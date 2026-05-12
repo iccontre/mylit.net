@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Link, useLocalSearchParams } from "expo-router";
+import * as Haptics from "expo-haptics";
+import { Link, useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
@@ -28,6 +29,7 @@ const PROFILE_KEY = "lit_user_profile";
 const CHECKIN_KEY = "lit_latest_checkin";
 
 export default function HomeScreen() {
+  const router = useRouter();
   const params = useLocalSearchParams();
 
   const rawMode = Array.isArray(params.mode) ? params.mode[0] : params.mode;
@@ -42,11 +44,41 @@ export default function HomeScreen() {
 
   const [completedQuests, setCompletedQuests] = useState<string[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+
   useEffect(() => {
-  loadCompletedQuests();
-  loadProfile();
-  loadLatestCheckIn();
+    loadCompletedQuests();
+    loadProfile();
+    loadLatestCheckIn();
   }, []);
+
+  async function lightHaptic() {
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {
+      // Haptics may not run in every web preview. Safe to ignore.
+    }
+  }
+
+  async function mediumHaptic() {
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    } catch {
+      // Haptics may not run in every web preview. Safe to ignore.
+    }
+  }
+
+  async function successHaptic() {
+    try {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      // Haptics may not run in every web preview. Safe to ignore.
+    }
+  }
+
+  async function navigateWithHaptic(path: any) {
+  await lightHaptic();
+  router.push(path);
+  } 
 
   async function loadProfile() {
     const saved = await AsyncStorage.getItem(PROFILE_KEY);
@@ -57,8 +89,9 @@ export default function HomeScreen() {
     const saved = await AsyncStorage.getItem(COMPLETED_QUESTS_KEY);
     if (saved) setCompletedQuests(JSON.parse(saved));
   }
+
   async function loadLatestCheckIn() {
-  const saved = await AsyncStorage.getItem(CHECKIN_KEY);
+    const saved = await AsyncStorage.getItem(CHECKIN_KEY);
 
     if (saved) {
       const checkIn = JSON.parse(saved);
@@ -79,14 +112,23 @@ export default function HomeScreen() {
   }
 
   async function toggleQuest(title: string) {
-    const nextCompleted = completedQuests.includes(title)
+    const isAlreadyComplete = completedQuests.includes(title);
+
+    const nextCompleted = isAlreadyComplete
       ? completedQuests.filter((item) => item !== title)
       : [...completedQuests, title];
+
+    if (isAlreadyComplete) {
+      await lightHaptic();
+    } else {
+      await successHaptic();
+    }
 
     await saveCompletedQuests(nextCompleted);
   }
 
   async function resetTodayProgress() {
+    await mediumHaptic();
     await saveCompletedQuests([]);
   }
 
@@ -208,43 +250,67 @@ export default function HomeScreen() {
         </View>
       </View>
 
-      <View style={styles.quickActions}>
-        <Link href="/onboarding" asChild>
-          <TouchableOpacity style={styles.goldButton}>
-            <Text style={styles.goldButtonText}>Set My Path</Text>
-          </TouchableOpacity>
-        </Link>
+      <View style={styles.actionPanel}>
+        <Text style={styles.actionPanelTitle}>Start Today</Text>
 
-        <Link href="/sleep-checkin" asChild>
-          <TouchableOpacity style={styles.darkButton}>
-            <Text style={styles.darkButtonText}>Morning Check-In</Text>
-          </TouchableOpacity>
-        </Link>
+        <TouchableOpacity
+          style={styles.primaryActionButton}
+          onPress={() => navigateWithHaptic("/sleep-checkin")}
+        >
+          <Text style={styles.primaryActionText}>Morning Check-In</Text>
+        </TouchableOpacity>
 
-        <Link href="/tomorrow-queue" asChild>
-          <TouchableOpacity style={styles.whiteButton}>
-            <Text style={styles.whiteButtonText}>Tomorrow Queue</Text>
-          </TouchableOpacity>
-        </Link>
-
-        <Link href="/journal" asChild>
-          <TouchableOpacity style={styles.whiteButtonPurple}>
-            <Text style={styles.whiteButtonText}>Journal</Text>
-          </TouchableOpacity>
-        </Link>
-
-        <Link href="/weekly-summary" asChild>
-          <TouchableOpacity style={styles.whiteButtonGreen}>
-            <Text style={styles.whiteButtonText}>Weekly Summary</Text>
-          </TouchableOpacity>
-        </Link>
+        <TouchableOpacity
+          style={styles.goldActionButton}
+          onPress={() => navigateWithHaptic("/onboarding")}
+        >
+          <Text style={styles.goldActionText}>Set My Path</Text>
+        </TouchableOpacity>
       </View>
 
-      <Link href="/next-chapter" asChild>
-        <TouchableOpacity style={styles.whiteButtonPurple}>
-          <Text style={styles.whiteButtonText}>Next Chapter</Text>
-        </TouchableOpacity>
-      </Link>
+      <View style={styles.actionPanel}>
+        <Text style={styles.actionPanelTitle}>Plan</Text>
+
+        <View style={styles.actionGrid}>
+          <TouchableOpacity
+            style={styles.smallActionButton}
+            onPress={() => navigateWithHaptic("/tomorrow-queue")}
+          >
+            <Text style={styles.smallActionIcon}>📌</Text>
+            <Text style={styles.smallActionText}>Tomorrow Queue</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.smallActionButton}
+            onPress={() => navigateWithHaptic("/weekly-summary")}
+          >
+            <Text style={styles.smallActionIcon}>📊</Text>
+            <Text style={styles.smallActionText}>Weekly Summary</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <View style={styles.actionPanel}>
+        <Text style={styles.actionPanelTitle}>Reflect & Grow</Text>
+
+        <View style={styles.actionGrid}>
+          <TouchableOpacity
+            style={styles.smallActionButtonPurple}
+            onPress={() => navigateWithHaptic("/journal")}
+          >
+            <Text style={styles.smallActionIcon}>📓</Text>
+            <Text style={styles.smallActionText}>Journal</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.smallActionButtonPurple}
+            onPress={() => navigateWithHaptic("/next-chapter")}
+          >
+            <Text style={styles.smallActionIcon}>🌱</Text>
+            <Text style={styles.smallActionText}>Next Chapter</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
 
       <View style={isRecovery ? styles.recoveryLunaCard : styles.progressLunaCard}>
         <Text style={styles.lunaName}>
@@ -293,7 +359,13 @@ export default function HomeScreen() {
         return (
           <View
             key={index}
-            style={isComplete ? styles.completedQuestCard : isRecovery ? styles.recoveryQuestCard : styles.progressQuestCard}
+            style={
+              isComplete
+                ? styles.completedQuestCard
+                : isRecovery
+                ? styles.recoveryQuestCard
+                : styles.progressQuestCard
+            }
           >
             <TouchableOpacity style={styles.questMain} onPress={() => toggleQuest(quest.title)}>
               <View style={styles.questLeft}>
@@ -319,7 +391,7 @@ export default function HomeScreen() {
                 }}
                 asChild
               >
-                <TouchableOpacity style={styles.reflectButton}>
+                <TouchableOpacity style={styles.reflectButton} onPress={lightHaptic}>
                   <Text style={styles.reflectButtonText}>Reflect if missed</Text>
                 </TouchableOpacity>
               </Link>
@@ -437,68 +509,79 @@ const styles = StyleSheet.create({
   spark: {
     fontSize: 38,
   },
-  quickActions: {
-    marginBottom: 18,
-  },
-  goldButton: {
-    backgroundColor: "#FBBF24",
-    padding: 15,
-    borderRadius: 20,
-    alignItems: "center",
-    marginBottom: 10,
+  actionPanel: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 16,
+    marginBottom: 14,
     borderWidth: 2,
-    borderColor: "#111827",
+    borderColor: "#E5D39A",
   },
-  goldButtonText: {
-    color: "#111827",
+  actionPanelTitle: {
     fontSize: 16,
     fontWeight: "900",
+    color: "#374151",
+    marginBottom: 12,
+    textTransform: "uppercase",
   },
-  darkButton: {
+  primaryActionButton: {
     backgroundColor: "#111827",
-    padding: 15,
-    borderRadius: 20,
+    padding: 16,
+    borderRadius: 18,
     alignItems: "center",
     marginBottom: 10,
     borderWidth: 2,
     borderColor: "#FBBF24",
   },
-  darkButtonText: {
+  primaryActionText: {
     color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "900",
   },
-  whiteButton: {
-    backgroundColor: "#FFFFFF",
-    padding: 15,
-    borderRadius: 20,
+  goldActionButton: {
+    backgroundColor: "#FBBF24",
+    padding: 16,
+    borderRadius: 18,
     alignItems: "center",
-    marginBottom: 10,
     borderWidth: 2,
-    borderColor: "#E5D39A",
+    borderColor: "#111827",
   },
-  whiteButtonPurple: {
-    backgroundColor: "#FFFFFF",
-    padding: 15,
-    borderRadius: 20,
+  goldActionText: {
+    color: "#111827",
+    fontSize: 16,
+    fontWeight: "900",
+  },
+  actionGrid: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  smallActionButton: {
+    width: "48%",
+    backgroundColor: "#F9FAFB",
+    padding: 14,
+    borderRadius: 18,
     alignItems: "center",
-    marginBottom: 10,
+    borderWidth: 2,
+    borderColor: "#E5E7EB",
+  },
+  smallActionButtonPurple: {
+    width: "48%",
+    backgroundColor: "#F9FAFB",
+    padding: 14,
+    borderRadius: 18,
+    alignItems: "center",
     borderWidth: 2,
     borderColor: "#A78BFA",
   },
-  whiteButtonGreen: {
-    backgroundColor: "#FFFFFF",
-    padding: 15,
-    borderRadius: 20,
-    alignItems: "center",
-    marginBottom: 10,
-    borderWidth: 2,
-    borderColor: "#22C55E",
+  smallActionIcon: {
+    fontSize: 24,
+    marginBottom: 6,
   },
-  whiteButtonText: {
+  smallActionText: {
     color: "#111827",
-    fontSize: 15,
+    fontSize: 13,
     fontWeight: "900",
+    textAlign: "center",
   },
   progressLunaCard: {
     backgroundColor: "#FFFFFF",
