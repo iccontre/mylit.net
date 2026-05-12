@@ -204,6 +204,12 @@ export default function HomeScreen() {
         </TouchableOpacity>
       </Link>
 
+      <Link href="/weekly-summary" asChild>
+        <TouchableOpacity style={styles.weeklyButton}>
+          <Text style={styles.weeklyButtonText}>Open Weekly Summary</Text>
+        </TouchableOpacity>
+      </Link>
+
       <View style={styles.lunaCard}>
         <Text style={styles.lunaName}>{isRecovery ? "🌙 Luna" : "☀️ Luna"}</Text>
         <Text style={styles.lunaText}>
@@ -564,4 +570,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "900",
   },
+  weeklyButton: {
+  backgroundColor: "#FFFFFF",
+  padding: 16,
+  borderRadius: 20,
+  alignItems: "center",
+  marginBottom: 18,
+  borderWidth: 2,
+  borderColor: "#22C55E",
+},
+weeklyButtonText: {
+  color: "#111827",
+  fontSize: 16,
+  fontWeight: "900",
+},
 });
