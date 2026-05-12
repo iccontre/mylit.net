@@ -26,6 +26,7 @@ type UserProfile = {
   biggestObstacle: string;
 };
 type CheckIn = {
+  id?: string;
   hours: string;
   mood: string;
   stress: string;
@@ -39,6 +40,7 @@ const QUEUE_KEY = "lit_tomorrow_queue";
 const COMPLETED_QUESTS_KEY = "lit_completed_quests";
 const PROFILE_KEY = "lit_user_profile";
 const CHECKIN_KEY = "lit_latest_checkin";
+const CHECKIN_HISTORY_KEY = "lit_checkin_history";
 
 export default function WeeklySummaryScreen() {
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
@@ -46,6 +48,7 @@ export default function WeeklySummaryScreen() {
   const [completedQuests, setCompletedQuests] = useState<string[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [latestCheckIn, setLatestCheckIn] = useState<CheckIn | null>(null);
+  const [checkInHistory, setCheckInHistory] = useState<CheckIn[]>([]);
 
   useEffect(() => {
     loadWeeklyData();
@@ -57,12 +60,15 @@ export default function WeeklySummaryScreen() {
     const savedCompleted = await AsyncStorage.getItem(COMPLETED_QUESTS_KEY);
     const savedProfile = await AsyncStorage.getItem(PROFILE_KEY);
     const savedCheckIn = await AsyncStorage.getItem(CHECKIN_KEY);
+    const savedHistory = await AsyncStorage.getItem(CHECKIN_HISTORY_KEY);
+
 
     if (savedJournal) setJournalEntries(JSON.parse(savedJournal));
     if (savedQueue) setQueueItems(JSON.parse(savedQueue));
     if (savedCompleted) setCompletedQuests(JSON.parse(savedCompleted));
     if (savedProfile) setProfile(JSON.parse(savedProfile));
     if (savedCheckIn) setLatestCheckIn(JSON.parse(savedCheckIn));
+    if (savedHistory) setCheckInHistory(JSON.parse(savedHistory));
   }
 
   const displayName = profile?.name?.trim() || "there";
@@ -77,6 +83,19 @@ export default function WeeklySummaryScreen() {
   const latestHours = latestCheckIn?.hours || "—";
   const latestMood = latestCheckIn?.mood || "—";
   const latestStress = latestCheckIn?.stress || "—";
+  
+  const totalCheckIns = checkInHistory.length;
+
+  const recoveryDays = checkInHistory.filter((checkIn) => checkIn.mode === "Recovery").length;
+  const progressDays = checkInHistory.filter((checkIn) => checkIn.mode === "Progress").length;
+
+  const averageEnergy =
+    checkInHistory.length > 0
+      ? Math.round(
+          checkInHistory.reduce((total, checkIn) => total + checkIn.energy, 0) /
+            checkInHistory.length
+        )
+      : null;
 
   const energyMessage =
     latestMode === "Recovery"
@@ -151,6 +170,26 @@ export default function WeeklySummaryScreen() {
           <Text style={styles.statNumber}>{averageMood ?? "—"}</Text>
           <Text style={styles.statLabel}>Avg Mood</Text>
         </View>
+
+        <View style={styles.statCard}>
+            <Text style={styles.statNumber}>{recoveryDays}</Text>
+            <Text style={styles.statLabel}>Recovery Days</Text>
+        </View>
+
+        <View style={styles.statCard}>
+            <Text style={styles.statNumber}>{progressDays}</Text>
+            <Text style={styles.statLabel}>Progress Days</Text>
+        </View>
+
+        <View style={styles.statCard}>
+            <Text style={styles.statNumber}>{averageEnergy ?? "—"}</Text>
+            <Text style={styles.statLabel}>Avg Energy</Text>
+        </View>
+
+        <View style={styles.statCard}>
+            <Text style={styles.statNumber}>{totalCheckIns}</Text>
+            <Text style={styles.statLabel}>Check-Ins</Text>
+        </View>
       </View>
 
       <View style={styles.highlightCard}>
@@ -161,8 +200,10 @@ export default function WeeklySummaryScreen() {
       <View style={styles.card}>
         <Text style={styles.cardLabel}>Recovery / Progress Reflection</Text>
         <Text style={styles.bodyText}>
-          This week, your goal is not to prove that you were perfect. Your goal is to
-          understand whether you needed Recovery, Progress, or a better balance of both.
+            You recorded {recoveryDays} Recovery day{recoveryDays === 1 ? "" : "s"} and{" "}
+            {progressDays} Progress day{progressDays === 1 ? "" : "s"}. This is not about
+            judging the week. It is about learning when your body needed restoration and when
+            you had energy to move forward.
         </Text>
       </View>
 

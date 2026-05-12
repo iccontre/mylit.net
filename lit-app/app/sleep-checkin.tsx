@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 type CheckIn = {
+  id: string;
   hours: string;
   mood: string;
   stress: string;
@@ -13,6 +14,7 @@ type CheckIn = {
 };
 
 const CHECKIN_KEY = "lit_latest_checkin";
+const CHECKIN_HISTORY_KEY = "lit_checkin_history";
 
 function calculateEnergy(hours: number, mood: number, stress: number) {
   let score = 50;
@@ -44,6 +46,7 @@ export default function SleepCheckInScreen() {
 
   async function saveCheckIn() {
     const checkIn: CheckIn = {
+      id: String(Date.now()),
       hours,
       mood,
       stress,
@@ -53,6 +56,13 @@ export default function SleepCheckInScreen() {
     };
 
     await AsyncStorage.setItem(CHECKIN_KEY, JSON.stringify(checkIn));
+
+    const savedHistory = await AsyncStorage.getItem(CHECKIN_HISTORY_KEY);
+    const history: CheckIn[] = savedHistory ? JSON.parse(savedHistory) : [];
+
+    const nextHistory = [checkIn, ...history];
+
+    await AsyncStorage.setItem(CHECKIN_HISTORY_KEY, JSON.stringify(nextHistory));
 
     router.push({
       pathname: "/",
