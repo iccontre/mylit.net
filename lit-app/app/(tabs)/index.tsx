@@ -240,6 +240,12 @@ export default function HomeScreen() {
         </Link>
       </View>
 
+      <Link href="/next-chapter" asChild>
+        <TouchableOpacity style={styles.whiteButtonPurple}>
+          <Text style={styles.whiteButtonText}>Next Chapter</Text>
+        </TouchableOpacity>
+      </Link>
+
       <View style={isRecovery ? styles.recoveryLunaCard : styles.progressLunaCard}>
         <Text style={styles.lunaName}>
           {isRecovery ? "🌙 Luna is in Recovery" : "☀️ Luna is in Progress"}
