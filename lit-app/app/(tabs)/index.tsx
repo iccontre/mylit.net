@@ -1,5 +1,6 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Link, useLocalSearchParams } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 type Quest = {
@@ -7,6 +8,8 @@ type Quest = {
   type: string;
   steps: number;
 };
+
+const COMPLETED_QUESTS_KEY = "lit_completed_quests";
 
 export default function HomeScreen() {
   const params = useLocalSearchParams();
@@ -30,19 +33,46 @@ export default function HomeScreen() {
 
   const [completedQuests, setCompletedQuests] = useState<string[]>([]);
 
+  useEffect(() => {
+    loadCompletedQuests();
+  }, []);
+
+  async function loadCompletedQuests() {
+    const saved = await AsyncStorage.getItem(COMPLETED_QUESTS_KEY);
+
+    if (saved) {
+      setCompletedQuests(JSON.parse(saved));
+    }
+  }
+
+  async function saveCompletedQuests(nextCompleted: string[]) {
+    setCompletedQuests(nextCompleted);
+    await AsyncStorage.setItem(COMPLETED_QUESTS_KEY, JSON.stringify(nextCompleted));
+  }
+
+  async function toggleQuest(title: string) {
+    let nextCompleted: string[];
+
+    if (completedQuests.includes(title)) {
+      nextCompleted = completedQuests.filter((item) => item !== title);
+    } else {
+      nextCompleted = [...completedQuests, title];
+    }
+
+    await saveCompletedQuests(nextCompleted);
+  }
+
+  async function resetTodayProgress() {
+    await saveCompletedQuests([]);
+  }
+
   const completedSteps = startingQuests
     .filter((quest) => completedQuests.includes(quest.title))
     .reduce((total, quest) => total + quest.steps, 0);
 
-  function toggleQuest(title: string) {
-    setCompletedQuests((current) => {
-      if (current.includes(title)) {
-        return current.filter((item) => item !== title);
-      }
-
-      return [...current, title];
-    });
-  }
+  const completedVisibleQuests = startingQuests.filter((quest) =>
+    completedQuests.includes(quest.title)
+  ).length;
 
   return (
     <ScrollView
@@ -63,6 +93,7 @@ export default function HomeScreen() {
           <Text style={styles.checkInButtonText}>Start Morning Check-In</Text>
         </TouchableOpacity>
       </Link>
+
       <Link href="/tomorrow-queue" asChild>
         <TouchableOpacity style={styles.queueButton}>
           <Text style={styles.queueButtonText}>Open Tomorrow Queue</Text>
@@ -102,7 +133,7 @@ export default function HomeScreen() {
             <TouchableOpacity style={styles.questMain} onPress={() => toggleQuest(quest.title)}>
               <View style={styles.questLeft}>
                 <Text style={styles.checkbox}>{isComplete ? "✅" : "⬜"}</Text>
-                <View>
+                <View style={{ flex: 1 }}>
                   <Text style={[styles.questTitle, isComplete && styles.completedQuestText]}>
                     {quest.title}
                   </Text>
@@ -132,11 +163,15 @@ export default function HomeScreen() {
 
       <View style={styles.summaryCard}>
         <Text style={styles.cardLabel}>Progress</Text>
-        <Text style={styles.rank}>Rank: Wanderer</Text>
+        <Text style={styles.rank}>Rank: {completedSteps >= 5 ? "Builder" : "Wanderer"}</Text>
         <Text style={styles.smallText}>Steps earned today: {completedSteps}</Text>
         <Text style={styles.smallText}>
-          Completed quests: {completedQuests.length}/{startingQuests.length}
+          Completed quests: {completedVisibleQuests}/{startingQuests.length}
         </Text>
+
+        <TouchableOpacity style={styles.resetButton} onPress={resetTodayProgress}>
+          <Text style={styles.resetButtonText}>Reset Today’s Quest Progress</Text>
+        </TouchableOpacity>
       </View>
     </ScrollView>
   );
@@ -192,6 +227,34 @@ const styles = StyleSheet.create({
   checkInButtonText: {
     color: "#FFFFFF",
     fontSize: 17,
+    fontWeight: "900",
+  },
+  queueButton: {
+    backgroundColor: "#FFFFFF",
+    padding: 16,
+    borderRadius: 20,
+    alignItems: "center",
+    marginBottom: 18,
+    borderWidth: 2,
+    borderColor: "#FBBF24",
+  },
+  queueButtonText: {
+    color: "#111827",
+    fontSize: 16,
+    fontWeight: "900",
+  },
+  journalButton: {
+    backgroundColor: "#FFFFFF",
+    padding: 16,
+    borderRadius: 20,
+    alignItems: "center",
+    marginBottom: 18,
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+  },
+  journalButtonText: {
+    color: "#111827",
+    fontSize: 16,
     fontWeight: "900",
   },
   lunaCard: {
@@ -327,32 +390,16 @@ const styles = StyleSheet.create({
     color: "#6B7280",
     marginTop: 6,
   },
-  queueButton: {
-  backgroundColor: "#FFFFFF",
-  padding: 16,
-  borderRadius: 20,
-  alignItems: "center",
-  marginBottom: 18,
-  borderWidth: 2,
-  borderColor: "#FBBF24",
-},
-queueButtonText: {
-  color: "#111827",
-  fontSize: 16,
-  fontWeight: "900",
-},
-journalButton: {
-  backgroundColor: "#FFFFFF",
-  padding: 16,
-  borderRadius: 20,
-  alignItems: "center",
-  marginBottom: 18,
-  borderWidth: 2,
-  borderColor: "#A78BFA",
-},
-journalButtonText: {
-  color: "#111827",
-  fontSize: 16,
-  fontWeight: "900",
-},
+  resetButton: {
+    backgroundColor: "#FEE2E2",
+    padding: 14,
+    borderRadius: 16,
+    alignItems: "center",
+    marginTop: 16,
+  },
+  resetButtonText: {
+    color: "#991B1B",
+    fontSize: 14,
+    fontWeight: "900",
+  },
 });
