@@ -9,6 +9,10 @@ type JournalEntry = {
   mood: string;
   content: string;
   gratitude: string;
+  thoughtPattern: string;
+  thoughtImpact: "Helpful" | "Harmful" | "Neutral";
+  honestReframe: string;
+  mindLesson: string;
   createdAt: string;
 };
 
@@ -19,6 +23,12 @@ export default function JournalScreen() {
   const [mood, setMood] = useState("7");
   const [content, setContent] = useState("");
   const [gratitude, setGratitude] = useState("");
+
+  const [thoughtPattern, setThoughtPattern] = useState("");
+  const [thoughtImpact, setThoughtImpact] = useState<"Helpful" | "Harmful" | "Neutral">("Neutral");
+  const [honestReframe, setHonestReframe] = useState("");
+  const [mindLesson, setMindLesson] = useState("");
+
   const [entries, setEntries] = useState<JournalEntry[]>([]);
 
   useEffect(() => {
@@ -39,7 +49,11 @@ export default function JournalScreen() {
   }
 
   async function saveJournalEntry() {
-    if (!content.trim() && !gratitude.trim()) return;
+    const hasMainJournal = content.trim() || gratitude.trim();
+    const hasMetacognition =
+      thoughtPattern.trim() || honestReframe.trim() || mindLesson.trim();
+
+    if (!hasMainJournal && !hasMetacognition) return;
 
     const newEntry: JournalEntry = {
       id: String(Date.now()),
@@ -47,6 +61,10 @@ export default function JournalScreen() {
       mood,
       content: content.trim(),
       gratitude: gratitude.trim(),
+      thoughtPattern: thoughtPattern.trim(),
+      thoughtImpact,
+      honestReframe: honestReframe.trim(),
+      mindLesson: mindLesson.trim(),
       createdAt: new Date().toLocaleString(),
     };
 
@@ -56,6 +74,10 @@ export default function JournalScreen() {
     setContent("");
     setGratitude("");
     setMood("7");
+    setThoughtPattern("");
+    setThoughtImpact("Neutral");
+    setHonestReframe("");
+    setMindLesson("");
   }
 
   async function clearEntries() {
@@ -79,29 +101,19 @@ export default function JournalScreen() {
 
         <View style={styles.toggleRow}>
           <TouchableOpacity
-            style={[styles.toggleButton, entryType === "Morning" && styles.activeToggle]}
+            style={entryType === "Morning" ? styles.activeToggle : styles.toggleButton}
             onPress={() => setEntryType("Morning")}
           >
-            <Text
-              style={[
-                styles.toggleText,
-                entryType === "Morning" && styles.activeToggleText,
-              ]}
-            >
+            <Text style={entryType === "Morning" ? styles.activeToggleText : styles.toggleText}>
               Morning
             </Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.toggleButton, entryType === "Evening" && styles.activeToggle]}
+            style={entryType === "Evening" ? styles.activeToggle : styles.toggleButton}
             onPress={() => setEntryType("Evening")}
           >
-            <Text
-              style={[
-                styles.toggleText,
-                entryType === "Evening" && styles.activeToggleText,
-              ]}
-            >
+            <Text style={entryType === "Evening" ? styles.activeToggleText : styles.toggleText}>
               Evening
             </Text>
           </TouchableOpacity>
@@ -141,11 +153,79 @@ export default function JournalScreen() {
           value={gratitude}
           onChangeText={setGratitude}
         />
-
-        <TouchableOpacity style={styles.saveButton} onPress={saveJournalEntry}>
-          <Text style={styles.saveButtonText}>Save Journal Entry</Text>
-        </TouchableOpacity>
       </View>
+
+      <View style={styles.metaCard}>
+        <Text style={styles.metaTitle}>Metacognitive Check-In</Text>
+        <Text style={styles.metaSubtitle}>
+          Notice how your mind worked today. This helps you understand your thoughts instead of being controlled by them.
+        </Text>
+
+        <Text style={styles.label}>What thought pattern showed up today?</Text>
+        <TextInput
+          style={styles.textArea}
+          multiline
+          placeholder="Example: overthinking, avoidance, comparison, self-doubt, clarity, motivation..."
+          placeholderTextColor="#9CA3AF"
+          value={thoughtPattern}
+          onChangeText={setThoughtPattern}
+        />
+
+        <Text style={styles.label}>Was this thought helpful, harmful, or neutral?</Text>
+
+        <View style={styles.impactRow}>
+          <TouchableOpacity
+            style={thoughtImpact === "Helpful" ? styles.helpfulImpact : styles.impactButton}
+            onPress={() => setThoughtImpact("Helpful")}
+          >
+            <Text style={thoughtImpact === "Helpful" ? styles.activeImpactText : styles.impactText}>
+              Helpful
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={thoughtImpact === "Neutral" ? styles.neutralImpact : styles.impactButton}
+            onPress={() => setThoughtImpact("Neutral")}
+          >
+            <Text style={thoughtImpact === "Neutral" ? styles.activeImpactText : styles.impactText}>
+              Neutral
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={thoughtImpact === "Harmful" ? styles.harmfulImpact : styles.impactButton}
+            onPress={() => setThoughtImpact("Harmful")}
+          >
+            <Text style={thoughtImpact === "Harmful" ? styles.activeImpactText : styles.impactText}>
+              Harmful
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <Text style={styles.label}>What is a more honest way to look at it?</Text>
+        <TextInput
+          style={styles.textArea}
+          multiline
+          placeholder="Example: I am not lazy. I was tired and needed a smaller first step."
+          placeholderTextColor="#9CA3AF"
+          value={honestReframe}
+          onChangeText={setHonestReframe}
+        />
+
+        <Text style={styles.label}>What did you learn about how your mind worked today?</Text>
+        <TextInput
+          style={styles.textArea}
+          multiline
+          placeholder="Example: I avoid tasks when they feel too big, but I can start when I make them smaller."
+          placeholderTextColor="#9CA3AF"
+          value={mindLesson}
+          onChangeText={setMindLesson}
+        />
+      </View>
+
+      <TouchableOpacity style={styles.saveButton} onPress={saveJournalEntry}>
+        <Text style={styles.saveButtonText}>Save Journal Entry</Text>
+      </TouchableOpacity>
 
       <Text style={styles.sectionTitle}>Recent Entries</Text>
 
@@ -166,6 +246,22 @@ export default function JournalScreen() {
 
             {entry.gratitude ? (
               <Text style={styles.gratitudeText}>Grateful for: {entry.gratitude}</Text>
+            ) : null}
+
+            {entry.thoughtPattern ? (
+              <View style={styles.savedMetaBox}>
+                <Text style={styles.savedMetaTitle}>Metacognitive note</Text>
+                <Text style={styles.savedMetaText}>Pattern: {entry.thoughtPattern}</Text>
+                <Text style={styles.savedMetaText}>Impact: {entry.thoughtImpact}</Text>
+
+                {entry.honestReframe ? (
+                  <Text style={styles.savedMetaText}>Reframe: {entry.honestReframe}</Text>
+                ) : null}
+
+                {entry.mindLesson ? (
+                  <Text style={styles.savedMetaText}>Lesson: {entry.mindLesson}</Text>
+                ) : null}
+              </View>
             ) : null}
           </View>
         ))
@@ -194,6 +290,7 @@ const styles = StyleSheet.create({
   container: {
     padding: 24,
     paddingTop: 70,
+    paddingBottom: 40,
   },
   title: {
     fontSize: 36,
@@ -224,9 +321,30 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
     borderRadius: 24,
     padding: 20,
-    marginBottom: 22,
+    marginBottom: 18,
     borderWidth: 2,
     borderColor: "#E5D39A",
+  },
+  metaCard: {
+    backgroundColor: "#EEF2FF",
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 18,
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+  },
+  metaTitle: {
+    fontSize: 22,
+    fontWeight: "900",
+    color: "#111827",
+    marginBottom: 6,
+  },
+  metaSubtitle: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: "#374151",
+    fontWeight: "700",
+    marginBottom: 10,
   },
   label: {
     fontSize: 14,
@@ -238,7 +356,6 @@ const styles = StyleSheet.create({
   },
   toggleRow: {
     flexDirection: "row",
-    gap: 10,
     marginBottom: 8,
   },
   toggleButton: {
@@ -249,10 +366,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 2,
     borderColor: "#E5E7EB",
+    marginRight: 8,
   },
   activeToggle: {
+    flex: 1,
     backgroundColor: "#111827",
+    padding: 14,
+    borderRadius: 16,
+    alignItems: "center",
+    borderWidth: 2,
     borderColor: "#FBBF24",
+    marginRight: 8,
   },
   toggleText: {
     fontSize: 16,
@@ -260,6 +384,8 @@ const styles = StyleSheet.create({
     color: "#374151",
   },
   activeToggleText: {
+    fontSize: 16,
+    fontWeight: "900",
     color: "#FFFFFF",
   },
   input: {
@@ -269,27 +395,84 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#111827",
     marginBottom: 8,
+    borderWidth: 2,
+    borderColor: "#E5E7EB",
   },
   textArea: {
     backgroundColor: "#F3F4F6",
     borderRadius: 16,
     padding: 14,
-    minHeight: 120,
+    minHeight: 110,
     fontSize: 16,
     color: "#111827",
     marginBottom: 8,
     textAlignVertical: "top",
+    borderWidth: 2,
+    borderColor: "#E5E7EB",
+  },
+  impactRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  impactButton: {
+    width: "31%",
+    backgroundColor: "#FFFFFF",
+    padding: 12,
+    borderRadius: 16,
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#E5E7EB",
+  },
+  helpfulImpact: {
+    width: "31%",
+    backgroundColor: "#16A34A",
+    padding: 12,
+    borderRadius: 16,
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#166534",
+  },
+  neutralImpact: {
+    width: "31%",
+    backgroundColor: "#111827",
+    padding: 12,
+    borderRadius: 16,
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#FBBF24",
+  },
+  harmfulImpact: {
+    width: "31%",
+    backgroundColor: "#991B1B",
+    padding: 12,
+    borderRadius: 16,
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#FCA5A5",
+  },
+  impactText: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: "#374151",
+  },
+  activeImpactText: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: "#FFFFFF",
   },
   saveButton: {
     backgroundColor: "#111827",
-    padding: 16,
-    borderRadius: 18,
+    padding: 18,
+    borderRadius: 20,
     alignItems: "center",
-    marginTop: 16,
+    marginBottom: 22,
+    borderWidth: 2,
+    borderColor: "#FBBF24",
   },
   saveButtonText: {
     color: "#FFFFFF",
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: "900",
   },
   sectionTitle: {
@@ -348,6 +531,28 @@ const styles = StyleSheet.create({
     color: "#166534",
     fontWeight: "700",
   },
+  savedMetaBox: {
+    backgroundColor: "#EEF2FF",
+    borderRadius: 16,
+    padding: 14,
+    marginTop: 12,
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+  },
+  savedMetaTitle: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: "#312E81",
+    marginBottom: 6,
+    textTransform: "uppercase",
+  },
+  savedMetaText: {
+    fontSize: 14,
+    lineHeight: 21,
+    color: "#374151",
+    fontWeight: "700",
+    marginBottom: 4,
+  },
   clearButton: {
     backgroundColor: "#FEE2E2",
     padding: 16,
@@ -366,6 +571,8 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: "center",
     marginTop: 12,
+    borderWidth: 2,
+    borderColor: "#111827",
   },
   homeButtonText: {
     color: "#111827",
