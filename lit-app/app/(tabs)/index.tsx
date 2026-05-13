@@ -41,7 +41,7 @@ const CHECKIN_KEY = "lit_latest_checkin";
 const LATEST_PRE_SLEEP_INTENTION_KEY = "lit_latest_pre_sleep_intention";
 
 function getTodayKey() {
-  return new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD format
+  return new Date().toLocaleDateString("en-CA");
 }
 
 export default function HomeScreen() {
@@ -73,7 +73,7 @@ export default function HomeScreen() {
     try {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch {
-      // Haptics may not run in every web preview. Safe to ignore.
+      // Haptics may not run in every web preview.
     }
   }
 
@@ -81,7 +81,7 @@ export default function HomeScreen() {
     try {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     } catch {
-      // Haptics may not run in every web preview. Safe to ignore.
+      // Haptics may not run in every web preview.
     }
   }
 
@@ -89,14 +89,14 @@ export default function HomeScreen() {
     try {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch {
-      // Haptics may not run in every web preview. Safe to ignore.
+      // Haptics may not run in every web preview.
     }
   }
 
   async function navigateWithHaptic(path: any) {
-  await lightHaptic();
-  router.push(path);
-  } 
+    await lightHaptic();
+    router.push(path);
+  }
 
   async function loadProfile() {
     const saved = await AsyncStorage.getItem(PROFILE_KEY);
@@ -136,6 +136,7 @@ export default function HomeScreen() {
       }
     }
   }
+
   async function loadLatestIntention() {
     const saved = await AsyncStorage.getItem(LATEST_PRE_SLEEP_INTENTION_KEY);
 
@@ -298,6 +299,7 @@ export default function HomeScreen() {
           style={styles.primaryActionButton}
           onPress={() => navigateWithHaptic("/sleep-checkin")}
         >
+          <Text style={styles.primaryActionIcon}>🔥</Text>
           <Text style={styles.primaryActionText}>Morning Check-In</Text>
         </TouchableOpacity>
 
@@ -305,12 +307,13 @@ export default function HomeScreen() {
           style={styles.goldActionButton}
           onPress={() => navigateWithHaptic("/onboarding")}
         >
+          <Text style={styles.primaryActionIcon}>🧭</Text>
           <Text style={styles.goldActionText}>Set My Path</Text>
         </TouchableOpacity>
       </View>
 
       <View style={styles.actionPanel}>
-        <Text style={styles.actionPanelTitle}>Plan</Text>
+        <Text style={styles.actionPanelTitle}>Today Plan</Text>
 
         <View style={styles.actionGrid}>
           <TouchableOpacity
@@ -322,7 +325,7 @@ export default function HomeScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.smallActionButton}
+            style={styles.smallActionButtonGreen}
             onPress={() => navigateWithHaptic("/weekly-summary")}
           >
             <Text style={styles.smallActionIcon}>📊</Text>
@@ -332,7 +335,7 @@ export default function HomeScreen() {
       </View>
 
       <View style={styles.actionPanel}>
-        <Text style={styles.actionPanelTitle}>Reflect & Grow</Text>
+        <Text style={styles.actionPanelTitle}>Mind & Sleep</Text>
 
         <View style={styles.actionGrid}>
           <TouchableOpacity
@@ -345,32 +348,14 @@ export default function HomeScreen() {
 
           <TouchableOpacity
             style={styles.smallActionButtonPurple}
-            onPress={() => navigateWithHaptic("/next-chapter")}
+            onPress={() => navigateWithHaptic("/awareness-check")}
           >
-            <Text style={styles.smallActionIcon}>🌱</Text>
-            <Text style={styles.smallActionText}>Next Chapter</Text>
+            <Text style={styles.smallActionIcon}>🧠</Text>
+            <Text style={styles.smallActionText}>Awareness Check</Text>
           </TouchableOpacity>
         </View>
-      </View>
 
-      <View style={styles.actionPanel}>
-        <Text style={styles.actionPanelTitle}>Awareness</Text>
-
-        <TouchableOpacity
-          style={styles.fullActionButtonPurple}
-          onPress={() => navigateWithHaptic("/awareness-check")}
-        >
-          <Text style={styles.smallActionIcon}>🧠</Text>
-          <Text style={styles.smallActionText}>Awareness Check</Text>
-        </TouchableOpacity>
-      </View>
-
-
-      
-      <View style={styles.actionPanel}>
-        <Text style={styles.actionPanelTitle}>Sleep & Intention</Text>
-
-        <View style={styles.actionGrid}>
+        <View style={styles.actionGridSecondRow}>
           <TouchableOpacity
             style={styles.smallActionButtonNight}
             onPress={() => navigateWithHaptic("/pre-sleep-intention")}
@@ -387,6 +372,18 @@ export default function HomeScreen() {
             <Text style={styles.smallActionText}>Morning Reflection</Text>
           </TouchableOpacity>
         </View>
+      </View>
+
+      <View style={styles.actionPanel}>
+        <Text style={styles.actionPanelTitle}>Growth</Text>
+
+        <TouchableOpacity
+          style={styles.fullActionButtonPurple}
+          onPress={() => navigateWithHaptic("/next-chapter")}
+        >
+          <Text style={styles.smallActionIcon}>🌱</Text>
+          <Text style={styles.fullActionText}>Next Chapter</Text>
+        </TouchableOpacity>
       </View>
 
       {latestIntention ? (
@@ -630,6 +627,10 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#FBBF24",
   },
+  primaryActionIcon: {
+    fontSize: 24,
+    marginBottom: 5,
+  },
   primaryActionText: {
     color: "#FFFFFF",
     fontSize: 16,
@@ -652,6 +653,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
   },
+  actionGridSecondRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 10,
+  },
   smallActionButton: {
     width: "48%",
     backgroundColor: "#F9FAFB",
@@ -661,8 +667,34 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#E5E7EB",
   },
+  smallActionButtonGreen: {
+    width: "48%",
+    backgroundColor: "#F0FDF4",
+    padding: 14,
+    borderRadius: 18,
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#22C55E",
+  },
   smallActionButtonPurple: {
     width: "48%",
+    backgroundColor: "#F9FAFB",
+    padding: 14,
+    borderRadius: 18,
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+  },
+  smallActionButtonNight: {
+    width: "48%",
+    backgroundColor: "#EEF2FF",
+    padding: 14,
+    borderRadius: 18,
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+  },
+  fullActionButtonPurple: {
     backgroundColor: "#F9FAFB",
     padding: 14,
     borderRadius: 18,
@@ -679,6 +711,54 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "900",
     textAlign: "center",
+  },
+  fullActionText: {
+    color: "#111827",
+    fontSize: 15,
+    fontWeight: "900",
+    textAlign: "center",
+  },
+  intentionPreviewCard: {
+    backgroundColor: "#EEF2FF",
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 18,
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+  },
+  intentionPreviewLabel: {
+    fontSize: 13,
+    color: "#6B7280",
+    marginBottom: 8,
+    textTransform: "uppercase",
+    fontWeight: "900",
+  },
+  intentionPreviewText: {
+    fontSize: 20,
+    lineHeight: 28,
+    color: "#111827",
+    fontWeight: "900",
+    marginBottom: 8,
+  },
+  intentionPreviewAction: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: "#374151",
+    fontWeight: "700",
+    marginBottom: 14,
+  },
+  intentionReflectButton: {
+    backgroundColor: "#312E81",
+    padding: 14,
+    borderRadius: 16,
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+  },
+  intentionReflectButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "900",
   },
   progressLunaCard: {
     backgroundColor: "#FFFFFF",
@@ -922,64 +1002,5 @@ const styles = StyleSheet.create({
     color: "#991B1B",
     fontSize: 14,
     fontWeight: "900",
-  },
-  smallActionButtonNight: {
-  width: "48%",
-  backgroundColor: "#EEF2FF",
-  padding: 14,
-  borderRadius: 18,
-  alignItems: "center",
-  borderWidth: 2,
-  borderColor: "#A78BFA",
-  },
-  intentionPreviewCard: {
-    backgroundColor: "#EEF2FF",
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 18,
-    borderWidth: 2,
-    borderColor: "#A78BFA",
-  },
-  intentionPreviewLabel: {
-    fontSize: 13,
-    color: "#6B7280",
-    marginBottom: 8,
-    textTransform: "uppercase",
-    fontWeight: "900",
-  },
-  intentionPreviewText: {
-    fontSize: 20,
-    lineHeight: 28,
-    color: "#111827",
-    fontWeight: "900",
-    marginBottom: 8,
-  },
-  intentionPreviewAction: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: "#374151",
-    fontWeight: "700",
-    marginBottom: 14,
-  },
-  intentionReflectButton: {
-    backgroundColor: "#312E81",
-    padding: 14,
-    borderRadius: 16,
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#A78BFA",
-  },
-  intentionReflectButtonText: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "900",
-  },
-  fullActionButtonPurple: {
-  backgroundColor: "#F9FAFB",
-  padding: 14,
-  borderRadius: 18,
-  alignItems: "center",
-  borderWidth: 2,
-  borderColor: "#A78BFA",
   },
 });
