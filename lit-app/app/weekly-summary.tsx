@@ -9,6 +9,10 @@ type JournalEntry = {
   mood: string;
   content: string;
   gratitude: string;
+  thoughtPattern?: string;
+  thoughtImpact?: "Helpful" | "Harmful" | "Neutral";
+  honestReframe?: string;
+  mindLesson?: string;
   createdAt: string;
 };
 
@@ -35,12 +39,45 @@ type CheckIn = {
   createdAt: string;
 };
 
+type PreSleepIntention = {
+  id: string;
+  date: string;
+  intention: string;
+  whyItMatters: string;
+  firstSmallAction: string;
+  dreamSymbol: string;
+  createdAt: string;
+};
+
+type MorningIntentionReflection = {
+  id: string;
+  intentionId: string;
+  date: string;
+  recallType: string;
+  reflectionText: string;
+  todayAction: string;
+  createdAt: string;
+};
+
+type AwarenessCheck = {
+  id: string;
+  attentionFocus: string;
+  automaticOrIntentional: "Mostly automatic" | "Mixed" | "Mostly intentional";
+  pulledAway: string;
+  broughtBack: string;
+  presentMoment: string;
+  createdAt: string;
+};
+
 const JOURNAL_KEY = "lit_journal_entries";
 const QUEUE_KEY = "lit_tomorrow_queue";
 const COMPLETED_QUESTS_KEY = "lit_completed_quests";
 const PROFILE_KEY = "lit_user_profile";
 const CHECKIN_KEY = "lit_latest_checkin";
 const CHECKIN_HISTORY_KEY = "lit_checkin_history";
+const PRE_SLEEP_INTENTIONS_KEY = "lit_pre_sleep_intentions";
+const MORNING_INTENTION_REFLECTIONS_KEY = "lit_morning_intention_reflections";
+const AWARENESS_CHECKS_KEY = "lit_awareness_checks";
 
 export default function WeeklySummaryScreen() {
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
@@ -49,6 +86,9 @@ export default function WeeklySummaryScreen() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [latestCheckIn, setLatestCheckIn] = useState<CheckIn | null>(null);
   const [checkInHistory, setCheckInHistory] = useState<CheckIn[]>([]);
+  const [preSleepIntentions, setPreSleepIntentions] = useState<PreSleepIntention[]>([]);
+  const [morningReflections, setMorningReflections] = useState<MorningIntentionReflection[]>([]);
+  const [awarenessChecks, setAwarenessChecks] = useState<AwarenessCheck[]>([]);
 
   useEffect(() => {
     loadWeeklyData();
@@ -61,6 +101,10 @@ export default function WeeklySummaryScreen() {
     const savedProfile = await AsyncStorage.getItem(PROFILE_KEY);
     const savedCheckIn = await AsyncStorage.getItem(CHECKIN_KEY);
     const savedHistory = await AsyncStorage.getItem(CHECKIN_HISTORY_KEY);
+    const savedIntentions = await AsyncStorage.getItem(PRE_SLEEP_INTENTIONS_KEY);
+    const savedMorningReflections = await AsyncStorage.getItem(MORNING_INTENTION_REFLECTIONS_KEY);
+    const savedAwarenessChecks = await AsyncStorage.getItem(AWARENESS_CHECKS_KEY);
+
 
 
     if (savedJournal) setJournalEntries(JSON.parse(savedJournal));
@@ -69,6 +113,9 @@ export default function WeeklySummaryScreen() {
     if (savedProfile) setProfile(JSON.parse(savedProfile));
     if (savedCheckIn) setLatestCheckIn(JSON.parse(savedCheckIn));
     if (savedHistory) setCheckInHistory(JSON.parse(savedHistory));
+    if (savedIntentions) setPreSleepIntentions(JSON.parse(savedIntentions));
+    if (savedMorningReflections) setMorningReflections(JSON.parse(savedMorningReflections));
+    if (savedAwarenessChecks) setAwarenessChecks(JSON.parse(savedAwarenessChecks));
   }
 
   const displayName = profile?.name?.trim() || "there";
@@ -83,11 +130,33 @@ export default function WeeklySummaryScreen() {
   const latestHours = latestCheckIn?.hours || "—";
   const latestMood = latestCheckIn?.mood || "—";
   const latestStress = latestCheckIn?.stress || "—";
+  const intentionCount = preSleepIntentions.length;
+  const morningReflectionCount = morningReflections.length;
+  const awarenessCount = awarenessChecks.length;
   
   const totalCheckIns = checkInHistory.length;
 
   const recoveryDays = checkInHistory.filter((checkIn) => checkIn.mode === "Recovery").length;
   const progressDays = checkInHistory.filter((checkIn) => checkIn.mode === "Progress").length;
+
+  const metacognitiveEntryCount = journalEntries.filter(
+    (entry) => entry.thoughtPattern || entry.honestReframe || entry.mindLesson
+  ).length;
+
+  const latestIntention = preSleepIntentions[0];
+  const latestMorningReflection = morningReflections[0];
+  const latestAwarenessCheck = awarenessChecks[0];
+
+  const cognitiveSmallWin =
+    latestMorningReflection?.todayAction
+      ? `You turned a night intention into an action: ${latestMorningReflection.todayAction}`
+      : latestIntention?.intention
+      ? `You gave tomorrow direction with this intention: ${latestIntention.intention}`
+      : latestAwarenessCheck?.presentMoment
+      ? `You noticed a present moment: ${latestAwarenessCheck.presentMoment}`
+      : metacognitiveEntryCount > 0
+      ? "You practiced noticing your thought patterns instead of just reacting to them."
+      : "Try one intention, awareness check, or metacognitive journal entry this week.";
 
   const averageEnergy =
     checkInHistory.length > 0
@@ -190,11 +259,37 @@ export default function WeeklySummaryScreen() {
             <Text style={styles.statNumber}>{totalCheckIns}</Text>
             <Text style={styles.statLabel}>Check-Ins</Text>
         </View>
+
+        <View style={styles.statCard}>
+          <Text style={styles.statNumber}>{intentionCount}</Text>
+          <Text style={styles.statLabel}>Night Intentions</Text>
+        </View>
+
+        <View style={styles.statCard}>
+          <Text style={styles.statNumber}>{morningReflectionCount}</Text>
+          <Text style={styles.statLabel}>Morning Reflections</Text>
+        </View>
+
+        <View style={styles.statCard}>
+          <Text style={styles.statNumber}>{metacognitiveEntryCount}</Text>
+          <Text style={styles.statLabel}>Meta Entries</Text>
+        </View>
+
+        <View style={styles.statCard}>
+          <Text style={styles.statNumber}>{awarenessCount}</Text>
+          <Text style={styles.statLabel}>Awareness Checks</Text>
+        </View>
       </View>
 
       <View style={styles.highlightCard}>
         <Text style={styles.highlightLabel}>Small Win</Text>
         <Text style={styles.highlightText}>{smallWin}</Text>
+      </View>
+
+      <View style={styles.cognitiveCard}>
+        <Text style={styles.cognitiveLabel}>Cognitive Science Layer</Text>
+        <Text style={styles.cognitiveTitle}>Night → Morning → Action</Text>
+        <Text style={styles.cognitiveText}>{cognitiveSmallWin}</Text>
       </View>
 
       <View style={styles.card}>
@@ -213,6 +308,24 @@ export default function WeeklySummaryScreen() {
           Next week, choose one goal that feels honest and small enough to repeat. If
           your energy is low, make it a Recovery goal. If your energy is strong, make
           it a Progress goal.
+        </Text>
+      </View>
+
+      <Text style={styles.sectionTitle}>Recent Cognitive Moments</Text>
+
+      <View style={styles.card}>
+        <Text style={styles.cardLabel}>Latest Intention</Text>
+        <Text style={styles.bodyText}>
+          {latestIntention?.intention || "No pre-sleep intention saved yet."}
+        </Text>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardLabel}>Latest Awareness Check</Text>
+        <Text style={styles.bodyText}>
+          {latestAwarenessCheck
+            ? `Attention: ${latestAwarenessCheck.attentionFocus || "not specified"}`
+            : "No awareness check saved yet."}
         </Text>
       </View>
 
@@ -419,44 +532,71 @@ const styles = StyleSheet.create({
   marginBottom: 18,
   borderWidth: 2,
   borderColor: "#FBBF24",
-},
-recoveryEnergyCard: {
-  backgroundColor: "#312E81",
+  },
+  recoveryEnergyCard: {
+    backgroundColor: "#312E81",
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 18,
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+  },
+  energyCardLabel: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: "#D1D5DB",
+    textTransform: "uppercase",
+    marginBottom: 8,
+  },
+  energyMain: {
+    fontSize: 36,
+    fontWeight: "900",
+    color: "#FBBF24",
+  },
+  energyMode: {
+    fontSize: 20,
+    fontWeight: "900",
+    color: "#FFFFFF",
+    marginTop: 4,
+  },
+  energyDetails: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: "#E5E7EB",
+    marginTop: 10,
+    fontWeight: "700",
+  },
+  energyMessage: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: "#F9FAFB",
+    marginTop: 10,
+  },
+  cognitiveCard: {
+  backgroundColor: "#EEF2FF",
   borderRadius: 24,
   padding: 20,
   marginBottom: 18,
   borderWidth: 2,
   borderColor: "#A78BFA",
-},
-energyCardLabel: {
-  fontSize: 14,
-  fontWeight: "900",
-  color: "#D1D5DB",
-  textTransform: "uppercase",
-  marginBottom: 8,
-},
-energyMain: {
-  fontSize: 36,
-  fontWeight: "900",
-  color: "#FBBF24",
-},
-energyMode: {
-  fontSize: 20,
-  fontWeight: "900",
-  color: "#FFFFFF",
-  marginTop: 4,
-},
-energyDetails: {
-  fontSize: 15,
-  lineHeight: 22,
-  color: "#E5E7EB",
-  marginTop: 10,
-  fontWeight: "700",
-},
-energyMessage: {
-  fontSize: 15,
-  lineHeight: 22,
-  color: "#F9FAFB",
-  marginTop: 10,
-},
+  },
+  cognitiveLabel: {
+    fontSize: 14,
+    fontWeight: "900",
+    color: "#6B7280",
+    textTransform: "uppercase",
+    marginBottom: 8,
+  },
+  cognitiveTitle: {
+    fontSize: 22,
+    fontWeight: "900",
+    color: "#111827",
+    marginBottom: 8,
+  },
+  cognitiveText: {
+    fontSize: 16,
+    lineHeight: 24,
+    color: "#374151",
+    fontWeight: "700",
+  },
 });
