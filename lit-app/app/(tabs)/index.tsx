@@ -24,10 +24,21 @@ type UserProfile = {
   hasFoodControl: boolean;
 };
 
+type PreSleepIntention = {
+  id: string;
+  date: string;
+  intention: string;
+  whyItMatters: string;
+  firstSmallAction: string;
+  dreamSymbol: string;
+  createdAt: string;
+};
+
 const COMPLETED_QUESTS_KEY = "lit_completed_quests";
 const TODAY_PROGRESS_DATE_KEY = "lit_today_progress_date";
 const PROFILE_KEY = "lit_user_profile";
 const CHECKIN_KEY = "lit_latest_checkin";
+const LATEST_PRE_SLEEP_INTENTION_KEY = "lit_latest_pre_sleep_intention";
 
 function getTodayKey() {
   return new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD format
@@ -49,11 +60,13 @@ export default function HomeScreen() {
 
   const [completedQuests, setCompletedQuests] = useState<string[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [latestIntention, setLatestIntention] = useState<PreSleepIntention | null>(null);
 
   useEffect(() => {
     loadCompletedQuests();
     loadProfile();
     loadLatestCheckIn();
+    loadLatestIntention();
   }, []);
 
   async function lightHaptic() {
@@ -121,6 +134,13 @@ export default function HomeScreen() {
       if (typeof checkIn.energy === "number") {
         setSavedEnergy(checkIn.energy);
       }
+    }
+  }
+  async function loadLatestIntention() {
+    const saved = await AsyncStorage.getItem(LATEST_PRE_SLEEP_INTENTION_KEY);
+
+    if (saved) {
+      setLatestIntention(JSON.parse(saved));
     }
   }
 
@@ -332,6 +352,48 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
       </View>
+      
+      <View style={styles.actionPanel}>
+        <Text style={styles.actionPanelTitle}>Sleep & Intention</Text>
+
+        <View style={styles.actionGrid}>
+          <TouchableOpacity
+            style={styles.smallActionButtonNight}
+            onPress={() => navigateWithHaptic("/pre-sleep-intention")}
+          >
+            <Text style={styles.smallActionIcon}>🌙</Text>
+            <Text style={styles.smallActionText}>Pre-Sleep Intention</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.smallActionButtonNight}
+            onPress={() => navigateWithHaptic("/morning-intention-reflection")}
+          >
+            <Text style={styles.smallActionIcon}>☀️</Text>
+            <Text style={styles.smallActionText}>Morning Reflection</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {latestIntention ? (
+        <View style={styles.intentionPreviewCard}>
+          <Text style={styles.intentionPreviewLabel}>Last night’s intention</Text>
+          <Text style={styles.intentionPreviewText}>{latestIntention.intention}</Text>
+
+          {latestIntention.firstSmallAction ? (
+            <Text style={styles.intentionPreviewAction}>
+              First small action: {latestIntention.firstSmallAction}
+            </Text>
+          ) : null}
+
+          <TouchableOpacity
+            style={styles.intentionReflectButton}
+            onPress={() => navigateWithHaptic("/morning-intention-reflection")}
+          >
+            <Text style={styles.intentionReflectButtonText}>Reflect This Morning</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       <View style={isRecovery ? styles.recoveryLunaCard : styles.progressLunaCard}>
         <Text style={styles.lunaName}>
@@ -845,6 +907,57 @@ const styles = StyleSheet.create({
   resetButtonText: {
     color: "#991B1B",
     fontSize: 14,
+    fontWeight: "900",
+  },
+  smallActionButtonNight: {
+  width: "48%",
+  backgroundColor: "#EEF2FF",
+  padding: 14,
+  borderRadius: 18,
+  alignItems: "center",
+  borderWidth: 2,
+  borderColor: "#A78BFA",
+  },
+  intentionPreviewCard: {
+    backgroundColor: "#EEF2FF",
+    borderRadius: 24,
+    padding: 20,
+    marginBottom: 18,
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+  },
+  intentionPreviewLabel: {
+    fontSize: 13,
+    color: "#6B7280",
+    marginBottom: 8,
+    textTransform: "uppercase",
+    fontWeight: "900",
+  },
+  intentionPreviewText: {
+    fontSize: 20,
+    lineHeight: 28,
+    color: "#111827",
+    fontWeight: "900",
+    marginBottom: 8,
+  },
+  intentionPreviewAction: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: "#374151",
+    fontWeight: "700",
+    marginBottom: 14,
+  },
+  intentionReflectButton: {
+    backgroundColor: "#312E81",
+    padding: 14,
+    borderRadius: 16,
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+  },
+  intentionReflectButtonText: {
+    color: "#FFFFFF",
+    fontSize: 15,
     fontWeight: "900",
   },
 });
