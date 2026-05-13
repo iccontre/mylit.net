@@ -352,6 +352,20 @@ export default function HomeScreen() {
           </TouchableOpacity>
         </View>
       </View>
+
+      <View style={styles.actionPanel}>
+        <Text style={styles.actionPanelTitle}>Awareness</Text>
+
+        <TouchableOpacity
+          style={styles.fullActionButtonPurple}
+          onPress={() => navigateWithHaptic("/awareness-check")}
+        >
+          <Text style={styles.smallActionIcon}>🧠</Text>
+          <Text style={styles.smallActionText}>Awareness Check</Text>
+        </TouchableOpacity>
+      </View>
+
+
       
       <View style={styles.actionPanel}>
         <Text style={styles.actionPanelTitle}>Sleep & Intention</Text>
@@ -959,5 +973,13 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 15,
     fontWeight: "900",
+  },
+  fullActionButtonPurple: {
+  backgroundColor: "#F9FAFB",
+  padding: 14,
+  borderRadius: 18,
+  alignItems: "center",
+  borderWidth: 2,
+  borderColor: "#A78BFA",
   },
 });
