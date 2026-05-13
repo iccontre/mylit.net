@@ -44,14 +44,19 @@ function getFlameLabel(score: number) {
 export default function SleepCheckInScreen() {
   const router = useRouter();
 
-  const [hours, setHours] = useState("7");
-  const [mood, setMood] = useState("6");
-  const [stress, setStress] = useState("3");
+  const [hours, setHours] = useState("");
+  const [mood, setMood] = useState("");
+  const [stress, setStress] = useState("");
 
-  const energy = calculateEnergy(Number(hours), Number(mood), Number(stress));
-  const mode = getMode(energy);
+  const hasAllInputs = hours.trim() !== "" && mood.trim() !== "" && stress.trim() !== "";
+
+  const energy = hasAllInputs
+    ? calculateEnergy(Number(hours), Number(mood), Number(stress))
+    : 0;
+
+  const mode = hasAllInputs ? getMode(energy) : "Recovery";
   const isRecovery = mode === "Recovery";
-  const flameLabel = getFlameLabel(energy);
+  const flameLabel = hasAllInputs ? getFlameLabel(energy) : "Not calculated yet";
 
   async function successHaptic() {
     try {
@@ -62,6 +67,8 @@ export default function SleepCheckInScreen() {
   }
 
   async function saveCheckIn() {
+    if (!hasAllInputs) return;
+
     const checkIn: CheckIn = {
       id: String(Date.now()),
       hours,
@@ -132,6 +139,8 @@ export default function SleepCheckInScreen() {
         <TextInput
           style={styles.input}
           keyboardType="numeric"
+          placeholder="Enter hours slept"
+          placeholderTextColor="#9CA3AF"
           value={hours}
           onChangeText={setHours}
         />
@@ -144,6 +153,8 @@ export default function SleepCheckInScreen() {
         <TextInput
           style={styles.input}
           keyboardType="numeric"
+          placeholder="Enter mood from 1-10"
+          placeholderTextColor="#9CA3AF"
           value={mood}
           onChangeText={setMood}
         />
@@ -152,6 +163,8 @@ export default function SleepCheckInScreen() {
         <TextInput
           style={styles.input}
           keyboardType="numeric"
+          placeholder="Enter stress from 1-10"
+          placeholderTextColor="#9CA3AF"
           value={stress}
           onChangeText={setStress}
         />
@@ -160,7 +173,9 @@ export default function SleepCheckInScreen() {
       <View style={isRecovery ? styles.recoveryResultCard : styles.progressResultCard}>
         <View>
           <Text style={styles.resultLabel}>Energy Yield</Text>
-          <Text style={styles.energy}>🔥 {energy}/100</Text>
+          <Text style={styles.energy}>
+            {hasAllInputs ? `🔥 ${energy}/100` : "🔥 —/100"}
+          </Text>
           <Text style={styles.flameLabel}>{flameLabel}</Text>
         </View>
 
@@ -174,14 +189,27 @@ export default function SleepCheckInScreen() {
           {isRecovery ? "What Recovery means" : "What Progress means"}
         </Text>
         <Text style={styles.meaningText}>
-          {isRecovery
+          {!hasAllInputs
+            ? "Enter your sleep, mood, and stress to let Luna estimate whether today fits Recovery or Progress."
+            : isRecovery
             ? "Recovery means your best step today is to protect your energy, reduce shame, and still do one honest thing."
             : "Progress means your energy is available for stronger action toward something that matters to you."}
         </Text>
       </View>
 
-      <TouchableOpacity style={isRecovery ? styles.recoveryButton : styles.progressButton} onPress={saveCheckIn}>
-        <Text style={styles.buttonText}>Save Check-In</Text>
+      <TouchableOpacity
+        style={
+          !hasAllInputs
+            ? styles.disabledButton
+            : isRecovery
+            ? styles.recoveryButton
+            : styles.progressButton
+        }
+        onPress={saveCheckIn}
+      >
+        <Text style={styles.buttonText}>
+          {hasAllInputs ? "Save Check-In" : "Enter Check-In Values"}
+        </Text>
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.backButton} onPress={() => router.push("/")}>
@@ -446,5 +474,14 @@ const styles = StyleSheet.create({
     color: "#111827",
     fontSize: 16,
     fontWeight: "900",
+  },
+  disabledButton: {
+  backgroundColor: "#6B7280",
+  padding: 18,
+  borderRadius: 20,
+  alignItems: "center",
+  borderWidth: 2,
+  borderColor: "#D1D5DB",
+  marginBottom: 12,
   },
 });
