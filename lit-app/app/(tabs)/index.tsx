@@ -8,6 +8,17 @@ type Quest = {
   title: string;
   type: string;
   steps: number;
+  description?: string;
+};
+
+type CheckIn = {
+  id: string;
+  hours: string;
+  mood: string;
+  stress: string;
+  energy: number;
+  mode: "Recovery" | "Progress";
+  createdAt: string;
 };
 
 type UserProfile = {
@@ -67,6 +78,7 @@ export default function HomeScreen() {
   const [savedMode, setSavedMode] = useState<"Recovery" | "Progress">("Recovery");
   const [savedEnergy, setSavedEnergy] = useState(0);
   const [hasSavedCheckIn, setHasSavedCheckIn] = useState(false);
+  const [latestCheckIn, setLatestCheckIn] = useState<CheckIn | null>(null);
 
   const hasEnergyData = hasRouteEnergy || hasSavedCheckIn;
 
@@ -105,25 +117,19 @@ export default function HomeScreen() {
   async function lightHaptic() {
     try {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch {
-      // Haptics may not run in every web preview.
-    }
+    } catch {}
   }
 
   async function mediumHaptic() {
     try {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    } catch {
-      // Haptics may not run in every web preview.
-    }
+    } catch {}
   }
 
   async function successHaptic() {
     try {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {
-      // Haptics may not run in every web preview.
-    }
+    } catch {}
   }
 
   async function navigateWithHaptic(path: any) {
@@ -168,6 +174,7 @@ export default function HomeScreen() {
 
     if (!saved) {
       setHasSavedCheckIn(false);
+      setLatestCheckIn(null);
       return;
     }
 
@@ -179,14 +186,15 @@ export default function HomeScreen() {
       setSavedMode(checkIn.mode);
       setSavedEnergy(checkIn.energy);
       setHasSavedCheckIn(true);
+      setLatestCheckIn(checkIn as CheckIn);
     } else {
       setHasSavedCheckIn(false);
+      setLatestCheckIn(null);
     }
   }
 
   async function loadLatestIntention() {
     const saved = await AsyncStorage.getItem(LATEST_PRE_SLEEP_INTENTION_KEY);
-
     if (saved) {
       setLatestIntention(JSON.parse(saved));
     }
@@ -194,7 +202,6 @@ export default function HomeScreen() {
 
   async function saveCompletedQuests(nextCompleted: string[]) {
     const today = getTodayKey();
-
     setCompletedQuests(nextCompleted);
     await AsyncStorage.setItem(TODAY_PROGRESS_DATE_KEY, today);
     await AsyncStorage.setItem(COMPLETED_QUESTS_KEY, JSON.stringify(nextCompleted));
@@ -221,16 +228,21 @@ export default function HomeScreen() {
     await saveCompletedQuests([]);
   }
 
-  const displayName = profile?.name?.trim() || "there";
   const topGoal = profile?.goalOne?.trim() || "your top goal";
   const secondGoal = profile?.goalTwo?.trim() || "your next goal";
   const thirdGoal = profile?.goalThree?.trim() || "your future";
   const longTermDream = profile?.longTermDream?.trim();
   const dreamCategory = profile?.dreamCategory?.trim();
 
+  const hoursSlept = latestCheckIn ? Number(latestCheckIn.hours) : null;
+  const shouldSuggestNap =
+    hasEnergyData &&
+    hoursSlept !== null &&
+    !Number.isNaN(hoursSlept) &&
+    hoursSlept < 7;
+
   function getCategoryQuests(category: string, modeType: "Recovery" | "Progress"): Quest[] {
     const normalized = category || "Purpose";
-
     const map: Record<string, { Recovery: string[]; Progress: string[] }> = {
       Health: {
         Progress: ["Do 15 minutes of movement", "Choose one better nutrition action", "Protect your sleep window tonight"],
@@ -279,12 +291,25 @@ export default function HomeScreen() {
   }
 
   function generateQuests(): Quest[] {
+    const napQuest: Quest = {
+      title: "Take a recovery nap",
+      type: "Recovery",
+      steps: 1,
+      description: "Aim for 30–60 minutes if your schedule allows.",
+    };
+
     if (isNeutral) {
-      return [
+      const baseNeutral: Quest[] = [
         { title: "Complete Morning Check-In", type: "Start", steps: 1 },
         { title: "Review your current path", type: "Direction", steps: 1 },
         { title: "Choose one small action for today", type: "Plan", steps: 1 },
       ];
+
+      if (shouldSuggestNap) {
+        return [baseNeutral[0], napQuest, baseNeutral[1], baseNeutral[2]];
+      }
+
+      return baseNeutral;
     }
 
     const category = profile?.dreamCategory?.trim() || "Purpose";
@@ -309,7 +334,13 @@ export default function HomeScreen() {
       ? { title: "Plan one out-of-home step you can reach", type: "Logistics", steps: 1 }
       : { title: "Plan one step you can do from home", type: "Logistics", steps: 1 };
 
-    return [...baseQuests, ...goalQuests, resourceQuest, movementQuest, transportQuest];
+    const merged = [...baseQuests, ...goalQuests, resourceQuest, movementQuest, transportQuest];
+
+    if (shouldSuggestNap) {
+      return [napQuest, ...merged];
+    }
+
+    return merged;
   }
 
   const quests = generateQuests();
@@ -578,6 +609,9 @@ export default function HomeScreen() {
                   <Text style={styles.checkbox}>{isComplete ? "✅" : "⬜"}</Text>
                   <View style={styles.questTextBlock}>
                     <Text style={styles.questTitle}>{quest.title}</Text>
+                    {quest.description ? (
+                      <Text style={styles.questDescription}>{quest.description}</Text>
+                    ) : null}
                     <View style={styles.questTypeBadge}>
                       <Text style={styles.questTypeText}>{quest.type}</Text>
                     </View>
@@ -1124,6 +1158,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#111827",
     fontWeight: "900",
+    marginBottom: 4,
+  },
+  questDescription: {
+    fontSize: 12,
+    color: "#374151",
+    fontWeight: "700",
+    lineHeight: 18,
     marginBottom: 6,
   },
   questTypeBadge: {
