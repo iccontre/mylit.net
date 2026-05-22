@@ -1,15 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
+import { Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { useMemo, useState } from "react";
-import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
 
 type MealHeaviness = "Light" | "Medium" | "Heavy";
 
@@ -37,15 +30,12 @@ const CHECKIN_HISTORY_KEY = "lit_checkin_history";
 
 function calculateEnergy(hours: number, mood: number, stress: number) {
   let score = 50;
-
   if (hours >= 8) score += 25;
   else if (hours >= 7) score += 15;
   else if (hours >= 6) score += 5;
   else score -= 15;
-
   score += (mood - 5) * 4;
   score -= stress * 3;
-
   return Math.max(0, Math.min(100, Math.round(score)));
 }
 
@@ -54,15 +44,14 @@ function getMode(score: number): "Recovery" | "Progress" {
 }
 
 function getFlameLabel(score: number) {
-  if (score >= 75) return "Bright Flame";
-  if (score >= 45) return "Steady Flame";
-  return "Low Flame";
+  if (score >= 75) return "BRIGHT FLAME";
+  if (score >= 45) return "STEADY FLAME";
+  return "LOW FLAME";
 }
 
 function parseTimeLabel(input: string): Date | null {
   const trimmed = input.trim().toUpperCase();
   if (!trimmed) return null;
-
   const match = trimmed.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)?$/);
   if (!match) return null;
 
@@ -71,7 +60,7 @@ function parseTimeLabel(input: string): Date | null {
   const meridian = match[3];
 
   if (Number.isNaN(rawHour) || Number.isNaN(rawMinute)) return null;
-  if (rawHour < 0 || rawHour > 23 || rawMinute < 0 || rawMinute > 59) return null;
+  if (rawMinute < 0 || rawMinute > 59) return null;
 
   let hour24 = rawHour;
 
@@ -79,8 +68,8 @@ function parseTimeLabel(input: string): Date | null {
     if (rawHour < 1 || rawHour > 12) return null;
     if (meridian === "AM") hour24 = rawHour === 12 ? 0 : rawHour;
     if (meridian === "PM") hour24 = rawHour === 12 ? 12 : rawHour + 12;
-  } else if (rawHour > 23) {
-    return null;
+  } else {
+    if (rawHour < 0 || rawHour > 23) return null;
   }
 
   const date = new Date();
@@ -106,6 +95,7 @@ function subtractHours(date: Date, hours: number) {
 
 export default function SleepCheckInScreen() {
   const router = useRouter();
+  const mono = Platform.select({ ios: "Menlo", android: "monospace", web: "monospace" });
 
   const [hours, setHours] = useState("");
   const [mood, setMood] = useState("");
@@ -126,7 +116,7 @@ export default function SleepCheckInScreen() {
 
   const mode = hasAllInputs ? getMode(energy) : "Recovery";
   const isRecovery = mode === "Recovery";
-  const flameLabel = hasAllInputs ? getFlameLabel(energy) : "Not calculated yet";
+  const flameLabel = hasAllInputs ? getFlameLabel(energy) : "NOT CALCULATED YET";
 
   const wakeTimeDate = useMemo(() => parseTimeLabel(wakeTime), [wakeTime]);
   const windDownDate = useMemo(() => parseTimeLabel(windDownGoal), [windDownGoal]);
@@ -162,9 +152,7 @@ export default function SleepCheckInScreen() {
   async function successHaptic() {
     try {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {
-      // Haptics may not run in every web preview.
-    }
+    } catch {}
   }
 
   async function saveCheckIn() {
@@ -205,242 +193,125 @@ export default function SleepCheckInScreen() {
   }
 
   return (
-    <ScrollView
-      style={isRecovery ? styles.recoveryScreen : styles.progressScreen}
-      contentContainerStyle={styles.container}
-    >
-      <View style={isRecovery ? styles.recoveryHero : styles.progressHero}>
-        <Text style={styles.heroTitle}>Morning Check-In</Text>
-        <Text style={styles.heroSubtitle}>
-          {!hasAllInputs
-            ? "Start with an honest snapshot."
-            : isRecovery
-            ? "Protect your flame."
-            : "Spend your flame wisely."}
-        </Text>
-      </View>
-
-      <View style={styles.inputCard}>
-        <Text style={styles.cardLabel}>Energy Inputs</Text>
-
-        <Text style={styles.label}>Hours slept</Text>
-        <TextInput style={styles.input} keyboardType="numeric" value={hours} onChangeText={setHours} />
-
-        <Text style={styles.label}>Mood today, 1-10</Text>
-        <TextInput style={styles.input} keyboardType="numeric" value={mood} onChangeText={setMood} />
-
-        <Text style={styles.label}>Stress level, 1-10</Text>
-        <TextInput style={styles.input} keyboardType="numeric" value={stress} onChangeText={setStress} />
-
-        <Text style={styles.cardLabel}>Sleep Timing Inputs (Optional)</Text>
-
-        <Text style={styles.label}>Approximate wake-up time</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Example: 7:30 AM"
-          placeholderTextColor="#9CA3AF"
-          value={wakeTime}
-          onChangeText={setWakeTime}
-        />
-
-        <Text style={styles.label}>Caffeine amount today</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Example: 1 coffee, 150mg, or none"
-          placeholderTextColor="#9CA3AF"
-          value={caffeineAmount}
-          onChangeText={setCaffeineAmount}
-        />
-
-        <Text style={styles.label}>Last caffeine time</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Example: 2:00 PM"
-          placeholderTextColor="#9CA3AF"
-          value={lastCaffeineTime}
-          onChangeText={setLastCaffeineTime}
-        />
-
-        <Text style={styles.label}>Last meal time</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Example: 8:00 PM"
-          placeholderTextColor="#9CA3AF"
-          value={lastMealTime}
-          onChangeText={setLastMealTime}
-        />
-
-        <Text style={styles.label}>Meal heaviness</Text>
-        <View style={styles.row}>
-          {(["Light", "Medium", "Heavy"] as MealHeaviness[]).map((item) => {
-            const active = mealHeaviness === item;
-            return (
-              <TouchableOpacity
-                key={item}
-                style={[styles.choice, active && styles.choiceActive]}
-                onPress={() => setMealHeaviness(item)}
-              >
-                <Text style={[styles.choiceText, active && styles.choiceTextActive]}>{item}</Text>
-              </TouchableOpacity>
-            );
-          })}
+    <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
+      <View style={styles.contentShell}>
+        <View style={[styles.hero, isRecovery ? styles.heroRecovery : styles.heroProgress]}>
+          <Text style={[styles.heroTitle, { fontFamily: mono }]}>MORNING CHECK-IN</Text>
+          <Text style={styles.heroSub}>
+            {hasAllInputs ? (isRecovery ? "Protect your flame." : "Spend your flame wisely.") : "Start with an honest snapshot."}
+          </Text>
         </View>
 
-        <Text style={styles.label}>Wind-down goal time</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Example: 10:30 PM"
-          placeholderTextColor="#9CA3AF"
-          value={windDownGoal}
-          onChangeText={setWindDownGoal}
-        />
+        <View style={styles.card}>
+          <Text style={[styles.sectionTitle, { fontFamily: mono }]}>ENERGY INPUTS</Text>
+
+          <Text style={styles.label}>Hours slept</Text>
+          <TextInput style={styles.input} keyboardType="numeric" value={hours} onChangeText={setHours} />
+
+          <Text style={styles.label}>Mood today, 1-10</Text>
+          <TextInput style={styles.input} keyboardType="numeric" value={mood} onChangeText={setMood} />
+
+          <Text style={styles.label}>Stress level, 1-10</Text>
+          <TextInput style={styles.input} keyboardType="numeric" value={stress} onChangeText={setStress} />
+
+          <Text style={[styles.sectionTitle, { fontFamily: mono }]}>SLEEP TIMING (OPTIONAL)</Text>
+
+          <Text style={styles.label}>Approximate wake-up time</Text>
+          <TextInput style={styles.input} placeholder="Example: 7:30 AM" placeholderTextColor="#9CA3AF" value={wakeTime} onChangeText={setWakeTime} />
+
+          <Text style={styles.label}>Caffeine amount today</Text>
+          <TextInput style={styles.input} placeholder="Example: 1 coffee, 150mg, or none" placeholderTextColor="#9CA3AF" value={caffeineAmount} onChangeText={setCaffeineAmount} />
+
+          <Text style={styles.label}>Last caffeine time</Text>
+          <TextInput style={styles.input} placeholder="Example: 2:00 PM" placeholderTextColor="#9CA3AF" value={lastCaffeineTime} onChangeText={setLastCaffeineTime} />
+
+          <Text style={styles.label}>Last meal time</Text>
+          <TextInput style={styles.input} placeholder="Example: 8:00 PM" placeholderTextColor="#9CA3AF" value={lastMealTime} onChangeText={setLastMealTime} />
+
+          <Text style={styles.label}>Meal heaviness</Text>
+          <View style={styles.choicesRow}>
+            {(["Light", "Medium", "Heavy"] as MealHeaviness[]).map((item) => {
+              const active = mealHeaviness === item;
+              return (
+                <TouchableOpacity key={item} style={[styles.choice, active && styles.choiceActive]} onPress={() => setMealHeaviness(item)}>
+                  <Text style={[styles.choiceText, active && styles.choiceTextActive]}>{item}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <Text style={styles.label}>Wind-down goal time</Text>
+          <TextInput style={styles.input} placeholder="Example: 10:30 PM" placeholderTextColor="#9CA3AF" value={windDownGoal} onChangeText={setWindDownGoal} />
+        </View>
+
+        <View style={styles.energyCard}>
+          <Text style={[styles.sectionTitleLight, { fontFamily: mono }]}>ENERGY RESERVE</Text>
+          <Text style={[styles.energyValue, { fontFamily: mono }]}>{hasAllInputs ? `${energy}/100` : "—/100"}</Text>
+          <Text style={styles.energyMeta}>{flameLabel}</Text>
+          <Text style={styles.energyMeta}>{mode}</Text>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={[styles.sectionTitle, { fontFamily: mono }]}>SLEEP TIMING GUIDE</Text>
+          {estimatedPreviousSleepTime ? (
+            <Text style={styles.helper}>
+              You may have fallen asleep around {estimatedPreviousSleepTime}, based on what you entered.
+            </Text>
+          ) : null}
+          <Text style={styles.helper}>Estimated sleep window: {estimatedSleepWindow}</Text>
+          {caffeineCutoffSuggestion ? <Text style={styles.helper}>{caffeineCutoffSuggestion}</Text> : null}
+          {mealCutoffSuggestion ? <Text style={styles.helper}>{mealCutoffSuggestion}</Text> : null}
+          {lastCaffeineTime.trim() ? (
+            <Text style={styles.helper}>For better sleep, consider avoiding caffeine 6–8 hours before bed.</Text>
+          ) : null}
+          <Text style={styles.helper}>Use this as a guide, not a rule.</Text>
+        </View>
+
+        <TouchableOpacity style={[styles.primaryBtn, !hasAllInputs && styles.disabledBtn]} onPress={saveCheckIn}>
+          <Text style={styles.primaryBtnText}>{hasAllInputs ? "Save Check-In" : "Enter Check-In Values"}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.push("/")}>
+          <Text style={styles.secondaryBtnText}>Back to Today</Text>
+        </TouchableOpacity>
       </View>
-
-      <View style={styles.resultCard}>
-        <Text style={styles.resultLabel}>Energy Reserve</Text>
-        <Text style={styles.energy}>{hasAllInputs ? `🔥 ${energy}/100` : "🔥 —/100"}</Text>
-        <Text style={styles.flameLabel}>{flameLabel}</Text>
-        <Text style={styles.modeText}>{mode}</Text>
-      </View>
-
-      <View style={styles.timingCard}>
-        <Text style={styles.resultLabel}>Sleep Timing Guide</Text>
-        {estimatedPreviousSleepTime ? (
-          <Text style={styles.helper}>
-            You may have fallen asleep around {estimatedPreviousSleepTime}, based on your wake time and hours slept.
-          </Text>
-        ) : null}
-        <Text style={styles.helper}>Estimated sleep window: {estimatedSleepWindow}</Text>
-        {caffeineCutoffSuggestion ? <Text style={styles.helper}>{caffeineCutoffSuggestion}</Text> : null}
-        {mealCutoffSuggestion ? <Text style={styles.helper}>{mealCutoffSuggestion}</Text> : null}
-        {lastCaffeineTime.trim() ? (
-          <Text style={styles.helper}>For better sleep, consider avoiding caffeine 6–8 hours before bed.</Text>
-        ) : null}
-        <Text style={styles.helper}>Use this as a guide, not a rule.</Text>
-      </View>
-
-      <TouchableOpacity
-        style={!hasAllInputs ? styles.disabledButton : styles.saveButton}
-        onPress={saveCheckIn}
-      >
-        <Text style={styles.buttonText}>{hasAllInputs ? "Save Check-In" : "Enter Check-In Values"}</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={styles.backButton} onPress={() => router.push("/")}>
-        <Text style={styles.backButtonText}>Back to Today</Text>
-      </TouchableOpacity>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  progressScreen: { flex: 1, backgroundColor: "#FFF7ED" },
-  recoveryScreen: { flex: 1, backgroundColor: "#0F172A" },
-  container: { padding: 20, paddingTop: 56, paddingBottom: 40 },
-  progressHero: {
-    backgroundColor: "#FEF3C7",
-    borderWidth: 3,
-    borderColor: "#FBBF24",
-    borderRadius: 20,
-    padding: 16,
-    marginBottom: 14,
-  },
-  recoveryHero: {
-    backgroundColor: "#1E1B4B",
-    borderWidth: 3,
-    borderColor: "#A78BFA",
-    borderRadius: 20,
-    padding: 16,
-    marginBottom: 14,
-  },
-  heroTitle: { fontSize: 30, fontWeight: "900", color: "#111827" },
-  heroSubtitle: { fontSize: 14, fontWeight: "800", color: "#374151", marginTop: 4 },
-  inputCard: {
-    backgroundColor: "#FFFFFF",
-    borderWidth: 3,
-    borderColor: "#374151",
-    borderRadius: 20,
-    padding: 14,
-    marginBottom: 14,
-  },
-  cardLabel: {
-    fontSize: 13,
-    fontWeight: "900",
-    color: "#374151",
-    textTransform: "uppercase",
-    marginTop: 8,
-    marginBottom: 6,
-  },
-  label: { fontSize: 14, fontWeight: "800", color: "#111827", marginBottom: 6, marginTop: 8 },
-  input: {
-    backgroundColor: "#F3F4F6",
-    borderWidth: 2,
-    borderColor: "#D1D5DB",
-    borderRadius: 12,
-    padding: 12,
-    color: "#111827",
-    fontWeight: "700",
-  },
-  row: { flexDirection: "row", justifyContent: "space-between", marginTop: 6 },
-  choice: {
-    width: "32%",
-    borderWidth: 2,
-    borderColor: "#D1D5DB",
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: "center",
-    backgroundColor: "#F9FAFB",
-  },
+  screen: { flex: 1, backgroundColor: "#0F172A" },
+  container: { padding: 14, paddingTop: 42, paddingBottom: 28 },
+  contentShell: { width: "100%", maxWidth: 520, alignSelf: "center" },
+
+  hero: { borderWidth: 3, borderRadius: 16, padding: 12, marginBottom: 10 },
+  heroProgress: { backgroundColor: "#FEF3C7", borderColor: "#FBBF24" },
+  heroRecovery: { backgroundColor: "#1E1B4B", borderColor: "#A78BFA" },
+  heroTitle: { fontSize: 24, color: "#111827", fontWeight: "900", letterSpacing: 1 },
+  heroSub: { marginTop: 4, fontSize: 12, fontWeight: "700", color: "#374151" },
+
+  card: { backgroundColor: "#FFFFFF", borderWidth: 2, borderColor: "#374151", borderRadius: 14, padding: 12, marginBottom: 10 },
+  sectionTitle: { fontSize: 12, fontWeight: "900", letterSpacing: 1, color: "#111827", marginTop: 6, marginBottom: 6 },
+  sectionTitleLight: { fontSize: 12, fontWeight: "900", letterSpacing: 1, color: "#F9FAFB", marginBottom: 6 },
+  label: { fontSize: 12, color: "#374151", fontWeight: "800", marginTop: 6, marginBottom: 4 },
+  input: { borderWidth: 2, borderColor: "#D1D5DB", borderRadius: 10, backgroundColor: "#F3F4F6", padding: 10, color: "#111827", fontWeight: "700" },
+
+  choicesRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 4, marginBottom: 4 },
+  choice: { width: "32%", borderWidth: 2, borderColor: "#D1D5DB", borderRadius: 9, paddingVertical: 8, alignItems: "center", backgroundColor: "#F9FAFB" },
   choiceActive: { backgroundColor: "#111827", borderColor: "#FBBF24" },
-  choiceText: { color: "#111827", fontWeight: "800" },
-  choiceTextActive: { color: "#FFFFFF" },
-  resultCard: {
-    backgroundColor: "#111827",
-    borderWidth: 3,
-    borderColor: "#374151",
-    borderRadius: 20,
-    padding: 14,
-    marginBottom: 14,
-  },
-  timingCard: {
-    backgroundColor: "#EEF2FF",
-    borderWidth: 3,
-    borderColor: "#A78BFA",
-    borderRadius: 20,
-    padding: 14,
-    marginBottom: 14,
-  },
-  resultLabel: { color: "#D1D5DB", fontSize: 13, fontWeight: "900", textTransform: "uppercase" },
-  energy: { color: "#FBBF24", fontSize: 36, fontWeight: "900", marginTop: 4 },
-  flameLabel: { color: "#F9FAFB", fontWeight: "800", marginTop: 2 },
-  modeText: { color: "#F9FAFB", fontWeight: "800", marginTop: 6 },
-  helper: { color: "#111827", fontWeight: "700", lineHeight: 20, marginTop: 6 },
-  saveButton: {
-    backgroundColor: "#111827",
-    borderColor: "#FBBF24",
-    borderWidth: 2,
-    borderRadius: 14,
-    padding: 14,
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  disabledButton: {
-    backgroundColor: "#6B7280",
-    borderColor: "#9CA3AF",
-    borderWidth: 2,
-    borderRadius: 14,
-    padding: 14,
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  buttonText: { color: "#FFFFFF", fontWeight: "900", fontSize: 16 },
-  backButton: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#D1D5DB",
-    borderWidth: 2,
-    borderRadius: 14,
-    padding: 14,
-    alignItems: "center",
-  },
-  backButtonText: { color: "#111827", fontWeight: "900", fontSize: 15 },
+  choiceText: { color: "#111827", fontWeight: "800", fontSize: 12 },
+  choiceTextActive: { color: "#F9FAFB" },
+
+  energyCard: { backgroundColor: "#111827", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 14, padding: 12, marginBottom: 10 },
+  energyValue: { fontSize: 34, fontWeight: "900", color: "#FBBF24", letterSpacing: 1 },
+  energyMeta: { color: "#F9FAFB", fontSize: 11, fontWeight: "800", marginTop: 2 },
+
+  helper: { color: "#111827", fontSize: 12, fontWeight: "700", lineHeight: 18, marginTop: 4 },
+
+  primaryBtn: { backgroundColor: "#111827", borderColor: "#FBBF24", borderWidth: 2, borderRadius: 10, paddingVertical: 11, alignItems: "center", marginBottom: 8 },
+  disabledBtn: { backgroundColor: "#6B7280", borderColor: "#9CA3AF" },
+  primaryBtnText: { color: "#FFFFFF", fontWeight: "900", fontSize: 14 },
+
+  secondaryBtn: { backgroundColor: "#FFFFFF", borderColor: "#D1D5DB", borderWidth: 2, borderRadius: 10, paddingVertical: 11, alignItems: "center" },
+  secondaryBtnText: { color: "#111827", fontWeight: "900", fontSize: 14 },
 });

@@ -264,8 +264,6 @@ export default function HomeScreen() {
 
     const checkIn = JSON.parse(saved) as CheckIn;
 
-    setLatestCheckIn(checkIn);
-
     if (
       (checkIn.mode === "Recovery" || checkIn.mode === "Progress") &&
       typeof checkIn.energy === "number"
@@ -273,8 +271,10 @@ export default function HomeScreen() {
       setSavedMode(checkIn.mode);
       setSavedEnergy(checkIn.energy);
       setHasSavedCheckIn(true);
+      setLatestCheckIn(checkIn);
     } else {
       setHasSavedCheckIn(false);
+      setLatestCheckIn(checkIn);
     }
   }
 
@@ -493,199 +493,205 @@ export default function HomeScreen() {
       style={isRecovery ? styles.recoveryScreen : isProgress ? styles.progressScreen : styles.neutralScreen}
       contentContainerStyle={styles.container}
     >
-      <View style={[styles.worldBackdrop, isNeutral && styles.worldNeutral, isProgress && styles.worldProgress, isRecovery && styles.worldRecovery]}>
-        <View style={styles.worldTopRow}>
-          <TouchableOpacity style={styles.iconTile} onPress={() => navigateWithHaptic("/onboarding")}>
-            <Text style={styles.iconTileText}>🌿</Text>
-          </TouchableOpacity>
-          <View style={styles.logoWrap}>
-            <Text style={[styles.logo, { fontFamily: mono }]}>lit</Text>
-            <Text style={styles.logoSub}>LIVING IN TRUTH</Text>
-            <Text style={styles.modeTitle}>{modeTitle.toUpperCase()}</Text>
-            <Text style={styles.modeInstruction}>{modeInstruction}</Text>
+      <View style={styles.contentShell}>
+        <View style={[styles.worldBackdrop, isNeutral && styles.worldNeutral, isProgress && styles.worldProgress, isRecovery && styles.worldRecovery]}>
+          <View style={styles.worldTopRow}>
+            <TouchableOpacity style={styles.iconTile} onPress={() => navigateWithHaptic("/onboarding")}>
+              <Text style={styles.iconTileText}>🌿</Text>
+            </TouchableOpacity>
+            <View style={styles.logoWrap}>
+              <Text style={[styles.logo, { fontFamily: mono }]}>lit</Text>
+              <Text style={styles.logoSub}>LIVING IN TRUTH</Text>
+              <Text style={styles.modeTitle}>{modeTitle.toUpperCase()}</Text>
+              <Text style={styles.modeInstruction}>{modeInstruction}</Text>
+            </View>
+            <TouchableOpacity style={styles.iconTile} onPress={() => navigateWithHaptic("/onboarding")}>
+              <Text style={styles.iconTileText}>🧭</Text>
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity style={styles.iconTile} onPress={() => navigateWithHaptic("/onboarding")}>
-            <Text style={styles.iconTileText}>🧭</Text>
-          </TouchableOpacity>
+
+          <View style={[styles.celestial, isRecovery ? styles.moon : styles.sun]} />
+          <View style={styles.terrainRow}>
+            <View style={styles.terrainBlock} />
+            <View style={styles.terrainBlockShort} />
+            <View style={styles.terrainBlock} />
+            <View style={styles.terrainBlockShort} />
+          </View>
         </View>
 
-        <View style={[styles.celestial, isRecovery ? styles.moon : styles.sun]} />
-        <View style={styles.terrainRow}>
-          <View style={styles.terrainBlock} />
-          <View style={styles.terrainBlockShort} />
-          <View style={styles.terrainBlock} />
-          <View style={styles.terrainBlockShort} />
+        <View style={styles.dayTrackPanel}>
+          <View style={styles.dayTrackLine} />
+          <View style={[styles.modeMarker, isNeutral && styles.markerNeutral, isProgress && styles.markerProgress, isRecovery && styles.markerRecovery]} />
+          <View style={styles.dayTrackTimes}>
+            <View style={styles.dayTrackItem}><Text style={styles.dayTrackEmoji}>🌅</Text><Text style={styles.dayTrackText}>6 AM</Text></View>
+            <View style={styles.dayTrackItem}><Text style={styles.dayTrackEmoji}>☀️</Text><Text style={styles.dayTrackText}>12 PM</Text></View>
+            <View style={styles.dayTrackItem}><Text style={styles.dayTrackEmoji}>🌇</Text><Text style={styles.dayTrackText}>6 PM</Text></View>
+            <View style={styles.dayTrackItem}><Text style={styles.dayTrackEmoji}>🌙</Text><Text style={styles.dayTrackText}>12 AM</Text></View>
+          </View>
         </View>
-      </View>
 
-      <View style={styles.dayTrackPanel}>
-        <View style={styles.dayTrackLine} />
-        <View style={[styles.modeMarker, isNeutral && styles.markerNeutral, isProgress && styles.markerProgress, isRecovery && styles.markerRecovery]} />
-        <View style={styles.dayTrackTimes}>
-          <View style={styles.dayTrackItem}><Text style={styles.dayTrackEmoji}>🌅</Text><Text style={styles.dayTrackText}>6 AM</Text></View>
-          <View style={styles.dayTrackItem}><Text style={styles.dayTrackEmoji}>☀️</Text><Text style={styles.dayTrackText}>12 PM</Text></View>
-          <View style={styles.dayTrackItem}><Text style={styles.dayTrackEmoji}>🌇</Text><Text style={styles.dayTrackText}>6 PM</Text></View>
-          <View style={styles.dayTrackItem}><Text style={styles.dayTrackEmoji}>🌙</Text><Text style={styles.dayTrackText}>12 AM</Text></View>
-        </View>
-      </View>
+        <View style={styles.rowWrap}>
+          <View style={styles.halfPanel}>
+            <View style={styles.lunaRow}>
+              <View style={styles.lunaOrb}><Text style={styles.lunaOrbText}>L</Text></View>
+              <View style={styles.lunaBubble}>
+                <Text style={styles.lunaTag}>Luna</Text>
+                <Text style={styles.lunaMessage}>{lunaMessage}</Text>
+                <Text style={styles.lunaPath}>Main path: {topGoal}</Text>
+              </View>
+            </View>
+          </View>
 
-      <View style={styles.rowWrap}>
-        <View style={styles.halfPanel}>
-          <View style={styles.lunaRow}>
-            <View style={styles.lunaOrb}><Text style={styles.lunaOrbText}>L</Text></View>
-            <View style={styles.lunaBubble}>
-              <Text style={styles.lunaTag}>Luna</Text>
-              <Text style={styles.lunaMessage}>{lunaMessage}</Text>
-              <Text style={styles.lunaPath}>Main path: {topGoal}</Text>
+          <View style={[styles.halfPanel, styles.energyPanel]}>
+            <Text style={[styles.hudTitleLight, { fontFamily: mono }]}>ENERGY RESERVE</Text>
+            <Text style={[styles.energyScore, { fontFamily: mono }]}>{hasEnergyData ? `${energyYield}/100` : "—/100"}</Text>
+            <Text style={styles.energyLabel}>{flameLabel}</Text>
+            <Text style={styles.energyHint}>
+              {hasEnergyData ? (isRecovery ? "Keep one promise." : "Choose your next move.") : "Complete Morning Check-In to calculate this."}
+            </Text>
+            <View style={styles.energyMeterRow}>
+              {Array.from({ length: 10 }).map((_, index) => (
+                <View
+                  key={index}
+                  style={[
+                    styles.energyMeterBlock,
+                    index < meterFillCount && styles.energyMeterBlockOn,
+                    index < meterFillCount && isRecovery && styles.energyMeterBlockRecovery,
+                    index < meterFillCount && isNeutral && styles.energyMeterBlockNeutral,
+                  ]}
+                />
+              ))}
             </View>
           </View>
         </View>
 
-        <View style={[styles.halfPanel, styles.energyPanel]}>
-          <Text style={[styles.hudTitle, { fontFamily: mono }]}>ENERGY RESERVE</Text>
-          <Text style={[styles.energyScore, { fontFamily: mono }]}>{hasEnergyData ? `${energyYield}/100` : "—/100"}</Text>
-          <Text style={styles.energyLabel}>{flameLabel}</Text>
-          <Text style={styles.energyHint}>
-            {hasEnergyData ? (isRecovery ? "Keep one promise." : "Choose your next move.") : "Complete Morning Check-In to calculate this."}
-          </Text>
-          <View style={styles.energyMeterRow}>
-            {Array.from({ length: 10 }).map((_, index) => (
-              <View
-                key={index}
-                style={[
-                  styles.energyMeterBlock,
-                  index < meterFillCount && styles.energyMeterBlockOn,
-                  index < meterFillCount && isRecovery && styles.energyMeterBlockRecovery,
-                  index < meterFillCount && isNeutral && styles.energyMeterBlockNeutral,
-                ]}
-              />
-            ))}
+        <View style={styles.questPanel}>
+          <View style={styles.questHeaderRow}>
+            <Text style={[styles.hudTitleDark, { fontFamily: mono }]}>QUEST BOARD</Text>
+            <Text style={styles.questCount}>{completedVisibleQuests}/{quests.length}</Text>
           </View>
-        </View>
-      </View>
+          <Text style={styles.questHint}>Complete quests for steps. Missed one? Reflect.</Text>
 
-      <View style={styles.questPanel}>
-        <View style={styles.questHeaderRow}>
-          <Text style={[styles.hudTitle, { fontFamily: mono }]}>QUEST BOARD</Text>
-          <Text style={styles.questCount}>{completedVisibleQuests}/{quests.length}</Text>
-        </View>
-        <Text style={styles.questHint}>Complete quests for steps. Missed one? Reflect.</Text>
+          {quests.map((quest, index) => {
+            const isComplete = completedQuests.includes(quest.title);
 
-        {quests.map((quest, index) => {
-          const isComplete = completedQuests.includes(quest.title);
-
-          return (
-            <View key={index} style={[styles.questRowCard, isComplete && styles.questRowCardDone]}>
-              <TouchableOpacity style={styles.questMainRow} onPress={() => toggleQuest(quest.title)}>
-                <Text style={styles.questIcon}>{isComplete ? "✅" : "⬜"}</Text>
-                <View style={styles.questTextCol}>
-                  <Text style={styles.questTitle}>{quest.title}</Text>
-                  {quest.description ? <Text style={styles.questDescription}>{quest.description}</Text> : null}
-                  <View style={styles.questMetaRow}>
-                    <Text style={styles.questBadge}>{quest.type}</Text>
-                    <Text style={styles.questReward}>+1</Text>
+            return (
+              <View key={index} style={[styles.questRowCard, isComplete && styles.questRowCardDone]}>
+                <TouchableOpacity style={styles.questMainRow} onPress={() => toggleQuest(quest.title)}>
+                  <View style={styles.questTextCol}>
+                    <Text style={styles.questTitle}>{quest.title}</Text>
+                    {quest.description ? <Text style={styles.questDescription}>{quest.description}</Text> : null}
+                    <View style={styles.questMetaRow}>
+                      <Text style={styles.questBadge}>{quest.type}</Text>
+                      <Text style={styles.questReward}>+1</Text>
+                    </View>
                   </View>
-                </View>
-              </TouchableOpacity>
+                  <Text style={styles.questIcon}>{isComplete ? "✅" : "⬜"}</Text>
+                </TouchableOpacity>
 
-              {!isComplete ? (
-                <Link href={{ pathname: "/reflection", params: { quest: quest.title } }} asChild>
-                  <TouchableOpacity style={styles.reflectBtn} onPress={lightHaptic}>
-                    <Text style={styles.reflectBtnText}>Reflect</Text>
-                  </TouchableOpacity>
-                </Link>
-              ) : null}
-            </View>
-          );
-        })}
-      </View>
+                {!isComplete ? (
+                  <Link href={{ pathname: "/reflection", params: { quest: quest.title } }} asChild>
+                    <TouchableOpacity style={styles.reflectBtn} onPress={lightHaptic}>
+                      <Text style={styles.reflectBtnText}>Reflect</Text>
+                    </TouchableOpacity>
+                  </Link>
+                ) : null}
+              </View>
+            );
+          })}
+        </View>
 
-      <View style={styles.widgetGrid}>
-        <View style={styles.widgetCard}>
-          <Text style={[styles.hudMiniTitle, { fontFamily: mono }]}>SLEEP TIMING</Text>
-          <Text style={styles.widgetBody}>
-            {latestCheckIn?.estimatedSleepWindow || "Check-in needed"}
-          </Text>
-          <TouchableOpacity style={styles.widgetBtn} onPress={() => navigateWithHaptic("/sleep-calendar")}>
-            <Text style={styles.widgetBtnText}>Open Calendar</Text>
+        <View style={styles.widgetGrid}>
+          <View style={styles.widgetCard}>
+            <Text style={[styles.hudMiniTitle, { fontFamily: mono }]}>SLEEP TIMING</Text>
+            <Text style={styles.widgetBody}>
+              {latestCheckIn?.estimatedSleepWindow || "Check-in needed"}
+            </Text>
+            <TouchableOpacity style={styles.widgetBtn} onPress={() => navigateWithHaptic("/sleep-calendar")}>
+              <Text style={styles.widgetBtnText}>Open Calendar</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.widgetCard}>
+            <Text style={[styles.hudMiniTitle, { fontFamily: mono }]}>DAY PLAN</Text>
+            <Text style={styles.widgetBody}>{todayRole || "No role set"}</Text>
+            <TouchableOpacity style={styles.widgetBtn} onPress={() => navigateWithHaptic("/day-plan")}>
+              <Text style={styles.widgetBtnText}>Edit</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.widgetCard}>
+            <Text style={[styles.hudMiniTitle, { fontFamily: mono }]}>NIGHT SIGNAL</Text>
+            <Text style={styles.widgetBody}>
+              {latestIntention?.intention || "No signal set"}
+            </Text>
+            <TouchableOpacity
+              style={styles.widgetBtn}
+              onPress={() =>
+                navigateWithHaptic(latestIntention ? "/morning-intention-reflection" : "/pre-sleep-intention")
+              }
+            >
+              <Text style={styles.widgetBtnText}>{latestIntention ? "Reflect" : "Set"}</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.widgetCard}>
+            <Text style={[styles.hudMiniTitle, { fontFamily: mono }]}>PATH MAP</Text>
+            <Text style={styles.widgetBody}>{longTermDream || topGoal}</Text>
+            {dreamCategory ? <Text style={styles.widgetSmall}>Category: {dreamCategory}</Text> : null}
+            <TouchableOpacity style={styles.widgetBtn} onPress={() => navigateWithHaptic("/onboarding")}>
+              <Text style={styles.widgetBtnText}>Edit Path</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.menuPanel}>
+          <Text style={[styles.hudTitleDark, { fontFamily: mono }]}>MENU</Text>
+          <View style={styles.menuGrid}>
+            <TouchableOpacity style={styles.menuTile} onPress={() => navigateWithHaptic("/sleep-checkin")}><Text style={styles.menuTileText}>Check-In</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.menuTile} onPress={() => navigateWithHaptic("/onboarding")}><Text style={styles.menuTileText}>Path</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.menuTile} onPress={() => navigateWithHaptic("/tomorrow-queue")}><Text style={styles.menuTileText}>Thoughts</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.menuTile} onPress={() => navigateWithHaptic("/day-plan")}><Text style={styles.menuTileText}>Day Plan</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.menuTile} onPress={() => navigateWithHaptic("/sleep-calendar")}><Text style={styles.menuTileText}>Sleep Cal</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.menuTile} onPress={() => navigateWithHaptic("/journal")}><Text style={styles.menuTileText}>Journal</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.menuTile} onPress={() => navigateWithHaptic("/awareness-check")}><Text style={styles.menuTileText}>Meditate</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.menuTile} onPress={() => navigateWithHaptic("/pre-sleep-intention")}><Text style={styles.menuTileText}>Sleep Intent</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.menuTile} onPress={() => navigateWithHaptic("/morning-intention-reflection")}><Text style={styles.menuTileText}>Morning Reflect</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.menuTile} onPress={() => navigateWithHaptic("/weekly-summary")}><Text style={styles.menuTileText}>Stats</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.menuTile} onPress={() => navigateWithHaptic("/next-chapter")}><Text style={styles.menuTileText}>Long Goal</Text></TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={styles.rankPanel}>
+          <Text style={[styles.hudTitleLight, { fontFamily: mono }]}>STEPS & RANK</Text>
+          <Text style={styles.rankText}>Steps earned: {completedSteps}</Text>
+          <Text style={styles.rankText}>Completed quests: {completedVisibleQuests}/{quests.length}</Text>
+          <Text style={styles.rankText}>Rank: {getRankName(completedSteps)}</Text>
+          <Text style={styles.rankText}>Path: {topGoal}</Text>
+          <Text style={styles.rankText}>Next: {secondGoal}</Text>
+          <Text style={styles.rankText}>Later: {thirdGoal}</Text>
+          <TouchableOpacity style={styles.resetBtn} onPress={resetTodayProgress}>
+            <Text style={styles.resetBtnText}>Reset Today Plan</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.widgetCard}>
-          <Text style={[styles.hudMiniTitle, { fontFamily: mono }]}>DAY PLAN</Text>
-          <Text style={styles.widgetBody}>{todayRole || "No role set"}</Text>
-          <TouchableOpacity style={styles.widgetBtn} onPress={() => navigateWithHaptic("/day-plan")}>
-            <Text style={styles.widgetBtnText}>Edit</Text>
+        <View style={styles.bottomBar}>
+          <TouchableOpacity style={[styles.bottomItem, styles.bottomItemActive]} onPress={lightHaptic}>
+            <Text style={styles.bottomTextActive}>Home</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.bottomItem} onPress={lightHaptic}>
+            <Text style={styles.bottomText}>Quests</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.bottomItem} onPress={() => navigateWithHaptic("/journal")}>
+            <Text style={styles.bottomText}>Mind</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.bottomItem} onPress={() => navigateWithHaptic("/sleep-calendar")}>
+            <Text style={styles.bottomText}>Sleep</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.bottomItem} onPress={() => navigateWithHaptic("/weekly-summary")}>
+            <Text style={styles.bottomText}>Stats</Text>
           </TouchableOpacity>
         </View>
-
-        <View style={styles.widgetCard}>
-          <Text style={[styles.hudMiniTitle, { fontFamily: mono }]}>NIGHT SIGNAL</Text>
-          <Text style={styles.widgetBody}>
-            {latestIntention?.intention || "No signal set"}
-          </Text>
-          <TouchableOpacity
-            style={styles.widgetBtn}
-            onPress={() =>
-              navigateWithHaptic(latestIntention ? "/morning-intention-reflection" : "/pre-sleep-intention")
-            }
-          >
-            <Text style={styles.widgetBtnText}>{latestIntention ? "Reflect" : "Set"}</Text>
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.widgetCard}>
-          <Text style={[styles.hudMiniTitle, { fontFamily: mono }]}>PATH MAP</Text>
-          <Text style={styles.widgetBody}>{topGoal}</Text>
-          <TouchableOpacity style={styles.widgetBtn} onPress={() => navigateWithHaptic("/onboarding")}>
-            <Text style={styles.widgetBtnText}>Edit Path</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <View style={styles.menuPanel}>
-        <Text style={[styles.hudTitle, { fontFamily: mono }]}>MENU</Text>
-        <View style={styles.menuGrid}>
-          <TouchableOpacity style={styles.menuTile} onPress={() => navigateWithHaptic("/sleep-checkin")}><Text style={styles.menuTileText}>Check-In</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuTile} onPress={() => navigateWithHaptic("/onboarding")}><Text style={styles.menuTileText}>Path</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuTile} onPress={() => navigateWithHaptic("/tomorrow-queue")}><Text style={styles.menuTileText}>Thoughts</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuTile} onPress={() => navigateWithHaptic("/day-plan")}><Text style={styles.menuTileText}>Day Plan</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuTile} onPress={() => navigateWithHaptic("/sleep-calendar")}><Text style={styles.menuTileText}>Sleep Cal</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuTile} onPress={() => navigateWithHaptic("/journal")}><Text style={styles.menuTileText}>Journal</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuTile} onPress={() => navigateWithHaptic("/awareness-check")}><Text style={styles.menuTileText}>Meditate</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuTile} onPress={() => navigateWithHaptic("/pre-sleep-intention")}><Text style={styles.menuTileText}>Sleep Intent</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuTile} onPress={() => navigateWithHaptic("/morning-intention-reflection")}><Text style={styles.menuTileText}>Morning Reflect</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuTile} onPress={() => navigateWithHaptic("/weekly-summary")}><Text style={styles.menuTileText}>Stats</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.menuTile} onPress={() => navigateWithHaptic("/next-chapter")}><Text style={styles.menuTileText}>Long Goal</Text></TouchableOpacity>
-        </View>
-      </View>
-
-      <View style={styles.rankPanel}>
-        <Text style={[styles.hudTitle, { fontFamily: mono }]}>STEPS & RANK</Text>
-        <Text style={styles.rankText}>Steps earned: {completedSteps}</Text>
-        <Text style={styles.rankText}>Completed quests: {completedVisibleQuests}/{quests.length}</Text>
-        <Text style={styles.rankText}>Rank: {getRankName(completedSteps)}</Text>
-        <TouchableOpacity style={styles.resetBtn} onPress={resetTodayProgress}>
-          <Text style={styles.resetBtnText}>Reset Today Plan</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.bottomBar}>
-        <TouchableOpacity style={[styles.bottomItem, styles.bottomItemActive]} onPress={lightHaptic}>
-          <Text style={styles.bottomTextActive}>Home</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.bottomItem} onPress={lightHaptic}>
-          <Text style={styles.bottomText}>Quests</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.bottomItem} onPress={() => navigateWithHaptic("/journal")}>
-          <Text style={styles.bottomText}>Mind</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.bottomItem} onPress={() => navigateWithHaptic("/pre-sleep-intention")}>
-          <Text style={styles.bottomText}>Sleep</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.bottomItem} onPress={() => navigateWithHaptic("/weekly-summary")}>
-          <Text style={styles.bottomText}>Stats</Text>
-        </TouchableOpacity>
       </View>
     </ScrollView>
   );
@@ -695,7 +701,9 @@ const styles = StyleSheet.create({
   neutralScreen: { flex: 1, backgroundColor: "#ECFDF5" },
   progressScreen: { flex: 1, backgroundColor: "#FFF7ED" },
   recoveryScreen: { flex: 1, backgroundColor: "#0F172A" },
+
   container: { padding: 14, paddingTop: 42, paddingBottom: 28 },
+  contentShell: { width: "100%", maxWidth: 520, alignSelf: "center" },
 
   worldBackdrop: { borderRadius: 18, borderWidth: 3, padding: 12, marginBottom: 12, overflow: "hidden" },
   worldNeutral: { backgroundColor: "#BBF7D0", borderColor: "#22C55E" },
@@ -742,7 +750,8 @@ const styles = StyleSheet.create({
   lunaPath: { marginTop: 4, fontSize: 11, color: "#374151", fontWeight: "800" },
 
   energyPanel: { backgroundColor: "#111827", borderColor: "#FBBF24" },
-  hudTitle: { fontSize: 15, letterSpacing: 1, fontWeight: "900", color: "#F9FAFB", textTransform: "uppercase", marginBottom: 3 },
+  hudTitleLight: { fontSize: 15, letterSpacing: 1, fontWeight: "900", color: "#F9FAFB", textTransform: "uppercase", marginBottom: 3 },
+  hudTitleDark: { fontSize: 15, letterSpacing: 1, fontWeight: "900", color: "#111827", textTransform: "uppercase", marginBottom: 3 },
   energyScore: { color: "#FBBF24", fontSize: 28, fontWeight: "900", letterSpacing: 1 },
   energyLabel: { color: "#F9FAFB", fontSize: 10, fontWeight: "800", marginTop: 2 },
   energyHint: { color: "#D1D5DB", fontSize: 10, marginTop: 4, fontWeight: "700", lineHeight: 14 },
@@ -759,25 +768,26 @@ const styles = StyleSheet.create({
   questRowCard: { backgroundColor: "#FFFFFF", borderWidth: 2, borderColor: "#374151", borderRadius: 10, padding: 8, marginBottom: 6 },
   questRowCardDone: { backgroundColor: "#DCFCE7", borderColor: "#22C55E" },
   questMainRow: { flexDirection: "row", alignItems: "flex-start" },
-  questIcon: { fontSize: 18, marginRight: 6 },
+  questIcon: { fontSize: 18, marginLeft: 6 },
   questTextCol: { flex: 1 },
   questTitle: { fontSize: 13, color: "#111827", fontWeight: "900" },
   questDescription: { fontSize: 10, color: "#374151", marginTop: 2, fontWeight: "700" },
   questMetaRow: { flexDirection: "row", marginTop: 4 },
   questBadge: { fontSize: 9, color: "#111827", backgroundColor: "#E0F2FE", borderWidth: 1, borderColor: "#38BDF8", borderRadius: 999, paddingHorizontal: 6, paddingVertical: 2, overflow: "hidden", marginRight: 4, fontWeight: "900" },
   questReward: { fontSize: 9, color: "#111827", backgroundColor: "#FBBF24", borderWidth: 1, borderColor: "#92400E", borderRadius: 999, paddingHorizontal: 6, paddingVertical: 2, overflow: "hidden", fontWeight: "900" },
-  reflectBtn: { marginTop: 6, backgroundColor: "#111827", borderRadius: 8, paddingVertical: 6, alignItems: "center" },
+  reflectBtn: { marginTop: 6, alignSelf: "flex-end", backgroundColor: "#111827", borderRadius: 8, paddingVertical: 5, paddingHorizontal: 10, alignItems: "center" },
   reflectBtnText: { color: "#F9FAFB", fontSize: 11, fontWeight: "900" },
 
   widgetGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", marginBottom: 12 },
   widgetCard: { width: "48%", backgroundColor: "#FFFFFF", borderWidth: 2, borderColor: "#374151", borderRadius: 10, padding: 8, marginBottom: 8 },
   hudMiniTitle: { fontSize: 11, letterSpacing: 1, color: "#111827", fontWeight: "900", textTransform: "uppercase", marginBottom: 3 },
   widgetBody: { fontSize: 11, color: "#374151", fontWeight: "700", minHeight: 28 },
+  widgetSmall: { fontSize: 10, color: "#4B5563", marginTop: 4, marginBottom: 2 },
   widgetBtn: { marginTop: 6, backgroundColor: "#111827", borderRadius: 7, paddingVertical: 6, alignItems: "center" },
   widgetBtnText: { color: "#FFFFFF", fontSize: 10, fontWeight: "900" },
 
   menuPanel: { backgroundColor: "#E0F2FE", borderWidth: 2, borderColor: "#38BDF8", borderRadius: 12, padding: 10, marginBottom: 12 },
-  menuGrid: { flexDirection: "row", flexWrap: "wrap" },
+  menuGrid: { flexDirection: "row", flexWrap: "wrap", marginRight: "-3.5%" },
   menuTile: { width: "31%", marginRight: "3.5%", marginBottom: 8, backgroundColor: "#FFFFFF", borderWidth: 2, borderColor: "#374151", borderRadius: 8, paddingVertical: 8, paddingHorizontal: 5, alignItems: "center" },
   menuTileText: { fontSize: 10, color: "#111827", fontWeight: "900", textAlign: "center" },
 
