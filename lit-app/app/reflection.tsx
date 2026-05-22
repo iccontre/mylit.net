@@ -15,13 +15,19 @@ type ReflectionEntry = {
 
 const REFLECTIONS_KEY = "lit_reflections";
 
+const pixelFont = Platform.select({
+  ios: "Menlo",
+  android: "monospace",
+  web: "monospace",
+  default: "monospace",
+});
+
 export default function ReflectionScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const mono = Platform.select({ ios: "Menlo", android: "monospace", web: "monospace" });
 
-  const questParam = Array.isArray(params.quest) ? params.quest[0] : params.quest;
-  const quest = questParam || "Open reflection";
+  const rawQuest = Array.isArray(params.quest) ? params.quest[0] : params.quest;
+  const quest = rawQuest || "Open reflection";
 
   const [whatGotInTheWay, setWhatGotInTheWay] = useState("");
   const [whatWasOff, setWhatWasOff] = useState("");
@@ -42,21 +48,21 @@ export default function ReflectionScreen() {
     const saved = await AsyncStorage.getItem(REFLECTIONS_KEY);
     const parsed: ReflectionEntry[] = saved ? JSON.parse(saved) : [];
     const next = [newEntry, ...parsed];
-    await AsyncStorage.setItem(REFLECTIONS_KEY, JSON.stringify(next));
 
+    await AsyncStorage.setItem(REFLECTIONS_KEY, JSON.stringify(next));
     router.push("/");
   }
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
-      <View style={styles.contentShell}>
-        <View style={styles.header}>
-          <Text style={[styles.title, { fontFamily: mono }]}>Reflect, Don’t Judge</Text>
-          <Text style={styles.subtitle}>Missed goals are data, not defeat.</Text>
+      <View style={styles.shell}>
+        <View style={styles.hero}>
+          <Text style={[styles.heroTitle, { fontFamily: pixelFont }]}>Reflect, Don’t Judge</Text>
+          <Text style={styles.heroSubtitle}>Missed goals are data, not defeat.</Text>
         </View>
 
-        <View style={styles.card}>
-          <Text style={[styles.hudLabel, { fontFamily: mono }]}>QUEST</Text>
+        <View style={styles.panel}>
+          <Text style={[styles.panelTitle, { fontFamily: pixelFont }]}>QUEST</Text>
           <Text style={styles.questText}>{quest}</Text>
 
           <Text style={styles.label}>What got in the way?</Text>
@@ -86,22 +92,23 @@ export default function ReflectionScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#0F172A" },
-  container: { padding: 14, paddingTop: 38, paddingBottom: 24 },
-  contentShell: { width: "100%", maxWidth: 520, alignSelf: "center" },
+  container: { padding: 14, paddingTop: 34, paddingBottom: 24 },
+  shell: { width: "100%", maxWidth: 520, alignSelf: "center" },
 
-  header: { backgroundColor: "#312E81", borderWidth: 3, borderColor: "#A78BFA", borderRadius: 16, padding: 12, marginBottom: 10 },
-  title: { color: "#F9FAFB", fontSize: 28, fontWeight: "900", letterSpacing: 1 },
-  subtitle: { color: "#DDD6FE", fontSize: 12, fontWeight: "700", marginTop: 4 },
+  hero: { backgroundColor: "#312E81", borderWidth: 3, borderColor: "#A78BFA", borderRadius: 18, padding: 12, marginBottom: 10 },
+  heroTitle: { color: "#F9FAFB", fontSize: 28, fontWeight: "900", letterSpacing: 1 },
+  heroSubtitle: { color: "#DDD6FE", fontSize: 12, fontWeight: "700", marginTop: 4 },
 
-  card: { backgroundColor: "#FFFFFF", borderWidth: 2, borderColor: "#334155", borderRadius: 12, padding: 12, marginBottom: 10 },
-  hudLabel: { color: "#111827", fontSize: 12, fontWeight: "900", letterSpacing: 1, marginBottom: 4 },
-  questText: { color: "#374151", fontSize: 12, fontWeight: "700", marginBottom: 8 },
-  label: { color: "#374151", fontSize: 12, fontWeight: "800", marginTop: 8, marginBottom: 4 },
-  input: { borderWidth: 2, borderColor: "#D1D5DB", borderRadius: 10, backgroundColor: "#F3F4F6", padding: 10, color: "#111827", fontWeight: "700" },
+  panel: { backgroundColor: "#FEF3C7", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 12, padding: 12, marginBottom: 10 },
+  panelTitle: { color: "#111827", fontSize: 12, fontWeight: "900", letterSpacing: 1 },
+  questText: { color: "#374151", fontSize: 12, fontWeight: "700", marginTop: 4, marginBottom: 8 },
+
+  label: { color: "#111827", fontSize: 12, fontWeight: "800", marginTop: 8, marginBottom: 4 },
+  input: { borderWidth: 2, borderColor: "#D1D5DB", borderRadius: 10, backgroundColor: "#FFFFFF", padding: 10, color: "#111827", fontWeight: "700" },
 
   primaryBtn: { backgroundColor: "#111827", borderWidth: 2, borderColor: "#A78BFA", borderRadius: 10, paddingVertical: 11, alignItems: "center", marginBottom: 8 },
-  primaryBtnText: { color: "#F9FAFB", fontWeight: "900", fontSize: 13 },
+  primaryBtnText: { color: "#F9FAFB", fontSize: 13, fontWeight: "900" },
 
   secondaryBtn: { backgroundColor: "#FFFFFF", borderWidth: 2, borderColor: "#CBD5E1", borderRadius: 10, paddingVertical: 11, alignItems: "center" },
-  secondaryBtnText: { color: "#111827", fontWeight: "900", fontSize: 13 },
+  secondaryBtnText: { color: "#111827", fontSize: 13, fontWeight: "900" },
 });

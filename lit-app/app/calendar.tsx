@@ -25,6 +25,13 @@ const DAY_PLAN_KEY = "lit_day_plan";
 
 const DAY_ORDER: Array<keyof DayPlan> = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
+const pixelFont = Platform.select({
+  ios: "Menlo",
+  android: "monospace",
+  web: "monospace",
+  default: "monospace",
+});
+
 function getTodayLabel(): keyof DayPlan {
   const map: Array<keyof DayPlan> = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   return map[new Date().getDay()];
@@ -32,7 +39,6 @@ function getTodayLabel(): keyof DayPlan {
 
 export default function CalendarHubScreen() {
   const router = useRouter();
-  const mono = Platform.select({ ios: "Menlo", android: "monospace", web: "monospace" });
 
   const [thoughts, setThoughts] = useState<QueueItem[]>([]);
   const [dayPlan, setDayPlan] = useState<DayPlan>({
@@ -83,60 +89,60 @@ export default function CalendarHubScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
-      <View style={styles.contentShell}>
-        <View style={styles.header}>
-          <Text style={[styles.title, { fontFamily: mono }]}>CALENDAR</Text>
-          <Text style={styles.subtitle}>Set what the day is for.</Text>
+      <View style={styles.shell}>
+        <View style={styles.hero}>
+          <Text style={[styles.heroTitle, { fontFamily: pixelFont }]}>CALENDAR</Text>
+          <Text style={styles.heroSubtitle}>Set what the day is for.</Text>
         </View>
 
-        <View style={styles.panel}>
-          <Text style={[styles.hudLabel, { fontFamily: mono }]}>TODAY’S DAY PLAN</Text>
-          <Text style={styles.bodyText}>{today}: {todayRole}</Text>
+        <View style={styles.panelLight}>
+          <Text style={[styles.panelTitleDark, { fontFamily: pixelFont }]}>TODAY’S DAY PLAN</Text>
+          <Text style={styles.panelTextDark}>{today}: {todayRole}</Text>
         </View>
 
-        <View style={styles.panel}>
-          <Text style={[styles.hudLabel, { fontFamily: mono }]}>TOMORROW’S SAVED THOUGHTS</Text>
+        <View style={styles.panelLight}>
+          <Text style={[styles.panelTitleDark, { fontFamily: pixelFont }]}>TOMORROW’S QUICK THOUGHTS</Text>
           {thoughts.length === 0 ? (
-            <Text style={styles.bodyText}>No quick thoughts saved yet.</Text>
+            <Text style={styles.panelTextDark}>No quick thoughts saved yet.</Text>
           ) : (
             thoughts.slice(0, 6).map((item, idx) => {
               const text = item.text || item.title || item.task || item.note || "";
               return (
-                <Text key={idx} style={styles.bodyText}>Quick thought: {text}</Text>
+                <Text key={idx} style={styles.panelTextDark}>Quick thought: {text}</Text>
               );
             })
           )}
         </View>
 
-        <View style={styles.panel}>
-          <Text style={[styles.hudLabel, { fontFamily: mono }]}>WEEKLY DAY ROLES</Text>
+        <View style={styles.panelDark}>
+          <Text style={[styles.panelTitleLight, { fontFamily: pixelFont }]}>WEEKLY DAY ROLES</Text>
           {DAY_ORDER.map((day) => (
-            <Text key={day} style={styles.bodyText}>{day}: {dayPlan[day] || "No role set"}</Text>
+            <Text key={day} style={styles.panelTextLight}>{day}: {dayPlan[day] || "No role set"}</Text>
           ))}
         </View>
 
         <View style={styles.grid}>
           <TouchableOpacity style={styles.tile} onPress={() => go("/tomorrow-queue")}>
             <Text style={styles.tileTitle}>Quick Thoughts</Text>
-            <Text style={styles.tileSub}>Save the thought.</Text>
+            <Text style={styles.tileText}>Save the thought.</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.tile} onPress={() => go("/day-plan")}>
             <Text style={styles.tileTitle}>Day Plan</Text>
-            <Text style={styles.tileSub}>Edit weekly roles.</Text>
+            <Text style={styles.tileText}>Edit weekly roles.</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.tile} onPress={() => go("/sleep-calendar")}>
             <Text style={styles.tileTitle}>Sleep Calendar</Text>
-            <Text style={styles.tileSub}>Timing and planning.</Text>
+            <Text style={styles.tileText}>Timing and planning board.</Text>
           </TouchableOpacity>
         </View>
 
-        <View style={styles.bottomBar}>
-          <TouchableOpacity style={styles.bottomItem} onPress={() => go("/")}><Text style={styles.bottomText}>Home</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.bottomItem} onPress={() => go("/sleep")}><Text style={styles.bottomText}>Sleep</Text></TouchableOpacity>
-          <TouchableOpacity style={[styles.bottomItem, styles.active]} onPress={() => go("/calendar")}><Text style={styles.activeText}>Calendar</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.bottomItem} onPress={() => go("/mind")}><Text style={styles.bottomText}>Mind</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.bottomItem} onPress={() => go("/path")}><Text style={styles.bottomText}>Path</Text></TouchableOpacity>
-          <TouchableOpacity style={styles.bottomItem} onPress={() => go("/stats")}><Text style={styles.bottomText}>Stats</Text></TouchableOpacity>
+        <View style={styles.navBar}>
+          <TouchableOpacity style={styles.navBtn} onPress={() => go("/")}><Text style={styles.navText}>Home</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.navBtn} onPress={() => go("/sleep")}><Text style={styles.navText}>Sleep</Text></TouchableOpacity>
+          <TouchableOpacity style={[styles.navBtn, styles.navBtnActive]} onPress={() => go("/calendar")}><Text style={styles.navTextActive}>Calendar</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.navBtn} onPress={() => go("/mind")}><Text style={styles.navText}>Mind</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.navBtn} onPress={() => go("/path")}><Text style={styles.navText}>Path</Text></TouchableOpacity>
+          <TouchableOpacity style={styles.navBtn} onPress={() => go("/stats")}><Text style={styles.navText}>Stats</Text></TouchableOpacity>
         </View>
       </View>
     </ScrollView>
@@ -145,25 +151,29 @@ export default function CalendarHubScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: "#052e16" },
-  container: { padding: 14, paddingTop: 38, paddingBottom: 24 },
-  contentShell: { width: "100%", maxWidth: 520, alignSelf: "center" },
+  container: { padding: 14, paddingTop: 34, paddingBottom: 24 },
+  shell: { width: "100%", maxWidth: 520, alignSelf: "center" },
 
-  header: { backgroundColor: "#166534", borderWidth: 3, borderColor: "#22C55E", borderRadius: 16, padding: 12, marginBottom: 10 },
-  title: { color: "#F9FAFB", fontSize: 34, fontWeight: "900", letterSpacing: 1 },
-  subtitle: { color: "#DCFCE7", fontSize: 12, fontWeight: "700", marginTop: 4 },
+  hero: { backgroundColor: "#166534", borderWidth: 3, borderColor: "#22C55E", borderRadius: 18, padding: 12, marginBottom: 10 },
+  heroTitle: { color: "#F9FAFB", fontSize: 34, fontWeight: "900", letterSpacing: 1 },
+  heroSubtitle: { color: "#DCFCE7", fontSize: 12, fontWeight: "700", marginTop: 4 },
 
-  panel: { backgroundColor: "#FFFFFF", borderWidth: 2, borderColor: "#334155", borderRadius: 12, padding: 10, marginBottom: 10 },
-  hudLabel: { color: "#111827", fontSize: 12, fontWeight: "900", letterSpacing: 1, marginBottom: 4 },
-  bodyText: { color: "#374151", fontSize: 12, fontWeight: "700", marginTop: 3 },
+  panelLight: { backgroundColor: "#FFFFFF", borderWidth: 2, borderColor: "#334155", borderRadius: 12, padding: 10, marginBottom: 10 },
+  panelTitleDark: { color: "#111827", fontSize: 12, fontWeight: "900", letterSpacing: 1 },
+  panelTextDark: { color: "#374151", fontSize: 12, fontWeight: "700", marginTop: 4 },
+
+  panelDark: { backgroundColor: "#111827", borderWidth: 2, borderColor: "#22C55E", borderRadius: 12, padding: 10, marginBottom: 10 },
+  panelTitleLight: { color: "#F9FAFB", fontSize: 12, fontWeight: "900", letterSpacing: 1 },
+  panelTextLight: { color: "#E5E7EB", fontSize: 12, fontWeight: "700", marginTop: 4 },
 
   grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", marginBottom: 10 },
   tile: { width: "48%", backgroundColor: "#ECFEFF", borderWidth: 2, borderColor: "#22C55E", borderRadius: 10, padding: 10, marginBottom: 8 },
   tileTitle: { color: "#111827", fontSize: 12, fontWeight: "900" },
-  tileSub: { color: "#4B5563", fontSize: 10, fontWeight: "700", marginTop: 4 },
+  tileText: { color: "#4B5563", fontSize: 10, fontWeight: "700", marginTop: 4 },
 
-  bottomBar: { backgroundColor: "#111827", borderWidth: 2, borderColor: "#374151", borderRadius: 12, padding: 6, flexDirection: "row", justifyContent: "space-between", flexWrap: "wrap" },
-  bottomItem: { width: "31.5%", marginBottom: 6, backgroundColor: "#1F2937", borderRadius: 8, alignItems: "center", paddingVertical: 8 },
-  active: { backgroundColor: "#DCFCE7", borderWidth: 1, borderColor: "#22C55E" },
-  bottomText: { color: "#F9FAFB", fontSize: 10, fontWeight: "900" },
-  activeText: { color: "#111827", fontSize: 10, fontWeight: "900" },
+  navBar: { backgroundColor: "#111827", borderWidth: 2, borderColor: "#374151", borderRadius: 12, padding: 6, flexDirection: "row", justifyContent: "space-between", flexWrap: "wrap" },
+  navBtn: { width: "31.5%", marginBottom: 6, backgroundColor: "#1F2937", borderRadius: 8, alignItems: "center", paddingVertical: 8 },
+  navBtnActive: { backgroundColor: "#DCFCE7", borderWidth: 1, borderColor: "#22C55E" },
+  navText: { color: "#F9FAFB", fontSize: 10, fontWeight: "900" },
+  navTextActive: { color: "#111827", fontSize: 10, fontWeight: "900" },
 });
