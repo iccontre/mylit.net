@@ -57,12 +57,12 @@ export default function ReflectionScreen() {
     <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
       <View style={styles.shell}>
         <View style={styles.hero}>
-          <Text style={[styles.heroTitle, { fontFamily: pixelFont }]}>Reflect, Don’t Judge</Text>
+          <Text style={[styles.heroTitle, { fontFamily: pixelFont }]}>REFLECT, DON’T JUDGE</Text>
           <Text style={styles.heroSubtitle}>Missed goals are data, not defeat.</Text>
         </View>
 
         <View style={styles.panel}>
-          <Text style={[styles.panelTitle, { fontFamily: pixelFont }]}>QUEST</Text>
+          <Text style={[styles.sectionLabel, { fontFamily: pixelFont }]}>QUEST</Text>
           <Text style={styles.questText}>{quest}</Text>
 
           <Text style={styles.label}>What got in the way?</Text>
@@ -79,11 +79,11 @@ export default function ReflectionScreen() {
         </View>
 
         <TouchableOpacity style={styles.primaryBtn} onPress={saveReflection}>
-          <Text style={styles.primaryBtnText}>Save Reflection</Text>
+          <Text style={styles.primaryText}>Save Reflection</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.push("/")}>
-          <Text style={styles.secondaryBtnText}>Back to Today</Text>
+          <Text style={styles.secondaryText}>Back to Today</Text>
         </TouchableOpacity>
       </View>
     </ScrollView>
@@ -95,20 +95,19 @@ const styles = StyleSheet.create({
   container: { padding: 14, paddingTop: 34, paddingBottom: 24 },
   shell: { width: "100%", maxWidth: 520, alignSelf: "center" },
 
-  hero: { backgroundColor: "#312E81", borderWidth: 3, borderColor: "#A78BFA", borderRadius: 18, padding: 12, marginBottom: 10 },
-  heroTitle: { color: "#F9FAFB", fontSize: 28, fontWeight: "900", letterSpacing: 1 },
-  heroSubtitle: { color: "#DDD6FE", fontSize: 12, fontWeight: "700", marginTop: 4 },
+  hero: { backgroundColor: "#111827", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 18, padding: 12, marginBottom: 10 },
+  heroTitle: { color: "#F9FAFB", fontSize: 26, fontWeight: "900", letterSpacing: 1 },
+  heroSubtitle: { color: "#E5E7EB", fontSize: 12, fontWeight: "700", marginTop: 4 },
 
-  panel: { backgroundColor: "#FEF3C7", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 12, padding: 12, marginBottom: 10 },
-  panelTitle: { color: "#111827", fontSize: 12, fontWeight: "900", letterSpacing: 1 },
-  questText: { color: "#374151", fontSize: 12, fontWeight: "700", marginTop: 4, marginBottom: 8 },
+  panel: { backgroundColor: "#1E1B4B", borderWidth: 2, borderColor: "#A78BFA", borderRadius: 12, padding: 12, marginBottom: 10 },
+  sectionLabel: { color: "#F9FAFB", fontSize: 12, letterSpacing: 1, fontWeight: "900" },
+  questText: { color: "#DDD6FE", fontSize: 12, fontWeight: "700", marginTop: 4, marginBottom: 8 },
+  label: { color: "#F9FAFB", fontSize: 12, fontWeight: "800", marginTop: 8, marginBottom: 4 },
+  input: { borderWidth: 2, borderColor: "#A78BFA", borderRadius: 10, backgroundColor: "#312E81", padding: 10, color: "#F9FAFB", fontWeight: "700" },
 
-  label: { color: "#111827", fontSize: 12, fontWeight: "800", marginTop: 8, marginBottom: 4 },
-  input: { borderWidth: 2, borderColor: "#D1D5DB", borderRadius: 10, backgroundColor: "#FFFFFF", padding: 10, color: "#111827", fontWeight: "700" },
+  primaryBtn: { backgroundColor: "#FBBF24", borderWidth: 2, borderColor: "#92400E", borderRadius: 10, alignItems: "center", paddingVertical: 11, marginBottom: 8 },
+  primaryText: { color: "#111827", fontSize: 13, fontWeight: "900" },
 
-  primaryBtn: { backgroundColor: "#111827", borderWidth: 2, borderColor: "#A78BFA", borderRadius: 10, paddingVertical: 11, alignItems: "center", marginBottom: 8 },
-  primaryBtnText: { color: "#F9FAFB", fontSize: 13, fontWeight: "900" },
-
-  secondaryBtn: { backgroundColor: "#FFFFFF", borderWidth: 2, borderColor: "#CBD5E1", borderRadius: 10, paddingVertical: 11, alignItems: "center" },
-  secondaryBtnText: { color: "#111827", fontSize: 13, fontWeight: "900" },
+  secondaryBtn: { backgroundColor: "#111827", borderWidth: 2, borderColor: "#374151", borderRadius: 10, alignItems: "center", paddingVertical: 11 },
+  secondaryText: { color: "#F9FAFB", fontSize: 13, fontWeight: "900" },
 });

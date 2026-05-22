@@ -22,7 +22,6 @@ type DayPlan = {
 
 const TOMORROW_QUEUE_KEY = "lit_tomorrow_queue";
 const DAY_PLAN_KEY = "lit_day_plan";
-
 const DAY_ORDER: Array<keyof DayPlan> = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
 const pixelFont = Platform.select({
@@ -39,7 +38,6 @@ function getTodayLabel(): keyof DayPlan {
 
 export default function CalendarHubScreen() {
   const router = useRouter();
-
   const [thoughts, setThoughts] = useState<QueueItem[]>([]);
   const [dayPlan, setDayPlan] = useState<DayPlan>({
     Monday: "",

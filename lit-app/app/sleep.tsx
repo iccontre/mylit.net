@@ -43,14 +43,12 @@ export default function SleepHubScreen() {
       <View style={styles.shell}>
         <View style={styles.hero}>
           <Text style={[styles.heroTitle, { fontFamily: pixelFont }]}>SLEEP</Text>
-          <Text style={styles.heroSubtitle}>Check your energy. Keep one promise.</Text>
+          <Text style={styles.heroSubtitle}>Review the signal. Keep one promise.</Text>
         </View>
 
         <View style={styles.panelDark}>
           <Text style={[styles.panelTitleLight, { fontFamily: pixelFont }]}>LATEST CHECK-IN</Text>
-          <Text style={styles.panelTextLight}>
-            Energy: {typeof latestCheckIn?.energy === "number" ? `${latestCheckIn.energy}/100` : "—/100"}
-          </Text>
+          <Text style={styles.panelTextLight}>Energy: {typeof latestCheckIn?.energy === "number" ? `${latestCheckIn.energy}/100` : "—/100"}</Text>
           <Text style={styles.panelTextLight}>Mode: {latestCheckIn?.mode || "Not set"}</Text>
           <Text style={styles.panelTextLight}>Wake: {latestCheckIn?.wakeTime || "Not set"}</Text>
         </View>
@@ -66,11 +64,11 @@ export default function SleepHubScreen() {
           </TouchableOpacity>
           <TouchableOpacity style={styles.tile} onPress={() => go("/morning-intention-reflection")}>
             <Text style={styles.tileTitle}>Morning Reflection</Text>
-            <Text style={styles.tileText}>Review last night’s intention.</Text>
+            <Text style={styles.tileText}>Review last night’s signal.</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.tile} onPress={() => go("/sleep-calendar")}>
             <Text style={styles.tileTitle}>Sleep Calendar</Text>
-            <Text style={styles.tileText}>Plan timing and carry thoughts.</Text>
+            <Text style={styles.tileText}>Plan timing and tomorrow’s thoughts.</Text>
           </TouchableOpacity>
         </View>
 
@@ -107,14 +105,14 @@ const styles = StyleSheet.create({
   panelTitleLight: { color: "#F9FAFB", fontSize: 12, fontWeight: "900", letterSpacing: 1 },
   panelTextLight: { color: "#E5E7EB", fontSize: 12, fontWeight: "700", marginTop: 4 },
 
-  panelLight: { backgroundColor: "#FFFFFF", borderWidth: 2, borderColor: "#334155", borderRadius: 12, padding: 10, marginBottom: 10 },
+  panelLight: { backgroundColor: "#EEF2FF", borderWidth: 2, borderColor: "#A78BFA", borderRadius: 12, padding: 10, marginBottom: 10 },
   panelTitleDark: { color: "#111827", fontSize: 12, fontWeight: "900", letterSpacing: 1 },
   panelTextDark: { color: "#374151", fontSize: 12, fontWeight: "700", marginTop: 4 },
 
   grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", marginBottom: 10 },
-  tile: { width: "48%", backgroundColor: "#EEF2FF", borderWidth: 2, borderColor: "#A78BFA", borderRadius: 10, padding: 10, marginBottom: 8 },
-  tileTitle: { color: "#111827", fontSize: 12, fontWeight: "900" },
-  tileText: { color: "#374151", fontSize: 10, fontWeight: "700", marginTop: 4 },
+  tile: { width: "48%", backgroundColor: "#312E81", borderWidth: 2, borderColor: "#A78BFA", borderRadius: 10, padding: 10, marginBottom: 8 },
+  tileTitle: { color: "#F9FAFB", fontSize: 12, fontWeight: "900" },
+  tileText: { color: "#DDD6FE", fontSize: 10, fontWeight: "700", marginTop: 4 },
 
   navBar: { backgroundColor: "#111827", borderWidth: 2, borderColor: "#374151", borderRadius: 12, padding: 6, flexDirection: "row", justifyContent: "space-between", flexWrap: "wrap" },
   navBtn: { width: "31.5%", marginBottom: 6, backgroundColor: "#1F2937", borderRadius: 8, alignItems: "center", paddingVertical: 8 },
