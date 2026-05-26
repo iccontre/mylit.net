@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Link } from "expo-router";
 import { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 type JournalEntry = {
   id: string;
@@ -18,6 +18,13 @@ type JournalEntry = {
 
 const STORAGE_KEY = "lit_journal_entries";
 
+const pixelFont = Platform.select({
+  ios: "Menlo",
+  android: "monospace",
+  web: "monospace",
+  default: "monospace",
+});
+
 export default function JournalScreen() {
   const [entryType, setEntryType] = useState<"Morning" | "Evening">("Morning");
   const [mood, setMood] = useState("");
@@ -31,15 +38,12 @@ export default function JournalScreen() {
 
   const [entries, setEntries] = useState<JournalEntry[]>([]);
 
-  const isMorning = entryType === "Morning";
-
   useEffect(() => {
     loadEntries();
   }, []);
 
   async function loadEntries() {
     const saved = await AsyncStorage.getItem(STORAGE_KEY);
-
     if (saved) {
       setEntries(JSON.parse(saved));
     }
@@ -51,7 +55,7 @@ export default function JournalScreen() {
   }
 
   async function saveJournalEntry() {
-    const hasMainJournal = content.trim() || gratitude.trim() || mood.trim();
+    const hasMainJournal = content.trim() || gratitude.trim();
     const hasMetacognition =
       thoughtPattern.trim() || honestReframe.trim() || mindLesson.trim();
 
@@ -60,7 +64,7 @@ export default function JournalScreen() {
     const newEntry: JournalEntry = {
       id: String(Date.now()),
       type: entryType,
-      mood: mood.trim(),
+      mood,
       content: content.trim(),
       gratitude: gratitude.trim(),
       thoughtPattern: thoughtPattern.trim(),
@@ -87,19 +91,22 @@ export default function JournalScreen() {
   }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Journal</Text>
+    <ScrollView style={styles.screen} contentContainerStyle={styles.shell}>
+      <View style={styles.hero}>
+        <Text style={styles.heroKicker}>MIND LOG</Text>
+        <Text style={styles.title}>JOURNAL</Text>
+        <Text style={styles.subtitle}>Write what happened. Notice the pattern.</Text>
+      </View>
 
       <View style={styles.lunaCard}>
-        <Text style={styles.lunaName}>🌙 Luna</Text>
+        <Text style={styles.lunaName}>Luna</Text>
         <Text style={styles.lunaText}>
-          Use this space to slow down and write what is actually happening. It does not need to sound perfect.
+          Write what is actually happening. It does not need to sound perfect.
         </Text>
       </View>
 
-      <View style={styles.card}>
+      <View style={styles.panel}>
         <Text style={styles.label}>Entry Type</Text>
-
         <View style={styles.toggleRow}>
           <TouchableOpacity
             style={entryType === "Morning" ? styles.activeToggle : styles.toggleButton}
@@ -120,68 +127,61 @@ export default function JournalScreen() {
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.label}>Mood, 1-10</Text>
+        <Text style={styles.label}>Mood (1-10)</Text>
         <TextInput
           style={styles.input}
           keyboardType="numeric"
-          placeholder="Enter your mood"
-          placeholderTextColor="#9CA3AF"
+          placeholder="Optional"
+          placeholderTextColor="#94A3B8"
           value={mood}
           onChangeText={setMood}
         />
 
         <Text style={styles.label}>
-          {isMorning ? "What are you carrying into this morning?" : "What stayed with you this evening?"}
+          {entryType === "Morning"
+            ? "What feels true about today?"
+            : "What did today teach you?"}
         </Text>
         <TextInput
           style={styles.textArea}
           multiline
           placeholder={
-            isMorning
-              ? "Example: I woke up tired, but I want to start with one small thing."
-              : "Example: I got distracted, but I noticed what pulled me away."
+            entryType === "Morning"
+              ? "Example: I feel tired, but I still want to take one small step."
+              : "Example: I learned I need smaller goals on low-energy days."
           }
-          placeholderTextColor="#9CA3AF"
+          placeholderTextColor="#94A3B8"
           value={content}
           onChangeText={setContent}
         />
 
-        <Text style={styles.label}>
-          {isMorning ? "One thing you can appreciate this morning" : "One thing you can appreciate from today"}
-        </Text>
+        <Text style={styles.label}>One thing you appreciate</Text>
         <TextInput
           style={styles.input}
-          placeholder={isMorning ? "Example: I got another chance to try." : "Example: I made it through the day."}
-          placeholderTextColor="#9CA3AF"
+          placeholder="Example: I kept one promise today."
+          placeholderTextColor="#94A3B8"
           value={gratitude}
           onChangeText={setGratitude}
         />
       </View>
 
-      <View style={styles.metaCard}>
+      <View style={styles.metaPanel}>
         <Text style={styles.metaTitle}>Metacognitive Check-In</Text>
         <Text style={styles.metaSubtitle}>
-          Notice the pattern behind your thoughts. The goal is not to judge the thought. The goal is to see it clearly.
+          Notice how your mind worked today. Use data, not judgment.
         </Text>
 
-        <Text style={styles.label}>
-          {isMorning ? "What thought pattern showed up this morning?" : "What thought pattern showed up this evening?"}
-        </Text>
+        <Text style={styles.label}>What thought pattern showed up today?</Text>
         <TextInput
           style={styles.textArea}
           multiline
-          placeholder={
-            isMorning
-              ? "Example: overthinking, avoidance, comparison, self-doubt, focus, calm..."
-              : "Example: replaying the day, regret, motivation, clarity, stress, relief..."
-          }
-          placeholderTextColor="#9CA3AF"
+          placeholder="Example: overthinking, avoidance, comparison, self-doubt..."
+          placeholderTextColor="#94A3B8"
           value={thoughtPattern}
           onChangeText={setThoughtPattern}
         />
 
-        <Text style={styles.label}>Did this thought help, hurt, or just pass through?</Text>
-
+        <Text style={styles.label}>Was this thought helpful, neutral, or harmful?</Text>
         <View style={styles.impactRow}>
           <TouchableOpacity
             style={thoughtImpact === "Helpful" ? styles.helpfulImpact : styles.impactButton}
@@ -211,30 +211,22 @@ export default function JournalScreen() {
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.label}>What is the more honest version of the thought?</Text>
+        <Text style={styles.label}>What is a more honest reframe?</Text>
         <TextInput
           style={styles.textArea}
           multiline
-          placeholder="Example: I am not lazy. I was tired, and the task needed to be smaller."
-          placeholderTextColor="#9CA3AF"
+          placeholder="Example: I am not lazy. I was tired and needed a smaller first step."
+          placeholderTextColor="#94A3B8"
           value={honestReframe}
           onChangeText={setHonestReframe}
         />
 
-        <Text style={styles.label}>
-          {isMorning
-            ? "What does this tell you about how your mind is starting the day?"
-            : "What did you learn about how your mind handled the day?"}
-        </Text>
+        <Text style={styles.label}>What did you learn about your mind today?</Text>
         <TextInput
           style={styles.textArea}
           multiline
-          placeholder={
-            isMorning
-              ? "Example: I need a simple first step before my mind starts avoiding."
-              : "Example: I lose direction when the task feels too big, but I come back when I write it down."
-          }
-          placeholderTextColor="#9CA3AF"
+          placeholder="Example: I avoid big tasks, but I can start small and keep going."
+          placeholderTextColor="#94A3B8"
           value={mindLesson}
           onChangeText={setMindLesson}
         />
@@ -244,37 +236,37 @@ export default function JournalScreen() {
         <Text style={styles.saveButtonText}>Save Journal Entry</Text>
       </TouchableOpacity>
 
-      <Text style={styles.sectionTitle}>Recent Entries</Text>
+      <Text style={styles.sectionTitle}>RECENT LOGS</Text>
 
       {entries.length === 0 ? (
         <View style={styles.emptyCard}>
           <Text style={styles.emptyText}>
-            No journal entries yet. Start with one honest sentence.
+            No journal logs yet. Start with one honest sentence.
           </Text>
         </View>
       ) : (
         entries.map((entry) => (
           <View key={entry.id} style={styles.entryCard}>
-            <Text style={styles.entryType}>{entry.type} Entry</Text>
+            <Text style={styles.entryType}>{entry.type} Log</Text>
             <Text style={styles.entryDate}>{entry.createdAt}</Text>
-            <Text style={styles.entryMood}>Mood: {entry.mood ? `${entry.mood}/10` : "Not entered"}</Text>
+            <Text style={styles.entryMood}>Mood: {entry.mood.trim() ? `${entry.mood}/10` : "Not entered"}</Text>
 
             {entry.content ? <Text style={styles.entryText}>{entry.content}</Text> : null}
 
             {entry.gratitude ? (
-              <Text style={styles.gratitudeText}>Appreciated: {entry.gratitude}</Text>
+              <Text style={styles.gratitudeText}>Appreciation: {entry.gratitude}</Text>
             ) : null}
 
-            {entry.thoughtPattern ? (
+            {(entry.thoughtPattern || entry.honestReframe || entry.mindLesson) ? (
               <View style={styles.savedMetaBox}>
-                <Text style={styles.savedMetaTitle}>Metacognitive note</Text>
-                <Text style={styles.savedMetaText}>Pattern: {entry.thoughtPattern}</Text>
-                <Text style={styles.savedMetaText}>Impact: {entry.thoughtImpact}</Text>
-
-                {entry.honestReframe ? (
-                  <Text style={styles.savedMetaText}>Honest version: {entry.honestReframe}</Text>
+                <Text style={styles.savedMetaTitle}>Metacognitive Note</Text>
+                {entry.thoughtPattern ? (
+                  <Text style={styles.savedMetaText}>Pattern: {entry.thoughtPattern}</Text>
                 ) : null}
-
+                <Text style={styles.savedMetaText}>Impact: {entry.thoughtImpact}</Text>
+                {entry.honestReframe ? (
+                  <Text style={styles.savedMetaText}>Reframe: {entry.honestReframe}</Text>
+                ) : null}
                 {entry.mindLesson ? (
                   <Text style={styles.savedMetaText}>Lesson: {entry.mindLesson}</Text>
                 ) : null}
@@ -291,8 +283,8 @@ export default function JournalScreen() {
       )}
 
       <Link href="/" asChild>
-        <TouchableOpacity style={styles.homeButton}>
-          <Text style={styles.homeButtonText}>Back to Today</Text>
+        <TouchableOpacity style={styles.backButton}>
+          <Text style={styles.backButtonText}>Back to Today</Text>
         </TouchableOpacity>
       </Link>
     </ScrollView>
@@ -302,74 +294,115 @@ export default function JournalScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F7EBC8",
+    backgroundColor: "#0B1020",
   },
-  container: {
-    padding: 24,
-    paddingTop: 70,
-    paddingBottom: 40,
+  shell: {
+    width: "100%",
+    maxWidth: 520,
+    alignSelf: "center",
+    padding: 18,
+    paddingTop: 56,
+    paddingBottom: 36,
+  },
+  hero: {
+    backgroundColor: "#1E1B4B",
+    borderColor: "#A78BFA",
+    borderWidth: 3,
+    borderRadius: 24,
+    padding: 16,
+    marginBottom: 12,
+  },
+  heroKicker: {
+    fontFamily: pixelFont,
+    fontSize: 11,
+    letterSpacing: 1.5,
+    fontWeight: "900",
+    color: "#C4B5FD",
+    marginBottom: 6,
+    textTransform: "uppercase",
   },
   title: {
-    fontSize: 36,
+    fontFamily: pixelFont,
+    fontSize: 28,
     fontWeight: "900",
-    color: "#111827",
-    marginBottom: 18,
+    color: "#F9FAFB",
+    marginBottom: 6,
+    lineHeight: 34,
+  },
+  subtitle: {
+    fontFamily: pixelFont,
+    fontSize: 13,
+    lineHeight: 19,
+    color: "#E5E7EB",
+    fontWeight: "700",
   },
   lunaCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 18,
-    borderWidth: 2,
-    borderColor: "#E5D39A",
-  },
-  lunaName: {
-    fontSize: 22,
-    fontWeight: "900",
-    color: "#111827",
-    marginBottom: 8,
-  },
-  lunaText: {
-    fontSize: 16,
-    lineHeight: 24,
-    color: "#374151",
-  },
-  card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 18,
-    borderWidth: 2,
-    borderColor: "#E5D39A",
-  },
-  metaCard: {
-    backgroundColor: "#EEF2FF",
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 18,
+    backgroundColor: "#111827",
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 12,
     borderWidth: 2,
     borderColor: "#A78BFA",
   },
-  metaTitle: {
-    fontSize: 22,
+  lunaName: {
+    fontFamily: pixelFont,
+    fontSize: 16,
     fontWeight: "900",
-    color: "#111827",
+    color: "#E9D5FF",
     marginBottom: 6,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  lunaText: {
+    fontFamily: pixelFont,
+    fontSize: 13,
+    lineHeight: 19,
+    color: "#F3F4F6",
+    fontWeight: "700",
+  },
+  panel: {
+    backgroundColor: "#0F172A",
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 3,
+    borderColor: "#FBBF24",
+  },
+  metaPanel: {
+    backgroundColor: "#1E1B4B",
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 3,
+    borderColor: "#A78BFA",
+  },
+  metaTitle: {
+    fontFamily: pixelFont,
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#F9FAFB",
+    marginBottom: 6,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
   },
   metaSubtitle: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: "#374151",
+    fontFamily: pixelFont,
+    fontSize: 12,
+    lineHeight: 18,
+    color: "#CBD5E1",
     fontWeight: "700",
-    marginBottom: 10,
+    marginBottom: 8,
   },
   label: {
-    fontSize: 14,
+    fontFamily: pixelFont,
+    fontSize: 12,
     fontWeight: "900",
-    color: "#374151",
-    marginBottom: 10,
+    color: "#E5E7EB",
+    marginBottom: 8,
     marginTop: 12,
     textTransform: "uppercase",
+    letterSpacing: 0.8,
+    lineHeight: 16,
   },
   toggleRow: {
     flexDirection: "row",
@@ -377,55 +410,63 @@ const styles = StyleSheet.create({
   },
   toggleButton: {
     flex: 1,
-    backgroundColor: "#F3F4F6",
-    padding: 14,
-    borderRadius: 16,
+    backgroundColor: "#111827",
+    padding: 12,
+    borderRadius: 12,
     alignItems: "center",
     borderWidth: 2,
-    borderColor: "#E5E7EB",
+    borderColor: "#334155",
     marginRight: 8,
   },
   activeToggle: {
     flex: 1,
-    backgroundColor: "#111827",
-    padding: 14,
-    borderRadius: 16,
+    backgroundColor: "#312E81",
+    padding: 12,
+    borderRadius: 12,
     alignItems: "center",
     borderWidth: 2,
-    borderColor: "#FBBF24",
+    borderColor: "#A78BFA",
     marginRight: 8,
   },
   toggleText: {
-    fontSize: 16,
+    fontFamily: pixelFont,
+    fontSize: 12,
     fontWeight: "900",
-    color: "#374151",
+    color: "#CBD5E1",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
   },
   activeToggleText: {
-    fontSize: 16,
+    fontFamily: pixelFont,
+    fontSize: 12,
     fontWeight: "900",
-    color: "#FFFFFF",
+    color: "#F9FAFB",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
   },
   input: {
-    backgroundColor: "#F3F4F6",
+    backgroundColor: "#111827",
     borderRadius: 16,
-    padding: 14,
-    fontSize: 16,
-    color: "#111827",
+    padding: 12,
+    fontSize: 15,
+    color: "#F9FAFB",
     marginBottom: 8,
     borderWidth: 2,
-    borderColor: "#E5E7EB",
+    borderColor: "#475569",
+    fontFamily: pixelFont,
   },
   textArea: {
-    backgroundColor: "#F3F4F6",
+    backgroundColor: "#111827",
     borderRadius: 16,
-    padding: 14,
-    minHeight: 110,
-    fontSize: 16,
-    color: "#111827",
+    padding: 12,
+    minHeight: 94,
+    fontSize: 15,
+    color: "#F9FAFB",
     marginBottom: 8,
     textAlignVertical: "top",
     borderWidth: 2,
-    borderColor: "#E5E7EB",
+    borderColor: "#475569",
+    fontFamily: pixelFont,
   },
   impactRow: {
     flexDirection: "row",
@@ -434,166 +475,198 @@ const styles = StyleSheet.create({
   },
   impactButton: {
     width: "31%",
-    backgroundColor: "#FFFFFF",
-    padding: 12,
-    borderRadius: 16,
+    backgroundColor: "#111827",
+    padding: 10,
+    borderRadius: 12,
     alignItems: "center",
     borderWidth: 2,
-    borderColor: "#E5E7EB",
+    borderColor: "#334155",
   },
   helpfulImpact: {
     width: "31%",
-    backgroundColor: "#16A34A",
-    padding: 12,
-    borderRadius: 16,
+    backgroundColor: "#14532D",
+    padding: 10,
+    borderRadius: 12,
     alignItems: "center",
     borderWidth: 2,
-    borderColor: "#166534",
+    borderColor: "#22C55E",
   },
   neutralImpact: {
     width: "31%",
-    backgroundColor: "#111827",
-    padding: 12,
-    borderRadius: 16,
+    backgroundColor: "#1E293B",
+    padding: 10,
+    borderRadius: 12,
     alignItems: "center",
     borderWidth: 2,
-    borderColor: "#FBBF24",
+    borderColor: "#38BDF8",
   },
   harmfulImpact: {
     width: "31%",
-    backgroundColor: "#991B1B",
-    padding: 12,
-    borderRadius: 16,
+    backgroundColor: "#7F1D1D",
+    padding: 10,
+    borderRadius: 12,
     alignItems: "center",
     borderWidth: 2,
-    borderColor: "#FCA5A5",
+    borderColor: "#EF4444",
   },
   impactText: {
-    fontSize: 13,
+    fontFamily: pixelFont,
+    fontSize: 11,
     fontWeight: "900",
-    color: "#374151",
+    color: "#E5E7EB",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   activeImpactText: {
-    fontSize: 13,
+    fontFamily: pixelFont,
+    fontSize: 11,
     fontWeight: "900",
-    color: "#FFFFFF",
+    color: "#F9FAFB",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   saveButton: {
-    backgroundColor: "#111827",
-    padding: 18,
-    borderRadius: 20,
+    backgroundColor: "#A78BFA",
+    padding: 14,
+    borderRadius: 14,
     alignItems: "center",
-    marginBottom: 22,
+    marginBottom: 14,
     borderWidth: 2,
-    borderColor: "#FBBF24",
+    borderColor: "#EDE9FE",
   },
   saveButtonText: {
-    color: "#FFFFFF",
-    fontSize: 17,
+    color: "#111827",
+    fontSize: 14,
     fontWeight: "900",
+    fontFamily: pixelFont,
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
   },
   sectionTitle: {
-    fontSize: 24,
-    fontWeight: "900",
-    color: "#111827",
-    marginBottom: 14,
-  },
-  emptyCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    padding: 18,
-    borderWidth: 2,
-    borderColor: "#D1D5DB",
-    marginBottom: 16,
-  },
-  emptyText: {
-    fontSize: 16,
-    lineHeight: 23,
-    color: "#6B7280",
-  },
-  entryCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    padding: 18,
-    marginBottom: 12,
-    borderWidth: 2,
-    borderColor: "#D1D5DB",
-  },
-  entryType: {
+    fontFamily: pixelFont,
     fontSize: 18,
     fontWeight: "900",
-    color: "#111827",
+    color: "#F9FAFB",
+    marginBottom: 10,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  emptyCard: {
+    backgroundColor: "#111827",
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 2,
+    borderColor: "#334155",
+    marginBottom: 12,
+  },
+  emptyText: {
+    fontFamily: pixelFont,
+    fontSize: 12,
+    lineHeight: 18,
+    color: "#CBD5E1",
+    fontWeight: "700",
+  },
+  entryCard: {
+    backgroundColor: "#111827",
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+  },
+  entryType: {
+    fontFamily: pixelFont,
+    fontSize: 14,
+    fontWeight: "900",
+    color: "#F9FAFB",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
   },
   entryDate: {
-    fontSize: 13,
-    color: "#6B7280",
+    fontFamily: pixelFont,
+    fontSize: 10,
+    color: "#94A3B8",
     marginTop: 4,
     marginBottom: 8,
   },
   entryMood: {
-    fontSize: 15,
+    fontFamily: pixelFont,
+    fontSize: 11,
     fontWeight: "800",
-    color: "#374151",
+    color: "#E5E7EB",
     marginBottom: 8,
   },
   entryText: {
-    fontSize: 16,
-    lineHeight: 23,
-    color: "#111827",
+    fontFamily: pixelFont,
+    fontSize: 12,
+    lineHeight: 18,
+    color: "#F9FAFB",
     marginBottom: 8,
   },
   gratitudeText: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: "#166534",
+    fontFamily: pixelFont,
+    fontSize: 11,
+    lineHeight: 17,
+    color: "#86EFAC",
     fontWeight: "700",
   },
   savedMetaBox: {
-    backgroundColor: "#EEF2FF",
-    borderRadius: 16,
-    padding: 14,
-    marginTop: 12,
+    backgroundColor: "#1E1B4B",
+    borderRadius: 12,
+    padding: 10,
+    marginTop: 10,
     borderWidth: 2,
     borderColor: "#A78BFA",
   },
   savedMetaTitle: {
-    fontSize: 14,
+    fontFamily: pixelFont,
+    fontSize: 11,
     fontWeight: "900",
-    color: "#312E81",
+    color: "#E9D5FF",
     marginBottom: 6,
     textTransform: "uppercase",
+    letterSpacing: 0.6,
   },
   savedMetaText: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: "#374151",
+    fontFamily: pixelFont,
+    fontSize: 11,
+    lineHeight: 17,
+    color: "#E5E7EB",
     fontWeight: "700",
     marginBottom: 4,
   },
   clearButton: {
-    backgroundColor: "#FEE2E2",
-    padding: 16,
-    borderRadius: 18,
+    backgroundColor: "#7F1D1D",
+    padding: 12,
+    borderRadius: 12,
     alignItems: "center",
-    marginTop: 8,
+    marginTop: 4,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: "#EF4444",
   },
   clearButtonText: {
-    color: "#991B1B",
-    fontSize: 16,
+    color: "#FECACA",
+    fontSize: 13,
     fontWeight: "900",
+    fontFamily: pixelFont,
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
   },
-  homeButton: {
-    backgroundColor: "#FBBF24",
-    padding: 18,
-    borderRadius: 20,
+  backButton: {
+    backgroundColor: "#111827",
+    padding: 13,
+    borderRadius: 14,
     alignItems: "center",
-    marginTop: 12,
     borderWidth: 2,
-    borderColor: "#111827",
+    borderColor: "#FBBF24",
   },
-  homeButtonText: {
-    color: "#111827",
-    fontSize: 17,
+  backButtonText: {
+    color: "#F9FAFB",
+    fontSize: 13,
     fontWeight: "900",
+    fontFamily: pixelFont,
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
   },
 });

@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 type PreSleepIntention = {
   id: string;
@@ -27,6 +27,13 @@ type MorningIntentionReflection = {
 const LATEST_PRE_SLEEP_INTENTION_KEY = "lit_latest_pre_sleep_intention";
 const MORNING_INTENTION_REFLECTIONS_KEY = "lit_morning_intention_reflections";
 const TOMORROW_QUEUE_KEY = "lit_tomorrow_queue";
+
+const pixelFont = Platform.select({
+  ios: "Menlo",
+  android: "monospace",
+  web: "monospace",
+  default: "monospace",
+});
 
 function getTodayKey() {
   return new Date().toLocaleDateString("en-CA");
@@ -110,20 +117,18 @@ export default function MorningIntentionReflectionScreen() {
   }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
+    <ScrollView style={styles.screen} contentContainerStyle={styles.shell}>
       <View style={styles.hero}>
-        <Text style={styles.heroIcon}>☀️</Text>
-        <Text style={styles.title}>Morning Reflection</Text>
-        <Text style={styles.subtitle}>
-          Notice whether last night’s intention affected your thoughts, dreams, mood, or motivation.
-        </Text>
+        <Text style={styles.heroKicker}>SUNRISE HUD</Text>
+        <Text style={styles.title}>MORNING REFLECTION</Text>
+        <Text style={styles.subtitle}>Review the signal from last night.</Text>
       </View>
 
       {!latestIntention ? (
         <View style={styles.emptyCard}>
-          <Text style={styles.emptyTitle}>No intention saved yet</Text>
+          <Text style={styles.emptyTitle}>NO SIGNAL SAVED</Text>
           <Text style={styles.emptyText}>
-            Set a pre-sleep intention tonight, then return here tomorrow morning to reflect.
+            Set a pre-sleep intention tonight, then return here tomorrow morning.
           </Text>
           <TouchableOpacity style={styles.primaryButton} onPress={() => router.push("/pre-sleep-intention")}>
             <Text style={styles.primaryButtonText}>Set Pre-Sleep Intention</Text>
@@ -131,23 +136,66 @@ export default function MorningIntentionReflectionScreen() {
         </View>
       ) : (
         <>
-          <View style={styles.intentionCard}>
-            <Text style={styles.cardLabel}>Last night’s intention</Text>
+          <View style={styles.signalCard}>
+            <Text style={styles.sectionTitle}>LAST NIGHT’S SIGNAL</Text>
             <Text style={styles.intentionText}>{latestIntention.intention}</Text>
 
             {latestIntention.whyItMatters ? (
               <Text style={styles.supportingText}>Why it matters: {latestIntention.whyItMatters}</Text>
             ) : null}
 
+            {latestIntention.firstSmallAction ? (
+              <Text style={styles.supportingText}>First small action: {latestIntention.firstSmallAction}</Text>
+            ) : null}
+
             {latestIntention.dreamSymbol ? (
               <Text style={styles.supportingText}>Dream symbol: {latestIntention.dreamSymbol}</Text>
             ) : null}
+          </View>
+
+          <View style={styles.panel}>
+            <Text style={styles.label}>
+              Did this show up in your thoughts, dreams, mood, or motivation?
+            </Text>
+
+            <View style={styles.optionWrap}>
+              {recallOptions.map((option) => {
+                const isSelected = recallType === option;
+
+                return (
+                  <TouchableOpacity
+                    key={option}
+                    style={isSelected ? styles.optionSelected : styles.option}
+                    onPress={() => setRecallType(option)}
+                  >
+                    <Text style={isSelected ? styles.optionSelectedText : styles.optionText}>
+                      {option}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={styles.label}>Reflection</Text>
+            <TextInput
+              style={styles.textArea}
+              multiline
+              placeholder="Write what you noticed this morning."
+              placeholderTextColor="#94A3B8"
+              value={reflectionText}
+              onChangeText={setReflectionText}
+            />
+          </View>
+
+          <View style={styles.panel}>
+            <Text style={styles.label}>
+              What is one small action you can take today based on this intention?
+            </Text>
 
             {latestIntention.firstSmallAction ? (
               <View style={styles.suggestionBox}>
-                <Text style={styles.suggestionLabel}>Suggested action from last night</Text>
+                <Text style={styles.suggestionLabel}>Suggested action</Text>
                 <Text style={styles.suggestionText}>{latestIntention.firstSmallAction}</Text>
-
                 <TouchableOpacity
                   style={styles.useSuggestionButton}
                   onPress={() => setTodayAction(latestIntention.firstSmallAction)}
@@ -157,47 +205,11 @@ export default function MorningIntentionReflectionScreen() {
               </View>
             ) : null}
 
-          </View>
-
-          <View style={styles.card}>
-            <Text style={styles.label}>
-              Did this show up in your thoughts, dreams, mood, or motivation this morning?
-            </Text>
-
-            {recallOptions.map((option) => {
-              const isSelected = recallType === option;
-
-              return (
-                <TouchableOpacity
-                  key={option}
-                  style={isSelected ? styles.selectedOption : styles.option}
-                  onPress={() => setRecallType(option)}
-                >
-                  <Text style={isSelected ? styles.selectedOptionText : styles.optionText}>
-                    {isSelected ? "✓ " : ""}{option}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-
-            <Text style={styles.label}>Short reflection</Text>
             <TextInput
               style={styles.textArea}
               multiline
-              placeholder="Example: I did not dream about it, but I woke up remembering that I wanted to start small."
-              placeholderTextColor="#9CA3AF"
-              value={reflectionText}
-              onChangeText={setReflectionText}
-            />
-
-            <Text style={styles.label}>
-              What is one small action you can take today based on this intention?
-            </Text>
-            <TextInput
-              style={styles.textArea}
-              multiline
-              placeholder="Write one small action for today, or use last night’s suggestion above."
-              placeholderTextColor="#9CA3AF"
+              placeholder="Write one small action for today."
+              placeholderTextColor="#94A3B8"
               value={todayAction}
               onChangeText={setTodayAction}
             />
@@ -205,11 +217,11 @@ export default function MorningIntentionReflectionScreen() {
             <Text style={styles.helperText}>
               Saving this will also add the action to your Tomorrow Queue as an Intention Action.
             </Text>
-
-            <TouchableOpacity style={styles.saveButton} onPress={saveReflection}>
-              <Text style={styles.saveButtonText}>Save Morning Reflection</Text>
-            </TouchableOpacity>
           </View>
+
+          <TouchableOpacity style={styles.saveButton} onPress={saveReflection}>
+            <Text style={styles.saveButtonText}>Save Reflection</Text>
+          </TouchableOpacity>
         </>
       )}
 
@@ -223,220 +235,263 @@ export default function MorningIntentionReflectionScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F7EBC8",
+    backgroundColor: "#0B1020",
   },
-  container: {
-    padding: 20,
-    paddingTop: 60,
-    paddingBottom: 40,
+  shell: {
+    width: "100%",
+    maxWidth: 520,
+    alignSelf: "center",
+    padding: 18,
+    paddingTop: 56,
+    paddingBottom: 36,
   },
   hero: {
-    backgroundColor: "#FDE68A",
-    borderColor: "#F59E0B",
+    backgroundColor: "#111827",
+    borderColor: "#FBBF24",
     borderWidth: 3,
-    borderRadius: 34,
-    padding: 22,
-    marginBottom: 18,
+    borderRadius: 24,
+    padding: 16,
+    marginBottom: 12,
   },
-  heroIcon: {
-    fontSize: 42,
-    marginBottom: 8,
+  heroKicker: {
+    fontFamily: pixelFont,
+    fontSize: 11,
+    letterSpacing: 1.5,
+    fontWeight: "900",
+    color: "#FDE68A",
+    marginBottom: 6,
+    textTransform: "uppercase",
   },
   title: {
-    fontSize: 34,
+    fontFamily: pixelFont,
+    fontSize: 28,
     fontWeight: "900",
-    color: "#FFFFFF",
-    marginBottom: 8,
+    color: "#F9FAFB",
+    marginBottom: 6,
+    lineHeight: 34,
   },
   subtitle: {
-    fontSize: 16,
-    lineHeight: 24,
-    color: "#FFFFFF",
-    fontWeight: "800",
+    fontFamily: pixelFont,
+    fontSize: 13,
+    lineHeight: 19,
+    color: "#E5E7EB",
+    fontWeight: "700",
   },
   emptyCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 18,
+    backgroundColor: "#111827",
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 12,
     borderWidth: 2,
-    borderColor: "#E5D39A",
+    borderColor: "#A78BFA",
   },
   emptyTitle: {
-    fontSize: 22,
+    fontFamily: pixelFont,
+    fontSize: 17,
     fontWeight: "900",
-    color: "#111827",
+    color: "#F9FAFB",
     marginBottom: 8,
+    letterSpacing: 0.8,
   },
   emptyText: {
-    fontSize: 16,
-    lineHeight: 24,
-    color: "#374151",
-    fontWeight: "600",
-    marginBottom: 16,
-  },
-  intentionCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 18,
-    borderWidth: 2,
-    borderColor: "#F59E0B",
-  },
-  cardLabel: {
-    fontSize: 14,
-    fontWeight: "900",
-    color: "#6B7280",
-    textTransform: "uppercase",
-    marginBottom: 8,
-  },
-  intentionText: {
-    fontSize: 22,
-    lineHeight: 30,
-    fontWeight: "900",
-    color: "#111827",
-    marginBottom: 10,
-  },
-  supportingText: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: "#374151",
+    fontFamily: pixelFont,
+    fontSize: 13,
+    lineHeight: 19,
+    color: "#CBD5E1",
     fontWeight: "700",
-    marginTop: 6,
+    marginBottom: 14,
   },
-  card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 18,
+  primaryButton: {
+    backgroundColor: "#312E81",
+    padding: 12,
+    borderRadius: 12,
+    alignItems: "center",
     borderWidth: 2,
-    borderColor: "#E5D39A",
+    borderColor: "#A78BFA",
   },
-  label: {
-    fontSize: 14,
+  primaryButtonText: {
+    color: "#F9FAFB",
+    fontSize: 13,
     fontWeight: "900",
-    color: "#374151",
-    marginBottom: 10,
-    marginTop: 12,
+    fontFamily: pixelFont,
     textTransform: "uppercase",
+    letterSpacing: 0.7,
   },
-  option: {
-    backgroundColor: "#F3F4F6",
-    borderRadius: 16,
+  signalCard: {
+    backgroundColor: "#1A1F38",
+    borderRadius: 18,
     padding: 14,
-    marginBottom: 10,
-    borderWidth: 2,
-    borderColor: "#E5E7EB",
-  },
-  selectedOption: {
-    backgroundColor: "#111827",
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 2,
+    marginBottom: 12,
+    borderWidth: 3,
     borderColor: "#FBBF24",
   },
-  optionText: {
-    fontSize: 15,
-    fontWeight: "800",
-    color: "#374151",
-  },
-  selectedOptionText: {
-    fontSize: 15,
+  sectionTitle: {
+    fontFamily: pixelFont,
+    fontSize: 13,
     fontWeight: "900",
-    color: "#FFFFFF",
+    color: "#FDE68A",
+    marginBottom: 8,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  intentionText: {
+    fontFamily: pixelFont,
+    fontSize: 18,
+    lineHeight: 25,
+    fontWeight: "900",
+    color: "#F9FAFB",
+    marginBottom: 8,
+  },
+  supportingText: {
+    fontFamily: pixelFont,
+    fontSize: 12,
+    lineHeight: 18,
+    color: "#CBD5E1",
+    fontWeight: "700",
+    marginTop: 4,
+  },
+  panel: {
+    backgroundColor: "#0F172A",
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: "#475569",
+  },
+  label: {
+    fontFamily: pixelFont,
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#E5E7EB",
+    marginBottom: 8,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    lineHeight: 16,
+  },
+  optionWrap: {
+    marginBottom: 8,
+  },
+  option: {
+    backgroundColor: "#111827",
+    borderRadius: 12,
+    padding: 11,
+    marginBottom: 8,
+    borderWidth: 2,
+    borderColor: "#334155",
+  },
+  optionSelected: {
+    backgroundColor: "#312E81",
+    borderRadius: 12,
+    padding: 11,
+    marginBottom: 8,
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+  },
+  optionText: {
+    fontFamily: pixelFont,
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#E5E7EB",
+  },
+  optionSelectedText: {
+    fontFamily: pixelFont,
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#F9FAFB",
   },
   textArea: {
-    backgroundColor: "#F3F4F6",
+    backgroundColor: "#111827",
     borderRadius: 16,
-    padding: 14,
-    minHeight: 100,
-    fontSize: 16,
-    color: "#111827",
+    padding: 12,
+    minHeight: 88,
+    fontSize: 15,
+    color: "#F9FAFB",
     marginBottom: 8,
     textAlignVertical: "top",
     borderWidth: 2,
-    borderColor: "#E5E7EB",
-  },
-  helperText: {
-    fontSize: 13,
-    lineHeight: 20,
-    color: "#6B7280",
-    fontWeight: "700",
-    marginTop: 4,
-    marginBottom: 14,
-  },
-  saveButton: {
-    backgroundColor: "#111827",
-    padding: 18,
-    borderRadius: 20,
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#FBBF24",
-    marginTop: 12,
-  },
-  saveButtonText: {
-    color: "#FFFFFF",
-    fontSize: 17,
-    fontWeight: "900",
-  },
-  primaryButton: {
-    backgroundColor: "#111827",
-    padding: 16,
-    borderRadius: 18,
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#FBBF24",
-  },
-  primaryButtonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "900",
-  },
-  backButton: {
-    backgroundColor: "#FFFFFF",
-    padding: 16,
-    borderRadius: 20,
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#D1D5DB",
-  },
-  backButtonText: {
-    color: "#111827",
-    fontSize: 16,
-    fontWeight: "900",
+    borderColor: "#A78BFA",
+    fontFamily: pixelFont,
   },
   suggestionBox: {
-  backgroundColor: "#EEF2FF",
-  borderRadius: 18,
-  padding: 16,
-  marginTop: 14,
-  borderWidth: 2,
-  borderColor: "#A78BFA",
+    backgroundColor: "#1E1B4B",
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 2,
+    borderColor: "#A78BFA",
   },
   suggestionLabel: {
-    fontSize: 13,
+    fontFamily: pixelFont,
+    fontSize: 11,
     fontWeight: "900",
-    color: "#6B7280",
+    color: "#C4B5FD",
     textTransform: "uppercase",
+    letterSpacing: 0.8,
     marginBottom: 6,
   },
   suggestionText: {
-    fontSize: 16,
-    lineHeight: 23,
-    color: "#111827",
+    fontFamily: pixelFont,
+    fontSize: 13,
+    lineHeight: 19,
+    color: "#F9FAFB",
     fontWeight: "800",
-    marginBottom: 12,
+    marginBottom: 10,
   },
   useSuggestionButton: {
-    backgroundColor: "#312E81",
-    padding: 12,
-    borderRadius: 14,
+    backgroundColor: "#FBBF24",
+    padding: 10,
+    borderRadius: 10,
     alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#111827",
   },
   useSuggestionButtonText: {
-    color: "#FFFFFF",
+    color: "#111827",
+    fontSize: 12,
+    fontWeight: "900",
+    fontFamily: pixelFont,
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
+  },
+  helperText: {
+    fontFamily: pixelFont,
+    fontSize: 11,
+    lineHeight: 16,
+    color: "#94A3B8",
+    fontWeight: "700",
+    marginTop: 2,
+  },
+  saveButton: {
+    backgroundColor: "#FBBF24",
+    padding: 14,
+    borderRadius: 14,
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#111827",
+    marginBottom: 12,
+  },
+  saveButtonText: {
+    color: "#111827",
     fontSize: 14,
     fontWeight: "900",
+    fontFamily: pixelFont,
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
+  },
+  backButton: {
+    backgroundColor: "#111827",
+    padding: 13,
+    borderRadius: 14,
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#FBBF24",
+  },
+  backButtonText: {
+    color: "#F9FAFB",
+    fontSize: 13,
+    fontWeight: "900",
+    fontFamily: pixelFont,
+    textTransform: "uppercase",
+    letterSpacing: 0.7,
   },
 });
