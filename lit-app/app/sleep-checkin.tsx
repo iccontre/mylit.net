@@ -1,44 +1,71 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useState } from "react";
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { useMemo, useState } from "react";
 
 type CheckIn = {
   id: string;
   hours: string;
   mood: string;
   stress: string;
+  sleepQuality: string;
   energy: number;
   mode: "Recovery" | "Progress";
+  wakeTime?: string;
+  caffeineAmount?: string;
+  lastCaffeineTime?: string;
+  lastMealTime?: string;
+  mealHeaviness?: string;
+  windDownGoal?: string;
   createdAt: string;
 };
 
 const CHECKIN_KEY = "lit_latest_checkin";
 const CHECKIN_HISTORY_KEY = "lit_checkin_history";
 
-function calculateEnergy(hours: number, mood: number, stress: number) {
-  let score = 50;
+const pixelFont = Platform.select({
+  ios: "Menlo",
+  android: "monospace",
+  web: "monospace",
+  default: "monospace",
+});
 
-  if (hours >= 8) score += 25;
-  else if (hours >= 7) score += 15;
-  else if (hours >= 6) score += 5;
-  else score -= 15;
+function clamp(value: number, min = 0, max = 100) {
+  return Math.max(min, Math.min(max, value));
+}
 
-  score += (mood - 5) * 4;
-  score -= stress * 3;
+function getHoursScore(hours: number) {
+  if (hours >= 8) return 95;
+  if (hours >= 7) return 85;
+  if (hours >= 6) return 70;
+  if (hours >= 5) return 55;
+  return 35;
+}
 
-  return Math.max(0, Math.min(100, Math.round(score)));
+function calculateEnergy(hours: number, mood: number, stress: number, sleepQuality: number) {
+  const hoursScore = getHoursScore(hours);
+  const moodScore = clamp(mood * 10);
+  const stressScore = clamp((10 - stress) * 10);
+  const sleepQualityScore = clamp(sleepQuality * 10);
+
+  const raw =
+    hoursScore * 0.35 +
+    sleepQualityScore * 0.3 +
+    moodScore * 0.2 +
+    stressScore * 0.15;
+
+  return clamp(Math.round(raw));
 }
 
 function getMode(score: number): "Recovery" | "Progress" {
   return score >= 60 ? "Progress" : "Recovery";
 }
 
-function getFlameLabel(score: number) {
-  if (score >= 75) return "Bright Flame";
-  if (score >= 45) return "Steady Flame";
-  return "Low Flame";
+function getFlameLabel(mode: "Recovery" | "Progress" | "Neutral") {
+  if (mode === "Neutral") return "No reading yet";
+  if (mode === "Recovery") return "Steady Flame";
+  return "Active Flame";
 }
 
 export default function SleepCheckInScreen() {
@@ -47,33 +74,62 @@ export default function SleepCheckInScreen() {
   const [hours, setHours] = useState("");
   const [mood, setMood] = useState("");
   const [stress, setStress] = useState("");
+  const [sleepQuality, setSleepQuality] = useState("");
 
-  const hasAllInputs = hours.trim() !== "" && mood.trim() !== "" && stress.trim() !== "";
+  const [wakeTime, setWakeTime] = useState("");
+  const [caffeineAmount, setCaffeineAmount] = useState("");
+  const [lastCaffeineTime, setLastCaffeineTime] = useState("");
+  const [lastMealTime, setLastMealTime] = useState("");
+  const [mealHeaviness, setMealHeaviness] = useState("");
+  const [windDownGoal, setWindDownGoal] = useState("");
 
-  const energy = hasAllInputs ? calculateEnergy(Number(hours), Number(mood), Number(stress)) : 0;
+  const parsed = useMemo(
+    () => ({
+      h: Number(hours),
+      m: Number(mood),
+      s: Number(stress),
+      q: Number(sleepQuality),
+    }),
+    [hours, mood, stress, sleepQuality]
+  );
 
-  const mode = hasAllInputs ? getMode(energy) : "Recovery";
+  const hasRequired =
+    hours.trim() !== "" &&
+    mood.trim() !== "" &&
+    stress.trim() !== "" &&
+    sleepQuality.trim() !== "" &&
+    !Number.isNaN(parsed.h) &&
+    !Number.isNaN(parsed.m) &&
+    !Number.isNaN(parsed.s) &&
+    !Number.isNaN(parsed.q);
+
+  const energy = hasRequired ? calculateEnergy(parsed.h, parsed.m, parsed.s, parsed.q) : 0;
+  const mode = hasRequired ? getMode(energy) : "Recovery";
   const isRecovery = mode === "Recovery";
-  const flameLabel = hasAllInputs ? getFlameLabel(energy) : "Not calculated yet";
 
   async function successHaptic() {
     try {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch {
-      // Haptics may not run in every web preview.
-    }
+    } catch {}
   }
 
   async function saveCheckIn() {
-    if (!hasAllInputs) return;
+    if (!hasRequired) return;
 
     const checkIn: CheckIn = {
       id: String(Date.now()),
-      hours,
-      mood,
-      stress,
+      hours: hours.trim(),
+      mood: mood.trim(),
+      stress: stress.trim(),
+      sleepQuality: sleepQuality.trim(),
       energy,
       mode,
+      wakeTime: wakeTime.trim(),
+      caffeineAmount: caffeineAmount.trim(),
+      lastCaffeineTime: lastCaffeineTime.trim(),
+      lastMealTime: lastMealTime.trim(),
+      mealHeaviness: mealHeaviness.trim(),
+      windDownGoal: windDownGoal.trim(),
       createdAt: new Date().toISOString(),
     };
 
@@ -83,411 +139,360 @@ export default function SleepCheckInScreen() {
     const history: CheckIn[] = savedHistory ? JSON.parse(savedHistory) : [];
 
     const nextHistory = [checkIn, ...history];
-
     await AsyncStorage.setItem(CHECKIN_HISTORY_KEY, JSON.stringify(nextHistory));
 
     await successHaptic();
 
     router.push({
       pathname: "/",
-      params: {
-        energy: String(energy),
-        mode,
-      },
+      params: { energy: String(energy), mode },
     });
   }
 
   return (
-    <ScrollView
-      style={isRecovery ? styles.recoveryScreen : styles.progressScreen}
-      contentContainerStyle={styles.container}
-    >
-      <View style={isRecovery ? styles.recoveryHero : styles.progressHero}>
-        <View style={styles.heroTopRow}>
-          <View>
-            <Text style={styles.modeIcon}>{isRecovery ? "🌙" : "☀️"}</Text>
-            <Text style={styles.heroTitle}>Morning Check-In</Text>
-            <Text style={styles.heroSubtitle}>
-              {!hasAllInputs
-                ? "Begin with an honest snapshot."
-                : isRecovery
-                ? "Protect your flame."
-                : "Spend your flame wisely."}
-            </Text>
-          </View>
-
-          <View style={isRecovery ? styles.recoveryLunaOrb : styles.progressLunaOrb}>
-            <Text style={styles.lunaFace}>{isRecovery ? "😴" : "🙂"}</Text>
-          </View>
+    <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
+      <View style={styles.shell}>
+        <View style={[styles.hero, isRecovery ? styles.heroRecovery : styles.heroProgress]}>
+          <Text style={styles.heroLabel}>MORNING SCAN</Text>
+          <Text style={styles.title}>MORNING CHECK-IN</Text>
+          <Text style={styles.subtitle}>
+            {hasRequired
+              ? isRecovery
+                ? "Recovery day. Keep it steady."
+                : "Progress day. Move with intention."
+              : "Enter sleep, mood, stress, and quality."}
+          </Text>
         </View>
 
-        <Text style={styles.heroBody}>
-          {!hasAllInputs
-            ? "This is your morning ritual. Enter sleep, mood, and stress when you are ready."
-            : isRecovery
-            ? "Today leans Recovery. Gentle effort counts."
-            : "Today leans Progress. Use your energy with intention."}
-        </Text>
-      </View>
-
-      <View style={styles.lunaCard}>
-        <Text style={styles.lunaName}>🌙 Luna</Text>
-        <Text style={styles.lunaText}>
-          This check-in is not a test. It helps lit decide whether today should be Recovery or
-          Progress, so your plan fits your real energy.
-        </Text>
-      </View>
-
-      <View style={styles.inputCard}>
-        <Text style={styles.cardLabel}>Morning Inputs</Text>
-
-        <Text style={styles.label}>Hours slept</Text>
-        <TextInput
-          style={styles.input}
-          keyboardType="numeric"
-          placeholder=""
-          placeholderTextColor="#9CA3AF"
-          value={hours}
-          onChangeText={setHours}
-        />
-
-        <Text style={styles.helperText}>
-          Be honest. Even low sleep helps Luna build a better plan.
-        </Text>
-
-        <Text style={styles.label}>Mood today, 1-10</Text>
-        <TextInput
-          style={styles.input}
-          keyboardType="numeric"
-          placeholder=""
-          placeholderTextColor="#9CA3AF"
-          value={mood}
-          onChangeText={setMood}
-        />
-
-        <Text style={styles.label}>Stress level, 1-10</Text>
-        <TextInput
-          style={styles.input}
-          keyboardType="numeric"
-          placeholder=""
-          placeholderTextColor="#9CA3AF"
-          value={stress}
-          onChangeText={setStress}
-        />
-      </View>
-
-      <View style={isRecovery ? styles.recoveryResultCard : styles.progressResultCard}>
-        <View>
-          <Text style={styles.resultLabel}>Energy Yield</Text>
-          <Text style={styles.energy}>{hasAllInputs ? `🔥 ${energy}/100` : "🔥 —/100"}</Text>
-          <Text style={styles.flameLabel}>{flameLabel}</Text>
+        <View style={styles.lunaCard}>
+          <Text style={styles.lunaTitle}>Luna</Text>
+          <Text style={styles.lunaText}>
+            Check your signal honestly. This helps shape a fair plan for today.
+          </Text>
         </View>
 
-        <View style={styles.modeBadge}>
-          <Text style={styles.modeBadgeText}>{mode}</Text>
+        <View style={styles.card}>
+          <Text style={styles.label}>Hours slept</Text>
+          <TextInput
+            style={styles.input}
+            keyboardType="numeric"
+            placeholder="Example: 7.5"
+            placeholderTextColor="#94A3B8"
+            value={hours}
+            onChangeText={setHours}
+          />
+
+          <Text style={styles.label}>Mood today, 1–10</Text>
+          <TextInput
+            style={styles.input}
+            keyboardType="numeric"
+            placeholder="Example: 6"
+            placeholderTextColor="#94A3B8"
+            value={mood}
+            onChangeText={setMood}
+          />
+
+          <Text style={styles.label}>Stress level, 1–10</Text>
+          <TextInput
+            style={styles.input}
+            keyboardType="numeric"
+            placeholder="Example: 4"
+            placeholderTextColor="#94A3B8"
+            value={stress}
+            onChangeText={setStress}
+          />
+
+          <Text style={styles.label}>Sleep Quality, 1–10</Text>
+          <Text style={styles.helper}>
+            Rate how restored your sleep felt, even if the number of hours looked okay.
+          </Text>
+          <TextInput
+            style={styles.input}
+            keyboardType="numeric"
+            placeholder="Example: 7"
+            placeholderTextColor="#94A3B8"
+            value={sleepQuality}
+            onChangeText={setSleepQuality}
+          />
         </View>
+
+        <View style={styles.card}>
+          <Text style={styles.cardHead}>Optional sleep details</Text>
+
+          <Text style={styles.label}>Wake time</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Example: 7:30 AM"
+            placeholderTextColor="#94A3B8"
+            value={wakeTime}
+            onChangeText={setWakeTime}
+          />
+
+          <Text style={styles.label}>Caffeine amount</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Example: 1 coffee"
+            placeholderTextColor="#94A3B8"
+            value={caffeineAmount}
+            onChangeText={setCaffeineAmount}
+          />
+
+          <Text style={styles.label}>Last caffeine time</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Example: 2:00 PM"
+            placeholderTextColor="#94A3B8"
+            value={lastCaffeineTime}
+            onChangeText={setLastCaffeineTime}
+          />
+
+          <Text style={styles.label}>Last meal time</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Example: 8:30 PM"
+            placeholderTextColor="#94A3B8"
+            value={lastMealTime}
+            onChangeText={setLastMealTime}
+          />
+
+          <Text style={styles.label}>Meal heaviness</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Example: light / medium / heavy"
+            placeholderTextColor="#94A3B8"
+            value={mealHeaviness}
+            onChangeText={setMealHeaviness}
+          />
+
+          <Text style={styles.label}>Wind-down goal</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Example: no phone after 11"
+            placeholderTextColor="#94A3B8"
+            value={windDownGoal}
+            onChangeText={setWindDownGoal}
+          />
+        </View>
+
+        <View style={[styles.energyCard, isRecovery ? styles.energyRecovery : styles.energyProgress]}>
+          <Text style={styles.energyTitle}>ENERGY RESERVE</Text>
+          <Text style={styles.energyScore}>{hasRequired ? `${energy}/100` : "—/100"}</Text>
+          <Text style={styles.energyMode}>{hasRequired ? mode : "CHECK-IN NEEDED"}</Text>
+          <Text style={styles.energyFlame}>{getFlameLabel(hasRequired ? mode : "Neutral")}</Text>
+          <Text style={styles.energySummary}>
+            Sleep: {hours || "—"}h • Quality: {sleepQuality || "—"}/10 • Mood: {mood || "—"}/10 • Stress: {stress || "—"}/10
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          style={[styles.saveButton, !hasRequired && styles.disabledButton]}
+          onPress={saveCheckIn}
+        >
+          <Text style={styles.saveButtonText}>
+            {hasRequired ? "Save Check-In" : "Enter Required Values"}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.backButton} onPress={() => router.push("/sleep")}>
+          <Text style={styles.backButtonText}>Back to Sleep</Text>
+        </TouchableOpacity>
       </View>
-
-      <View style={isRecovery ? styles.recoveryMeaningCard : styles.progressMeaningCard}>
-        <Text style={styles.meaningTitle}>
-          {isRecovery ? "What Recovery means" : "What Progress means"}
-        </Text>
-        <Text style={styles.meaningText}>
-          {!hasAllInputs
-            ? "Recovery and Progress are not grades. They help you choose a fair plan for today."
-            : isRecovery
-            ? "Recovery means protecting energy, lowering pressure, and still taking one honest step."
-            : "Progress means your energy is available for focused action and meaningful momentum."}
-        </Text>
-      </View>
-
-      <TouchableOpacity
-        style={
-          !hasAllInputs
-            ? styles.disabledButton
-            : isRecovery
-            ? styles.recoveryButton
-            : styles.progressButton
-        }
-        onPress={saveCheckIn}
-      >
-        <Text style={styles.buttonText}>
-          {hasAllInputs ? "Save Check-In" : "Enter Check-In Values"}
-        </Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={styles.backButton} onPress={() => router.push("/")}>
-        <Text style={styles.backButtonText}>Back to Today</Text>
-      </TouchableOpacity>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  progressScreen: {
-    flex: 1,
-    backgroundColor: "#F7EBC8",
-  },
-  recoveryScreen: {
-    flex: 1,
-    backgroundColor: "#0F172A",
-  },
-  container: {
-    padding: 20,
-    paddingTop: 60,
-    paddingBottom: 40,
-  },
-  progressHero: {
-    backgroundColor: "#FDE68A",
-    borderColor: "#F59E0B",
-    borderWidth: 3,
-    borderRadius: 30,
-    padding: 22,
-    marginBottom: 16,
-  },
-  recoveryHero: {
-    backgroundColor: "#1E1B4B",
-    borderColor: "#8B5CF6",
-    borderWidth: 3,
-    borderRadius: 30,
-    padding: 22,
-    marginBottom: 16,
-  },
-  heroTopRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  modeIcon: {
-    fontSize: 40,
+  screen: { flex: 1, backgroundColor: "#0B1220" },
+  container: { paddingTop: 30, paddingBottom: 40 },
+  shell: {
+    width: "100%",
+    maxWidth: 520,
+    alignSelf: "center",
+    paddingHorizontal: 18,
   },
 
-  heroTitle: {
-    fontSize: 30,
-    fontWeight: "900",
-    color: "#FFFFFF",
-  },
-  heroSubtitle: {
-    fontSize: 15,
-    color: "#F9FAFB",
-    fontWeight: "800",
-    marginTop: 4,
-  },
-  heroBody: {
-    fontSize: 15,
-    lineHeight: 24,
-    color: "#FFFFFF",
-    fontWeight: "700",
-  },
-  progressLunaOrb: {
-    height: 82,
-    width: 82,
-    borderRadius: 41,
-    alignItems: "center",
-    justifyContent: "center",
+  hero: {
     borderWidth: 3,
-    backgroundColor: "#FEF3C7",
+    borderRadius: 22,
+    padding: 16,
+    marginBottom: 12,
+  },
+  heroProgress: {
+    backgroundColor: "#2A1F0F",
     borderColor: "#FBBF24",
   },
-  recoveryLunaOrb: {
-    height: 82,
-    width: 82,
-    borderRadius: 41,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 3,
-    backgroundColor: "#312E81",
-    borderColor: "#C4B5FD",
-  },
-  lunaFace: {
-    fontSize: 40,
-  },
-  lunaCard: {
-    backgroundColor: "#FFFBEB",
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 16,
-    borderWidth: 2,
-    borderColor: "#E5D39A",
-  },
-  lunaName: {
-    fontSize: 22,
-    fontWeight: "900",
-    color: "#111827",
-    marginBottom: 8,
-  },
-  lunaText: {
-    fontSize: 16,
-    lineHeight: 24,
-    color: "#374151",
-    fontWeight: "600",
-  },
-  inputCard: {
-    backgroundColor: "#FFFFFF",
-    shadowOpacity: 0,
-    borderRadius: 24,
-    padding: 20,
-    borderWidth: 2,
-    borderColor: "#E5D39A",
-    marginBottom: 16,
-  },
-  cardLabel: {
-    fontSize: 14,
-    color: "#6B7280",
-    marginBottom: 8,
-    textTransform: "uppercase",
-    fontWeight: "900",
-  },
-  label: {
-    fontSize: 15,
-    fontWeight: "900",
-    color: "#374151",
-    marginBottom: 8,
-    marginTop: 12,
-    textTransform: "uppercase",
-  },
-  input: {
-    backgroundColor: "#F9FAFB",
-    borderRadius: 16,
-    padding: 14,
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#111827",
-    borderWidth: 2,
-    borderColor: "#E5E7EB",
-  },
-  helperText: {
-    fontSize: 13,
-    lineHeight: 20,
-    color: "#6B7280",
-    marginTop: 8,
-    fontWeight: "700",
-  },
-  progressResultCard: {
-    backgroundColor: "#1F2937",
-    borderColor: "#FBBF24",
-    borderWidth: 3,
-    borderRadius: 28,
-    padding: 22,
-    marginBottom: 16,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  recoveryResultCard: {
+  heroRecovery: {
     backgroundColor: "#1E1B4B",
     borderColor: "#A78BFA",
-    borderWidth: 3,
-    borderRadius: 28,
-    padding: 22,
-    marginBottom: 16,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
   },
-  resultLabel: {
-    color: "#D1D5DB",
+  heroLabel: {
+    color: "#CBD5E1",
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 1,
+    fontFamily: pixelFont,
+    marginBottom: 6,
+  },
+  title: {
+    color: "#F9FAFB",
+    fontSize: 28,
+    fontWeight: "900",
+    fontFamily: pixelFont,
+    marginBottom: 6,
+  },
+  subtitle: {
+    color: "#E2E8F0",
+    fontSize: 13,
+    lineHeight: 19,
+    fontFamily: pixelFont,
+  },
+
+  lunaCard: {
+    backgroundColor: "#111827",
+    borderColor: "#334155",
+    borderWidth: 2,
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 12,
+  },
+  lunaTitle: {
+    color: "#F9FAFB",
     fontSize: 14,
     fontWeight: "900",
+    fontFamily: pixelFont,
+    marginBottom: 6,
+  },
+  lunaText: {
+    color: "#CBD5E1",
+    fontSize: 13,
+    lineHeight: 19,
+  },
+
+  card: {
+    backgroundColor: "#111827",
+    borderColor: "#334155",
+    borderWidth: 2,
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 12,
+  },
+  cardHead: {
+    color: "#FDE68A",
+    fontSize: 12,
+    fontWeight: "900",
+    fontFamily: pixelFont,
+    marginBottom: 6,
     textTransform: "uppercase",
-    marginBottom: 8,
   },
-  energy: {
-    fontSize: 40,
-    fontWeight: "900",
-    color: "#FBBF24",
-  },
-  flameLabel: {
+  label: {
     color: "#F9FAFB",
-    fontSize: 15,
+    fontSize: 12,
     fontWeight: "900",
-    marginTop: 4,
+    fontFamily: pixelFont,
+    marginBottom: 6,
+    marginTop: 8,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
   },
-  modeBadge: {
-    backgroundColor: "#0F172A",
-    borderRadius: 999,
+  helper: {
+    color: "#CBD5E1",
+    fontSize: 12,
+    lineHeight: 17,
+    marginBottom: 6,
+  },
+  input: {
+    backgroundColor: "#020617",
+    color: "#F9FAFB",
+    borderColor: "#475569",
+    borderWidth: 2,
+    borderRadius: 14,
     paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderWidth: 1,
-    borderColor: "#FFFFFF",
+    paddingHorizontal: 12,
+    fontSize: 14,
+    fontFamily: pixelFont,
   },
-  modeBadgeText: {
-    color: "#FFFFFF",
+
+  energyCard: {
+    borderWidth: 3,
+    borderRadius: 20,
+    padding: 14,
+    marginBottom: 12,
+  },
+  energyProgress: {
+    backgroundColor: "#111827",
+    borderColor: "#FBBF24",
+  },
+  energyRecovery: {
+    backgroundColor: "#1E1B4B",
+    borderColor: "#A78BFA",
+  },
+  energyTitle: {
+    color: "#F9FAFB",
     fontSize: 13,
     fontWeight: "900",
+    fontFamily: pixelFont,
+    marginBottom: 6,
   },
-  progressMeaningCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 16,
-    borderWidth: 2,
-    borderColor: "#F59E0B",
-  },
-  recoveryMeaningCard: {
-    backgroundColor: "#EEF2FF",
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 16,
-    borderWidth: 2,
-    borderColor: "#A78BFA",
-  },
-  meaningTitle: {
-    fontSize: 20,
+  energyScore: {
+    color: "#F9FAFB",
+    fontSize: 34,
     fontWeight: "900",
-    color: "#111827",
+    fontFamily: pixelFont,
+  },
+  energyMode: {
+    color: "#FDE68A",
+    fontSize: 12,
+    fontWeight: "900",
+    fontFamily: pixelFont,
+    marginTop: 4,
+  },
+  energyFlame: {
+    color: "#CBD5E1",
+    fontSize: 12,
+    fontFamily: pixelFont,
+    marginTop: 2,
     marginBottom: 8,
   },
-  meaningText: {
-    fontSize: 16,
-    lineHeight: 24,
-    color: "#374151",
-    fontWeight: "600",
+  energySummary: {
+    color: "#E2E8F0",
+    fontSize: 12,
+    lineHeight: 18,
+    fontFamily: pixelFont,
   },
-  progressButton: {
-    backgroundColor: "#111827",
-    padding: 18,
-    borderRadius: 20,
-    alignItems: "center",
-    borderWidth: 2,
+
+  saveButton: {
+    backgroundColor: "#166534",
     borderColor: "#FBBF24",
-    marginBottom: 12,
-  },
-  recoveryButton: {
-    backgroundColor: "#312E81",
-    padding: 18,
-    borderRadius: 20,
-    alignItems: "center",
     borderWidth: 2,
-    borderColor: "#A78BFA",
-    marginBottom: 12,
-  },
-  buttonText: {
-    color: "#FFFFFF",
-    fontSize: 17,
-    fontWeight: "900",
-  },
-  backButton: {
-    backgroundColor: "#FFFFFF",
-    padding: 16,
-    borderRadius: 20,
+    borderRadius: 14,
+    paddingVertical: 12,
     alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#D1D5DB",
-  },
-  backButtonText: {
-    color: "#111827",
-    fontSize: 16,
-    fontWeight: "900",
+    marginBottom: 10,
   },
   disabledButton: {
-    backgroundColor: "#6B7280",
-    padding: 18,
-    borderRadius: 20,
-    alignItems: "center",
+    backgroundColor: "#334155",
+    borderColor: "#64748B",
+  },
+  saveButtonText: {
+    color: "#F9FAFB",
+    fontSize: 13,
+    fontWeight: "900",
+    fontFamily: pixelFont,
+    letterSpacing: 0.5,
+  },
+
+  backButton: {
+    backgroundColor: "#111827",
+    borderColor: "#64748B",
     borderWidth: 2,
-    borderColor: "#D1D5DB",
-    marginBottom: 12,
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  backButtonText: {
+    color: "#CBD5E1",
+    fontSize: 13,
+    fontWeight: "900",
+    fontFamily: pixelFont,
   },
 });

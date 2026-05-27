@@ -720,35 +720,27 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.bottomNav}>
-          <TouchableOpacity style={[styles.bottomNavButton, styles.bottomNavButtonActive]} onPress={lightHaptic}>
-            <Text style={styles.bottomNavIcon}>🏠</Text>
-            <Text style={[styles.bottomNavText, styles.bottomNavTextActive]}>Home</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.bottomNavButton} onPress={() => navigateWithHaptic("/sleep")}>
-            <Text style={styles.bottomNavIcon}>🌙</Text>
-            <Text style={styles.bottomNavText}>Sleep</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.bottomNavButton} onPress={() => navigateWithHaptic("/calendar")}>
-            <Text style={styles.bottomNavIcon}>📅</Text>
-            <Text style={styles.bottomNavText}>Calendar</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.bottomNavButton} onPress={() => navigateWithHaptic("/mind")}>
-            <Text style={styles.bottomNavIcon}>🧠</Text>
-            <Text style={styles.bottomNavText}>Mind</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.bottomNavButton} onPress={() => navigateWithHaptic("/path")}>
-            <Text style={styles.bottomNavIcon}>🧭</Text>
-            <Text style={styles.bottomNavText}>Path</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.bottomNavButton} onPress={() => navigateWithHaptic("/stats")}>
-            <Text style={styles.bottomNavIcon}>🎒</Text>
-            <Text style={styles.bottomNavText}>Inventory</Text>
-          </TouchableOpacity>
+          <Text style={styles.bottomTitle}>NAVIGATION</Text>
+          <View style={styles.navGrid}>
+            <TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={lightHaptic}>
+              <Text style={styles.navTextActive}>🏠 Home</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => navigateWithHaptic("/sleep")}>
+              <Text style={styles.navText}>🌙 Sleep</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => navigateWithHaptic("/calendar")}>
+              <Text style={styles.navText}>📅 Calendar</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => navigateWithHaptic("/mind")}>
+              <Text style={styles.navText}>🧠 Mind</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => navigateWithHaptic("/path")}>
+              <Text style={styles.navText}>🧭 Path</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => navigateWithHaptic("/stats")}>
+              <Text style={styles.navText}>🎒 Inventory</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </ScrollView>
@@ -1286,36 +1278,46 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: "#334155",
     borderRadius: 18,
-    padding: 10,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    flexWrap: "wrap",
+    padding: 12,
+    marginTop: 6,
   },
-  bottomNavButton: {
-    width: "32%",
-    borderWidth: 2,
-    borderColor: "#334155",
-    borderRadius: 10,
-    backgroundColor: "#111827",
-    alignItems: "center",
-    paddingVertical: 8,
-    marginBottom: 8,
-  },
-  bottomNavButtonActive: {
-    borderColor: "#FBBF24",
-    backgroundColor: "#1F3D2A",
-  },
-  bottomNavIcon: {
-    fontSize: 14,
-    marginBottom: 2,
-  },
-  bottomNavText: {
-    color: "#CBD5E1",
+  bottomTitle: {
+    color: "#E2E8F0",
     fontSize: 11,
     fontWeight: "800",
+    letterSpacing: 1.1,
+    marginBottom: 8,
+  },
+  navGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
+  navButton: {
+    width: "48.5%",
+    backgroundColor: "#111827",
+    borderWidth: 2,
+    borderColor: "#334155",
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    marginBottom: 8,
+    alignItems: "center",
+  },
+  navButtonActive: {
+    backgroundColor: "#184B31",
+    borderColor: "#FBBF24",
+  },
+  navText: {
+    color: "#E2E8F0",
+    fontSize: 12,
+    fontWeight: "900",
     textAlign: "center",
   },
-  bottomNavTextActive: {
+  navTextActive: {
     color: "#FDE68A",
+    fontSize: 12,
+    fontWeight: "900",
+    textAlign: "center",
   },
 });
