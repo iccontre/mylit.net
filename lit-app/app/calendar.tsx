@@ -141,7 +141,7 @@ export default function CalendarScreen() {
               <Text style={styles.navText}>🧭 Path</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.navButton} onPress={() => router.push("/stats")}>
-              <Text style={styles.navText}>📊 Stats</Text>
+              <Text style={styles.navText}>🎒 Inventory</Text>
             </TouchableOpacity>
           </View>
         </View>

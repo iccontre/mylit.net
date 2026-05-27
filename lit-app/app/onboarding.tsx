@@ -1,32 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import {
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View,
-} from "react-native";
-
-type DreamCategory =
-  | "Health"
-  | "Money"
-  | "Mind"
-  | "Friends / Connection"
-  | "School / Work"
-  | "Confidence"
-  | "Creativity"
-  | "Sleep"
-  | "Phone Use"
-  | "Purpose";
+import { Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 type UserProfile = {
   name: string;
   longTermDream: string;
-  dreamCategory: DreamCategory | "";
+  dreamCategory: string;
   progressMeaning: string;
   goalOne: string;
   goalTwo: string;
@@ -48,112 +28,93 @@ const pixelFont = Platform.select({
   default: "monospace",
 });
 
-const CATEGORY_GOALS: Record<DreamCategory, { goalOne: string; goalTwo: string; goalThree: string }> = {
-  Health: {
-    goalOne: "build a consistent movement routine",
-    goalTwo: "improve daily nutrition",
-    goalThree: "protect sleep and recovery",
-  },
-  Money: {
-    goalOne: "build a useful money skill",
-    goalTwo: "find an income opportunity",
-    goalThree: "track spending and saving",
-  },
-  Mind: {
-    goalOne: "journal consistently",
-    goalTwo: "notice thought patterns",
-    goalThree: "practice awareness before reacting",
-  },
-  "Friends / Connection": {
-    goalOne: "reach out to one person",
-    goalTwo: "build social confidence",
-    goalThree: "create meaningful connections",
-  },
-  "School / Work": {
-    goalOne: "complete one focus block",
-    goalTwo: "plan assignments earlier",
-    goalThree: "build weekly consistency",
-  },
-  Confidence: {
-    goalOne: "keep one promise to myself",
-    goalTwo: "practice one uncomfortable but safe action",
-    goalThree: "reflect on small wins",
-  },
-  Creativity: {
-    goalOne: "work on one creative project",
-    goalTwo: "share or save one idea",
-    goalThree: "make time for practice",
-  },
-  Sleep: {
-    goalOne: "improve sleep consistency",
-    goalTwo: "reduce phone use before bed",
-    goalThree: "use recovery when needed",
-  },
-  "Phone Use": {
-    goalOne: "notice screen-time triggers",
-    goalTwo: "replace scrolling with one small action",
-    goalThree: "create phone-free focus time",
-  },
-  Purpose: {
-    goalOne: "define what progress means to me",
-    goalTwo: "take one honest step daily",
-    goalThree: "reflect on what feels meaningful",
-  },
-};
+const DREAM_CATEGORIES = [
+  "Health",
+  "Money",
+  "Mind",
+  "Friends / Connection",
+  "School / Work",
+  "Confidence",
+  "Creativity",
+  "Sleep",
+  "Phone Use",
+  "Purpose",
+] as const;
 
-const DREAM_CATEGORIES = Object.keys(CATEGORY_GOALS) as DreamCategory[];
+const CATEGORY_GOALS: Record<string, [string, string, string]> = {
+  Health: ["move your body consistently", "eat with intention", "protect your sleep"],
+  Money: ["track spending honestly", "build one income step", "save a small amount weekly"],
+  Mind: ["journal daily", "practice meditation", "notice thought patterns"],
+  "Friends / Connection": ["message one person weekly", "practice direct communication", "show up socially with honesty"],
+  "School / Work": ["complete one focus block", "plan assignments earlier", "build weekly consistency"],
+  Confidence: ["keep one promise daily", "speak up once more", "collect proof of progress"],
+  Creativity: ["create daily for 20 minutes", "finish small drafts", "share one piece each week"],
+  Sleep: ["set a realistic bedtime", "start wind-down earlier", "track rest patterns"],
+  "Phone Use": ["reduce automatic scrolling", "create phone-free blocks", "protect mornings from noise"],
+  Purpose: ["define what matters now", "act on one meaningful step", "review your path weekly"],
+};
 
 export default function OnboardingScreen() {
   const router = useRouter();
 
   const [name, setName] = useState("");
   const [longTermDream, setLongTermDream] = useState("");
-  const [dreamCategory, setDreamCategory] = useState<DreamCategory | "">("");
+  const [dreamCategory, setDreamCategory] = useState("");
   const [progressMeaning, setProgressMeaning] = useState("");
   const [goalOne, setGoalOne] = useState("");
   const [goalTwo, setGoalTwo] = useState("");
   const [goalThree, setGoalThree] = useState("");
   const [biggestObstacle, setBiggestObstacle] = useState("");
-  const [validationMessage, setValidationMessage] = useState("");
-  const [hasExistingProfile, setHasExistingProfile] = useState(false);
-
   const [hasWorkOrSchool, setHasWorkOrSchool] = useState(true);
   const [hasTransportation, setHasTransportation] = useState(false);
   const [hasGymAccess, setHasGymAccess] = useState(false);
   const [hasQuietSpace, setHasQuietSpace] = useState(false);
   const [hasFoodControl, setHasFoodControl] = useState(false);
+  const [validationMessage, setValidationMessage] = useState("");
+  const [hasExistingProfile, setHasExistingProfile] = useState(false);
 
   useEffect(() => {
-    loadProfile();
+    loadExistingProfile();
   }, []);
 
   const pathPreview = useMemo(() => {
-    if (dreamCategory) return CATEGORY_GOALS[dreamCategory];
-    return { goalOne, goalTwo, goalThree };
+    if (goalOne || goalTwo || goalThree) {
+      return { goalOne, goalTwo, goalThree };
+    }
+
+    if (dreamCategory && CATEGORY_GOALS[dreamCategory]) {
+      const [a, b, c] = CATEGORY_GOALS[dreamCategory];
+      return { goalOne: a, goalTwo: b, goalThree: c };
+    }
+
+    return { goalOne: "", goalTwo: "", goalThree: "" };
   }, [dreamCategory, goalOne, goalTwo, goalThree]);
 
-  function applyCategory(category: DreamCategory) {
+  function applyCategory(category: string) {
     setDreamCategory(category);
-    const mappedGoals = CATEGORY_GOALS[category];
-    setGoalOne(mappedGoals.goalOne);
-    setGoalTwo(mappedGoals.goalTwo);
-    setGoalThree(mappedGoals.goalThree);
+
+    const presets = CATEGORY_GOALS[category];
+
+    if (!presets) return;
+
+    const [g1, g2, g3] = presets;
+
+    setGoalOne((prev) => (prev.trim() ? prev : g1));
+    setGoalTwo((prev) => (prev.trim() ? prev : g2));
+    setGoalThree((prev) => (prev.trim() ? prev : g3));
   }
 
-  async function loadProfile() {
+  async function loadExistingProfile() {
     const saved = await AsyncStorage.getItem(PROFILE_KEY);
 
-    if (saved) {
-      setHasExistingProfile(true);
-      const profile = JSON.parse(saved) as Partial<UserProfile>;
-      const savedCategory =
-        profile.dreamCategory && profile.dreamCategory in CATEGORY_GOALS
-          ? (profile.dreamCategory as DreamCategory)
-          : "";
+    if (!saved) return;
 
+    try {
+      const profile = JSON.parse(saved);
+      setHasExistingProfile(true);
       setName(profile.name || "");
       setLongTermDream(profile.longTermDream || "");
-      setDreamCategory(savedCategory);
+      setDreamCategory(profile.dreamCategory || "");
       setProgressMeaning(profile.progressMeaning || "");
       setGoalOne(profile.goalOne || "");
       setGoalTwo(profile.goalTwo || "");
@@ -164,6 +125,8 @@ export default function OnboardingScreen() {
       setHasGymAccess(profile.hasGymAccess ?? false);
       setHasQuietSpace(profile.hasQuietSpace ?? false);
       setHasFoodControl(profile.hasFoodControl ?? false);
+    } catch {
+      // Keep defaults on parse failure
     }
   }
 
@@ -198,7 +161,15 @@ export default function OnboardingScreen() {
     router.push("/");
   }
 
-  function ToggleButton({ label, value, onPress }: { label: string; value: boolean; onPress: () => void }) {
+  function ToggleButton({
+    label,
+    value,
+    onPress,
+  }: {
+    label: string;
+    value: boolean;
+    onPress: () => void;
+  }) {
     return (
       <TouchableOpacity style={[styles.toggleButton, value && styles.activeToggleButton]} onPress={onPress}>
         <Text style={[styles.toggleText, value && styles.activeToggleText]}>
@@ -265,7 +236,9 @@ export default function OnboardingScreen() {
 
           <View style={styles.previewCard}>
             <Text style={styles.previewTitle}>YOUR STARTING PATH</Text>
-            <Text style={styles.goalText}>1. {pathPreview.goalOne || "Choose a category to auto-fill your path"}</Text>
+            <Text style={styles.goalText}>
+              1. {pathPreview.goalOne || "Choose a category to auto-fill your path"}
+            </Text>
             <Text style={styles.goalText}>2. {pathPreview.goalTwo || ""}</Text>
             <Text style={styles.goalText}>3. {pathPreview.goalThree || ""}</Text>
           </View>
@@ -518,6 +491,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     fontFamily: pixelFont,
   },
+
   goalText: {
     fontSize: 14,
     color: "#F9FAFB",
