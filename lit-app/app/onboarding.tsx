@@ -1,10 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 type UserProfile = {
   name: string;
+  longTermDream: string;
+  dreamCategory: string;
   progressMeaning: string;
   goalOne: string;
   goalTwo: string;
@@ -19,33 +21,100 @@ type UserProfile = {
 
 const PROFILE_KEY = "lit_user_profile";
 
+const pixelFont = Platform.select({
+  ios: "Menlo",
+  android: "monospace",
+  web: "monospace",
+  default: "monospace",
+});
+
+const DREAM_CATEGORIES = [
+  "Health",
+  "Money",
+  "Mind",
+  "Friends / Connection",
+  "School / Work",
+  "Confidence",
+  "Creativity",
+  "Sleep",
+  "Phone Use",
+  "Purpose",
+] as const;
+
+const CATEGORY_GOALS: Record<string, [string, string, string]> = {
+  Health: ["move your body consistently", "eat with intention", "protect your sleep"],
+  Money: ["track spending honestly", "build one income step", "save a small amount weekly"],
+  Mind: ["journal daily", "practice meditation", "notice thought patterns"],
+  "Friends / Connection": ["message one person weekly", "practice direct communication", "show up socially with honesty"],
+  "School / Work": ["complete one focus block", "plan assignments earlier", "build weekly consistency"],
+  Confidence: ["keep one promise daily", "speak up once more", "collect proof of progress"],
+  Creativity: ["create daily for 20 minutes", "finish small drafts", "share one piece each week"],
+  Sleep: ["set a realistic bedtime", "start wind-down earlier", "track rest patterns"],
+  "Phone Use": ["reduce automatic scrolling", "create phone-free blocks", "protect mornings from noise"],
+  Purpose: ["define what matters now", "act on one meaningful step", "review your path weekly"],
+};
+
 export default function OnboardingScreen() {
   const router = useRouter();
 
   const [name, setName] = useState("");
+  const [longTermDream, setLongTermDream] = useState("");
+  const [dreamCategory, setDreamCategory] = useState("");
   const [progressMeaning, setProgressMeaning] = useState("");
   const [goalOne, setGoalOne] = useState("");
   const [goalTwo, setGoalTwo] = useState("");
   const [goalThree, setGoalThree] = useState("");
   const [biggestObstacle, setBiggestObstacle] = useState("");
-
   const [hasWorkOrSchool, setHasWorkOrSchool] = useState(true);
   const [hasTransportation, setHasTransportation] = useState(false);
   const [hasGymAccess, setHasGymAccess] = useState(false);
   const [hasQuietSpace, setHasQuietSpace] = useState(false);
   const [hasFoodControl, setHasFoodControl] = useState(false);
+  const [validationMessage, setValidationMessage] = useState("");
+  const [hasExistingProfile, setHasExistingProfile] = useState(false);
 
   useEffect(() => {
-    loadProfile();
+    loadExistingProfile();
   }, []);
 
-  async function loadProfile() {
+  const pathPreview = useMemo(() => {
+    if (goalOne || goalTwo || goalThree) {
+      return { goalOne, goalTwo, goalThree };
+    }
+
+    if (dreamCategory && CATEGORY_GOALS[dreamCategory]) {
+      const [a, b, c] = CATEGORY_GOALS[dreamCategory];
+      return { goalOne: a, goalTwo: b, goalThree: c };
+    }
+
+    return { goalOne: "", goalTwo: "", goalThree: "" };
+  }, [dreamCategory, goalOne, goalTwo, goalThree]);
+
+  function applyCategory(category: string) {
+    setDreamCategory(category);
+
+    const presets = CATEGORY_GOALS[category];
+
+    if (!presets) return;
+
+    const [g1, g2, g3] = presets;
+
+    setGoalOne((prev) => (prev.trim() ? prev : g1));
+    setGoalTwo((prev) => (prev.trim() ? prev : g2));
+    setGoalThree((prev) => (prev.trim() ? prev : g3));
+  }
+
+  async function loadExistingProfile() {
     const saved = await AsyncStorage.getItem(PROFILE_KEY);
 
-    if (saved) {
-      const profile: UserProfile = JSON.parse(saved);
+    if (!saved) return;
 
+    try {
+      const profile = JSON.parse(saved);
+      setHasExistingProfile(true);
       setName(profile.name || "");
+      setLongTermDream(profile.longTermDream || "");
+      setDreamCategory(profile.dreamCategory || "");
       setProgressMeaning(profile.progressMeaning || "");
       setGoalOne(profile.goalOne || "");
       setGoalTwo(profile.goalTwo || "");
@@ -56,12 +125,26 @@ export default function OnboardingScreen() {
       setHasGymAccess(profile.hasGymAccess ?? false);
       setHasQuietSpace(profile.hasQuietSpace ?? false);
       setHasFoodControl(profile.hasFoodControl ?? false);
+    } catch {
+      // Keep defaults on parse failure
     }
   }
 
   async function saveProfile() {
+    const trimmedName = name.trim();
+    const trimmedDream = longTermDream.trim();
+
+    if (!trimmedName || !trimmedDream || !dreamCategory) {
+      setValidationMessage("Please add your name, long-term dream, and a dream category.");
+      return;
+    }
+
+    setValidationMessage("");
+
     const profile: UserProfile = {
-      name: name.trim(),
+      name: trimmedName,
+      longTermDream: trimmedDream,
+      dreamCategory,
       progressMeaning: progressMeaning.trim(),
       goalOne: goalOne.trim(),
       goalTwo: goalTwo.trim(),
@@ -88,12 +171,10 @@ export default function OnboardingScreen() {
     onPress: () => void;
   }) {
     return (
-      <TouchableOpacity
-        style={[styles.toggleButton, value && styles.activeToggleButton]}
-        onPress={onPress}
-      >
+      <TouchableOpacity style={[styles.toggleButton, value && styles.activeToggleButton]} onPress={onPress}>
         <Text style={[styles.toggleText, value && styles.activeToggleText]}>
-          {value ? "✓ " : ""}{label}
+          {value ? "✓ " : ""}
+          {label}
         </Text>
       </TouchableOpacity>
     );
@@ -101,120 +182,156 @@ export default function OnboardingScreen() {
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
-      <Text style={styles.logo}>lit</Text>
-      <Text style={styles.subtitle}>Living in Truth</Text>
+      <View style={styles.shell}>
+        <View style={styles.hero}>
+          <Text style={styles.heroLabel}>PATH SETUP</Text>
+          <Text style={styles.title}>SET MY PATH</Text>
+          <Text style={styles.subtitle}>Choose the dream your quests should follow.</Text>
+        </View>
 
-      <View style={styles.lunaCard}>
-        <Text style={styles.lunaName}>🌙 Luna</Text>
-        <Text style={styles.lunaText}>
-          Before we build your path, I want to understand what progress means to you.
-          lit is not here to force a perfect life. It is here to help you move honestly
-          from where you are.
-        </Text>
+        <View style={styles.lunaCard}>
+          <Text style={styles.lunaName}>Luna</Text>
+          <Text style={styles.lunaText}>
+            Before I build your path, choose the direction that feels closest to your long-term dream.
+          </Text>
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.label}>Your name</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Example: Isaac"
+            placeholderTextColor="#94A3B8"
+            value={name}
+            onChangeText={setName}
+          />
+
+          <Text style={styles.label}>What is your long-term dream?</Text>
+          <TextInput
+            style={styles.textArea}
+            multiline
+            placeholder="Example: I want to feel healthy, financially stable, and proud of my day-to-day life."
+            placeholderTextColor="#94A3B8"
+            value={longTermDream}
+            onChangeText={setLongTermDream}
+          />
+
+          <Text style={styles.label}>Choose the category that fits your dream</Text>
+          <View style={styles.categoryGrid}>
+            {DREAM_CATEGORIES.map((category) => {
+              const selected = dreamCategory === category;
+              return (
+                <TouchableOpacity
+                  key={category}
+                  style={[styles.categoryButton, selected && styles.categoryButtonActive]}
+                  onPress={() => applyCategory(category)}
+                >
+                  <Text style={[styles.categoryText, selected && styles.categoryTextActive]}>
+                    {category}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <View style={styles.previewCard}>
+            <Text style={styles.previewTitle}>YOUR STARTING PATH</Text>
+            <Text style={styles.goalText}>
+              1. {pathPreview.goalOne || "Choose a category to auto-fill your path"}
+            </Text>
+            <Text style={styles.goalText}>2. {pathPreview.goalTwo || ""}</Text>
+            <Text style={styles.goalText}>3. {pathPreview.goalThree || ""}</Text>
+          </View>
+
+          <Text style={styles.label}>Goal one</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="First path goal"
+            placeholderTextColor="#94A3B8"
+            value={goalOne}
+            onChangeText={setGoalOne}
+          />
+
+          <Text style={styles.label}>Goal two</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Second path goal"
+            placeholderTextColor="#94A3B8"
+            value={goalTwo}
+            onChangeText={setGoalTwo}
+          />
+
+          <Text style={styles.label}>Goal three</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Third path goal"
+            placeholderTextColor="#94A3B8"
+            value={goalThree}
+            onChangeText={setGoalThree}
+          />
+
+          <Text style={styles.label}>What does progress mean to you right now?</Text>
+          <TextInput
+            style={styles.textArea}
+            multiline
+            placeholder="Example: being consistent, sleeping better, and taking honest action daily."
+            placeholderTextColor="#94A3B8"
+            value={progressMeaning}
+            onChangeText={setProgressMeaning}
+          />
+
+          <Text style={styles.label}>What usually gets in your way?</Text>
+          <TextInput
+            style={styles.textArea}
+            multiline
+            placeholder="Example: phone use, anxiety, low energy, school pressure, transportation..."
+            placeholderTextColor="#94A3B8"
+            value={biggestObstacle}
+            onChangeText={setBiggestObstacle}
+          />
+
+          {validationMessage ? <Text style={styles.validationText}>{validationMessage}</Text> : null}
+        </View>
+
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>YOUR CURRENT RESOURCES</Text>
+          <ToggleButton
+            label="I have work or school responsibilities"
+            value={hasWorkOrSchool}
+            onPress={() => setHasWorkOrSchool(!hasWorkOrSchool)}
+          />
+          <ToggleButton
+            label="I usually have transportation"
+            value={hasTransportation}
+            onPress={() => setHasTransportation(!hasTransportation)}
+          />
+          <ToggleButton
+            label="I have gym access"
+            value={hasGymAccess}
+            onPress={() => setHasGymAccess(!hasGymAccess)}
+          />
+          <ToggleButton
+            label="I have a quiet study/work space"
+            value={hasQuietSpace}
+            onPress={() => setHasQuietSpace(!hasQuietSpace)}
+          />
+          <ToggleButton
+            label="I have control over food/meals"
+            value={hasFoodControl}
+            onPress={() => setHasFoodControl(!hasFoodControl)}
+          />
+        </View>
+
+        <TouchableOpacity style={styles.saveButton} onPress={saveProfile}>
+          <Text style={styles.saveButtonText}>Save My Path</Text>
+        </TouchableOpacity>
+
+        {hasExistingProfile ? (
+          <TouchableOpacity style={styles.skipButton} onPress={() => router.push("/")}>
+            <Text style={styles.skipButtonText}>Back to Today</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
-
-      <View style={styles.card}>
-        <Text style={styles.label}>Your name</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Example: Isaac"
-          placeholderTextColor="#9CA3AF"
-          value={name}
-          onChangeText={setName}
-        />
-
-        <Text style={styles.label}>What does progress mean to you right now?</Text>
-        <TextInput
-          style={styles.textArea}
-          multiline
-          placeholder="Example: sleeping better, making friends, feeling confident, improving school, making money..."
-          placeholderTextColor="#9CA3AF"
-          value={progressMeaning}
-          onChangeText={setProgressMeaning}
-        />
-
-        <Text style={styles.label}>Top life direction 1</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Example: improve sleep"
-          placeholderTextColor="#9CA3AF"
-          value={goalOne}
-          onChangeText={setGoalOne}
-        />
-
-        <Text style={styles.label}>Top life direction 2</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Example: make friends"
-          placeholderTextColor="#9CA3AF"
-          value={goalTwo}
-          onChangeText={setGoalTwo}
-        />
-
-        <Text style={styles.label}>Top life direction 3</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Example: build confidence"
-          placeholderTextColor="#9CA3AF"
-          value={goalThree}
-          onChangeText={setGoalThree}
-        />
-
-        <Text style={styles.label}>What usually gets in your way?</Text>
-        <TextInput
-          style={styles.textArea}
-          multiline
-          placeholder="Example: phone use, anxiety, low energy, school, work, transportation, lack of motivation..."
-          placeholderTextColor="#9CA3AF"
-          value={biggestObstacle}
-          onChangeText={setBiggestObstacle}
-        />
-      </View>
-
-      <View style={styles.card}>
-        <Text style={styles.sectionTitle}>Your current resources</Text>
-        <Text style={styles.helperText}>
-          This helps lit suggest fair quests. You do not need money, transportation, or a perfect environment to make progress.
-        </Text>
-
-        <ToggleButton
-          label="I have work or school responsibilities"
-          value={hasWorkOrSchool}
-          onPress={() => setHasWorkOrSchool(!hasWorkOrSchool)}
-        />
-
-        <ToggleButton
-          label="I usually have transportation"
-          value={hasTransportation}
-          onPress={() => setHasTransportation(!hasTransportation)}
-        />
-
-        <ToggleButton
-          label="I have gym access"
-          value={hasGymAccess}
-          onPress={() => setHasGymAccess(!hasGymAccess)}
-        />
-
-        <ToggleButton
-          label="I have a quiet study/work space"
-          value={hasQuietSpace}
-          onPress={() => setHasQuietSpace(!hasQuietSpace)}
-        />
-
-        <ToggleButton
-          label="I have control over food/meals"
-          value={hasFoodControl}
-          onPress={() => setHasFoodControl(!hasFoodControl)}
-        />
-      </View>
-
-      <TouchableOpacity style={styles.saveButton} onPress={saveProfile}>
-        <Text style={styles.saveButtonText}>Save My Path</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={styles.skipButton} onPress={() => router.push("/")}>
-        <Text style={styles.skipButtonText}>Skip for now</Text>
-      </TouchableOpacity>
     </ScrollView>
   );
 }
@@ -222,133 +339,227 @@ export default function OnboardingScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#F7EBC8",
+    backgroundColor: "#0B1220",
   },
   container: {
-    padding: 24,
-    paddingTop: 70,
-    paddingBottom: 40,
+    paddingTop: 28,
+    paddingBottom: 42,
   },
-  logo: {
-    fontSize: 52,
-    fontWeight: "900",
-    color: "#111827",
-    letterSpacing: -2,
+  shell: {
+    width: "100%",
+    maxWidth: 520,
+    alignSelf: "center",
+    paddingHorizontal: 18,
   },
-  subtitle: {
-    fontSize: 16,
-    color: "#6B7280",
-    marginTop: -4,
-    marginBottom: 24,
-  },
-  lunaCard: {
-    backgroundColor: "#FFFFFF",
+  hero: {
+    backgroundColor: "#0F1E1A",
+    borderColor: "#FBBF24",
+    borderWidth: 3,
     borderRadius: 24,
-    padding: 20,
-    marginBottom: 18,
-    borderWidth: 2,
-    borderColor: "#E5D39A",
-  },
-  lunaName: {
-    fontSize: 22,
-    fontWeight: "900",
-    color: "#111827",
-    marginBottom: 8,
-  },
-  lunaText: {
-    fontSize: 16,
-    lineHeight: 24,
-    color: "#374151",
-  },
-  card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 18,
-    borderWidth: 2,
-    borderColor: "#E5D39A",
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "900",
-    color: "#374151",
-    marginBottom: 10,
-    marginTop: 12,
-    textTransform: "uppercase",
-  },
-  input: {
-    backgroundColor: "#F3F4F6",
-    borderRadius: 16,
-    padding: 14,
-    fontSize: 16,
-    color: "#111827",
-    marginBottom: 6,
-  },
-  textArea: {
-    backgroundColor: "#F3F4F6",
-    borderRadius: 16,
-    padding: 14,
-    minHeight: 100,
-    fontSize: 16,
-    color: "#111827",
-    marginBottom: 6,
-    textAlignVertical: "top",
-  },
-  sectionTitle: {
-    fontSize: 22,
-    fontWeight: "900",
-    color: "#111827",
-    marginBottom: 8,
-  },
-  helperText: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: "#6B7280",
+    padding: 18,
     marginBottom: 14,
   },
-  toggleButton: {
-    backgroundColor: "#F3F4F6",
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 10,
+  heroLabel: {
+    color: "#86EFAC",
+    fontFamily: pixelFont,
+    fontSize: 11,
+    letterSpacing: 1.2,
+    fontWeight: "800",
+    marginBottom: 8,
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: "900",
+    color: "#F9FAFB",
+    marginBottom: 8,
+    letterSpacing: 1,
+    fontFamily: pixelFont,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: "#D1FAE5",
+    lineHeight: 21,
+    fontWeight: "600",
+  },
+  lunaCard: {
+    backgroundColor: "#132A23",
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 14,
     borderWidth: 2,
-    borderColor: "#E5E7EB",
+    borderColor: "#22C55E",
+  },
+  lunaName: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#F9FAFB",
+    marginBottom: 8,
+    letterSpacing: 0.8,
+    fontFamily: pixelFont,
+  },
+  lunaText: {
+    fontSize: 14,
+    color: "#DCFCE7",
+    lineHeight: 20,
+  },
+  card: {
+    backgroundColor: "#111827",
+    borderRadius: 22,
+    padding: 16,
+    marginBottom: 14,
+    borderWidth: 2,
+    borderColor: "#334155",
+  },
+  label: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#F8FAFC",
+    marginBottom: 8,
+    marginTop: 10,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+    fontFamily: pixelFont,
+  },
+  input: {
+    backgroundColor: "#020617",
+    borderRadius: 14,
+    padding: 12,
+    fontSize: 15,
+    color: "#F9FAFB",
+    marginBottom: 6,
+    borderWidth: 2,
+    borderColor: "#334155",
+  },
+  textArea: {
+    backgroundColor: "#020617",
+    borderRadius: 14,
+    padding: 12,
+    minHeight: 90,
+    fontSize: 15,
+    color: "#F9FAFB",
+    marginBottom: 6,
+    textAlignVertical: "top",
+    borderWidth: 2,
+    borderColor: "#334155",
+  },
+  categoryGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    marginBottom: 10,
+    marginTop: 2,
+  },
+  categoryButton: {
+    backgroundColor: "#1F2937",
+    borderWidth: 2,
+    borderColor: "#22C55E",
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    marginBottom: 8,
+    width: "48.5%",
+    minHeight: 46,
+    justifyContent: "center",
+  },
+  categoryButtonActive: {
+    backgroundColor: "#FBBF24",
+    borderColor: "#F59E0B",
+  },
+  categoryText: {
+    color: "#E5E7EB",
+    fontWeight: "800",
+    fontSize: 13,
+    textAlign: "center",
+  },
+  categoryTextActive: {
+    color: "#111827",
+  },
+  previewCard: {
+    backgroundColor: "#1F2937",
+    borderColor: "#FBBF24",
+    borderWidth: 2,
+    borderRadius: 14,
+    padding: 13,
+    marginTop: 6,
+    marginBottom: 8,
+  },
+  previewTitle: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: "#FDE68A",
+    marginBottom: 7,
+    letterSpacing: 0.8,
+    fontFamily: pixelFont,
+  },
+
+  goalText: {
+    fontSize: 14,
+    color: "#F9FAFB",
+    marginBottom: 4,
+    fontWeight: "700",
+  },
+  validationText: {
+    color: "#FCA5A5",
+    fontSize: 13,
+    marginTop: 10,
+    fontWeight: "700",
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: "900",
+    color: "#F9FAFB",
+    marginBottom: 8,
+    letterSpacing: 0.8,
+    fontFamily: pixelFont,
+  },
+  toggleButton: {
+    backgroundColor: "#1F2937",
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 2,
+    borderColor: "#334155",
   },
   activeToggleButton: {
-    backgroundColor: "#111827",
+    backgroundColor: "#0F172A",
     borderColor: "#FBBF24",
   },
   toggleText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: "800",
-    color: "#374151",
+    color: "#E5E7EB",
   },
   activeToggleText: {
-    color: "#FFFFFF",
+    color: "#F9FAFB",
   },
   saveButton: {
-    backgroundColor: "#111827",
-    padding: 18,
-    borderRadius: 20,
+    backgroundColor: "#166534",
+    paddingVertical: 15,
+    borderRadius: 16,
     alignItems: "center",
-    marginBottom: 12,
+    marginBottom: 10,
+    borderWidth: 2,
+    borderColor: "#FBBF24",
   },
   saveButtonText: {
-    color: "#FFFFFF",
-    fontSize: 17,
-    fontWeight: "900",
-  },
-  skipButton: {
-    backgroundColor: "#FFFFFF",
-    padding: 16,
-    borderRadius: 20,
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#D1D5DB",
-  },
-  skipButtonText: {
-    color: "#374151",
+    color: "#F9FAFB",
     fontSize: 16,
     fontWeight: "900",
+    letterSpacing: 0.8,
+    fontFamily: pixelFont,
+  },
+  skipButton: {
+    backgroundColor: "#111827",
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#64748B",
+  },
+  skipButtonText: {
+    color: "#CBD5E1",
+    fontSize: 15,
+    fontWeight: "900",
+    fontFamily: pixelFont,
   },
 });

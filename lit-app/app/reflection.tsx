@@ -1,167 +1,113 @@
-import { Link, useLocalSearchParams } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useState } from "react";
-import { ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+
+type ReflectionEntry = {
+  id: string;
+  quest: string;
+  whatGotInTheWay: string;
+  whatWasOff: string;
+  smallerVersion: string;
+  nextTry: string;
+  createdAt: string;
+};
+
+const REFLECTIONS_KEY = "lit_reflections";
+
+const pixelFont = Platform.select({
+  ios: "Menlo",
+  android: "monospace",
+  web: "monospace",
+  default: "monospace",
+});
 
 export default function ReflectionScreen() {
+  const router = useRouter();
   const params = useLocalSearchParams();
-  const questTitle = typeof params.quest === "string" ? params.quest : "this quest";
 
-  const [obstacle, setObstacle] = useState("");
-  const [adjustment, setAdjustment] = useState("");
+  const rawQuest = Array.isArray(params.quest) ? params.quest[0] : params.quest;
+  const quest = rawQuest || "Open reflection";
+
+  const [whatGotInTheWay, setWhatGotInTheWay] = useState("");
+  const [whatWasOff, setWhatWasOff] = useState("");
+  const [smallerVersion, setSmallerVersion] = useState("");
+  const [nextTry, setNextTry] = useState("");
+
+  async function saveReflection() {
+    const newEntry: ReflectionEntry = {
+      id: String(Date.now()),
+      quest,
+      whatGotInTheWay: whatGotInTheWay.trim(),
+      whatWasOff: whatWasOff.trim(),
+      smallerVersion: smallerVersion.trim(),
+      nextTry: nextTry.trim(),
+      createdAt: new Date().toISOString(),
+    };
+
+    const saved = await AsyncStorage.getItem(REFLECTIONS_KEY);
+    const parsed: ReflectionEntry[] = saved ? JSON.parse(saved) : [];
+    const next = [newEntry, ...parsed];
+
+    await AsyncStorage.setItem(REFLECTIONS_KEY, JSON.stringify(next));
+    router.push("/");
+  }
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
-      <Text style={styles.title}>Reflection Mode</Text>
+      <View style={styles.shell}>
+        <View style={styles.hero}>
+          <Text style={[styles.heroTitle, { fontFamily: pixelFont }]}>REFLECT, DON’T JUDGE</Text>
+          <Text style={styles.heroSubtitle}>Missed goals are data, not defeat.</Text>
+        </View>
 
-      <View style={styles.lunaCard}>
-        <Text style={styles.lunaName}>🌙 Luna</Text>
-        <Text style={styles.lunaText}>
-          Missing a quest does not mean you failed. It means we found something
-          to understand. Let’s figure out what got in the way.
-        </Text>
-      </View>
+        <View style={styles.panel}>
+          <Text style={[styles.sectionLabel, { fontFamily: pixelFont }]}>QUEST</Text>
+          <Text style={styles.questText}>{quest}</Text>
 
-      <View style={styles.questCard}>
-        <Text style={styles.label}>Quest</Text>
-        <Text style={styles.questTitle}>{questTitle}</Text>
-      </View>
+          <Text style={styles.label}>What got in the way?</Text>
+          <TextInput style={styles.input} value={whatGotInTheWay} onChangeText={setWhatGotInTheWay} />
 
-      <View style={styles.card}>
-        <Text style={styles.label}>What got in the way?</Text>
-        <TextInput
-          style={styles.textArea}
-          multiline
-          placeholder="Example: I was tired, anxious, distracted, busy, or the goal was too hard."
-          placeholderTextColor="#9CA3AF"
-          value={obstacle}
-          onChangeText={setObstacle}
-        />
+          <Text style={styles.label}>Was the quest too big, too vague, or badly timed?</Text>
+          <TextInput style={styles.input} value={whatWasOff} onChangeText={setWhatWasOff} />
 
-        <Text style={styles.label}>What should we adjust tomorrow?</Text>
-        <TextInput
-          style={styles.textArea}
-          multiline
-          placeholder="Example: Make it smaller, move it earlier, or switch to Recovery."
-          placeholderTextColor="#9CA3AF"
-          value={adjustment}
-          onChangeText={setAdjustment}
-        />
-      </View>
+          <Text style={styles.label}>What is the smaller version?</Text>
+          <TextInput style={styles.input} value={smallerVersion} onChangeText={setSmallerVersion} />
 
-      <View style={styles.summaryCard}>
-        <Text style={styles.summaryTitle}>Luna’s reminder</Text>
-        <Text style={styles.summaryText}>
-          Your next step does not need to be perfect. It just needs to be honest.
-        </Text>
-      </View>
+          <Text style={styles.label}>What can you try next?</Text>
+          <TextInput style={styles.input} value={nextTry} onChangeText={setNextTry} />
+        </View>
 
-      <Link href="/" asChild>
-        <TouchableOpacity style={styles.button}>
-          <Text style={styles.buttonText}>Save Reflection</Text>
+        <TouchableOpacity style={styles.primaryBtn} onPress={saveReflection}>
+          <Text style={styles.primaryText}>Save Reflection</Text>
         </TouchableOpacity>
-      </Link>
+
+        <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.push("/")}>
+          <Text style={styles.secondaryText}>Back to Today</Text>
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: "#111827",
-  },
-  container: {
-    padding: 24,
-    paddingTop: 70,
-  },
-  title: {
-    fontSize: 36,
-    fontWeight: "900",
-    color: "#F9FAFB",
-    marginBottom: 18,
-  },
-  lunaCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 18,
-    borderWidth: 2,
-    borderColor: "#A78BFA",
-  },
-  lunaName: {
-    fontSize: 22,
-    fontWeight: "900",
-    color: "#111827",
-    marginBottom: 8,
-  },
-  lunaText: {
-    fontSize: 16,
-    lineHeight: 24,
-    color: "#374151",
-  },
-  questCard: {
-    backgroundColor: "#312E81",
-    borderRadius: 22,
-    padding: 18,
-    marginBottom: 18,
-    borderWidth: 2,
-    borderColor: "#A78BFA",
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: "900",
-    color: "#D1D5DB",
-    marginBottom: 8,
-    textTransform: "uppercase",
-  },
-  questTitle: {
-    fontSize: 20,
-    fontWeight: "900",
-    color: "#FFFFFF",
-  },
-  card: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 20,
-    marginBottom: 18,
-  },
-  textArea: {
-    backgroundColor: "#F3F4F6",
-    borderRadius: 16,
-    padding: 14,
-    minHeight: 100,
-    fontSize: 16,
-    color: "#111827",
-    marginBottom: 18,
-    textAlignVertical: "top",
-  },
-  summaryCard: {
-    backgroundColor: "#1F2937",
-    borderRadius: 22,
-    padding: 18,
-    marginBottom: 20,
-    borderWidth: 2,
-    borderColor: "#A78BFA",
-  },
-  summaryTitle: {
-    fontSize: 18,
-    fontWeight: "900",
-    color: "#FBBF24",
-    marginBottom: 6,
-  },
-  summaryText: {
-    fontSize: 16,
-    lineHeight: 23,
-    color: "#E5E7EB",
-  },
-  button: {
-    backgroundColor: "#FBBF24",
-    padding: 18,
-    borderRadius: 20,
-    alignItems: "center",
-  },
-  buttonText: {
-    color: "#111827",
-    fontSize: 17,
-    fontWeight: "900",
-  },
+  screen: { flex: 1, backgroundColor: "#0F172A" },
+  container: { padding: 14, paddingTop: 34, paddingBottom: 24 },
+  shell: { width: "100%", maxWidth: 520, alignSelf: "center" },
+
+  hero: { backgroundColor: "#111827", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 18, padding: 12, marginBottom: 10 },
+  heroTitle: { color: "#F9FAFB", fontSize: 26, fontWeight: "900", letterSpacing: 1 },
+  heroSubtitle: { color: "#E5E7EB", fontSize: 12, fontWeight: "700", marginTop: 4 },
+
+  panel: { backgroundColor: "#1E1B4B", borderWidth: 2, borderColor: "#A78BFA", borderRadius: 12, padding: 12, marginBottom: 10 },
+  sectionLabel: { color: "#F9FAFB", fontSize: 12, letterSpacing: 1, fontWeight: "900" },
+  questText: { color: "#DDD6FE", fontSize: 12, fontWeight: "700", marginTop: 4, marginBottom: 8 },
+  label: { color: "#F9FAFB", fontSize: 12, fontWeight: "800", marginTop: 8, marginBottom: 4 },
+  input: { borderWidth: 2, borderColor: "#A78BFA", borderRadius: 10, backgroundColor: "#312E81", padding: 10, color: "#F9FAFB", fontWeight: "700" },
+
+  primaryBtn: { backgroundColor: "#FBBF24", borderWidth: 2, borderColor: "#92400E", borderRadius: 10, alignItems: "center", paddingVertical: 11, marginBottom: 8 },
+  primaryText: { color: "#111827", fontSize: 13, fontWeight: "900" },
+
+  secondaryBtn: { backgroundColor: "#111827", borderWidth: 2, borderColor: "#374151", borderRadius: 10, alignItems: "center", paddingVertical: 11 },
+  secondaryText: { color: "#F9FAFB", fontSize: 13, fontWeight: "900" },
 });
