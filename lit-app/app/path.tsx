@@ -3,14 +3,22 @@ import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
+import { GOAL_HORIZON_LABELS } from "../constants/goalMilestoneTemplates";
+
 type UserProfile = {
   name: string;
   longTermDream?: string;
   dreamCategory?: string;
   progressMeaning: string;
-  goalOne: string;
-  goalTwo: string;
-  goalThree: string;
+  // Phase 1 tiered goals
+  specificGoal?: string;
+  shortTermGoal?: string;
+  midTermGoal?: string;
+  longTermGoal?: string;
+  // Legacy flat fields, kept for backward compat with older saved profiles
+  goalOne?: string;
+  goalTwo?: string;
+  goalThree?: string;
   biggestObstacle?: string;
   hasWorkOrSchool?: boolean;
   hasTransportation?: boolean;
@@ -60,9 +68,15 @@ export default function PathScreen() {
 
   const longTermDream = profile?.longTermDream?.trim() || "Not set yet";
   const dreamCategory = profile?.dreamCategory?.trim() || "Not set yet";
-  const goalOne = profile?.goalOne?.trim() || "Not set yet";
-  const goalTwo = profile?.goalTwo?.trim() || "Not set yet";
-  const goalThree = profile?.goalThree?.trim() || "Not set yet";
+  const specificGoal = profile?.specificGoal?.trim() || "";
+  // Prefer the new tiered fields, fall back to legacy goalOne / Two / Three
+  // for users whose profile was saved before the tiered flow existed.
+  const shortTermGoal =
+    profile?.shortTermGoal?.trim() || profile?.goalOne?.trim() || "Not set yet";
+  const midTermGoal =
+    profile?.midTermGoal?.trim() || profile?.goalTwo?.trim() || "Not set yet";
+  const longTermGoal =
+    profile?.longTermGoal?.trim() || profile?.goalThree?.trim() || "Not set yet";
   const progressMeaning = profile?.progressMeaning?.trim() || "Not set yet";
 
   return (
@@ -84,11 +98,39 @@ export default function PathScreen() {
           <Text style={styles.cardText}>{dreamCategory}</Text>
         </View>
 
+        {specificGoal ? (
+          <View style={styles.card}>
+            <Text style={styles.cardLabel}>SPECIFIC GOAL</Text>
+            <Text style={styles.cardText}>{specificGoal}</Text>
+          </View>
+        ) : null}
+
         <View style={styles.card}>
-          <Text style={styles.cardLabel}>TOP GOALS</Text>
-          <Text style={styles.goalText}>1. {goalOne}</Text>
-          <Text style={styles.goalText}>2. {goalTwo}</Text>
-          <Text style={styles.goalText}>3. {goalThree}</Text>
+          <Text style={styles.cardLabel}>PATH MILESTONES</Text>
+
+          <View style={styles.milestoneRow}>
+            <View style={styles.milestoneHeaderRow}>
+              <Text style={styles.milestoneLabel}>{GOAL_HORIZON_LABELS.shortTerm.label}</Text>
+              <Text style={styles.milestoneCaption}>{GOAL_HORIZON_LABELS.shortTerm.caption}</Text>
+            </View>
+            <Text style={styles.goalText}>{shortTermGoal}</Text>
+          </View>
+
+          <View style={styles.milestoneRow}>
+            <View style={styles.milestoneHeaderRow}>
+              <Text style={styles.milestoneLabel}>{GOAL_HORIZON_LABELS.midTerm.label}</Text>
+              <Text style={styles.milestoneCaption}>{GOAL_HORIZON_LABELS.midTerm.caption}</Text>
+            </View>
+            <Text style={styles.goalText}>{midTermGoal}</Text>
+          </View>
+
+          <View style={styles.milestoneRow}>
+            <View style={styles.milestoneHeaderRow}>
+              <Text style={styles.milestoneLabel}>{GOAL_HORIZON_LABELS.longTerm.label}</Text>
+              <Text style={styles.milestoneCaption}>{GOAL_HORIZON_LABELS.longTerm.caption}</Text>
+            </View>
+            <Text style={styles.goalText}>{longTermGoal}</Text>
+          </View>
         </View>
 
         <View style={styles.card}>
@@ -209,6 +251,33 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 4,
     fontWeight: "700",
+  },
+  milestoneRow: {
+    marginTop: 4,
+    marginBottom: 6,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: "#1F2937",
+  },
+  milestoneHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  milestoneLabel: {
+    color: "#FDE68A",
+    fontFamily: pixelFont,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.6,
+  },
+  milestoneCaption: {
+    color: "#94A3B8",
+    fontSize: 10,
+    fontFamily: pixelFont,
+    fontWeight: "700",
+    letterSpacing: 0.4,
   },
   actionButton: {
     backgroundColor: "#166534",
