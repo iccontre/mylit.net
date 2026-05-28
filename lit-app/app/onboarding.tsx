@@ -3,11 +3,26 @@ import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
+import {
+  GOAL_HORIZON_LABELS,
+  type GoalHorizon,
+  type GoalMilestoneSet,
+} from "../constants/goalMilestoneTemplates";
+import { logGoalFeedback } from "../lib/feedbackLog";
+import { generateGoalMilestones } from "../lib/goalGeneration";
+
 type UserProfile = {
   name: string;
   longTermDream: string;
   dreamCategory: string;
   progressMeaning: string;
+  // Phase 1 tiered goals
+  specificGoal: string;
+  shortTermGoal: string;
+  midTermGoal: string;
+  longTermGoal: string;
+  goalsGeneratedAt?: string;
+  // Legacy mirrored fields, kept so older screens continue to read
   goalOne: string;
   goalTwo: string;
   goalThree: string;
@@ -41,17 +56,12 @@ const DREAM_CATEGORIES = [
   "Purpose",
 ] as const;
 
-const CATEGORY_GOALS: Record<string, [string, string, string]> = {
-  Health: ["move your body consistently", "eat with intention", "protect your sleep"],
-  Money: ["track spending honestly", "build one income step", "save a small amount weekly"],
-  Mind: ["journal daily", "practice meditation", "notice thought patterns"],
-  "Friends / Connection": ["message one person weekly", "practice direct communication", "show up socially with honesty"],
-  "School / Work": ["complete one focus block", "plan assignments earlier", "build weekly consistency"],
-  Confidence: ["keep one promise daily", "speak up once more", "collect proof of progress"],
-  Creativity: ["create daily for 20 minutes", "finish small drafts", "share one piece each week"],
-  Sleep: ["set a realistic bedtime", "start wind-down earlier", "track rest patterns"],
-  "Phone Use": ["reduce automatic scrolling", "create phone-free blocks", "protect mornings from noise"],
-  Purpose: ["define what matters now", "act on one meaningful step", "review your path weekly"],
+const HORIZON_ORDER: GoalHorizon[] = ["shortTerm", "midTerm", "longTerm"];
+
+const EMPTY_MILESTONES: GoalMilestoneSet = {
+  shortTerm: "",
+  midTerm: "",
+  longTerm: "",
 };
 
 export default function OnboardingScreen() {
@@ -61,9 +71,11 @@ export default function OnboardingScreen() {
   const [longTermDream, setLongTermDream] = useState("");
   const [dreamCategory, setDreamCategory] = useState("");
   const [progressMeaning, setProgressMeaning] = useState("");
-  const [goalOne, setGoalOne] = useState("");
-  const [goalTwo, setGoalTwo] = useState("");
-  const [goalThree, setGoalThree] = useState("");
+  const [specificGoal, setSpecificGoal] = useState("");
+  const [shortTermGoal, setShortTermGoal] = useState("");
+  const [midTermGoal, setMidTermGoal] = useState("");
+  const [longTermGoal, setLongTermGoal] = useState("");
+  const [lastGenerated, setLastGenerated] = useState<GoalMilestoneSet>(EMPTY_MILESTONES);
   const [biggestObstacle, setBiggestObstacle] = useState("");
   const [hasWorkOrSchool, setHasWorkOrSchool] = useState(true);
   const [hasTransportation, setHasTransportation] = useState(false);
@@ -77,31 +89,59 @@ export default function OnboardingScreen() {
     loadExistingProfile();
   }, []);
 
-  const pathPreview = useMemo(() => {
-    if (goalOne || goalTwo || goalThree) {
-      return { goalOne, goalTwo, goalThree };
-    }
+  const milestonesEmpty = useMemo(
+    () => !shortTermGoal.trim() && !midTermGoal.trim() && !longTermGoal.trim(),
+    [shortTermGoal, midTermGoal, longTermGoal]
+  );
 
-    if (dreamCategory && CATEGORY_GOALS[dreamCategory]) {
-      const [a, b, c] = CATEGORY_GOALS[dreamCategory];
-      return { goalOne: a, goalTwo: b, goalThree: c };
-    }
-
-    return { goalOne: "", goalTwo: "", goalThree: "" };
-  }, [dreamCategory, goalOne, goalTwo, goalThree]);
+  function applyGeneratedMilestones(
+    next: GoalMilestoneSet,
+    { force = false }: { force?: boolean } = {}
+  ) {
+    setLastGenerated(next);
+    setShortTermGoal((prev) => (force || !prev.trim() ? next.shortTerm : prev));
+    setMidTermGoal((prev) => (force || !prev.trim() ? next.midTerm : prev));
+    setLongTermGoal((prev) => (force || !prev.trim() ? next.longTerm : prev));
+  }
 
   function applyCategory(category: string) {
     setDreamCategory(category);
 
-    const presets = CATEGORY_GOALS[category];
+    const result = generateGoalMilestones({
+      category,
+      dream: longTermDream,
+      specificGoal,
+    });
 
-    if (!presets) return;
+    applyGeneratedMilestones({
+      shortTerm: result.shortTerm,
+      midTerm: result.midTerm,
+      longTerm: result.longTerm,
+    });
+  }
 
-    const [g1, g2, g3] = presets;
+  function regenerateMilestones() {
+    if (!dreamCategory) {
+      setValidationMessage("Pick a category first so we can draft your milestones.");
+      return;
+    }
 
-    setGoalOne((prev) => (prev.trim() ? prev : g1));
-    setGoalTwo((prev) => (prev.trim() ? prev : g2));
-    setGoalThree((prev) => (prev.trim() ? prev : g3));
+    setValidationMessage("");
+
+    const result = generateGoalMilestones({
+      category: dreamCategory,
+      dream: longTermDream,
+      specificGoal,
+    });
+
+    applyGeneratedMilestones(
+      {
+        shortTerm: result.shortTerm,
+        midTerm: result.midTerm,
+        longTerm: result.longTerm,
+      },
+      { force: true }
+    );
   }
 
   async function loadExistingProfile() {
@@ -116,9 +156,14 @@ export default function OnboardingScreen() {
       setLongTermDream(profile.longTermDream || "");
       setDreamCategory(profile.dreamCategory || "");
       setProgressMeaning(profile.progressMeaning || "");
-      setGoalOne(profile.goalOne || "");
-      setGoalTwo(profile.goalTwo || "");
-      setGoalThree(profile.goalThree || "");
+      setSpecificGoal(profile.specificGoal || "");
+
+      // Prefer tiered fields; fall back to legacy goalOne/Two/Three so users
+      // who set up their path before this flow existed don't lose anything.
+      setShortTermGoal(profile.shortTermGoal || profile.goalOne || "");
+      setMidTermGoal(profile.midTermGoal || profile.goalTwo || "");
+      setLongTermGoal(profile.longTermGoal || profile.goalThree || "");
+
       setBiggestObstacle(profile.biggestObstacle || "");
       setHasWorkOrSchool(profile.hasWorkOrSchool ?? true);
       setHasTransportation(profile.hasTransportation ?? false);
@@ -141,14 +186,26 @@ export default function OnboardingScreen() {
 
     setValidationMessage("");
 
+    const finalMilestones: GoalMilestoneSet = {
+      shortTerm: shortTermGoal.trim(),
+      midTerm: midTermGoal.trim(),
+      longTerm: longTermGoal.trim(),
+    };
+
     const profile: UserProfile = {
       name: trimmedName,
       longTermDream: trimmedDream,
       dreamCategory,
       progressMeaning: progressMeaning.trim(),
-      goalOne: goalOne.trim(),
-      goalTwo: goalTwo.trim(),
-      goalThree: goalThree.trim(),
+      specificGoal: specificGoal.trim(),
+      shortTermGoal: finalMilestones.shortTerm,
+      midTermGoal: finalMilestones.midTerm,
+      longTermGoal: finalMilestones.longTerm,
+      goalsGeneratedAt: new Date().toISOString(),
+      // Mirror tiered goals back into legacy fields so older screens keep working.
+      goalOne: finalMilestones.shortTerm,
+      goalTwo: finalMilestones.midTerm,
+      goalThree: finalMilestones.longTerm,
       biggestObstacle: biggestObstacle.trim(),
       hasWorkOrSchool,
       hasTransportation,
@@ -158,6 +215,18 @@ export default function OnboardingScreen() {
     };
 
     await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+
+    // Record the (generated, final) pair so we can learn from user edits.
+    // Failures here are intentionally swallowed inside logGoalFeedback.
+    void logGoalFeedback({
+      category: dreamCategory,
+      dream: trimmedDream,
+      specificGoal: specificGoal.trim(),
+      mode: null,
+      generated: lastGenerated,
+      final: finalMilestones,
+    });
+
     router.push("/");
   }
 
@@ -180,6 +249,33 @@ export default function OnboardingScreen() {
     );
   }
 
+  function MilestoneField({
+    horizon,
+    value,
+    onChange,
+  }: {
+    horizon: GoalHorizon;
+    value: string;
+    onChange: (next: string) => void;
+  }) {
+    const meta = GOAL_HORIZON_LABELS[horizon];
+    return (
+      <View style={styles.milestoneField}>
+        <View style={styles.milestoneHeaderRow}>
+          <Text style={styles.label}>{meta.label}</Text>
+          <Text style={styles.milestoneCaption}>{meta.caption}</Text>
+        </View>
+        <TextInput
+          style={styles.input}
+          placeholder={`Your ${meta.label.toLowerCase()}`}
+          placeholderTextColor="#94A3B8"
+          value={value}
+          onChangeText={onChange}
+        />
+      </View>
+    );
+  }
+
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
       <View style={styles.shell}>
@@ -192,7 +288,8 @@ export default function OnboardingScreen() {
         <View style={styles.lunaCard}>
           <Text style={styles.lunaName}>Luna</Text>
           <Text style={styles.lunaText}>
-            Before I build your path, choose the direction that feels closest to your long-term dream.
+            Pick a category and tell me the specific goal that lives under your dream. I&apos;ll draft three milestones —
+            short-term, mid-term, long-term — that you can keep, edit, or regenerate.
           </Text>
         </View>
 
@@ -234,41 +331,66 @@ export default function OnboardingScreen() {
             })}
           </View>
 
+          <Text style={styles.label}>What is your specific goal in this category?</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Example: lose 15 lbs, save $5k, ship a small side project"
+            placeholderTextColor="#94A3B8"
+            value={specificGoal}
+            onChangeText={setSpecificGoal}
+          />
+
           <View style={styles.previewCard}>
-            <Text style={styles.previewTitle}>YOUR STARTING PATH</Text>
-            <Text style={styles.goalText}>
-              1. {pathPreview.goalOne || "Choose a category to auto-fill your path"}
+            <View style={styles.previewHeaderRow}>
+              <Text style={styles.previewTitle}>YOUR PATH MILESTONES</Text>
+              <TouchableOpacity
+                style={[
+                  styles.regenerateButton,
+                  !dreamCategory && styles.regenerateButtonDisabled,
+                ]}
+                onPress={regenerateMilestones}
+                disabled={!dreamCategory}
+              >
+                <Text style={styles.regenerateButtonText}>↻ Regenerate</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.previewHint}>
+              {milestonesEmpty
+                ? "Pick a category above to draft your three milestones."
+                : "Edit any milestone to make it yours — your edits help shape future suggestions."}
             </Text>
-            <Text style={styles.goalText}>2. {pathPreview.goalTwo || ""}</Text>
-            <Text style={styles.goalText}>3. {pathPreview.goalThree || ""}</Text>
           </View>
 
-          <Text style={styles.label}>Goal one</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="First path goal"
-            placeholderTextColor="#94A3B8"
-            value={goalOne}
-            onChangeText={setGoalOne}
-          />
-
-          <Text style={styles.label}>Goal two</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Second path goal"
-            placeholderTextColor="#94A3B8"
-            value={goalTwo}
-            onChangeText={setGoalTwo}
-          />
-
-          <Text style={styles.label}>Goal three</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Third path goal"
-            placeholderTextColor="#94A3B8"
-            value={goalThree}
-            onChangeText={setGoalThree}
-          />
+          {HORIZON_ORDER.map((horizon) => {
+            if (horizon === "shortTerm") {
+              return (
+                <MilestoneField
+                  key={horizon}
+                  horizon={horizon}
+                  value={shortTermGoal}
+                  onChange={setShortTermGoal}
+                />
+              );
+            }
+            if (horizon === "midTerm") {
+              return (
+                <MilestoneField
+                  key={horizon}
+                  horizon={horizon}
+                  value={midTermGoal}
+                  onChange={setMidTermGoal}
+                />
+              );
+            }
+            return (
+              <MilestoneField
+                key={horizon}
+                horizon={horizon}
+                value={longTermGoal}
+                onChange={setLongTermGoal}
+              />
+            );
+          })}
 
           <Text style={styles.label}>What does progress mean to you right now?</Text>
           <TextInput
@@ -483,20 +605,58 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginBottom: 8,
   },
+  previewHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
+  },
   previewTitle: {
     fontSize: 13,
     fontWeight: "900",
     color: "#FDE68A",
-    marginBottom: 7,
     letterSpacing: 0.8,
     fontFamily: pixelFont,
   },
-
-  goalText: {
-    fontSize: 14,
-    color: "#F9FAFB",
-    marginBottom: 4,
+  previewHint: {
+    fontSize: 12,
+    color: "#CBD5E1",
+    lineHeight: 17,
+  },
+  regenerateButton: {
+    backgroundColor: "#0F172A",
+    borderColor: "#22C55E",
+    borderWidth: 2,
+    borderRadius: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+  },
+  regenerateButtonDisabled: {
+    opacity: 0.4,
+  },
+  regenerateButtonText: {
+    color: "#86EFAC",
+    fontFamily: pixelFont,
+    fontWeight: "900",
+    fontSize: 11,
+    letterSpacing: 0.6,
+  },
+  milestoneField: {
+    marginTop: 4,
+  },
+  milestoneHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+  },
+  milestoneCaption: {
+    color: "#94A3B8",
+    fontSize: 11,
+    fontFamily: pixelFont,
     fontWeight: "700",
+    marginBottom: 8,
+    marginTop: 10,
+    letterSpacing: 0.5,
   },
   validationText: {
     color: "#FCA5A5",
