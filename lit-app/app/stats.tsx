@@ -106,8 +106,7 @@ export default function InventoryScreen() {
   }
 
   const rank = completedQuestCount >= 5 ? "Consistent" : "Beginner";
-  const latestEnergy =
-    typeof latestCheckIn?.energy === "number" ? `${latestCheckIn.energy}/100` : "Not logged yet";
+  const latestEnergy = typeof latestCheckIn?.energy === "number" ? `${latestCheckIn.energy}/100` : "Not logged yet";
   const latestMode = latestCheckIn?.mode ?? "Not logged yet";
 
   const totalSignals =
@@ -155,22 +154,10 @@ export default function InventoryScreen() {
 
         <View style={styles.panel}>
           <Text style={styles.panelTitle}>PLAYER CARD</Text>
-          <View style={styles.statRow}>
-            <Text style={styles.statLabel}>Rank</Text>
-            <Text style={styles.statValue}>{rank}</Text>
-          </View>
-          <View style={styles.statRow}>
-            <Text style={styles.statLabel}>Latest Energy</Text>
-            <Text style={styles.statValue}>{latestEnergy}</Text>
-          </View>
-          <View style={styles.statRow}>
-            <Text style={styles.statLabel}>Latest Mode</Text>
-            <Text style={styles.statValue}>{latestMode}</Text>
-          </View>
-          <View style={styles.statRow}>
-            <Text style={styles.statLabel}>Completed Quests</Text>
-            <Text style={styles.statValue}>{completedQuestCount}</Text>
-          </View>
+          <View style={styles.statRow}><Text style={styles.statLabel}>Rank</Text><Text style={styles.statValue}>{rank}</Text></View>
+          <View style={styles.statRow}><Text style={styles.statLabel}>Latest Energy</Text><Text style={styles.statValue}>{latestEnergy}</Text></View>
+          <View style={styles.statRow}><Text style={styles.statLabel}>Latest Mode</Text><Text style={styles.statValue}>{latestMode}</Text></View>
+          <View style={styles.statRow}><Text style={styles.statLabel}>Completed Quests</Text><Text style={styles.statValue}>{completedQuestCount}</Text></View>
         </View>
 
         <View style={styles.panel}>
@@ -199,9 +186,7 @@ export default function InventoryScreen() {
               <Text style={styles.inventoryLine}>• Completed {completedQuestCount} quests</Text>
               <Text style={styles.inventoryLine}>• Wrote {journalCount} journal entries</Text>
               <Text style={styles.inventoryLine}>• Logged {meditationCount} meditations</Text>
-              <Text style={styles.inventoryLine}>
-                • Set {preSleepIntentionCount} pre-sleep intentions
-              </Text>
+              <Text style={styles.inventoryLine}>• Set {preSleepIntentionCount} pre-sleep intentions</Text>
               <Text style={styles.inventoryLine}>• Saved {quickThoughtCount} quick thoughts</Text>
             </>
           )}
@@ -211,15 +196,10 @@ export default function InventoryScreen() {
           <Text style={styles.panelTitle}>RESUME PREVIEW</Text>
           <Text style={styles.previewSubtitle}>Your progress can become real evidence.</Text>
           {resumeBullets.map((line) => (
-            <Text key={line} style={styles.inventoryLine}>
-              • {line}
-            </Text>
+            <Text key={line} style={styles.inventoryLine}>• {line}</Text>
           ))}
 
-          <TouchableOpacity
-            style={styles.primaryButton}
-            onPress={() => router.push("/weekly-summary")}
-          >
+          <TouchableOpacity style={styles.primaryButton} onPress={() => router.push("/weekly-summary")}>
             <Text style={styles.primaryButtonText}>Open Weekly Summary</Text>
           </TouchableOpacity>
         </View>
@@ -242,10 +222,7 @@ export default function InventoryScreen() {
             <TouchableOpacity style={styles.navButton} onPress={() => router.push("/path")}>
               <Text style={styles.navText}>🧭 Path</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.navButton, styles.navButtonActive]}
-              onPress={() => router.push("/stats")}
-            >
+            <TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={() => router.push("/stats")}>
               <Text style={[styles.navText, styles.navTextActive]}>🎒 Inventory</Text>
             </TouchableOpacity>
           </View>

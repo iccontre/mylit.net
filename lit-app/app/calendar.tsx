@@ -9,13 +9,13 @@ type QueueItem = {
 };
 
 type DayPlan = {
-  Monday: string;
-  Tuesday: string;
-  Wednesday: string;
-  Thursday: string;
-  Friday: string;
-  Saturday: string;
-  Sunday: string;
+  monday: string;
+  tuesday: string;
+  wednesday: string;
+  thursday: string;
+  friday: string;
+  saturday: string;
+  sunday: string;
 };
 
 const TOMORROW_QUEUE_KEY = "lit_tomorrow_queue";
@@ -36,7 +36,7 @@ const weekdayKeys: Array<keyof DayPlan> = [
   "thursday",
   "friday",
   "saturday",
-] as any;
+];
 
 const weekdayLabels: Record<keyof DayPlan, string> = {
   monday: "Monday",
@@ -46,12 +46,12 @@ const weekdayLabels: Record<keyof DayPlan, string> = {
   friday: "Friday",
   saturday: "Saturday",
   sunday: "Sunday",
-} as any;
+};
 
 export default function CalendarScreen() {
   const router = useRouter();
   const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
-  const [dayPlan, setDayPlan] = useState<any>(null);
+  const [dayPlan, setDayPlan] = useState<DayPlan | null>(null);
 
   useEffect(() => {
     loadCalendarData();
@@ -71,7 +71,7 @@ export default function CalendarScreen() {
   }
 
   const todayKey = useMemo(() => weekdayKeys[new Date().getDay()], []);
-  const todayRole = dayPlan?.[todayKey]?.trim() || dayPlan?.[weekdayLabels[todayKey]]?.trim() || "Not set yet";
+  const todayRole = dayPlan?.[todayKey]?.trim() || "Not set yet";
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
@@ -105,9 +105,7 @@ export default function CalendarScreen() {
           {weekdayKeys.map((key) => (
             <View key={key} style={styles.roleRow}>
               <Text style={styles.roleDay}>{weekdayLabels[key]}</Text>
-              <Text style={styles.roleValue}>
-                {dayPlan?.[key]?.trim() || dayPlan?.[weekdayLabels[key]]?.trim() || "Not set"}
-              </Text>
+              <Text style={styles.roleValue}>{dayPlan?.[key]?.trim() || "Not set"}</Text>
             </View>
           ))}
         </View>
