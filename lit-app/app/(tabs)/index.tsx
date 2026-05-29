@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
-import { Link, useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { Link, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 type Quest = {
@@ -30,14 +30,25 @@ type CheckIn = {
   createdAt?: string;
 };
 
+type WeekdayName = "Sunday" | "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "Saturday";
+type LowercaseWeekdayName = Lowercase<WeekdayName>;
+
 type DayPlan = {
-  Monday: string;
-  Tuesday: string;
-  Wednesday: string;
-  Thursday: string;
-  Friday: string;
-  Saturday: string;
-  Sunday: string;
+  todayGoal?: string;
+  Monday?: string;
+  Tuesday?: string;
+  Wednesday?: string;
+  Thursday?: string;
+  Friday?: string;
+  Saturday?: string;
+  Sunday?: string;
+  monday?: string;
+  tuesday?: string;
+  wednesday?: string;
+  thursday?: string;
+  friday?: string;
+  saturday?: string;
+  sunday?: string;
 };
 
 type UserProfile = {
@@ -80,8 +91,8 @@ function getTodayKey() {
   return new Date().toLocaleDateString("en-CA");
 }
 
-function getWeekdayName() {
-  const days: Array<keyof DayPlan> = [
+function getWeekdayName(): WeekdayName {
+  const days: WeekdayName[] = [
     "Sunday",
     "Monday",
     "Tuesday",
@@ -116,6 +127,7 @@ export default function HomeScreen() {
   const [latestCheckIn, setLatestCheckIn] = useState<CheckIn | null>(null);
   const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
   const [dayPlan, setDayPlan] = useState<DayPlan>({
+    todayGoal: "",
     Monday: "",
     Tuesday: "",
     Wednesday: "",
@@ -123,6 +135,13 @@ export default function HomeScreen() {
     Friday: "",
     Saturday: "",
     Sunday: "",
+    monday: "",
+    tuesday: "",
+    wednesday: "",
+    thursday: "",
+    friday: "",
+    saturday: "",
+    sunday: "",
   });
 
   const hasEnergyData = hasRouteEnergy || hasSavedCheckIn;
@@ -143,6 +162,15 @@ export default function HomeScreen() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileChecked, setProfileChecked] = useState(false);
   const [latestIntention, setLatestIntention] = useState<PreSleepIntention | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadCompletedQuests();
+      loadLatestCheckIn();
+      loadQuickThoughts();
+      loadDayPlan();
+    }, [])
+  );
 
   useEffect(() => {
     loadCompletedQuests();
@@ -211,11 +239,15 @@ export default function HomeScreen() {
       return;
     }
 
-    const parsed = JSON.parse(saved);
+    try {
+      const parsed = JSON.parse(saved);
 
-    if (Array.isArray(parsed)) {
-      setQueueItems(parsed);
-    } else {
+      if (Array.isArray(parsed)) {
+        setQueueItems(parsed);
+      } else {
+        setQueueItems([]);
+      }
+    } catch {
       setQueueItems([]);
     }
   }
@@ -225,17 +257,29 @@ export default function HomeScreen() {
 
     if (!saved) return;
 
-    const parsed = JSON.parse(saved);
+    try {
+      const parsed = JSON.parse(saved) as Partial<DayPlan> & Record<string, string | undefined>;
 
-    setDayPlan({
-      Monday: parsed.Monday || "",
-      Tuesday: parsed.Tuesday || "",
-      Wednesday: parsed.Wednesday || "",
-      Thursday: parsed.Thursday || "",
-      Friday: parsed.Friday || "",
-      Saturday: parsed.Saturday || "",
-      Sunday: parsed.Sunday || "",
-    });
+      setDayPlan({
+        todayGoal: parsed.todayGoal || "",
+        Monday: parsed.Monday || parsed.monday || "",
+        Tuesday: parsed.Tuesday || parsed.tuesday || "",
+        Wednesday: parsed.Wednesday || parsed.wednesday || "",
+        Thursday: parsed.Thursday || parsed.thursday || "",
+        Friday: parsed.Friday || parsed.friday || "",
+        Saturday: parsed.Saturday || parsed.saturday || "",
+        Sunday: parsed.Sunday || parsed.sunday || "",
+        monday: parsed.monday || parsed.Monday || "",
+        tuesday: parsed.tuesday || parsed.Tuesday || "",
+        wednesday: parsed.wednesday || parsed.Wednesday || "",
+        thursday: parsed.thursday || parsed.Thursday || "",
+        friday: parsed.friday || parsed.Friday || "",
+        saturday: parsed.saturday || parsed.Saturday || "",
+        sunday: parsed.sunday || parsed.Sunday || "",
+      });
+    } catch {
+      // Keep the default empty day plan if saved data cannot be parsed.
+    }
   }
 
   async function loadCompletedQuests() {
@@ -251,7 +295,11 @@ export default function HomeScreen() {
     }
 
     if (savedQuests) {
-      setCompletedQuests(JSON.parse(savedQuests));
+      try {
+        setCompletedQuests(JSON.parse(savedQuests));
+      } catch {
+        setCompletedQuests([]);
+      }
     }
   }
 
@@ -320,8 +368,6 @@ export default function HomeScreen() {
   const topGoal = profile?.goalOne?.trim() || "your top goal";
   const secondGoal = profile?.goalTwo?.trim() || "your next goal";
   const thirdGoal = profile?.goalThree?.trim() || "your future";
-  const longTermDream = profile?.longTermDream?.trim();
-  const dreamCategory = profile?.dreamCategory?.trim();
 
   const hoursSlept = latestCheckIn?.hours ? Number(latestCheckIn.hours) : null;
   const shouldSuggestNap =
@@ -331,7 +377,13 @@ export default function HomeScreen() {
     hoursSlept < 7;
 
   const todayName = getWeekdayName();
-  const todayRole = dayPlan[todayName]?.trim();
+  const lowercaseTodayName = todayName.toLowerCase() as LowercaseWeekdayName;
+  const todayGoal = dayPlan.todayGoal?.trim() || "";
+  const todayRole =
+    dayPlan[todayName]?.trim() ||
+    dayPlan[lowercaseTodayName]?.trim() ||
+    "";
+  const todayPlanText = todayGoal || todayRole;
 
   const flameLabel = useMemo(() => {
     if (!hasEnergyData) return "Check-in needed";
@@ -445,12 +497,12 @@ export default function HomeScreen() {
       description: "Aim for 30–60 minutes if your schedule allows.",
     };
 
-    const dayPlanQuest: Quest | null = todayRole
+    const dayPlanQuest: Quest | null = todayPlanText
       ? {
-          title: `Day plan: ${todayRole}`,
-          type: "Day Plan",
-          steps: 1,
-          description: "Use today’s theme to choose your next move.",
+          title: `Today’s Quest: ${todayPlanText}`,
+          type: "Personal",
+          steps: 2,
+          description: "A personal quest from your Day Plan.",
         }
       : null;
 
@@ -463,12 +515,14 @@ export default function HomeScreen() {
         { title: "Choose one small action for today", type: "Plan", steps: 1 },
       ];
 
-      const withNap = shouldSuggestNap
-        ? [neutralBase[0], napQuest, neutralBase[1], neutralBase[2]]
-        : neutralBase;
-
-      const withDayPlan = dayPlanQuest ? [...withNap, dayPlanQuest] : withNap;
-      return [...withDayPlan, ...quickThoughtQuests];
+      return [
+        neutralBase[0],
+        ...(dayPlanQuest ? [dayPlanQuest] : []),
+        ...(shouldSuggestNap ? [napQuest] : []),
+        neutralBase[1],
+        neutralBase[2],
+        ...quickThoughtQuests,
+      ];
     }
 
     const category = profile?.dreamCategory?.trim() || "Purpose";
@@ -501,10 +555,12 @@ export default function HomeScreen() {
       transportQuest,
     ];
 
-    const withNap = shouldSuggestNap ? [napQuest, ...baseQuests] : baseQuests;
-    const withDayPlan = dayPlanQuest ? [...withNap, dayPlanQuest] : withNap;
-
-    return [...withDayPlan, ...quickThoughtQuests];
+    return [
+      ...(dayPlanQuest ? [dayPlanQuest] : []),
+      ...(shouldSuggestNap ? [napQuest] : []),
+      ...baseQuests,
+      ...quickThoughtQuests,
+    ];
   }
 
   const quests = generateQuests();
