@@ -61,6 +61,12 @@ type UserProfile = {
   longTermDream?: string;
   dreamCategory?: string;
   progressMeaning?: string;
+  // Phase 1 tiered goals (preferred)
+  specificGoal?: string;
+  shortTermGoal?: string;
+  midTermGoal?: string;
+  longTermGoal?: string;
+  // Legacy fields, kept for backward compat with profiles saved before tiered flow
   goalOne?: string;
   goalTwo?: string;
   goalThree?: string;
@@ -405,9 +411,14 @@ export default function HomeScreen() {
     await saveCompletedQuests([]);
   }
 
-  const topGoal = profile?.goalOne?.trim() || "your top goal";
-  const secondGoal = profile?.goalTwo?.trim() || "your next goal";
-  const thirdGoal = profile?.goalThree?.trim() || "your future";
+  // Prefer the new tiered milestone fields; fall back to legacy goalOne/Two/Three
+  // so older profiles keep working until users re-save through PATH SETUP.
+  const topGoal =
+    profile?.shortTermGoal?.trim() || profile?.goalOne?.trim() || "your top goal";
+  const secondGoal =
+    profile?.midTermGoal?.trim() || profile?.goalTwo?.trim() || "your next goal";
+  const thirdGoal =
+    profile?.longTermGoal?.trim() || profile?.goalThree?.trim() || "your future";
 
   const completedMandatoryTitles = completedQuests.filter(
     (title) => title === "Eat to restore energy" || title === "Relax for 30 minutes"
