@@ -9,6 +9,8 @@ type Quest = {
   type: string;
   steps: number;
   description?: string;
+  mandatory?: boolean;
+  restoreEnergy?: number;
 };
 
 type QueueItem = {
@@ -22,11 +24,14 @@ type QueueItem = {
 
 type CheckIn = {
   id?: string;
+  checkInType?: "morning" | "afternoon";
   hours?: string;
   mood?: string;
   stress?: string;
   energy: number;
   mode: "Recovery" | "Progress";
+  eatenSinceMorning?: boolean;
+  foodSinceMorning?: string;
   createdAt?: string;
 };
 
@@ -86,6 +91,10 @@ const CHECKIN_KEY = "lit_latest_checkin";
 const LATEST_PRE_SLEEP_INTENTION_KEY = "lit_latest_pre_sleep_intention";
 const TOMORROW_QUEUE_KEY = "lit_tomorrow_queue";
 const DAY_PLAN_KEY = "lit_day_plan";
+const PROGRESS_QUEST_ENERGY_COST = 8;
+const RECOVERY_QUEST_ENERGY_COST = 6;
+const PASSIVE_DECAY_POINTS = 5;
+const PASSIVE_DECAY_INTERVAL_HOURS = 2;
 
 function getTodayKey() {
   return new Date().toLocaleDateString("en-CA");
@@ -103,6 +112,30 @@ function getWeekdayName(): WeekdayName {
   ];
 
   return days[new Date().getDay()];
+}
+
+function clampEnergy(value: number) {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function getFlameState(score: number) {
+  if (score >= 80) {
+    return { icon: "🔥", label: "Blazing Flame", size: 74 };
+  }
+
+  if (score >= 60) {
+    return { icon: "🔥", label: "Bright Flame", size: 62 };
+  }
+
+  if (score >= 40) {
+    return { icon: "🔥", label: "Steady Flame", size: 50 };
+  }
+
+  if (score >= 25) {
+    return { icon: "🔥", label: "Low Flame", size: 40 };
+  }
+
+  return { icon: "🟠", label: "Ember", size: 30 };
 }
 
 export default function HomeScreen() {
@@ -156,7 +189,7 @@ export default function HomeScreen() {
   const isProgress = currentMode === "Progress";
   const isNeutral = currentMode === "Neutral";
 
-  const energyYield = hasRouteEnergy ? routeEnergyNumber : savedEnergy;
+  const baseEnergyYield = hasRouteEnergy ? routeEnergyNumber : savedEnergy;
 
   const [completedQuests, setCompletedQuests] = useState<string[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -344,12 +377,19 @@ export default function HomeScreen() {
     await AsyncStorage.setItem(COMPLETED_QUESTS_KEY, JSON.stringify(nextCompleted));
   }
 
-  async function toggleQuest(title: string) {
-    const isAlreadyComplete = completedQuests.includes(title);
+  async function toggleQuest(quest: Quest) {
+    const mandatoryQuest = getMandatoryQuest();
+
+    if (mandatoryQuest && !quest.mandatory && !completedQuests.includes(mandatoryQuest.title)) {
+      await mediumHaptic();
+      return;
+    }
+
+    const isAlreadyComplete = completedQuests.includes(quest.title);
 
     const nextCompleted = isAlreadyComplete
-      ? completedQuests.filter((item) => item !== title)
-      : [...completedQuests, title];
+      ? completedQuests.filter((item) => item !== quest.title)
+      : [...completedQuests, quest.title];
 
     if (isAlreadyComplete) {
       await lightHaptic();
@@ -369,6 +409,26 @@ export default function HomeScreen() {
   const secondGoal = profile?.goalTwo?.trim() || "your next goal";
   const thirdGoal = profile?.goalThree?.trim() || "your future";
 
+  const completedMandatoryTitles = completedQuests.filter(
+    (title) => title === "Eat to restore energy" || title === "Relax for 30 minutes"
+  );
+  const completedNormalQuestCount = completedQuests.length - completedMandatoryTitles.length;
+  const questEnergyCost = isProgress ? PROGRESS_QUEST_ENERGY_COST : RECOVERY_QUEST_ENERGY_COST;
+  const passiveDecay =
+    hasEnergyData && latestCheckIn?.createdAt
+      ? Math.floor(
+          Math.max(0, Date.now() - new Date(latestCheckIn.createdAt).getTime()) /
+            (PASSIVE_DECAY_INTERVAL_HOURS * 60 * 60 * 1000)
+        ) * PASSIVE_DECAY_POINTS
+      : 0;
+  const mandatoryRecoveryBoost = completedMandatoryTitles.reduce(
+    (sum, title) => sum + (title === "Eat to restore energy" ? 15 : 10),
+    0
+  );
+  const energyYield = hasEnergyData
+    ? clampEnergy(baseEnergyYield - passiveDecay - completedNormalQuestCount * questEnergyCost + mandatoryRecoveryBoost)
+    : 0;
+
   const hoursSlept = latestCheckIn?.hours ? Number(latestCheckIn.hours) : null;
   const shouldSuggestNap =
     hasEnergyData &&
@@ -385,12 +445,8 @@ export default function HomeScreen() {
     "";
   const todayPlanText = todayGoal || todayRole;
 
-  const flameLabel = useMemo(() => {
-    if (!hasEnergyData) return "Check-in needed";
-    if (energyYield >= 75) return "Bright Flame";
-    if (energyYield >= 45) return "Steady Flame";
-    return "Low Flame";
-  }, [hasEnergyData, energyYield]);
+  const flameState = useMemo(() => getFlameState(energyYield), [energyYield]);
+  const flameLabel = hasEnergyData ? flameState.label : "Check-in needed";
 
   const modeTitle = isNeutral ? "Start Today" : isRecovery ? "Recovery Mode" : "Progress Mode";
   const modeInstruction = isNeutral
@@ -405,7 +461,6 @@ export default function HomeScreen() {
     ? "Recovery counts. Choose the smallest honest step."
     : "Energy is available. Pick the quest that moves your path forward.";
 
-  const meterFillCount = hasEnergyData ? Math.max(0, Math.min(10, Math.round(energyYield / 10))) : 0;
 
   function getAccentColor() {
     if (isNeutral) return "#22C55E";
@@ -489,6 +544,41 @@ export default function HomeScreen() {
     return result;
   }
 
+  function getMandatoryQuest(): Quest | null {
+    if (!hasEnergyData || isNeutral) return null;
+
+    const threshold = isProgress ? 50 : 40;
+    if (energyYield >= threshold) return null;
+
+    const eatQuestDone = completedQuests.includes("Eat to restore energy");
+    const relaxQuestDone = completedQuests.includes("Relax for 30 minutes");
+    const hasEaten = latestCheckIn?.eatenSinceMorning === true || eatQuestDone;
+
+    if (!hasEaten && !eatQuestDone) {
+      return {
+        title: "Eat to restore energy",
+        type: "Mandatory",
+        steps: 0,
+        restoreEnergy: 15,
+        mandatory: true,
+        description: "Have a meal or snack so your energy can recover.",
+      };
+    }
+
+    if (!relaxQuestDone) {
+      return {
+        title: "Relax for 30 minutes",
+        type: "Mandatory",
+        steps: 0,
+        restoreEnergy: 10,
+        mandatory: true,
+        description: "Pause and recover before spending more energy.",
+      };
+    }
+
+    return null;
+  }
+
   function generateQuests(): Quest[] {
     const napQuest: Quest = {
       title: "Take a recovery nap",
@@ -507,6 +597,7 @@ export default function HomeScreen() {
       : null;
 
     const quickThoughtQuests = generateQuickThoughtQuests();
+    const mandatoryQuest = getMandatoryQuest();
 
     if (isNeutral) {
       const neutralBase: Quest[] = [
@@ -556,6 +647,7 @@ export default function HomeScreen() {
     ];
 
     return [
+      ...(mandatoryQuest ? [mandatoryQuest] : []),
       ...(dayPlanQuest ? [dayPlanQuest] : []),
       ...(shouldSuggestNap ? [napQuest] : []),
       ...baseQuests,
@@ -687,23 +779,32 @@ export default function HomeScreen() {
             <Text style={styles.energyOutOf}>/100</Text>
           </View>
 
-          <View style={styles.energyBlocksRow}>
-            {Array.from({ length: 10 }).map((_, i) => (
-              <View
-                key={i}
-                style={[
-                  styles.energyBlock,
-                  i < meterFillCount && isNeutral ? styles.energyBlockNeutral : null,
-                  i < meterFillCount && isProgress ? styles.energyBlockProgress : null,
-                  i < meterFillCount && isRecovery ? styles.energyBlockRecovery : null,
-                ]}
-              />
-            ))}
+          <View style={styles.flameMeter}>
+            <Text style={[styles.flameIcon, { fontSize: flameState.size }]}>
+              {hasEnergyData ? flameState.icon : "○"}
+            </Text>
+            <Text style={styles.flameMeterText}>
+              {hasEnergyData ? flameLabel : "No flame reading yet"}
+            </Text>
           </View>
 
           <TouchableOpacity style={styles.checkInButton} onPress={() => navigateWithHaptic("/sleep-checkin")}>
             <Text style={styles.checkInButtonText}>Morning Check-In</Text>
           </TouchableOpacity>
+
+          {hasEnergyData ? (
+            <TouchableOpacity
+              style={styles.afternoonCheckInButton}
+              onPress={() =>
+                router.push({
+                  pathname: "/sleep-checkin",
+                  params: { checkInType: "afternoon" },
+                })
+              }
+            >
+              <Text style={styles.afternoonCheckInButtonText}>Afternoon Check-In</Text>
+            </TouchableOpacity>
+          ) : null}
         </View>
 
         <View style={styles.questPanel}>
@@ -733,6 +834,7 @@ export default function HomeScreen() {
 
                   <Text style={styles.questText}>{quest.title}</Text>
                   {quest.description ? <Text style={styles.questDescription}>{quest.description}</Text> : null}
+                  {quest.mandatory ? <Text style={styles.mandatoryLockText}>Normal quests unlock after this.</Text> : null}
 
                   <View style={styles.questActionsRow}>
                     <Link href={{ pathname: "/reflection", params: { quest: quest.title } }} asChild>
@@ -743,7 +845,7 @@ export default function HomeScreen() {
                   </View>
                 </View>
 
-                <TouchableOpacity style={[styles.checkBox, isDone && styles.checkBoxDone]} onPress={() => toggleQuest(quest.title)}>
+                <TouchableOpacity style={[styles.checkBox, isDone && styles.checkBoxDone]} onPress={() => toggleQuest(quest)}>
                   <Text style={styles.checkBoxText}>{isDone ? "✓" : ""}</Text>
                 </TouchableOpacity>
               </View>
@@ -1109,30 +1211,23 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     fontWeight: "800",
   },
-  energyBlocksRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
+  flameMeter: {
+    backgroundColor: "#0F172A",
+    borderWidth: 2,
+    borderColor: "#334155",
+    borderRadius: 18,
+    paddingVertical: 12,
+    alignItems: "center",
     marginBottom: 10,
   },
-  energyBlock: {
-    width: "8.7%",
-    height: 10,
-    borderRadius: 4,
-    backgroundColor: "#1F2937",
-    borderWidth: 1,
-    borderColor: "#334155",
+  flameIcon: {
+    lineHeight: 78,
   },
-  energyBlockNeutral: {
-    backgroundColor: "#22C55E",
-    borderColor: "#16A34A",
-  },
-  energyBlockProgress: {
-    backgroundColor: "#FBBF24",
-    borderColor: "#F59E0B",
-  },
-  energyBlockRecovery: {
-    backgroundColor: "#A78BFA",
-    borderColor: "#8B5CF6",
+  flameMeterText: {
+    color: "#FDE68A",
+    fontSize: 12,
+    fontWeight: "900",
+    textTransform: "uppercase",
   },
   checkInButton: {
     marginTop: 2,
@@ -1145,6 +1240,20 @@ const styles = StyleSheet.create({
   },
   checkInButtonText: {
     color: "#F9FAFB",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  afternoonCheckInButton: {
+    marginTop: 8,
+    backgroundColor: "#1E293B",
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+    borderRadius: 12,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  afternoonCheckInButtonText: {
+    color: "#EDE9FE",
     fontSize: 13,
     fontWeight: "900",
   },
@@ -1237,6 +1346,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
     marginTop: 4,
+  },
+  mandatoryLockText: {
+    color: "#FDE68A",
+    fontSize: 11,
+    fontWeight: "900",
+    marginTop: 5,
+    textTransform: "uppercase",
   },
   questActionsRow: {
     marginTop: 8,

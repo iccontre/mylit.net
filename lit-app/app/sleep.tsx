@@ -1,5 +1,22 @@
-import { useRouter } from "expo-router";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Haptics from "expo-haptics";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
 import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+
+type DreamEntry = {
+  id: string;
+  title: string;
+  summary: string;
+  emotions: string;
+  symbols: string;
+  lucid: "yes" | "no";
+  pattern: string;
+  tomorrowIntention?: string;
+  createdAt: string;
+};
+
+const DREAM_JOURNAL_KEY = "lit_dream_journal";
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -8,85 +25,118 @@ const pixelFont = Platform.select({
   default: "monospace",
 });
 
-type SleepTile = {
-  title: string;
-  subtitle: string;
-  route: string;
-};
-
-const sleepTiles: SleepTile[] = [
-  {
-    title: "Morning Check-In",
-    subtitle: "Review sleep, mood, stress, and daily energy mode.",
-    route: "/sleep-checkin",
-  },
-  {
-    title: "Pre-Sleep Intention",
-    subtitle: "Set one clear signal for tomorrow before bed.",
-    route: "/pre-sleep-intention",
-  },
-  {
-    title: "Morning Reflection",
-    subtitle: "Check what carried from night into today.",
-    route: "/morning-intention-reflection",
-  },
-  {
-    title: "Sleep Calendar",
-    subtitle: "View sleep planning with day plan and thought context.",
-    route: "/sleep-calendar",
-  },
-  {
-    title: "Dream Journal",
-    subtitle: "Track dreams, symbols, and intention links.",
-    route: "/dream-journal",
-  },
-];
-
 export default function SleepScreen() {
   const router = useRouter();
+  const [latestDream, setLatestDream] = useState<DreamEntry | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadLatestDream();
+    }, [])
+  );
+
+  async function lightHaptic() {
+    try {
+      await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    } catch {
+      // Haptics may not run in every web preview.
+    }
+  }
+
+  async function navigate(path: any) {
+    await lightHaptic();
+    router.push(path);
+  }
+
+  async function loadLatestDream() {
+    const saved = await AsyncStorage.getItem(DREAM_JOURNAL_KEY);
+
+    if (!saved) {
+      setLatestDream(null);
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(saved);
+      setLatestDream(Array.isArray(parsed) && parsed.length > 0 ? parsed[0] : null);
+    } catch {
+      setLatestDream(null);
+    }
+  }
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
       <View style={styles.shell}>
         <View style={styles.hero}>
-          <Text style={styles.heroLabel}>SLEEP HUB</Text>
+          <Text style={styles.kicker}>SLEEP HUB</Text>
           <Text style={styles.title}>SLEEP</Text>
-          <Text style={styles.subtitle}>Intentions, timing, and sleep tools.</Text>
+          <Text style={styles.subtitle}>Intentions, timing, dreams, and sleep tools.</Text>
         </View>
 
-        {sleepTiles.map((tile) => (
-          <TouchableOpacity
-            key={tile.title}
-            style={styles.tile}
-            onPress={() => router.push(tile.route as any)}
-          >
-            <Text style={styles.tileTitle}>{tile.title}</Text>
-            <Text style={styles.tileSubtitle}>{tile.subtitle}</Text>
-          </TouchableOpacity>
-        ))}
+        <TouchableOpacity style={styles.toolCard} onPress={() => navigate("/sleep-checkin")}>
+          <Text style={styles.toolTitle}>Morning Check-In</Text>
+          <Text style={styles.toolSubtitle}>Review sleep, mood, stress, and daily energy mode.</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.toolCard}
+          onPress={() =>
+            router.push({
+              pathname: "/sleep-checkin",
+              params: { checkInType: "afternoon" },
+            })
+          }
+        >
+          <Text style={styles.toolTitle}>Afternoon Check-In</Text>
+          <Text style={styles.toolSubtitle}>Update food, mood, stress, and current flame.</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.toolCard} onPress={() => navigate("/pre-sleep-intention")}>
+          <Text style={styles.toolTitle}>Pre-Sleep Intention</Text>
+          <Text style={styles.toolSubtitle}>Set one clear signal for tomorrow before bed.</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.toolCard} onPress={() => navigate("/morning-intention-reflection")}>
+          <Text style={styles.toolTitle}>Morning Reflection</Text>
+          <Text style={styles.toolSubtitle}>Check what carried from night into today.</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.toolCard} onPress={() => navigate("/calendar")}>
+          <Text style={styles.toolTitle}>Sleep Calendar</Text>
+          <Text style={styles.toolSubtitle}>View sleep planning with day plan and thought context.</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.dreamCard} onPress={() => navigate("/dream-journal")}>
+          <Text style={styles.toolTitle}>Dream Journal</Text>
+          <Text style={styles.toolSubtitle}>Track dreams, lucid moments, symbols, and subconscious intention links.</Text>
+          {latestDream ? (
+            <View style={styles.latestDreamBox}>
+              <Text style={styles.latestLabel}>LATEST DREAM</Text>
+              <Text style={styles.latestTitle}>{latestDream.title || "Untitled dream"}</Text>
+              <Text style={styles.latestText} numberOfLines={2}>{latestDream.summary}</Text>
+            </View>
+          ) : null}
+        </TouchableOpacity>
 
         <View style={styles.bottomNav}>
           <Text style={styles.bottomTitle}>NAVIGATION</Text>
           <View style={styles.navGrid}>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}>
+            <TouchableOpacity style={styles.navButton} onPress={() => navigate("/")}>
               <Text style={styles.navText}>🏠 Home</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.navButton, styles.navButtonActive]}
-              onPress={() => router.push("/sleep")}
-            >
-              <Text style={[styles.navText, styles.navTextActive]}>🌙 Sleep</Text>
+            <TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={lightHaptic}>
+              <Text style={styles.navTextActive}>🌙 Sleep</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/calendar")}>
+            <TouchableOpacity style={styles.navButton} onPress={() => navigate("/calendar")}>
               <Text style={styles.navText}>📅 Calendar</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/mind")}>
+            <TouchableOpacity style={styles.navButton} onPress={() => navigate("/mind")}>
               <Text style={styles.navText}>🧠 Mind</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/path")}>
+            <TouchableOpacity style={styles.navButton} onPress={() => navigate("/path")}>
               <Text style={styles.navText}>🧭 Path</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/stats")}>
+            <TouchableOpacity style={styles.navButton} onPress={() => navigate("/stats")}>
               <Text style={styles.navText}>🎒 Inventory</Text>
             </TouchableOpacity>
           </View>
@@ -99,11 +149,11 @@ export default function SleepScreen() {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: "#020B24",
+    backgroundColor: "#0B1220",
   },
   container: {
-    paddingTop: 28,
-    paddingBottom: 44,
+    paddingTop: 26,
+    paddingBottom: 34,
   },
   shell: {
     width: "100%",
@@ -112,56 +162,90 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
   },
   hero: {
-    backgroundColor: "#27235C",
-    borderWidth: 4,
-    borderColor: "#9F88FF",
-    borderRadius: 28,
+    backgroundColor: "#1B1940",
+    borderWidth: 3,
+    borderColor: "#A78BFA",
+    borderRadius: 24,
     padding: 18,
     marginBottom: 14,
   },
-  heroLabel: {
+  kicker: {
     color: "#C4B5FD",
-    fontFamily: pixelFont,
-    fontSize: 11,
+    fontSize: 12,
+    fontWeight: "900",
     letterSpacing: 1.5,
-    fontWeight: "800",
-    marginBottom: 8,
+    marginBottom: 12,
+    fontFamily: pixelFont,
   },
   title: {
     color: "#F9FAFB",
-    fontFamily: pixelFont,
-    fontSize: 38,
+    fontSize: 32,
     fontWeight: "900",
-    letterSpacing: 1.4,
-    marginBottom: 6,
+    letterSpacing: 2,
+    fontFamily: pixelFont,
   },
   subtitle: {
     color: "#E2E8F0",
-    fontSize: 18,
-    lineHeight: 26,
+    fontSize: 14,
+    marginTop: 10,
     fontFamily: pixelFont,
   },
-  tile: {
-    backgroundColor: "#0D1938",
+  toolCard: {
+    backgroundColor: "#111827",
     borderWidth: 2,
-    borderColor: "#35517B",
-    borderRadius: 22,
-    paddingVertical: 16,
-    paddingHorizontal: 18,
+    borderColor: "#334155",
+    borderRadius: 18,
+    padding: 16,
     marginBottom: 12,
   },
-  tileTitle: {
-    color: "#F9FAFB",
-    fontFamily: pixelFont,
-    fontSize: 31 / 2,
-    fontWeight: "900",
-    marginBottom: 7,
-    letterSpacing: 0.6,
+  dreamCard: {
+    backgroundColor: "#111827",
+    borderWidth: 2,
+    borderColor: "#FBBF24",
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 12,
   },
-  tileSubtitle: {
-    color: "#E2E8F0",
-    fontSize: 31 / 2,
-    lineHeight: 22,
+  toolTitle: {
+    color: "#F9FAFB",
+    fontSize: 15,
+    fontWeight: "900",
+    fontFamily: pixelFont,
+  },
+  toolSubtitle: {
+    color: "#CBD5E1",
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 8,
+    fontFamily: pixelFont,
+  },
+  latestDreamBox: {
+    backgroundColor: "#0F172A",
+    borderWidth: 1,
+    borderColor: "#334155",
+    borderRadius: 12,
+    padding: 10,
+    marginTop: 12,
+  },
+  latestLabel: {
+    color: "#FDE68A",
+    fontSize: 10,
+    fontWeight: "900",
+    marginBottom: 5,
+    fontFamily: pixelFont,
+  },
+  latestTitle: {
+    color: "#F9FAFB",
+    fontSize: 13,
+    fontWeight: "900",
+    fontFamily: pixelFont,
+  },
+  latestText: {
+    color: "#CBD5E1",
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 4,
+    fontFamily: pixelFont,
   },
   bottomNav: {
     backgroundColor: "#0F172A",
@@ -173,11 +257,11 @@ const styles = StyleSheet.create({
   },
   bottomTitle: {
     color: "#E2E8F0",
-    fontFamily: pixelFont,
     fontSize: 11,
     fontWeight: "800",
     letterSpacing: 1.1,
     marginBottom: 8,
+    fontFamily: pixelFont,
   },
   navGrid: {
     flexDirection: "row",
@@ -190,7 +274,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#334155",
     borderRadius: 12,
-    paddingVertical: 10,
+    paddingVertical: 12,
     paddingHorizontal: 8,
     marginBottom: 8,
     alignItems: "center",
@@ -200,13 +284,17 @@ const styles = StyleSheet.create({
     borderColor: "#FBBF24",
   },
   navText: {
-    color: "#CBD5E1",
-    fontFamily: pixelFont,
+    color: "#E2E8F0",
     fontSize: 12,
-    fontWeight: "800",
+    fontWeight: "900",
     textAlign: "center",
+    fontFamily: pixelFont,
   },
   navTextActive: {
     color: "#FDE68A",
+    fontSize: 12,
+    fontWeight: "900",
+    textAlign: "center",
+    fontFamily: pixelFont,
   },
 });
