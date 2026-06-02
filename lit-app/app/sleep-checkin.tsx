@@ -11,6 +11,7 @@ type CheckIn = {
   id: string;
   checkInType?: CheckInType;
   hours?: string;
+  sleepQuality?: string;
   mood: string;
   stress: string;
   currentEnergyFeeling?: string;
@@ -35,18 +36,20 @@ function clampEnergy(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-function calculateMorningEnergy(hours: number, mood: number, stress: number) {
-  let score = 50;
+function calculateMorningEnergy(hours: number, sleepQuality: number, mood: number, stress: number) {
+  const hoursScore = clampEnergy((hours / 8) * 100);
+  const sleepQualityScore = sleepQuality * 10;
+  const moodScore = mood * 10;
+  const stressScore = (10 - stress) * 10;
 
-  if (hours >= 8) score += 25;
-  else if (hours >= 7) score += 15;
-  else if (hours >= 6) score += 5;
-  else score -= 15;
-
-  score += (mood - 5) * 4;
-  score -= stress * 3;
-
-  return clampEnergy(score);
+  return clampEnergy(
+    Math.round(
+      hoursScore * 0.35 +
+        sleepQualityScore * 0.30 +
+        moodScore * 0.20 +
+        stressScore * 0.15
+    )
+  );
 }
 
 function calculateAfternoonEnergy(baseEnergy: number, eaten: boolean, mood: number, stress: number, currentEnergyFeeling?: number) {
@@ -80,6 +83,7 @@ export default function SleepCheckInScreen() {
 
   const [latestCheckIn, setLatestCheckIn] = useState<CheckIn | null>(null);
   const [hours, setHours] = useState("");
+  const [sleepQuality, setSleepQuality] = useState("");
   const [mood, setMood] = useState("");
   const [stress, setStress] = useState("");
   const [eatenSinceMorning, setEatenSinceMorning] = useState<"yes" | "no" | "">("");
@@ -103,7 +107,8 @@ export default function SleepCheckInScreen() {
   }
 
   const isAfternoon = checkInType === "afternoon";
-  const hasMorningInputs = hours.trim() !== "" && mood.trim() !== "" && stress.trim() !== "";
+  const hasMorningInputs =
+    hours.trim() !== "" && sleepQuality.trim() !== "" && mood.trim() !== "" && stress.trim() !== "";
   const hasAfternoonInputs = eatenSinceMorning !== "" && mood.trim() !== "" && stress.trim() !== "";
   const hasAllInputs = isAfternoon ? hasAfternoonInputs : hasMorningInputs;
 
@@ -120,8 +125,8 @@ export default function SleepCheckInScreen() {
       );
     }
 
-    return calculateMorningEnergy(Number(hours), Number(mood), Number(stress));
-  }, [currentEnergyFeeling, eatenSinceMorning, hasAllInputs, hours, isAfternoon, latestCheckIn?.energy, mood, stress]);
+    return calculateMorningEnergy(Number(hours), Number(sleepQuality), Number(mood), Number(stress));
+  }, [currentEnergyFeeling, eatenSinceMorning, hasAllInputs, hours, isAfternoon, latestCheckIn?.energy, mood, sleepQuality, stress]);
 
   const mode = hasAllInputs ? getMode(energy) : "Recovery";
   const isRecovery = mode === "Recovery";
@@ -142,6 +147,7 @@ export default function SleepCheckInScreen() {
       id: String(Date.now()),
       checkInType,
       hours: isAfternoon ? latestCheckIn?.hours : hours,
+      sleepQuality: isAfternoon ? latestCheckIn?.sleepQuality : sleepQuality,
       mood,
       stress,
       currentEnergyFeeling: currentEnergyFeeling.trim() || undefined,
@@ -247,7 +253,17 @@ export default function SleepCheckInScreen() {
                 onChangeText={setHours}
               />
 
-              <Text style={styles.helperText}>Be honest. Even low sleep helps Luna build a better plan.</Text>
+              <Text style={styles.label}>Sleep Quality, 1–10</Text>
+              <TextInput
+                style={styles.input}
+                keyboardType="numeric"
+                placeholder="Example: 7"
+                placeholderTextColor="#64748B"
+                value={sleepQuality}
+                onChangeText={setSleepQuality}
+              />
+
+              <Text style={styles.helperText}>Rate how restored your sleep felt, even if the number of hours looked okay.</Text>
             </>
           )}
 
@@ -314,286 +330,43 @@ export default function SleepCheckInScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: "#0B1220",
-  },
-  container: {
-    paddingTop: 28,
-    paddingBottom: 36,
-  },
-  shell: {
-    width: "100%",
-    maxWidth: 520,
-    alignSelf: "center",
-    paddingHorizontal: 18,
-  },
-  progressHero: {
-    backgroundColor: "#251F11",
-    borderColor: "#FBBF24",
-    borderWidth: 3,
-    borderRadius: 24,
-    padding: 16,
-    marginBottom: 12,
-  },
-  recoveryHero: {
-    backgroundColor: "#1B1940",
-    borderColor: "#A78BFA",
-    borderWidth: 3,
-    borderRadius: 24,
-    padding: 16,
-    marginBottom: 12,
-  },
-  heroTopRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  heroCopy: {
-    flex: 1,
-    marginRight: 12,
-  },
-  modeIcon: {
-    fontSize: 28,
-    fontFamily: pixelFont,
-  },
-  heroTitle: {
-    fontSize: 25,
-    fontWeight: "900",
-    color: "#F9FAFB",
-    fontFamily: pixelFont,
-    textTransform: "uppercase",
-  },
-  heroSubtitle: {
-    fontSize: 13,
-    color: "#CBD5E1",
-    fontWeight: "800",
-    marginTop: 4,
-    fontFamily: pixelFont,
-  },
-  heroBody: {
-    fontSize: 13,
-    lineHeight: 20,
-    color: "#E2E8F0",
-    fontWeight: "700",
-    fontFamily: pixelFont,
-  },
-  progressLunaOrb: {
-    height: 58,
-    width: 58,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    backgroundColor: "#0F172A",
-    borderColor: "#FBBF24",
-  },
-  recoveryLunaOrb: {
-    height: 58,
-    width: 58,
-    borderRadius: 999,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    backgroundColor: "#0F172A",
-    borderColor: "#A78BFA",
-  },
-  lunaFace: {
-    fontSize: 26,
-    fontFamily: pixelFont,
-  },
-  lunaCard: {
-    backgroundColor: "#111827",
-    borderRadius: 18,
-    padding: 14,
-    marginBottom: 12,
-    borderWidth: 2,
-    borderColor: "#334155",
-  },
-  lunaName: {
-    fontSize: 14,
-    fontWeight: "900",
-    color: "#FDE68A",
-    marginBottom: 6,
-    fontFamily: pixelFont,
-  },
-  lunaText: {
-    fontSize: 13,
-    lineHeight: 20,
-    color: "#CBD5E1",
-    fontWeight: "600",
-    fontFamily: pixelFont,
-  },
-  inputCard: {
-    backgroundColor: "#111827",
-    borderRadius: 18,
-    padding: 14,
-    borderWidth: 2,
-    borderColor: "#334155",
-    marginBottom: 12,
-  },
-  cardLabel: {
-    fontSize: 12,
-    color: "#FDE68A",
-    marginBottom: 8,
-    textTransform: "uppercase",
-    fontWeight: "900",
-    fontFamily: pixelFont,
-  },
-  label: {
-    fontSize: 12,
-    fontWeight: "900",
-    color: "#E2E8F0",
-    marginBottom: 7,
-    marginTop: 10,
-    textTransform: "uppercase",
-    fontFamily: pixelFont,
-  },
-  input: {
-    backgroundColor: "#0F172A",
-    borderRadius: 12,
-    padding: 12,
-    fontSize: 15,
-    fontWeight: "800",
-    color: "#F9FAFB",
-    borderWidth: 2,
-    borderColor: "#334155",
-    fontFamily: pixelFont,
-  },
-  choiceRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  choiceButton: {
-    width: "48%",
-    backgroundColor: "#0F172A",
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: "#334155",
-    paddingVertical: 12,
-    alignItems: "center",
-  },
-  choiceButtonActive: {
-    borderColor: "#FBBF24",
-    backgroundColor: "#184B31",
-  },
-  choiceText: {
-    color: "#F9FAFB",
-    fontSize: 13,
-    fontWeight: "900",
-    fontFamily: pixelFont,
-  },
-  helperText: {
-    fontSize: 12,
-    lineHeight: 18,
-    color: "#94A3B8",
-    marginTop: 8,
-    fontWeight: "700",
-    fontFamily: pixelFont,
-  },
-  progressResultCard: {
-    backgroundColor: "#111827",
-    borderColor: "#FBBF24",
-    borderWidth: 3,
-    borderRadius: 20,
-    padding: 16,
-    marginBottom: 12,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  recoveryResultCard: {
-    backgroundColor: "#111827",
-    borderColor: "#A78BFA",
-    borderWidth: 3,
-    borderRadius: 20,
-    padding: 16,
-    marginBottom: 12,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  resultLabel: {
-    color: "#CBD5E1",
-    fontSize: 12,
-    fontWeight: "900",
-    textTransform: "uppercase",
-    marginBottom: 6,
-    fontFamily: pixelFont,
-  },
-  energy: {
-    fontSize: 34,
-    fontWeight: "900",
-    color: "#FBBF24",
-    fontFamily: pixelFont,
-  },
-  flameLabel: {
-    color: "#F9FAFB",
-    fontSize: 13,
-    fontWeight: "900",
-    marginTop: 4,
-    fontFamily: pixelFont,
-  },
-  modeBadge: {
-    backgroundColor: "#0F172A",
-    borderRadius: 999,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: "#FFFFFF",
-  },
-  modeBadgeText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "900",
-    fontFamily: pixelFont,
-  },
-  progressButton: {
-    backgroundColor: "#111827",
-    padding: 15,
-    borderRadius: 14,
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#FBBF24",
-    marginBottom: 10,
-  },
-  recoveryButton: {
-    backgroundColor: "#312E81",
-    padding: 15,
-    borderRadius: 14,
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#A78BFA",
-    marginBottom: 10,
-  },
-  disabledButton: {
-    backgroundColor: "#334155",
-    padding: 15,
-    borderRadius: 14,
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#475569",
-    marginBottom: 10,
-  },
-  buttonText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "900",
-    fontFamily: pixelFont,
-  },
-  backButton: {
-    backgroundColor: "#0F172A",
-    padding: 14,
-    borderRadius: 14,
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#334155",
-  },
-  backButtonText: {
-    color: "#E2E8F0",
-    fontSize: 13,
-    fontWeight: "900",
-    fontFamily: pixelFont,
-  },
+  screen: { flex: 1, backgroundColor: "#0B1220" },
+  container: { paddingTop: 28, paddingBottom: 36 },
+  shell: { width: "100%", maxWidth: 520, alignSelf: "center", paddingHorizontal: 18 },
+  progressHero: { backgroundColor: "#251F11", borderColor: "#FBBF24", borderWidth: 3, borderRadius: 24, padding: 16, marginBottom: 12 },
+  recoveryHero: { backgroundColor: "#1B1940", borderColor: "#A78BFA", borderWidth: 3, borderRadius: 24, padding: 16, marginBottom: 12 },
+  heroTopRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
+  heroCopy: { flex: 1, marginRight: 12 },
+  modeIcon: { fontSize: 28, fontFamily: pixelFont },
+  heroTitle: { fontSize: 25, fontWeight: "900", color: "#F9FAFB", fontFamily: pixelFont, textTransform: "uppercase" },
+  heroSubtitle: { fontSize: 13, color: "#CBD5E1", fontWeight: "800", marginTop: 4, fontFamily: pixelFont },
+  heroBody: { fontSize: 13, lineHeight: 20, color: "#E2E8F0", fontWeight: "700", fontFamily: pixelFont },
+  progressLunaOrb: { height: 58, width: 58, borderRadius: 999, alignItems: "center", justifyContent: "center", borderWidth: 2, backgroundColor: "#0F172A", borderColor: "#FBBF24" },
+  recoveryLunaOrb: { height: 58, width: 58, borderRadius: 999, alignItems: "center", justifyContent: "center", borderWidth: 2, backgroundColor: "#0F172A", borderColor: "#A78BFA" },
+  lunaFace: { fontSize: 26, fontFamily: pixelFont },
+  lunaCard: { backgroundColor: "#111827", borderRadius: 18, padding: 14, marginBottom: 12, borderWidth: 2, borderColor: "#334155" },
+  lunaName: { fontSize: 14, fontWeight: "900", color: "#FDE68A", marginBottom: 6, fontFamily: pixelFont },
+  lunaText: { fontSize: 13, lineHeight: 20, color: "#CBD5E1", fontWeight: "600", fontFamily: pixelFont },
+  inputCard: { backgroundColor: "#111827", borderRadius: 18, padding: 14, borderWidth: 2, borderColor: "#334155", marginBottom: 12 },
+  cardLabel: { fontSize: 12, color: "#FDE68A", marginBottom: 8, textTransform: "uppercase", fontWeight: "900", fontFamily: pixelFont },
+  label: { fontSize: 12, fontWeight: "900", color: "#E2E8F0", marginBottom: 7, marginTop: 10, textTransform: "uppercase", fontFamily: pixelFont },
+  input: { backgroundColor: "#0F172A", borderRadius: 12, padding: 12, fontSize: 15, fontWeight: "800", color: "#F9FAFB", borderWidth: 2, borderColor: "#334155", fontFamily: pixelFont },
+  choiceRow: { flexDirection: "row", justifyContent: "space-between" },
+  choiceButton: { width: "48%", backgroundColor: "#0F172A", borderRadius: 12, borderWidth: 2, borderColor: "#334155", paddingVertical: 12, alignItems: "center" },
+  choiceButtonActive: { borderColor: "#FBBF24", backgroundColor: "#184B31" },
+  choiceText: { color: "#F9FAFB", fontSize: 13, fontWeight: "900", fontFamily: pixelFont },
+  helperText: { fontSize: 12, lineHeight: 18, color: "#94A3B8", marginTop: 8, fontWeight: "700", fontFamily: pixelFont },
+  progressResultCard: { backgroundColor: "#111827", borderColor: "#FBBF24", borderWidth: 3, borderRadius: 20, padding: 16, marginBottom: 12, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  recoveryResultCard: { backgroundColor: "#111827", borderColor: "#A78BFA", borderWidth: 3, borderRadius: 20, padding: 16, marginBottom: 12, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  resultLabel: { color: "#CBD5E1", fontSize: 12, fontWeight: "900", textTransform: "uppercase", marginBottom: 6, fontFamily: pixelFont },
+  energy: { fontSize: 34, fontWeight: "900", color: "#FBBF24", fontFamily: pixelFont },
+  flameLabel: { color: "#F9FAFB", fontSize: 13, fontWeight: "900", marginTop: 4, fontFamily: pixelFont },
+  modeBadge: { backgroundColor: "#0F172A", borderRadius: 999, paddingVertical: 8, paddingHorizontal: 12, borderWidth: 1, borderColor: "#FFFFFF" },
+  modeBadgeText: { color: "#FFFFFF", fontSize: 12, fontWeight: "900", fontFamily: pixelFont },
+  progressButton: { backgroundColor: "#111827", padding: 15, borderRadius: 14, alignItems: "center", borderWidth: 2, borderColor: "#FBBF24", marginBottom: 10 },
+  recoveryButton: { backgroundColor: "#312E81", padding: 15, borderRadius: 14, alignItems: "center", borderWidth: 2, borderColor: "#A78BFA", marginBottom: 10 },
+  disabledButton: { backgroundColor: "#334155", padding: 15, borderRadius: 14, alignItems: "center", borderWidth: 2, borderColor: "#475569", marginBottom: 10 },
+  buttonText: { color: "#FFFFFF", fontSize: 14, fontWeight: "900", fontFamily: pixelFont },
+  backButton: { backgroundColor: "#0F172A", padding: 14, borderRadius: 14, alignItems: "center", borderWidth: 2, borderColor: "#334155" },
+  backButtonText: { color: "#E2E8F0", fontSize: 13, fontWeight: "900", fontFamily: pixelFont },
 });

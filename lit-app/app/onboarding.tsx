@@ -11,17 +11,7 @@ import {
   View,
 } from "react-native";
 
-type DreamCategory =
-  | "Health"
-  | "Money"
-  | "Mind"
-  | "Friends / Connection"
-  | "School / Work"
-  | "Confidence"
-  | "Creativity"
-  | "Sleep"
-  | "Phone Use"
-  | "Purpose";
+type DreamCategory = "Health" | "School / Work" | "Social Life" | "Purpose";
 
 type UserProfile = {
   name: string;
@@ -50,55 +40,32 @@ const pixelFont = Platform.select({
 
 const CATEGORY_GOALS: Record<DreamCategory, { goalOne: string; goalTwo: string; goalThree: string }> = {
   Health: {
-    goalOne: "build a consistent movement routine",
-    goalTwo: "improve daily nutrition",
-    goalThree: "protect sleep and recovery",
-  },
-  Money: {
-    goalOne: "build a useful money skill",
-    goalTwo: "find an income opportunity",
-    goalThree: "track spending and saving",
-  },
-  Mind: {
-    goalOne: "journal consistently",
-    goalTwo: "notice thought patterns",
-    goalThree: "practice awareness before reacting",
-  },
-  "Friends / Connection": {
-    goalOne: "reach out to one person",
-    goalTwo: "build social confidence",
-    goalThree: "create meaningful connections",
+    goalOne: "improve my sleep and energy",
+    goalTwo: "build a consistent fitness habit",
+    goalThree: "make healthier daily choices",
   },
   "School / Work": {
     goalOne: "complete one focus block",
-    goalTwo: "plan assignments earlier",
+    goalTwo: "stay ahead of assignments",
     goalThree: "build weekly consistency",
   },
-  Confidence: {
-    goalOne: "keep one promise to myself",
-    goalTwo: "practice one uncomfortable but safe action",
-    goalThree: "reflect on small wins",
-  },
-  Creativity: {
-    goalOne: "work on one creative project",
-    goalTwo: "share or save one idea",
-    goalThree: "make time for practice",
-  },
-  Sleep: {
-    goalOne: "improve sleep consistency",
-    goalTwo: "reduce phone use before bed",
-    goalThree: "use recovery when needed",
-  },
-  "Phone Use": {
-    goalOne: "notice screen-time triggers",
-    goalTwo: "replace scrolling with one small action",
-    goalThree: "create phone-free focus time",
+  "Social Life": {
+    goalOne: "reach out to one person",
+    goalTwo: "practice starting conversations",
+    goalThree: "build confidence with people",
   },
   Purpose: {
-    goalOne: "define what progress means to me",
-    goalTwo: "take one honest step daily",
+    goalOne: "choose one honest direction",
+    goalTwo: "take one small step daily",
     goalThree: "reflect on what feels meaningful",
   },
+};
+
+const CATEGORY_MEANINGS: Record<DreamCategory, string> = {
+  Health: "fitness, better sleep, energy, body, wellness",
+  "School / Work": "homework, studying, coding, career, productivity",
+  "Social Life": "friends, confidence with people, meeting new people, connection",
+  Purpose: "direction, identity, meaning, creativity, confidence, general growth",
 };
 
 const DREAM_CATEGORIES = Object.keys(CATEGORY_GOALS) as DreamCategory[];
@@ -258,6 +225,9 @@ export default function OnboardingScreen() {
                   <Text style={[styles.categoryText, selected && styles.categoryTextActive]}>
                     {category}
                   </Text>
+                  <Text style={[styles.categoryMeaningText, selected && styles.categoryTextActive]}>
+                    {CATEGORY_MEANINGS[category]}
+                  </Text>
                 </TouchableOpacity>
               );
             })}
@@ -269,6 +239,8 @@ export default function OnboardingScreen() {
             <Text style={styles.goalText}>2. {pathPreview.goalTwo || ""}</Text>
             <Text style={styles.goalText}>3. {pathPreview.goalThree || ""}</Text>
           </View>
+
+          <Text style={styles.goalHelperText}>Edit these goals to create the most accurate path for you.</Text>
 
           <Text style={styles.label}>Goal one</Text>
           <TextInput
@@ -501,6 +473,13 @@ const styles = StyleSheet.create({
   categoryTextActive: {
     color: "#111827",
   },
+  categoryMeaningText: {
+    color: "#CBD5E1",
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 5,
+    textAlign: "center",
+  },
   previewCard: {
     backgroundColor: "#1F2937",
     borderColor: "#FBBF24",
@@ -523,6 +502,13 @@ const styles = StyleSheet.create({
     color: "#F9FAFB",
     marginBottom: 4,
     fontWeight: "700",
+  },
+  goalHelperText: {
+    color: "#CBD5E1",
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: "700",
+    marginBottom: 6,
   },
   validationText: {
     color: "#FCA5A5",
