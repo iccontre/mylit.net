@@ -16,6 +16,12 @@ import {
   GOAL_MILESTONE_TEMPLATES,
   type GoalMilestoneSet,
 } from "../constants/goalMilestoneTemplates";
+import {
+  DEFAULT_GOAL_PHRASE,
+  GOAL_DATABASE,
+  GOAL_DATABASE_FALLBACK,
+  GOAL_SLOT,
+} from "../constants/goalDatabase";
 import { LLM_CONFIG, llmChatUrl } from "./llmConfig";
 
 export type GenerationMode = "Progress" | "Recovery" | "Neutral";
@@ -27,8 +33,10 @@ export type GenerationInput = {
   mode?: GenerationMode;
 };
 
+export type GenerationSource = "database" | "template" | "llm";
+
 export type GenerationResult = GoalMilestoneSet & {
-  source: "template" | "llm";
+  source: GenerationSource;
 };
 
 function pickTemplate(category: string): GoalMilestoneSet {
@@ -59,6 +67,47 @@ export function generateGoalMilestones(input: GenerationInput): GenerationResult
     longTerm: template.longTerm,
     source: "template",
   };
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+const GOAL_SLOT_PATTERN = new RegExp(escapeRegExp(GOAL_SLOT), "g");
+
+/**
+ * Offline, instant generation from the bundled goal database.
+ *
+ * This is the runtime path users actually hit: it picks a milestone variant
+ * for the category and substitutes the `{goal}` slot with the user's typed
+ * specific goal. No network, no LLM — works fully offline.
+ *
+ * `variantIndex` lets the UI offer "regenerate" by cycling through the
+ * variants the ROG (or a human) authored for that category.
+ */
+export function generateFromDatabase(
+  input: GenerationInput,
+  variantIndex = 0
+): GenerationResult {
+  const variants = GOAL_DATABASE[input.category] ?? GOAL_DATABASE_FALLBACK;
+  const safeVariants = variants.length > 0 ? variants : GOAL_DATABASE_FALLBACK;
+  const variant = safeVariants[((variantIndex % safeVariants.length) + safeVariants.length) % safeVariants.length];
+
+  const goalPhrase = input.specificGoal?.trim() || DEFAULT_GOAL_PHRASE;
+  const fill = (text: string) => text.replace(GOAL_SLOT_PATTERN, goalPhrase);
+
+  return {
+    shortTerm: fill(variant.shortTerm),
+    midTerm: fill(variant.midTerm),
+    longTerm: fill(variant.longTerm),
+    source: "database",
+  };
+}
+
+/** Number of authored variants available for a category (for UI rotation). */
+export function variantCountFor(category: string): number {
+  const variants = GOAL_DATABASE[category];
+  return variants && variants.length > 0 ? variants.length : GOAL_DATABASE_FALLBACK.length;
 }
 
 const SYSTEM_PROMPT =

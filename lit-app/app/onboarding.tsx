@@ -1,8 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  ActivityIndicator,
   Platform,
   ScrollView,
   StyleSheet,
@@ -19,9 +18,9 @@ import {
 } from "../constants/goalMilestoneTemplates";
 import { logGoalFeedback } from "../lib/feedbackLog";
 import {
-  generateGoalMilestones,
-  generateGoalMilestonesAsync,
-  type GenerationResult,
+  generateFromDatabase,
+  variantCountFor,
+  type GenerationSource,
 } from "../lib/goalGeneration";
 
 type DreamCategory =
@@ -47,7 +46,7 @@ type UserProfile = {
   midTermGoal: string;
   longTermGoal: string;
   goalsGeneratedAt?: string;
-  goalsSource?: "template" | "llm";
+  goalsSource?: GenerationSource;
   // Legacy mirrored fields, kept so older screens continue to read goals
   goalOne: string;
   goalTwo: string;
@@ -104,8 +103,9 @@ export default function OnboardingScreen() {
   const [midTermGoal, setMidTermGoal] = useState("");
   const [longTermGoal, setLongTermGoal] = useState("");
   const [lastGenerated, setLastGenerated] = useState<GoalMilestoneSet>(EMPTY_MILESTONES);
-  const [generationSource, setGenerationSource] = useState<"template" | "llm">("template");
-  const [isGenerating, setIsGenerating] = useState(false);
+  const [generationSource, setGenerationSource] = useState<GenerationSource>("database");
+  const [hasGenerated, setHasGenerated] = useState(false);
+  const [variantIndex, setVariantIndex] = useState(0);
   const [biggestObstacle, setBiggestObstacle] = useState("");
   const [hasWorkOrSchool, setHasWorkOrSchool] = useState(true);
   const [hasTransportation, setHasTransportation] = useState(false);
@@ -114,11 +114,6 @@ export default function OnboardingScreen() {
   const [hasFoodControl, setHasFoodControl] = useState(false);
   const [validationMessage, setValidationMessage] = useState("");
   const [hasExistingProfile, setHasExistingProfile] = useState(false);
-
-  // Token to ignore stale async LLM responses, and a flag so we never clobber
-  // edits the user made while the model was still thinking.
-  const requestTokenRef = useRef(0);
-  const editedDuringGenRef = useRef(false);
 
   useEffect(() => {
     loadProfile();
@@ -135,76 +130,43 @@ export default function OnboardingScreen() {
     setLongTermGoal(next.longTerm);
   }
 
-  function onMilestoneEdit(setter: (v: string) => void, value: string) {
-    editedDuringGenRef.current = true;
-    setter(value);
-  }
-
   /**
-   * Fill milestones instantly from templates, then try to upgrade to LLM
-   * output in the background. Stale responses and mid-generation edits are
-   * both ignored so the user is never surprised.
+   * Offline generation: pull a milestone variant for the chosen category from
+   * the bundled database and slot in the user's specific goal. Instant, no
+   * network. `cycle` advances to the next authored variant so the user can
+   * regenerate for a different draft.
    */
-  function generateFor(category: DreamCategory) {
-    const token = requestTokenRef.current + 1;
-    requestTokenRef.current = token;
-    editedDuringGenRef.current = false;
-
-    const instant = generateGoalMilestones({
-      category,
-      dream: longTermDream,
-      specificGoal,
-    });
-
-    const instantSet: GoalMilestoneSet = {
-      shortTerm: instant.shortTerm,
-      midTerm: instant.midTerm,
-      longTerm: instant.longTerm,
-    };
-
-    applyMilestones(instantSet);
-    setLastGenerated(instantSet);
-    setGenerationSource("template");
-    setIsGenerating(true);
-
-    generateGoalMilestonesAsync({
-      category,
-      dream: longTermDream,
-      specificGoal,
-    })
-      .then((result: GenerationResult) => {
-        // Ignore if a newer request started or the user began editing.
-        if (token !== requestTokenRef.current) return;
-        setIsGenerating(false);
-
-        if (result.source !== "llm" || editedDuringGenRef.current) return;
-
-        const llmSet: GoalMilestoneSet = {
-          shortTerm: result.shortTerm,
-          midTerm: result.midTerm,
-          longTerm: result.longTerm,
-        };
-        applyMilestones(llmSet);
-        setLastGenerated(llmSet);
-        setGenerationSource("llm");
-      })
-      .catch(() => {
-        if (token === requestTokenRef.current) setIsGenerating(false);
-      });
-  }
-
-  function applyCategory(category: DreamCategory) {
-    setDreamCategory(category);
-    generateFor(category);
-  }
-
-  function regenerateMilestones() {
+  function generateMilestones(cycle = false) {
     if (!dreamCategory) {
       setValidationMessage("Pick a category first so we can draft your milestones.");
       return;
     }
     setValidationMessage("");
-    generateFor(dreamCategory);
+
+    const nextIndex = cycle && hasGenerated ? variantIndex + 1 : variantIndex;
+    const result = generateFromDatabase(
+      { category: dreamCategory, specificGoal },
+      nextIndex
+    );
+
+    const set: GoalMilestoneSet = {
+      shortTerm: result.shortTerm,
+      midTerm: result.midTerm,
+      longTerm: result.longTerm,
+    };
+
+    applyMilestones(set);
+    setLastGenerated(set);
+    setGenerationSource(result.source);
+    setVariantIndex(nextIndex);
+    setHasGenerated(true);
+  }
+
+  function applyCategory(category: DreamCategory) {
+    // Selecting a category no longer auto-generates — the user clicks Generate.
+    setDreamCategory(category);
+    setVariantIndex(0);
+    setHasGenerated(false);
   }
 
   async function loadProfile() {
@@ -229,9 +191,17 @@ export default function OnboardingScreen() {
 
       // Prefer tiered fields; fall back to legacy goalOne/Two/Three so users
       // who set up their path before this flow existed don't lose anything.
-      setShortTermGoal(profile.shortTermGoal || profile.goalOne || "");
-      setMidTermGoal(profile.midTermGoal || profile.goalTwo || "");
-      setLongTermGoal(profile.longTermGoal || profile.goalThree || "");
+      const loadedShort = profile.shortTermGoal || profile.goalOne || "";
+      const loadedMid = profile.midTermGoal || profile.goalTwo || "";
+      const loadedLong = profile.longTermGoal || profile.goalThree || "";
+      setShortTermGoal(loadedShort);
+      setMidTermGoal(loadedMid);
+      setLongTermGoal(loadedLong);
+      if (loadedShort || loadedMid || loadedLong) {
+        setHasGenerated(true);
+        setLastGenerated({ shortTerm: loadedShort, midTerm: loadedMid, longTerm: loadedLong });
+      }
+      if (profile.goalsSource) setGenerationSource(profile.goalsSource);
 
       setBiggestObstacle(profile.biggestObstacle || "");
       setHasWorkOrSchool(profile.hasWorkOrSchool ?? true);
@@ -246,10 +216,17 @@ export default function OnboardingScreen() {
 
   async function saveProfile() {
     const trimmedName = name.trim();
+    // longTermDream is no longer collected here; preserve whatever was set
+    // elsewhere (e.g. the "Next Long-Term Goal" flow) so we don't wipe it.
     const trimmedDream = longTermDream.trim();
 
-    if (!trimmedName || !trimmedDream || !dreamCategory) {
-      setValidationMessage("Please add your name, long-term dream, and a dream category.");
+    if (!trimmedName || !dreamCategory) {
+      setValidationMessage("Please add your name and pick a category.");
+      return;
+    }
+
+    if (milestonesEmpty) {
+      setValidationMessage("Tap Generate to draft your milestones (and edit them if you like).");
       return;
     }
 
@@ -373,16 +350,6 @@ export default function OnboardingScreen() {
             onChangeText={setName}
           />
 
-          <Text style={styles.label}>What is your long-term dream?</Text>
-          <TextInput
-            style={styles.textArea}
-            multiline
-            placeholder="Example: I want to feel healthy, financially stable, and proud of my day-to-day life."
-            placeholderTextColor="#94A3B8"
-            value={longTermDream}
-            onChangeText={setLongTermDream}
-          />
-
           <Text style={styles.label}>Choose the category that fits your dream</Text>
           <View style={styles.categoryGrid}>
             {DREAM_CATEGORIES.map((category) => {
@@ -410,35 +377,32 @@ export default function OnboardingScreen() {
             onChangeText={setSpecificGoal}
           />
 
+          <TouchableOpacity
+            style={[styles.generateButton, !dreamCategory && styles.generateButtonDisabled]}
+            onPress={() => generateMilestones(false)}
+            disabled={!dreamCategory}
+          >
+            <Text style={styles.generateButtonText}>
+              {hasGenerated ? "↻ Generate again" : "✦ Generate my milestones"}
+            </Text>
+          </TouchableOpacity>
+
           <View style={styles.previewCard}>
             <View style={styles.previewHeaderRow}>
               <Text style={styles.previewTitle}>YOUR PATH MILESTONES</Text>
-              <TouchableOpacity
-                style={[
-                  styles.regenerateButton,
-                  (!dreamCategory || isGenerating) && styles.regenerateButtonDisabled,
-                ]}
-                onPress={regenerateMilestones}
-                disabled={!dreamCategory || isGenerating}
-              >
-                {isGenerating ? (
-                  <View style={styles.regenerateLoadingRow}>
-                    <ActivityIndicator size="small" color="#86EFAC" />
-                    <Text style={styles.regenerateButtonText}>Generating…</Text>
-                  </View>
-                ) : (
-                  <Text style={styles.regenerateButtonText}>↻ Regenerate</Text>
-                )}
-              </TouchableOpacity>
+              {hasGenerated && variantCountFor(dreamCategory) > 1 ? (
+                <TouchableOpacity
+                  style={styles.regenerateButton}
+                  onPress={() => generateMilestones(true)}
+                >
+                  <Text style={styles.regenerateButtonText}>↻ New draft</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
             <Text style={styles.previewHint}>
               {milestonesEmpty
-                ? "Pick a category above to draft your three milestones."
-                : isGenerating
-                  ? "Luna is drafting personalized milestones from your goal…"
-                  : generationSource === "llm"
-                    ? "Personalized by Luna. Edit any milestone to make it yours — your edits shape future suggestions."
-                    : "Edit any milestone to make it yours — your edits help shape future suggestions."}
+                ? "Pick a category, type your specific goal, then tap Generate to draft three milestones."
+                : "Edit any milestone to make it yours — your edits are saved as higher-weight training signal."}
             </Text>
           </View>
 
@@ -449,7 +413,7 @@ export default function OnboardingScreen() {
                   key={horizon}
                   horizon={horizon}
                   value={shortTermGoal}
-                  onChange={(v) => onMilestoneEdit(setShortTermGoal, v)}
+                  onChange={setShortTermGoal}
                 />
               );
             }
@@ -459,7 +423,7 @@ export default function OnboardingScreen() {
                   key={horizon}
                   horizon={horizon}
                   value={midTermGoal}
-                  onChange={(v) => onMilestoneEdit(setMidTermGoal, v)}
+                  onChange={setMidTermGoal}
                 />
               );
             }
@@ -468,7 +432,7 @@ export default function OnboardingScreen() {
                 key={horizon}
                 horizon={horizon}
                 value={longTermGoal}
-                onChange={(v) => onMilestoneEdit(setLongTermGoal, v)}
+                onChange={setLongTermGoal}
               />
             );
           })}
@@ -704,6 +668,26 @@ const styles = StyleSheet.create({
     color: "#CBD5E1",
     lineHeight: 17,
   },
+  generateButton: {
+    backgroundColor: "#166534",
+    borderColor: "#FBBF24",
+    borderWidth: 2,
+    borderRadius: 14,
+    paddingVertical: 13,
+    alignItems: "center",
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  generateButtonDisabled: {
+    opacity: 0.4,
+  },
+  generateButtonText: {
+    color: "#F9FAFB",
+    fontFamily: pixelFont,
+    fontWeight: "900",
+    fontSize: 14,
+    letterSpacing: 0.8,
+  },
   regenerateButton: {
     backgroundColor: "#0F172A",
     borderColor: "#22C55E",
@@ -712,20 +696,12 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 10,
   },
-  regenerateButtonDisabled: {
-    opacity: 0.4,
-  },
   regenerateButtonText: {
     color: "#86EFAC",
     fontFamily: pixelFont,
     fontWeight: "900",
     fontSize: 11,
     letterSpacing: 0.6,
-  },
-  regenerateLoadingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
   },
   milestoneField: {
     marginTop: 4,
