@@ -7,9 +7,12 @@
  * app ships with. Users never call the LLM; this script is the only place the
  * model is used.
  *
+ * The ROG is reachable over Tailscale at 100.116.162.41 (the shared dev host),
+ * so this works from anywhere both machines are on the tailnet.
+ *
  * Usage:
  *   node scripts/generateGoalDatabase.mjs
- *   OLLAMA_BASE_URL=http://10.145.163.105:11434 \
+ *   OLLAMA_BASE_URL=http://100.116.162.41:11434 \
  *   OLLAMA_MODEL=qwen2.5:14b-instruct-q4_K_M \
  *   VARIANTS=3 node scripts/generateGoalDatabase.mjs
  *
@@ -28,7 +31,7 @@ import { dirname, join } from "node:path";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const OUT_PATH = join(__dirname, "..", "constants", "goalDatabase.ts");
 
-const BASE_URL = (process.env.OLLAMA_BASE_URL || "http://10.145.163.105:11434").replace(/\/$/, "");
+const BASE_URL = (process.env.OLLAMA_BASE_URL || "http://100.116.162.41:11434").replace(/\/$/, "");
 const MODEL = process.env.OLLAMA_MODEL || "qwen2.5:14b-instruct-q4_K_M";
 const VARIANTS = Math.max(1, Number(process.env.VARIANTS || "2"));
 const TIMEOUT_MS = Number(process.env.TIMEOUT_MS || "60000");
