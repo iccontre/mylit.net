@@ -835,10 +835,26 @@ export default function HomeScreen() {
           <View style={styles.questHeaderRow}>
             <Text style={styles.questTitle}>Quest Board</Text>
             <Text style={styles.questProgress}>
-              {completedVisibleQuests}/{visibleQuests.length || 0}
+              {isNeutral ? "🔒 Locked" : `${completedVisibleQuests}/${visibleQuests.length || 0}`}
             </Text>
           </View>
 
+          {isNeutral ? (
+            <View style={styles.questLockedCard}>
+              <Text style={styles.questLockedIcon}>🔒</Text>
+              <Text style={styles.questLockedTitle}>Quest Board Locked</Text>
+              <Text style={styles.questLockedText}>
+                Complete your Morning Check-In to calculate today&apos;s energy and unlock quests built around your path.
+              </Text>
+              <TouchableOpacity
+                style={styles.questLockedButton}
+                onPress={() => navigateWithHaptic("/sleep-checkin")}
+              >
+                <Text style={styles.questLockedButtonText}>Start Morning Check-In</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
           <Text style={styles.questSubtitle}>Complete one. Reflect if it misses.</Text>
 
           {visibleQuests.map((quest) => {
@@ -875,6 +891,8 @@ export default function HomeScreen() {
               </View>
             );
           })}
+            </>
+          )}
         </View>
 
         <View style={styles.rankPanel}>
@@ -1303,6 +1321,51 @@ const styles = StyleSheet.create({
     color: "#F9FAFB",
     fontSize: 13,
     fontWeight: "900",
+  },
+  questLockedCard: {
+    backgroundColor: "#0F172A",
+    borderWidth: 2,
+    borderColor: "#334155",
+    borderStyle: "dashed",
+    borderRadius: 16,
+    paddingVertical: 22,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    marginTop: 10,
+  },
+  questLockedIcon: {
+    fontSize: 34,
+    marginBottom: 8,
+  },
+  questLockedTitle: {
+    color: "#F9FAFB",
+    fontSize: 15,
+    fontWeight: "900",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+    marginBottom: 6,
+  },
+  questLockedText: {
+    color: "#CBD5E1",
+    fontSize: 13,
+    lineHeight: 19,
+    textAlign: "center",
+    marginBottom: 14,
+  },
+  questLockedButton: {
+    backgroundColor: "#166534",
+    borderWidth: 2,
+    borderColor: "#FBBF24",
+    borderRadius: 12,
+    paddingVertical: 11,
+    paddingHorizontal: 18,
+    alignItems: "center",
+  },
+  questLockedButtonText: {
+    color: "#F9FAFB",
+    fontSize: 13,
+    fontWeight: "900",
+    letterSpacing: 0.4,
   },
   questSubtitle: {
     color: "#CBD5E1",
