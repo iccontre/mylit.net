@@ -4,6 +4,8 @@ import { Link, useFocusEffect, useLocalSearchParams, useRouter } from "expo-rout
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
+import { generateProgressQuests } from "../../lib/questGeneration";
+
 type Quest = {
   title: string;
   type: string;
@@ -420,6 +422,9 @@ export default function HomeScreen() {
   const thirdGoal =
     profile?.longTermGoal?.trim() || profile?.goalThree?.trim() || "your future";
 
+  // The specific goal anchors goal-aware quest generation (Progress mode).
+  const specificGoal = profile?.specificGoal?.trim() || "";
+
   const completedMandatoryTitles = completedQuests.filter(
     (title) => title === "Eat to restore energy" || title === "Relax for 30 minutes"
   );
@@ -628,14 +633,6 @@ export default function HomeScreen() {
     }
 
     const category = profile?.dreamCategory?.trim() || "Purpose";
-    const questMode: "Recovery" | "Progress" = isRecovery ? "Recovery" : "Progress";
-    const categoryQuests = getCategoryQuests(category, questMode);
-
-    const goalQuests: Quest[] = [
-      { title: `Goal step: ${topGoal}`, type: "Goal", steps: 1 },
-      { title: `Goal step: ${secondGoal}`, type: "Goal", steps: 1 },
-      { title: `Goal step: ${thirdGoal}`, type: "Goal", steps: 1 },
-    ];
 
     const resourceQuest: Quest = profile?.hasQuietSpace
       ? { title: "Use your quiet space for one focus block", type: "Focus", steps: 1 }
@@ -649,13 +646,29 @@ export default function HomeScreen() {
       ? { title: "Plan one out-of-home step you can reach", type: "Logistics", steps: 1 }
       : { title: "Plan one step you can do from home", type: "Logistics", steps: 1 };
 
-    const baseQuests = [
-      ...categoryQuests,
-      ...goalQuests,
-      resourceQuest,
-      movementQuest,
-      transportQuest,
-    ];
+    let baseQuests: Quest[];
+
+    if (isProgress) {
+      // Progress mode: goal-anchored daily quests from the offline quest DB,
+      // personalized with the user's specific goal.
+      const progressQuests = generateProgressQuests({ category, specificGoal }, 5);
+      baseQuests = [...progressQuests, resourceQuest, movementQuest, transportQuest];
+    } else {
+      // Recovery mode (unchanged for now): gentle category quests + goal steps.
+      const categoryQuests = getCategoryQuests(category, "Recovery");
+      const goalQuests: Quest[] = [
+        { title: `Goal step: ${topGoal}`, type: "Goal", steps: 1 },
+        { title: `Goal step: ${secondGoal}`, type: "Goal", steps: 1 },
+        { title: `Goal step: ${thirdGoal}`, type: "Goal", steps: 1 },
+      ];
+      baseQuests = [
+        ...categoryQuests,
+        ...goalQuests,
+        resourceQuest,
+        movementQuest,
+        transportQuest,
+      ];
+    }
 
     return [
       ...(mandatoryQuest ? [mandatoryQuest] : []),
