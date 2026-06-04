@@ -11,11 +11,14 @@ type CheckIn = {
   id: string;
   checkInType?: CheckInType;
   hours?: string;
+  sleepQuality?: string;
   mood: string;
   stress: string;
   currentEnergyFeeling?: string;
   eatenSinceMorning?: boolean;
+  hasEatenToday?: boolean;
   foodSinceMorning?: string;
+  afternoonCheckInCompletedToday?: boolean;
   energy: number;
   mode: CheckInMode;
   createdAt: string;
@@ -35,31 +38,38 @@ function clampEnergy(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-function calculateMorningEnergy(hours: number, mood: number, stress: number) {
-  let score = 50;
+function calculateMorningEnergy(hours: number, sleepQuality: number, mood: number, stress: number) {
+  const hoursScore = clampEnergy((hours / 8) * 100);
+  const sleepQualityScore = sleepQuality * 10;
+  const moodScore = mood * 10;
+  const stressScore = (10 - stress) * 10;
 
-  if (hours >= 8) score += 25;
-  else if (hours >= 7) score += 15;
-  else if (hours >= 6) score += 5;
-  else score -= 15;
-
-  score += (mood - 5) * 4;
-  score -= stress * 3;
-
-  return clampEnergy(score);
+  return clampEnergy(
+    Math.round(
+      hoursScore * 0.35 +
+        sleepQualityScore * 0.30 +
+        moodScore * 0.20 +
+        stressScore * 0.15
+    )
+  );
 }
 
 function calculateAfternoonEnergy(baseEnergy: number, eaten: boolean, mood: number, stress: number, currentEnergyFeeling?: number) {
   const foodBonus = eaten ? 12 : 0;
-  const moodShift = (mood - 5) * 2;
-  const stressShift = stress * -2;
-  const feltEnergyShift = currentEnergyFeeling ? (currentEnergyFeeling - 5) * 2 : 0;
+  const moodAdjustment = (mood - 5) * 2;
+  const stressAdjustment = (5 - stress) * 2;
+  let updatedEnergy = baseEnergy + foodBonus + moodAdjustment + stressAdjustment;
 
-  return clampEnergy(baseEnergy + foodBonus + moodShift + stressShift + feltEnergyShift);
+  if (currentEnergyFeeling !== undefined) {
+    const energyFeelingScore = currentEnergyFeeling * 10;
+    updatedEnergy = Math.round(updatedEnergy * 0.75 + energyFeelingScore * 0.25);
+  }
+
+  return clampEnergy(updatedEnergy);
 }
 
 function getMode(score: number): CheckInMode {
-  return score >= 60 ? "Progress" : "Recovery";
+  return score > 60 ? "Progress" : "Recovery";
 }
 
 function getFlameLabel(score: number) {
@@ -80,6 +90,7 @@ export default function SleepCheckInScreen() {
 
   const [latestCheckIn, setLatestCheckIn] = useState<CheckIn | null>(null);
   const [hours, setHours] = useState("");
+  const [sleepQuality, setSleepQuality] = useState("");
   const [mood, setMood] = useState("");
   const [stress, setStress] = useState("");
   const [eatenSinceMorning, setEatenSinceMorning] = useState<"yes" | "no" | "">("");
@@ -103,7 +114,8 @@ export default function SleepCheckInScreen() {
   }
 
   const isAfternoon = checkInType === "afternoon";
-  const hasMorningInputs = hours.trim() !== "" && mood.trim() !== "" && stress.trim() !== "";
+  const hasMorningInputs =
+    hours.trim() !== "" && sleepQuality.trim() !== "" && mood.trim() !== "" && stress.trim() !== "";
   const hasAfternoonInputs = eatenSinceMorning !== "" && mood.trim() !== "" && stress.trim() !== "";
   const hasAllInputs = isAfternoon ? hasAfternoonInputs : hasMorningInputs;
 
@@ -120,8 +132,8 @@ export default function SleepCheckInScreen() {
       );
     }
 
-    return calculateMorningEnergy(Number(hours), Number(mood), Number(stress));
-  }, [currentEnergyFeeling, eatenSinceMorning, hasAllInputs, hours, isAfternoon, latestCheckIn?.energy, mood, stress]);
+    return calculateMorningEnergy(Number(hours), Number(sleepQuality), Number(mood), Number(stress));
+  }, [currentEnergyFeeling, eatenSinceMorning, hasAllInputs, hours, isAfternoon, latestCheckIn?.energy, mood, sleepQuality, stress]);
 
   const mode = hasAllInputs ? getMode(energy) : "Recovery";
   const isRecovery = mode === "Recovery";
@@ -142,11 +154,14 @@ export default function SleepCheckInScreen() {
       id: String(Date.now()),
       checkInType,
       hours: isAfternoon ? latestCheckIn?.hours : hours,
+      sleepQuality: isAfternoon ? latestCheckIn?.sleepQuality : sleepQuality,
       mood,
       stress,
       currentEnergyFeeling: currentEnergyFeeling.trim() || undefined,
       eatenSinceMorning: isAfternoon ? eatenSinceMorning === "yes" : false,
+      hasEatenToday: isAfternoon ? eatenSinceMorning === "yes" : false,
       foodSinceMorning: isAfternoon ? foodSinceMorning.trim() : undefined,
+      afternoonCheckInCompletedToday: isAfternoon,
       energy,
       mode,
       createdAt: new Date().toISOString(),
@@ -247,7 +262,17 @@ export default function SleepCheckInScreen() {
                 onChangeText={setHours}
               />
 
-              <Text style={styles.helperText}>Be honest. Even low sleep helps Luna build a better plan.</Text>
+              <Text style={styles.label}>Sleep Quality, 1–10</Text>
+              <TextInput
+                style={styles.input}
+                keyboardType="numeric"
+                placeholder="Example: 7"
+                placeholderTextColor="#64748B"
+                value={sleepQuality}
+                onChangeText={setSleepQuality}
+              />
+
+              <Text style={styles.helperText}>Rate how restored your sleep felt, even if the number of hours looked okay.</Text>
             </>
           )}
 

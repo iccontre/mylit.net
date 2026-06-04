@@ -23,17 +23,7 @@ import {
   type GenerationSource,
 } from "../lib/goalGeneration";
 
-type DreamCategory =
-  | "Health"
-  | "Money"
-  | "Mind"
-  | "Friends / Connection"
-  | "School / Work"
-  | "Confidence"
-  | "Creativity"
-  | "Sleep"
-  | "Phone Use"
-  | "Purpose";
+type DreamCategory = "Health" | "School / Work" | "Social Life" | "Purpose";
 
 type UserProfile = {
   name: string;
@@ -68,18 +58,14 @@ const pixelFont = Platform.select({
   default: "monospace",
 });
 
-const DREAM_CATEGORIES: DreamCategory[] = [
-  "Health",
-  "Money",
-  "Mind",
-  "Friends / Connection",
-  "School / Work",
-  "Confidence",
-  "Creativity",
-  "Sleep",
-  "Phone Use",
-  "Purpose",
-];
+const CATEGORY_MEANINGS: Record<DreamCategory, string> = {
+  Health: "fitness, better sleep, energy, body, wellness",
+  "School / Work": "homework, studying, coding, career, productivity",
+  "Social Life": "friends, confidence with people, meeting new people, connection",
+  Purpose: "direction, identity, meaning, creativity, confidence, general growth",
+};
+
+const DREAM_CATEGORIES = Object.keys(CATEGORY_MEANINGS) as DreamCategory[];
 
 const HORIZON_ORDER: GoalHorizon[] = ["shortTerm", "midTerm", "longTerm"];
 
@@ -90,6 +76,27 @@ const EMPTY_MILESTONES: GoalMilestoneSet = {
 };
 
 const CATEGORY_SET = new Set<string>(DREAM_CATEGORIES);
+
+/** Map onboarding categories to goal-database keys (main simplified Social Life). */
+const LEGACY_CATEGORY_ALIASES: Record<string, DreamCategory> = {
+  "Friends / Connection": "Social Life",
+  Money: "Purpose",
+  Mind: "Purpose",
+  Confidence: "Social Life",
+  Creativity: "Purpose",
+  Sleep: "Health",
+  "Phone Use": "Purpose",
+};
+
+function normalizeDreamCategory(category?: string): DreamCategory | "" {
+  if (!category) return "";
+  if (CATEGORY_SET.has(category)) return category as DreamCategory;
+  return LEGACY_CATEGORY_ALIASES[category] ?? "";
+}
+
+function databaseCategoryFor(category: DreamCategory): string {
+  return category === "Social Life" ? "Friends / Connection" : category;
+}
 
 export default function OnboardingScreen() {
   const router = useRouter();
@@ -145,7 +152,7 @@ export default function OnboardingScreen() {
 
     const nextIndex = cycle && hasGenerated ? variantIndex + 1 : variantIndex;
     const result = generateFromDatabase(
-      { category: dreamCategory, specificGoal },
+      { category: databaseCategoryFor(dreamCategory), specificGoal },
       nextIndex
     );
 
@@ -178,10 +185,7 @@ export default function OnboardingScreen() {
       const profile = JSON.parse(saved) as Partial<UserProfile>;
       setHasExistingProfile(true);
 
-      const savedCategory =
-        profile.dreamCategory && CATEGORY_SET.has(profile.dreamCategory)
-          ? (profile.dreamCategory as DreamCategory)
-          : "";
+      const savedCategory = normalizeDreamCategory(profile.dreamCategory);
 
       setName(profile.name || "");
       setLongTermDream(profile.longTermDream || "");
@@ -363,6 +367,9 @@ export default function OnboardingScreen() {
                   <Text style={[styles.categoryText, selected && styles.categoryTextActive]}>
                     {category}
                   </Text>
+                  <Text style={[styles.categoryMeaningText, selected && styles.categoryTextActive]}>
+                    {CATEGORY_MEANINGS[category]}
+                  </Text>
                 </TouchableOpacity>
               );
             })}
@@ -390,7 +397,7 @@ export default function OnboardingScreen() {
           <View style={styles.previewCard}>
             <View style={styles.previewHeaderRow}>
               <Text style={styles.previewTitle}>YOUR PATH MILESTONES</Text>
-              {hasGenerated && variantCountFor(dreamCategory) > 1 ? (
+              {hasGenerated && variantCountFor(databaseCategoryFor(dreamCategory as DreamCategory)) > 1 ? (
                 <TouchableOpacity
                   style={styles.regenerateButton}
                   onPress={() => generateMilestones(true)}
@@ -640,6 +647,13 @@ const styles = StyleSheet.create({
   },
   categoryTextActive: {
     color: "#111827",
+  },
+  categoryMeaningText: {
+    color: "#CBD5E1",
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 5,
+    textAlign: "center",
   },
   previewCard: {
     backgroundColor: "#1F2937",
