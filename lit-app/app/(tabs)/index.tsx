@@ -2,9 +2,20 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { Link, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Image, ImageBackground, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
+import { uiAssets } from "../../constants/uiAssets";
 import { generateProgressQuests } from "../../lib/questGeneration";
+
+const mylitLogo = require("../../assets/ui/logo/mylit-logo.png");
+
+const fireAssets = {
+  ember: require("../../assets/ui/fires/ember.png"),
+  lowFlame: require("../../assets/ui/fires/low-flame.png"),
+  steadyFlame: require("../../assets/ui/fires/steady-flame.png"),
+  brightFlame: require("../../assets/ui/fires/bright-flame.png"),
+  blazingFlame: require("../../assets/ui/fires/blazing-flame.png"),
+};
 
 type Quest = {
   title: string;
@@ -78,6 +89,7 @@ type UserProfile = {
   hasGymAccess?: boolean;
   hasQuietSpace?: boolean;
   hasFoodControl?: boolean;
+  goalsGeneratedAt?: string;
 };
 
 type PreSleepIntention = {
@@ -128,22 +140,22 @@ function clampEnergy(value: number) {
 
 function getFlameState(score: number) {
   if (score >= 80) {
-    return { icon: "🔥", label: "Blazing Flame", size: 74 };
+    return { image: fireAssets.blazingFlame, label: "Blazing Flame", size: 74 };
   }
 
   if (score >= 60) {
-    return { icon: "🔥", label: "Bright Flame", size: 62 };
+    return { image: fireAssets.brightFlame, label: "Bright Flame", size: 62 };
   }
 
   if (score >= 40) {
-    return { icon: "🔥", label: "Steady Flame", size: 50 };
+    return { image: fireAssets.steadyFlame, label: "Steady Flame", size: 50 };
   }
 
   if (score >= 25) {
-    return { icon: "🔥", label: "Low Flame", size: 40 };
+    return { image: fireAssets.lowFlame, label: "Low Flame", size: 40 };
   }
 
-  return { icon: "🟠", label: "Ember", size: 30 };
+  return { image: fireAssets.ember, label: "Ember", size: 30 };
 }
 
 export default function HomeScreen() {
@@ -185,24 +197,46 @@ export default function HomeScreen() {
     sunday: "",
   });
 
-  const hasEnergyData = hasRouteEnergy || hasSavedCheckIn;
+  const [completedQuests, setCompletedQuests] = useState<string[]>([]);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [profileChecked, setProfileChecked] = useState(false);
+  const [latestIntention, setLatestIntention] = useState<PreSleepIntention | null>(null);
+
+  const latestCheckInDay = latestCheckIn?.createdAt
+    ? new Date(latestCheckIn.createdAt).toLocaleDateString("en-CA")
+    : null;
+  const latestCheckInTime = latestCheckIn?.createdAt
+    ? new Date(latestCheckIn.createdAt).getTime()
+    : null;
+  const pathSetTime = profile?.goalsGeneratedAt
+    ? new Date(profile.goalsGeneratedAt).getTime()
+    : null;
+  const isSavedCheckInToday = latestCheckInDay === getTodayKey();
+  const isSavedCheckInAfterPath =
+    latestCheckInTime !== null && pathSetTime !== null
+      ? latestCheckInTime >= pathSetTime
+      : true;
+  const hasSavedEnergyData =
+    hasSavedCheckIn &&
+    latestCheckIn !== null &&
+    isSavedCheckInToday &&
+    isSavedCheckInAfterPath;
+
+  const hasEnergyData = hasRouteEnergy || hasSavedEnergyData;
 
   const currentMode: ModeState = hasEnergyData
     ? rawMode === "Recovery" || rawMode === "Progress"
       ? rawMode
-      : savedMode
+      : hasSavedEnergyData
+      ? savedMode
+      : "Neutral"
     : "Neutral";
 
   const isRecovery = currentMode === "Recovery";
   const isProgress = currentMode === "Progress";
   const isNeutral = currentMode === "Neutral";
 
-  const baseEnergyYield = hasRouteEnergy ? routeEnergyNumber : savedEnergy;
-
-  const [completedQuests, setCompletedQuests] = useState<string[]>([]);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [profileChecked, setProfileChecked] = useState(false);
-  const [latestIntention, setLatestIntention] = useState<PreSleepIntention | null>(null);
+  const baseEnergyYield = hasRouteEnergy ? routeEnergyNumber : hasSavedEnergyData ? savedEnergy : 0;
 
   useFocusEffect(
     useCallback(() => {
@@ -464,24 +498,54 @@ export default function HomeScreen() {
   const flameState = useMemo(() => getFlameState(energyYield), [energyYield]);
   const flameLabel = hasEnergyData ? flameState.label : "Check-in needed";
 
-  const modeTitle = isNeutral ? "Start Today" : isRecovery ? "Recovery Mode" : "Progress Mode";
+  const modeTitle = isNeutral ? "Balanced Mode" : isRecovery ? "Recovery Mode" : "Progress Mode";
   const modeInstruction = isNeutral
-    ? "Complete a Morning Check-In to calculate your Energy Reserve."
+    ? "A new day awaits. Small steps today, bright tomorrows."
     : isRecovery
-    ? "Protect your energy and keep one promise."
-    : "Use your energy on the path that matters.";
+    ? "Gentle steps today. You're doing enough."
+    : "Keep building momentum. Your best day is ahead.";
 
-  const lunaMessage = isNeutral
-    ? "Check in first. I’ll build the quest board around your real energy."
-    : isRecovery
-    ? "Recovery counts. Choose the smallest honest step."
-    : "Energy is available. Pick the quest that moves your path forward.";
+  const guideName = isRecovery ? "Luna" : "Evie";
+  const guideImage = isRecovery ? uiAssets.guides.luna : uiAssets.guides.evie;
+  const guideMessage = isRecovery
+    ? "It's okay to take it slow, stargazer. Rest is part of becoming your brightest self."
+    : "You're on fire! Keep building momentum. Your best day is ahead.";
 
+  const theme = isRecovery
+    ? {
+        accent: "#C4A7FF",
+        accent2: "#8B5CF6",
+        glow: "#E9D5FF",
+        dark: "rgba(22, 17, 42, 0.94)",
+        panel: "rgba(18, 16, 34, 0.95)",
+        soft: "#DDD6FE",
+        status: "RECOVERY",
+        mode: "RECOVERY MODE",
+      }
+    : isProgress
+    ? {
+        accent: "#FBBF24",
+        accent2: "#84CC16",
+        glow: "#FEF3C7",
+        dark: "rgba(15, 18, 15, 0.94)",
+        panel: "rgba(8, 13, 18, 0.95)",
+        soft: "#D9F99D",
+        status: "ACTIVE",
+        mode: "PROGRESS MODE",
+      }
+    : {
+        accent: "#F8C84A",
+        accent2: "#22C55E",
+        glow: "#FDE68A",
+        dark: "rgba(11, 17, 22, 0.92)",
+        panel: "rgba(8, 14, 18, 0.94)",
+        soft: "#F8E7A1",
+        status: "STEADY",
+        mode: "BALANCED MODE",
+      };
 
   function getAccentColor() {
-    if (isNeutral) return "#22C55E";
-    if (isRecovery) return "#A78BFA";
-    return "#FBBF24";
+    return theme.accent;
   }
 
   function getCategoryQuests(category: string, modeType: "Recovery" | "Progress"): Quest[] {
@@ -704,879 +768,784 @@ export default function HomeScreen() {
   if (!profileChecked) return null;
 
   return (
-    <ScrollView
-      style={isRecovery ? styles.recoveryScreen : isProgress ? styles.progressScreen : styles.neutralScreen}
-      contentContainerStyle={styles.container}
-    >
-      <View style={styles.shell}>
-        <View style={isRecovery ? styles.recoveryHeader : isProgress ? styles.progressHeader : styles.neutralHeader}>
-          <View style={styles.headerTopRow}>
-            <TouchableOpacity style={styles.headerSquareButton} onPress={() => navigateWithHaptic("/onboarding")}>
-              <Text style={styles.headerSquareText}>🌿</Text>
-            </TouchableOpacity>
-
-            <View style={styles.logoBlock}>
-              <Text style={styles.logo}>MYLIT</Text>
-              <Text style={styles.subtitle}>Living in Truth</Text>
-            </View>
-
-            <TouchableOpacity style={styles.headerSquareButton} onPress={() => navigateWithHaptic("/onboarding")}>
-              <Text style={styles.headerSquareText}>🧭</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.headerModePanel}>
-            <Text style={styles.headerModeTitle}>{modeTitle}</Text>
-            <Text style={styles.headerModeInstruction}>{modeInstruction}</Text>
-          </View>
-        </View>
-
-        <View style={styles.timeTrackPanel}>
-          <View style={styles.trackHeaderRow}>
-            <Text style={styles.trackTitle}>Day Track</Text>
-            <View style={[styles.trackMarkerLabel, { backgroundColor: getAccentColor() }]}>
-              <Text style={styles.trackMarkerLabelText}>
-                {isNeutral ? "Check-in" : isRecovery ? "Recovery" : "Active"}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.trackLine}>
-            <View
-              style={[
-                styles.trackMarkerDot,
-                isNeutral && styles.trackMarkerStart,
-                isProgress && styles.trackMarkerMid,
-                isRecovery && styles.trackMarkerEnd,
-              ]}
-            />
-          </View>
-
-          <View style={styles.trackTimesRow}>
-            <View style={styles.trackTimeItem}>
-              <Text style={styles.trackIcon}>🌅</Text>
-              <Text style={styles.trackTimeText}>6 AM</Text>
-            </View>
-            <View style={styles.trackTimeItem}>
-              <Text style={styles.trackIcon}>☀️</Text>
-              <Text style={styles.trackTimeText}>12 PM</Text>
-            </View>
-            <View style={styles.trackTimeItem}>
-              <Text style={styles.trackIcon}>🌇</Text>
-              <Text style={styles.trackTimeText}>6 PM</Text>
-            </View>
-            <View style={styles.trackTimeItem}>
-              <Text style={styles.trackIcon}>🌙</Text>
-              <Text style={styles.trackTimeText}>12 AM</Text>
-            </View>
-          </View>
-        </View>
-
-        <View style={isRecovery ? styles.recoveryLunaBox : isProgress ? styles.progressLunaBox : styles.neutralLunaBox}>
-          <View style={styles.lunaOrb}>
-            <Text style={styles.lunaOrbText}>L</Text>
-          </View>
-
-          <View style={styles.lunaSpeech}>
-            <Text style={styles.lunaTag}>Luna</Text>
-            <Text style={styles.lunaText}>{lunaMessage}</Text>
-            <Text style={styles.lunaPath}>Main path: {topGoal}</Text>
-          </View>
-        </View>
-
-        <View style={isRecovery ? styles.recoveryEnergyPanel : isProgress ? styles.progressEnergyPanel : styles.neutralEnergyPanel}>
-          <View style={styles.energyTopRow}>
-            <View>
-              <Text style={styles.energyTitle}>Energy Reserve</Text>
-              <Text style={styles.energyLabel}>{hasEnergyData ? flameLabel : "Check-in needed"}</Text>
-            </View>
-
-            <View style={styles.energyModeBadge}>
-              <Text style={styles.energyModeBadgeText}>
-                {isNeutral ? "Not set" : isRecovery ? "Recovery" : "Progress"}
-              </Text>
-            </View>
-          </View>
-
-          <View style={styles.energyScoreRow}>
-            <Text style={styles.energyScore}>{hasEnergyData ? energyYield : "—"}</Text>
-            <Text style={styles.energyOutOf}>/100</Text>
-          </View>
-
-          <View style={styles.flameMeter}>
-            <Text style={[styles.flameIcon, { fontSize: flameState.size }]}>
-              {hasEnergyData ? flameState.icon : "○"}
-            </Text>
-            <Text style={styles.flameMeterText}>
-              {hasEnergyData ? flameLabel : "No flame reading yet"}
-            </Text>
-          </View>
-
-          <TouchableOpacity style={styles.checkInButton} onPress={() => navigateWithHaptic("/sleep-checkin")}>
-            <Text style={styles.checkInButtonText}>Morning Check-In</Text>
-          </TouchableOpacity>
-
-          {hasEnergyData ? (
-            <TouchableOpacity
-              style={styles.afternoonCheckInButton}
-              onPress={() =>
-                router.push({
-                  pathname: "/sleep-checkin",
-                  params: { checkInType: "afternoon" },
-                })
-              }
+    <View style={styles.pageRoot}>
+      <View style={styles.phoneFrame}>
+        <ImageBackground source={uiAssets.backgrounds.default} style={styles.phoneBackground} resizeMode="cover">
+          <View style={styles.worldOverlay}>
+            <ScrollView
+              style={styles.screenScroller}
+              contentContainerStyle={styles.hudContent}
+              showsVerticalScrollIndicator={false}
+              bounces={false}
             >
-              <Text style={styles.afternoonCheckInButtonText}>Afternoon Check-In</Text>
-            </TouchableOpacity>
-          ) : null}
-        </View>
+              <View style={styles.topHud}>
+                <TouchableOpacity style={[styles.cornerButton, { borderColor: theme.accent }]} onPress={() => navigateWithHaptic("/onboarding")}>
+                  <Text style={styles.cornerButtonText}>🌲</Text>
+                </TouchableOpacity>
 
-        <View style={styles.questPanel}>
-          <View style={styles.questHeaderRow}>
-            <Text style={styles.questTitle}>Quest Board</Text>
-            <Text style={styles.questProgress}>
-              {isNeutral ? "🔒 Locked" : `${completedVisibleQuests}/${visibleQuests.length || 0}`}
-            </Text>
-          </View>
+                <Image source={mylitLogo} style={styles.heroLogo} resizeMode="contain" />
 
-          {isNeutral ? (
-            <View style={styles.questLockedCard}>
-              <Text style={styles.questLockedIcon}>🔒</Text>
-              <Text style={styles.questLockedTitle}>Quest Board Locked</Text>
-              <Text style={styles.questLockedText}>
-                Complete your Morning Check-In to calculate today&apos;s energy and unlock quests built around your path.
-              </Text>
-              <TouchableOpacity
-                style={styles.questLockedButton}
-                onPress={() => navigateWithHaptic("/sleep-checkin")}
-              >
-                <Text style={styles.questLockedButtonText}>Start Morning Check-In</Text>
-              </TouchableOpacity>
-            </View>
-          ) : (
-            <>
-          <Text style={styles.questSubtitle}>Complete one. Reflect if it misses.</Text>
-
-          {visibleQuests.map((quest) => {
-            const isDone = completedQuests.includes(quest.title);
-
-            return (
-              <View key={quest.title} style={[styles.questTile, isDone && styles.questTileDone]}>
-                <View style={styles.questLeft}>
-                  <View style={styles.questTopRow}>
-                    <View style={styles.questTypeBadge}>
-                      <Text style={styles.questTypeText}>{quest.type}</Text>
-                    </View>
-                    <View style={styles.questStepBadge}>
-                      <Text style={styles.questStepText}>+{quest.steps}</Text>
-                    </View>
-                  </View>
-
-                  <Text style={styles.questText}>{quest.title}</Text>
-                  {quest.description ? <Text style={styles.questDescription}>{quest.description}</Text> : null}
-                  {quest.mandatory ? <Text style={styles.mandatoryLockText}>Normal quests unlock after this.</Text> : null}
-
-                  <View style={styles.questActionsRow}>
-                    <Link href={{ pathname: "/reflection", params: { quest: quest.title } }} asChild>
-                      <TouchableOpacity style={styles.reflectButton}>
-                        <Text style={styles.reflectButtonText}>Reflect</Text>
-                      </TouchableOpacity>
-                    </Link>
-                  </View>
-                </View>
-
-                <TouchableOpacity style={[styles.checkBox, isDone && styles.checkBoxDone]} onPress={() => toggleQuest(quest)}>
-                  <Text style={styles.checkBoxText}>{isDone ? "✓" : ""}</Text>
+                <TouchableOpacity style={[styles.cornerButton, { borderColor: theme.accent }]} onPress={() => navigateWithHaptic("/onboarding")}>
+                  <Text style={styles.cornerButtonText}>⚙️</Text>
                 </TouchableOpacity>
               </View>
-            );
-          })}
-            </>
-          )}
-        </View>
 
-        <View style={styles.rankPanel}>
-          <Text style={styles.rankTitle}>RANK & STEPS</Text>
-          <View style={styles.rankRow}>
-            <Text style={styles.rankLabel}>Rank</Text>
-            <Text style={styles.rankValue}>{rank}</Text>
-          </View>
-          <View style={styles.rankRow}>
-            <Text style={styles.rankLabel}>Steps Earned</Text>
-            <Text style={styles.rankValue}>{completedSteps}</Text>
-          </View>
-          <View style={styles.rankRow}>
-            <Text style={styles.rankLabel}>Completed Quests</Text>
-            <Text style={styles.rankValue}>{completedVisibleQuests}</Text>
-          </View>
-          <View style={styles.rankMiniStats}>
-            <Text style={styles.rankMiniText}>Move: {moveQuestDone}</Text>
-            <Text style={styles.rankMiniText}>Focus: {focusValue}</Text>
-            <Text style={styles.rankMiniText}>Reflect: {reflectValue}</Text>
-          </View>
-          <TouchableOpacity style={styles.resetButton} onPress={resetTodayProgress}>
-            <Text style={styles.resetButtonText}>Reset Today Progress</Text>
-          </TouchableOpacity>
-        </View>
+              <View style={styles.modeRow}>
+                <Text style={[styles.modeTitle, { color: theme.accent }]}>{theme.mode}</Text>
+                <Text style={styles.modeSubtitle} numberOfLines={1}>{modeInstruction}</Text>
+              </View>
 
-        <View style={styles.bottomNav}>
-          <Text style={styles.bottomTitle}>NAVIGATION</Text>
-          <View style={styles.navGrid}>
-            <TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={lightHaptic}>
-              <Text style={styles.navTextActive}>🏠 Home</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => navigateWithHaptic("/sleep")}>
-              <Text style={styles.navText}>🌙 Sleep</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => navigateWithHaptic("/calendar")}>
-              <Text style={styles.navText}>📅 Calendar</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => navigateWithHaptic("/mind")}>
-              <Text style={styles.navText}>🧠 Mind</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => navigateWithHaptic("/path")}>
-              <Text style={styles.navText}>🧭 Path</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => navigateWithHaptic("/stats")}>
-              <Text style={styles.navText}>🎒 Inventory</Text>
-            </TouchableOpacity>
+              <View style={[styles.timePanel, { borderColor: theme.accent }]}>
+                <View style={styles.panelHeaderRow}>
+                  <Text style={styles.panelHeaderText}>DAY / TIME TRACK</Text>
+                  <View style={[styles.statusPill, { borderColor: theme.accent }]}>
+                    <Text style={[styles.statusPillText, { color: theme.accent }]}>{theme.status}</Text>
+                  </View>
+                </View>
+                <View style={styles.timelineIconsRow}>
+                  <Text style={styles.timelineIcon}>🌅</Text>
+                  <Text style={styles.timelineIcon}>☀️</Text>
+                  <Text style={styles.timelineIcon}>{isRecovery ? "☾" : "🌇"}</Text>
+                  <Text style={styles.timelineIcon}>🌙</Text>
+                </View>
+                <View style={styles.timelineTrack}>
+                  <View style={[styles.timelineFill, { backgroundColor: theme.accent }]} />
+                  <View
+                    style={[
+                      styles.timelineMarker,
+                      { borderColor: theme.accent, backgroundColor: theme.glow },
+                      isNeutral && styles.timelineMarkerNeutral,
+                      isProgress && styles.timelineMarkerProgress,
+                      isRecovery && styles.timelineMarkerRecovery,
+                    ]}
+                  />
+                </View>
+                <View style={styles.timelineLabelsRow}>
+                  <Text style={styles.timelineLabel}>6 AM</Text>
+                  <Text style={styles.timelineLabel}>12 PM</Text>
+                  <Text style={styles.timelineLabel}>6 PM</Text>
+                  <Text style={styles.timelineLabel}>12 AM</Text>
+                </View>
+              </View>
+
+              <View style={[styles.guideScene, isNeutral && styles.guideSceneNeutral]}>
+                {!isNeutral ? (
+                  <Image source={guideImage} style={[styles.guideEmblem, { borderColor: theme.accent }]} resizeMode="contain" />
+                ) : null}
+                <View style={[styles.speechBubble, { borderColor: theme.accent }, isNeutral && styles.neutralSpeechBubble]}>
+                  <Text style={styles.speechText}>{isNeutral ? modeInstruction : guideMessage}</Text>
+                  {!isNeutral ? <Text style={[styles.speechName, { color: theme.accent }]}>{guideName} {isRecovery ? "💜" : "💚"}</Text> : null}
+                </View>
+              </View>
+
+              <View style={[styles.energyCard, { borderColor: theme.accent }]}>
+                <View style={styles.energyHeaderRow}>
+                  <Text style={[styles.energyTitle, { color: theme.accent }]}>{isRecovery ? "+ RECOVERY MODE +" : "ENERGY FLAME"}</Text>
+                  <View style={[styles.energyPill, { borderColor: theme.accent }]}>
+                    <Text style={[styles.energyPillText, { color: theme.accent }]}>{isNeutral ? "STEADY" : isRecovery ? "RECOVERY" : "PROGRESS"}</Text>
+                  </View>
+                </View>
+                <Image
+                  source={hasEnergyData ? flameState.image : fireAssets.steadyFlame}
+                  style={[
+                    styles.energyFlame,
+                    {
+                      height: hasEnergyData ? flameState.size + 42 : 92,
+                      width: hasEnergyData ? flameState.size + 42 : 92,
+                    },
+                  ]}
+                  resizeMode="contain"
+                />
+                <View style={styles.energyScoreLine}>
+                  <Text style={[styles.energyScore, { color: theme.glow }]}>{hasEnergyData ? energyYield : "—"}</Text>
+                  <Text style={styles.energyOutOf}> / 100</Text>
+                </View>
+                <Text style={[styles.flameMeterText, { color: theme.soft }]}>{hasEnergyData ? flameLabel : "CHECK-IN NEEDED"}</Text>
+                <Text style={styles.energyFooterText} numberOfLines={2}>{modeInstruction}</Text>
+              </View>
+
+              <View style={styles.checkInRow}>
+                <TouchableOpacity style={[styles.checkInCard, { borderColor: theme.accent }]} onPress={() => navigateWithHaptic("/sleep-checkin")}>
+                  <View style={styles.checkIconBox}><Text style={styles.checkIcon}>🌄</Text></View>
+                  <View style={styles.checkTextBox}>
+                    <Text style={[styles.checkTitle, { color: theme.glow }]}>MORNING{"\n"}CHECK-IN</Text>
+                    <Text style={styles.checkSubtitle} numberOfLines={2}>{isRecovery ? "Start your day with kindness." : "Start strong. Set your focus."}</Text>
+                  </View>
+                  <Text style={[styles.checkArrow, { color: theme.accent }]}>›</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.checkInCard, { borderColor: theme.accent }]}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/sleep-checkin",
+                      params: { checkInType: "afternoon" },
+                    })
+                  }
+                >
+                  <View style={styles.checkIconBox}><Text style={styles.checkIcon}>{isRecovery ? "🌙" : "🌇"}</Text></View>
+                  <View style={styles.checkTextBox}>
+                    <Text style={[styles.checkTitle, { color: theme.glow }]}>AFTERNOON{"\n"}CHECK-IN</Text>
+                    <Text style={styles.checkSubtitle} numberOfLines={2}>{isRecovery ? "Pause, breathe, reset." : "Recalibrate. Keep going."}</Text>
+                  </View>
+                  <Text style={[styles.checkArrow, { color: theme.accent }]}>›</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={[styles.questBoard, { borderColor: theme.accent }]}>
+                <View style={styles.questHeaderRow}>
+                  <Text style={[styles.questTitle, { color: theme.accent }]}>{isRecovery ? "+ QUEST BOARD +" : "⚔ QUEST BOARD"}</Text>
+                  <Text style={[styles.questCount, { color: theme.accent }]}>{isNeutral ? "LOCKED" : isProgress ? `${visibleQuests.length} ACTIVE` : `${completedVisibleQuests}/${visibleQuests.length || 0}`}</Text>
+                </View>
+
+                {isNeutral ? (
+                  <View style={styles.questLockedCard}>
+                    <Text style={styles.questLockedTitle}>Quest Board Locked</Text>
+                    <Text style={styles.questLockedText} numberOfLines={2}>Complete a check-in to reveal energy-aware quests for your path.</Text>
+                    <TouchableOpacity style={[styles.questLockedButton, { borderColor: theme.accent }]} onPress={() => navigateWithHaptic("/sleep-checkin")}>
+                      <Text style={styles.questLockedButtonText}>START CHECK-IN</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  visibleQuests.map((quest) => {
+                    const isDone = completedQuests.includes(quest.title);
+
+                    return (
+                      <View key={quest.title} style={[styles.questRow, isDone && styles.questRowDone]}>
+                        <View style={styles.questIconSlot}>
+                          <Text style={styles.questIcon}>{quest.mandatory ? "!" : quest.type === "Body" ? "🏋️" : quest.type === "Focus" ? "📓" : "📜"}</Text>
+                        </View>
+                        <View style={styles.questCopy}>
+                          <Text style={styles.questText} numberOfLines={1}>{quest.title}</Text>
+                          <View style={styles.questMetaRow}>
+                            <Text style={[styles.questMeta, { color: theme.soft }]} numberOfLines={1}>{quest.description || quest.type}</Text>
+                            <Text style={[styles.questSteps, { color: theme.accent }]}>+{quest.steps}</Text>
+                          </View>
+                        </View>
+                        <Link href={{ pathname: "/reflection", params: { quest: quest.title } }} asChild>
+                          <TouchableOpacity style={styles.reflectButton}>
+                            <Text style={styles.reflectButtonText}>↺</Text>
+                          </TouchableOpacity>
+                        </Link>
+                        <TouchableOpacity style={[styles.checkBox, isDone && styles.checkBoxDone, { borderColor: isDone ? "#22C55E" : theme.soft }]} onPress={() => toggleQuest(quest)}>
+                          <Text style={styles.checkBoxText}>{isDone ? "✓" : ""}</Text>
+                        </TouchableOpacity>
+                      </View>
+                    );
+                  })
+                )}
+              </View>
+
+              <View style={[styles.statsBar, { borderColor: theme.accent }]}>
+                <View style={styles.statCell}>
+                  <Text style={styles.statIcon}>🛡️</Text>
+                  <View>
+                    <Text style={[styles.statLabel, { color: theme.accent }]}>RANK</Text>
+                    <Text style={styles.statValue}>{rank}</Text>
+                  </View>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statCell}>
+                  <Text style={styles.statIcon}>🥾</Text>
+                  <View>
+                    <Text style={[styles.statLabel, { color: theme.accent }]}>STEPS</Text>
+                    <Text style={styles.statValue}>{completedSteps}</Text>
+                  </View>
+                </View>
+                <View style={styles.statDivider} />
+                <View style={styles.statCell}>
+                  <Text style={styles.statIcon}>🎒</Text>
+                  <View>
+                    <Text style={[styles.statLabel, { color: theme.accent }]}>INVENTORY</Text>
+                    <Text style={styles.statValue}>{completedVisibleQuests} / {visibleQuests.length || 0}</Text>
+                  </View>
+                </View>
+              </View>
+            </ScrollView>
+
+            <View style={[styles.bottomNav, { borderColor: theme.accent }]}>
+              <TouchableOpacity style={[styles.navButton, styles.navButtonActive, { borderColor: theme.accent }]} onPress={lightHaptic}>
+                <Text style={styles.navTextActive}>🏠</Text>
+                <Text style={[styles.navLabelActive, { color: theme.glow }]}>HOME</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.navButton} onPress={() => navigateWithHaptic("/sleep")}>
+                <Text style={styles.navText}>🌙</Text>
+                <Text style={styles.navLabel}>SLEEP</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.navButton} onPress={() => navigateWithHaptic("/mind")}>
+                <Text style={styles.navText}>🧠</Text>
+                <Text style={styles.navLabel}>MIND</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.navButton} onPress={() => navigateWithHaptic("/path")}>
+                <Text style={styles.navText}>🌲</Text>
+                <Text style={styles.navLabel}>PATH</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.navButton} onPress={() => navigateWithHaptic("/calendar")}>
+                <Text style={styles.navText}>📅</Text>
+                <Text style={styles.navLabel}>CAL</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.navButton} onPress={() => navigateWithHaptic("/stats")}>
+                <Text style={styles.navText}>🎒</Text>
+                <Text style={styles.navLabel}>BAG</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
+        </ImageBackground>
       </View>
-    </ScrollView>
+    </View>
   );
 }
-
 const styles = StyleSheet.create({
-  neutralScreen: {
+  pageRoot: {
     flex: 1,
-    backgroundColor: "#0B1220",
-  },
-  progressScreen: {
-    flex: 1,
-    backgroundColor: "#151A2D",
-  },
-  recoveryScreen: {
-    flex: 1,
-    backgroundColor: "#0A1020",
-  },
-  container: {
-    paddingTop: 26,
-    paddingBottom: 34,
-  },
-  shell: {
-    width: "100%",
-    maxWidth: 520,
-    alignSelf: "center",
-    paddingHorizontal: 18,
-  },
-  neutralHeader: {
-    backgroundColor: "#102314",
-    borderWidth: 3,
-    borderColor: "#22C55E",
-    borderRadius: 24,
-    padding: 14,
-    marginBottom: 12,
-  },
-  progressHeader: {
-    backgroundColor: "#251F11",
-    borderWidth: 3,
-    borderColor: "#FBBF24",
-    borderRadius: 24,
-    padding: 14,
-    marginBottom: 12,
-  },
-  recoveryHeader: {
-    backgroundColor: "#1B1940",
-    borderWidth: 3,
-    borderColor: "#A78BFA",
-    borderRadius: 24,
-    padding: 14,
-    marginBottom: 12,
-  },
-  headerTopRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  headerSquareButton: {
-    height: 34,
-    width: 34,
-    borderRadius: 8,
-    backgroundColor: "#0F172A",
-    borderWidth: 2,
-    borderColor: "#334155",
+    backgroundColor: "#02040A",
     alignItems: "center",
     justifyContent: "center",
   },
-  headerSquareText: {
-    color: "#F9FAFB",
-    fontSize: 14,
+  phoneFrame: {
+    flex: 1,
+    width: "100%",
+    maxWidth: 430,
+    alignSelf: "center",
+    backgroundColor: "#050814",
+    overflow: "hidden",
   },
-  logoBlock: {
+  phoneBackground: {
+    flex: 1,
+  },
+  worldOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(2, 6, 12, 0.08)",
+  },
+  screenScroller: {
+    flex: 1,
+  },
+  hudContent: {
+    minHeight: "100%",
+    paddingTop: 10,
+    paddingHorizontal: 12,
+    paddingBottom: 86,
+    justifyContent: "space-between",
+  },
+  topHud: {
+    minHeight: 92,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+  },
+  cornerButton: {
+    height: 52,
+    width: 52,
+    borderWidth: 3,
+    borderRadius: 8,
+    backgroundColor: "rgba(6, 10, 18, 0.94)",
     alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.7,
+    shadowRadius: 0,
+    shadowOffset: { width: 3, height: 3 },
   },
-  logo: {
-    color: "#F9FAFB",
+  cornerButtonText: {
     fontSize: 24,
+  },
+  heroLogo: {
+    height: 86,
+    width: 238,
+    marginTop: -2,
+  },
+  modeRow: {
+    marginTop: -10,
+    marginBottom: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+  },
+  modeTitle: {
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    textShadowColor: "#000",
+    textShadowOffset: { width: 1, height: 2 },
+    textShadowRadius: 0,
+  },
+  modeSubtitle: {
+    flex: 1,
+    color: "#F8F1D7",
+    fontSize: 10,
+    fontWeight: "800",
+    textAlign: "right",
+    textShadowColor: "#000",
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 0,
+  },
+  timePanel: {
+    backgroundColor: "rgba(6, 10, 18, 0.78)",
+    borderWidth: 3,
+    borderRadius: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 9,
+  },
+  panelHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  panelHeaderText: {
+    color: "#F8F1D7",
+    fontSize: 11,
     fontWeight: "900",
     letterSpacing: 1,
   },
-  subtitle: {
-    color: "#CBD5E1",
-    fontSize: 12,
-    marginTop: 2,
-  },
-  headerModePanel: {
-    marginTop: 12,
-    backgroundColor: "#0F172A",
+  statusPill: {
     borderWidth: 2,
-    borderColor: "#334155",
-    borderRadius: 14,
-    padding: 10,
-  },
-  headerModeTitle: {
-    color: "#F9FAFB",
-    fontSize: 16,
-    fontWeight: "900",
-    marginBottom: 4,
-  },
-  headerModeInstruction: {
-    color: "#CBD5E1",
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  timeTrackPanel: {
-    backgroundColor: "#111827",
-    borderWidth: 2,
-    borderColor: "#334155",
-    borderRadius: 18,
-    padding: 12,
-    marginBottom: 12,
-  },
-  trackHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  trackTitle: {
-    color: "#E2E8F0",
-    fontSize: 13,
-    fontWeight: "800",
-  },
-  trackMarkerLabel: {
-    borderRadius: 999,
-    paddingVertical: 4,
+    backgroundColor: "rgba(9, 14, 24, 0.95)",
+    paddingVertical: 2,
     paddingHorizontal: 8,
   },
-  trackMarkerLabelText: {
-    color: "#0F172A",
-    fontSize: 11,
+  statusPillText: {
+    fontSize: 9,
     fontWeight: "900",
   },
-  trackLine: {
-    height: 7,
-    backgroundColor: "#1F2937",
-    borderRadius: 999,
-    marginTop: 10,
-    marginBottom: 10,
-    position: "relative",
-  },
-  trackMarkerDot: {
-    position: "absolute",
-    top: -4,
-    height: 15,
-    width: 15,
-    borderRadius: 999,
-    backgroundColor: "#F9FAFB",
-    borderWidth: 2,
-    borderColor: "#0F172A",
-  },
-  trackMarkerStart: {
-    left: "2%",
-    backgroundColor: "#22C55E",
-  },
-  trackMarkerMid: {
-    left: "47%",
-    backgroundColor: "#FBBF24",
-  },
-  trackMarkerEnd: {
-    left: "85%",
-    backgroundColor: "#A78BFA",
-  },
-  trackTimesRow: {
+  timelineIconsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    paddingHorizontal: 10,
+    marginTop: 4,
+    marginBottom: -1,
   },
-  trackTimeItem: {
+  timelineIcon: {
+    fontSize: 18,
+    textShadowColor: "#000",
+    textShadowOffset: { width: 1, height: 2 },
+    textShadowRadius: 0,
+  },
+  timelineTrack: {
+    height: 8,
+    backgroundColor: "rgba(1, 5, 12, 0.96)",
+    borderWidth: 2,
+    borderColor: "#111827",
+    position: "relative",
+    overflow: "visible",
+  },
+  timelineFill: {
+    position: "absolute",
+    left: 0,
+    top: 1,
+    bottom: 1,
+    width: "42%",
+    opacity: 0.75,
+  },
+  timelineMarker: {
+    position: "absolute",
+    top: -9,
+    height: 22,
+    width: 22,
+    borderWidth: 3,
+    transform: [{ rotate: "45deg" }],
+    shadowColor: "#000",
+    shadowOpacity: 0.7,
+    shadowRadius: 0,
+    shadowOffset: { width: 2, height: 2 },
+  },
+  timelineMarkerNeutral: { left: "23%" },
+  timelineMarkerProgress: { left: "42%" },
+  timelineMarkerRecovery: { left: "10%" },
+  timelineLabelsRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: 5,
+  },
+  timelineLabel: {
+    color: "#F8FAFC",
+    fontSize: 12,
+    fontWeight: "900",
+    textShadowColor: "#000",
+    textShadowOffset: { width: 1, height: 2 },
+    textShadowRadius: 0,
+  },
+  guideScene: {
+    minHeight: 94,
+    flexDirection: "row",
     alignItems: "center",
+    paddingHorizontal: 10,
+    marginVertical: 3,
   },
-  trackIcon: {
-    fontSize: 13,
-    marginBottom: 2,
-  },
-  trackTimeText: {
-    color: "#CBD5E1",
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  neutralLunaBox: {
-    backgroundColor: "#102314",
-    borderWidth: 2,
-    borderColor: "#22C55E",
-    borderRadius: 18,
-    padding: 12,
-    marginBottom: 12,
-    flexDirection: "row",
-  },
-  progressLunaBox: {
-    backgroundColor: "#251F11",
-    borderWidth: 2,
-    borderColor: "#FBBF24",
-    borderRadius: 18,
-    padding: 12,
-    marginBottom: 12,
-    flexDirection: "row",
-  },
-  recoveryLunaBox: {
-    backgroundColor: "#1B1940",
-    borderWidth: 2,
-    borderColor: "#A78BFA",
-    borderRadius: 18,
-    padding: 12,
-    marginBottom: 12,
-    flexDirection: "row",
-  },
-  lunaOrb: {
-    height: 40,
-    width: 40,
-    borderRadius: 999,
-    backgroundColor: "#0F172A",
-    borderWidth: 2,
-    borderColor: "#475569",
-    alignItems: "center",
+  guideSceneNeutral: {
+    minHeight: 78,
     justifyContent: "center",
+  },
+  guideEmblem: {
+    height: 86,
+    width: 86,
+    borderWidth: 3,
+    borderRadius: 43,
+    backgroundColor: "rgba(8, 13, 24, 0.55)",
     marginRight: 10,
   },
-  lunaOrbText: {
-    color: "#F9FAFB",
-    fontWeight: "900",
-  },
-  lunaSpeech: {
+  speechBubble: {
     flex: 1,
+    backgroundColor: "rgba(8, 12, 20, 0.94)",
+    borderWidth: 3,
+    borderRadius: 4,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
-  lunaTag: {
-    color: "#FDE68A",
-    fontSize: 12,
-    fontWeight: "900",
-    marginBottom: 4,
+  neutralSpeechBubble: {
+    flex: 0,
+    width: "72%",
   },
-  lunaText: {
-    color: "#E2E8F0",
+  speechText: {
+    color: "#F8F1D7",
     fontSize: 13,
+    fontWeight: "800",
     lineHeight: 18,
-    marginBottom: 5,
   },
-  lunaPath: {
-    color: "#CBD5E1",
-    fontSize: 12,
-    fontWeight: "700",
+  speechName: {
+    fontSize: 14,
+    fontWeight: "900",
+    marginTop: 5,
   },
-  neutralEnergyPanel: {
-    backgroundColor: "#111827",
-    borderWidth: 3,
-    borderColor: "#22C55E",
-    borderRadius: 20,
-    padding: 14,
-    marginBottom: 12,
+  energyCard: {
+    width: "58%",
+    minHeight: 188,
+    alignSelf: "center",
+    backgroundColor: "rgba(6, 10, 18, 0.96)",
+    borderWidth: 4,
+    borderRadius: 5,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.7,
+    shadowRadius: 0,
+    shadowOffset: { width: 4, height: 4 },
   },
-  progressEnergyPanel: {
-    backgroundColor: "#111827",
-    borderWidth: 3,
-    borderColor: "#FBBF24",
-    borderRadius: 20,
-    padding: 14,
-    marginBottom: 12,
-  },
-  recoveryEnergyPanel: {
-    backgroundColor: "#111827",
-    borderWidth: 3,
-    borderColor: "#A78BFA",
-    borderRadius: 20,
-    padding: 14,
-    marginBottom: 12,
-  },
-  energyTopRow: {
+  energyHeaderRow: {
+    width: "100%",
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
-    alignItems: "flex-start",
   },
   energyTitle: {
-    color: "#F9FAFB",
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: "900",
+    letterSpacing: 1,
     textTransform: "uppercase",
   },
-  energyLabel: {
-    color: "#CBD5E1",
-    fontSize: 12,
-    marginTop: 4,
+  energyPill: {
+    borderWidth: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.9)",
+    paddingVertical: 2,
+    paddingHorizontal: 5,
   },
-  energyModeBadge: {
-    backgroundColor: "#0F172A",
-    borderWidth: 2,
-    borderColor: "#334155",
-    borderRadius: 999,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-  },
-  energyModeBadgeText: {
-    color: "#E2E8F0",
-    fontSize: 11,
+  energyPillText: {
+    fontSize: 8,
     fontWeight: "900",
   },
-  energyScoreRow: {
+  energyFlame: {
+    marginTop: 2,
+    marginBottom: -4,
+  },
+  energyScoreLine: {
     flexDirection: "row",
     alignItems: "baseline",
-    marginTop: 8,
-    marginBottom: 8,
   },
   energyScore: {
-    color: "#F9FAFB",
-    fontSize: 40,
+    fontSize: 44,
     fontWeight: "900",
-    lineHeight: 44,
+    lineHeight: 48,
+    textShadowColor: "#000",
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 0,
   },
   energyOutOf: {
-    color: "#CBD5E1",
-    fontSize: 18,
-    marginLeft: 4,
-    fontWeight: "800",
-  },
-  flameMeter: {
-    backgroundColor: "#0F172A",
-    borderWidth: 2,
-    borderColor: "#334155",
-    borderRadius: 18,
-    paddingVertical: 12,
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  flameIcon: {
-    lineHeight: 78,
+    color: "#F8F1D7",
+    fontSize: 22,
+    fontWeight: "900",
   },
   flameMeterText: {
-    color: "#FDE68A",
     fontSize: 12,
     fontWeight: "900",
     textTransform: "uppercase",
   },
-  checkInButton: {
+  energyFooterText: {
+    color: "#F8F1D7",
+    fontSize: 11,
+    fontWeight: "800",
+    textAlign: "center",
+    marginTop: 4,
+  },
+  checkInRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 7,
+  },
+  checkInCard: {
+    flex: 1,
+    minHeight: 82,
+    backgroundColor: "rgba(6, 10, 18, 0.95)",
+    borderWidth: 3,
+    borderRadius: 4,
+    padding: 7,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  checkIconBox: {
+    height: 46,
+    width: 46,
+    borderWidth: 2,
+    borderColor: "#334155",
+    backgroundColor: "rgba(15, 23, 42, 0.8)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 7,
+  },
+  checkIcon: {
+    fontSize: 27,
+  },
+  checkTextBox: {
+    flex: 1,
+  },
+  checkTitle: {
+    fontSize: 13,
+    fontWeight: "900",
+    lineHeight: 16,
+  },
+  checkSubtitle: {
+    color: "#F8F1D7",
+    fontSize: 10,
+    fontWeight: "800",
+    lineHeight: 13,
     marginTop: 2,
-    backgroundColor: "#0F172A",
-    borderWidth: 2,
-    borderColor: "#F9FAFB",
-    borderRadius: 12,
-    paddingVertical: 10,
-    alignItems: "center",
   },
-  checkInButtonText: {
-    color: "#F9FAFB",
-    fontSize: 13,
+  checkArrow: {
+    fontSize: 30,
     fontWeight: "900",
+    marginLeft: 3,
   },
-  afternoonCheckInButton: {
+  questBoard: {
+    minHeight: 150,
+    backgroundColor: "rgba(5, 9, 17, 0.96)",
+    borderWidth: 3,
+    borderRadius: 4,
+    padding: 8,
     marginTop: 8,
-    backgroundColor: "#1E293B",
-    borderWidth: 2,
-    borderColor: "#A78BFA",
-    borderRadius: 12,
-    paddingVertical: 10,
-    alignItems: "center",
-  },
-  afternoonCheckInButtonText: {
-    color: "#EDE9FE",
-    fontSize: 13,
-    fontWeight: "900",
-  },
-  questPanel: {
-    backgroundColor: "#111827",
-    borderWidth: 2,
-    borderColor: "#FBBF24",
-    borderRadius: 20,
-    padding: 12,
-    marginBottom: 12,
   },
   questHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 7,
   },
   questTitle: {
-    color: "#FDE68A",
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "900",
-    textTransform: "uppercase",
+    letterSpacing: 1,
   },
-  questProgress: {
-    color: "#F9FAFB",
+  questCount: {
     fontSize: 13,
     fontWeight: "900",
   },
   questLockedCard: {
-    backgroundColor: "#0F172A",
+    flex: 1,
+    minHeight: 92,
     borderWidth: 2,
     borderColor: "#334155",
-    borderStyle: "dashed",
-    borderRadius: 16,
-    paddingVertical: 22,
-    paddingHorizontal: 16,
+    backgroundColor: "rgba(15, 23, 42, 0.9)",
     alignItems: "center",
-    marginTop: 10,
-  },
-  questLockedIcon: {
-    fontSize: 34,
-    marginBottom: 8,
+    justifyContent: "center",
+    padding: 10,
   },
   questLockedTitle: {
-    color: "#F9FAFB",
-    fontSize: 15,
+    color: "#F8F1D7",
+    fontSize: 13,
     fontWeight: "900",
     textTransform: "uppercase",
-    letterSpacing: 0.6,
-    marginBottom: 6,
   },
   questLockedText: {
     color: "#CBD5E1",
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 10,
+    lineHeight: 14,
     textAlign: "center",
-    marginBottom: 14,
+    marginVertical: 6,
   },
   questLockedButton: {
-    backgroundColor: "#166534",
     borderWidth: 2,
-    borderColor: "#FBBF24",
-    borderRadius: 12,
-    paddingVertical: 11,
-    paddingHorizontal: 18,
-    alignItems: "center",
+    backgroundColor: "#111827",
+    paddingVertical: 5,
+    paddingHorizontal: 14,
   },
   questLockedButtonText: {
-    color: "#F9FAFB",
-    fontSize: 13,
+    color: "#F8F1D7",
+    fontSize: 10,
     fontWeight: "900",
-    letterSpacing: 0.4,
   },
-  questSubtitle: {
-    color: "#CBD5E1",
-    fontSize: 12,
-    marginTop: 4,
-    marginBottom: 8,
-  },
-  questTile: {
-    backgroundColor: "#0F172A",
+  questRow: {
+    minHeight: 39,
+    backgroundColor: "rgba(15, 23, 42, 0.94)",
     borderWidth: 2,
-    borderColor: "#334155",
-    borderRadius: 14,
-    padding: 10,
-    marginBottom: 8,
+    borderColor: "#2E3542",
+    paddingHorizontal: 6,
+    marginBottom: 5,
     flexDirection: "row",
     alignItems: "center",
   },
-  questTileDone: {
+  questRowDone: {
     borderColor: "#22C55E",
+    backgroundColor: "rgba(20, 83, 45, 0.72)",
   },
-  questLeft: {
-    flex: 1,
-    marginRight: 10,
-  },
-  questTopRow: {
-    flexDirection: "row",
+  questIconSlot: {
+    height: 28,
+    width: 28,
     alignItems: "center",
-    marginBottom: 6,
-  },
-  questTypeBadge: {
-    backgroundColor: "#1F2937",
-    borderWidth: 1,
-    borderColor: "#475569",
-    borderRadius: 8,
-    paddingVertical: 2,
-    paddingHorizontal: 7,
+    justifyContent: "center",
     marginRight: 6,
   },
-  questTypeText: {
-    color: "#CBD5E1",
-    fontSize: 10,
-    fontWeight: "800",
+  questIcon: {
+    fontSize: 18,
   },
-  questStepBadge: {
-    backgroundColor: "#14532D",
-    borderWidth: 1,
-    borderColor: "#22C55E",
-    borderRadius: 8,
-    paddingVertical: 2,
-    paddingHorizontal: 7,
-  },
-  questStepText: {
-    color: "#DCFCE7",
-    fontSize: 10,
-    fontWeight: "800",
+  questCopy: {
+    flex: 1,
   },
   questText: {
-    color: "#F9FAFB",
-    fontSize: 13,
-    fontWeight: "800",
-    lineHeight: 18,
-  },
-  questDescription: {
-    color: "#CBD5E1",
+    color: "#F8F1D7",
     fontSize: 12,
-    lineHeight: 17,
-    marginTop: 4,
-  },
-  mandatoryLockText: {
-    color: "#FDE68A",
-    fontSize: 11,
     fontWeight: "900",
-    marginTop: 5,
-    textTransform: "uppercase",
   },
-  questActionsRow: {
-    marginTop: 8,
+  questMetaRow: {
     flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 5,
+  },
+  questMeta: {
+    flex: 1,
+    fontSize: 9,
+    fontWeight: "800",
+    marginTop: 1,
+  },
+  questSteps: {
+    fontSize: 10,
+    fontWeight: "900",
   },
   reflectButton: {
-    backgroundColor: "#1E293B",
+    height: 25,
+    width: 25,
+    marginLeft: 5,
     borderWidth: 1,
     borderColor: "#64748B",
-    borderRadius: 9,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
+    backgroundColor: "#111827",
+    alignItems: "center",
+    justifyContent: "center",
   },
   reflectButtonText: {
     color: "#E2E8F0",
-    fontSize: 11,
-    fontWeight: "800",
+    fontSize: 14,
+    fontWeight: "900",
   },
   checkBox: {
-    height: 26,
-    width: 26,
-    borderRadius: 8,
+    height: 24,
+    width: 24,
+    marginLeft: 5,
     borderWidth: 2,
-    borderColor: "#475569",
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#111827",
+    backgroundColor: "#0B1020",
   },
   checkBoxDone: {
     backgroundColor: "#166534",
-    borderColor: "#22C55E",
   },
   checkBoxText: {
     color: "#F9FAFB",
     fontSize: 13,
     fontWeight: "900",
   },
-  rankPanel: {
-    backgroundColor: "#111827",
-    borderWidth: 2,
-    borderColor: "#334155",
-    borderRadius: 18,
-    padding: 12,
-    marginBottom: 12,
-  },
-  rankTitle: {
-    color: "#FDE68A",
-    fontSize: 13,
-    fontWeight: "900",
-    marginBottom: 8,
-  },
-  rankRow: {
+  statsBar: {
+    minHeight: 62,
     flexDirection: "row",
-    justifyContent: "space-between",
-    borderBottomWidth: 1,
-    borderBottomColor: "#1F2937",
-    paddingVertical: 6,
-  },
-  rankLabel: {
-    color: "#CBD5E1",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  rankValue: {
-    color: "#F9FAFB",
-    fontSize: 12,
-    fontWeight: "900",
-  },
-  rankMiniStats: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 8,
-    marginBottom: 8,
-  },
-  rankMiniText: {
-    color: "#E2E8F0",
-    fontSize: 11,
-    fontWeight: "800",
-  },
-  resetButton: {
-    backgroundColor: "#0F172A",
-    borderWidth: 2,
-    borderColor: "#475569",
-    borderRadius: 10,
-    paddingVertical: 8,
     alignItems: "center",
+    backgroundColor: "rgba(5, 9, 17, 0.96)",
+    borderWidth: 3,
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    marginTop: 8,
   },
-  resetButtonText: {
-    color: "#E2E8F0",
+  statCell: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  statDivider: {
+    height: 40,
+    width: 2,
+    backgroundColor: "#4B5563",
+  },
+  statIcon: {
+    fontSize: 26,
+  },
+  statLabel: {
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.6,
+  },
+  statValue: {
+    color: "#F8F1D7",
     fontSize: 12,
-    fontWeight: "800",
+    fontWeight: "900",
+    marginTop: 1,
   },
   bottomNav: {
-    backgroundColor: "#0F172A",
+    position: "absolute",
+    left: 8,
+    right: 8,
+    bottom: 8,
+    height: 66,
+    backgroundColor: "rgba(4, 8, 16, 0.98)",
     borderWidth: 3,
-    borderColor: "#334155",
-    borderRadius: 18,
-    padding: 12,
-    marginTop: 6,
-  },
-  bottomTitle: {
-    color: "#E2E8F0",
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 1.1,
-    marginBottom: 8,
-  },
-  navGrid: {
+    borderRadius: 5,
+    padding: 4,
     flexDirection: "row",
-    flexWrap: "wrap",
     justifyContent: "space-between",
   },
   navButton: {
-    width: "48.5%",
+    flex: 1,
     backgroundColor: "#111827",
     borderWidth: 2,
-    borderColor: "#334155",
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    marginBottom: 8,
+    borderColor: "#3A4558",
+    borderRadius: 3,
+    paddingVertical: 4,
+    marginHorizontal: 2,
     alignItems: "center",
+    justifyContent: "center",
   },
   navButtonActive: {
-    backgroundColor: "#184B31",
-    borderColor: "#FBBF24",
+    backgroundColor: "#162314",
   },
   navText: {
     color: "#E2E8F0",
-    fontSize: 12,
+    fontSize: 17,
     fontWeight: "900",
-    textAlign: "center",
   },
   navTextActive: {
     color: "#FDE68A",
-    fontSize: 12,
+    fontSize: 17,
     fontWeight: "900",
-    textAlign: "center",
+  },
+  navLabel: {
+    color: "#CBD5E1",
+    fontSize: 8,
+    fontWeight: "900",
+    marginTop: 1,
+  },
+  navLabelActive: {
+    fontSize: 8,
+    fontWeight: "900",
+    marginTop: 1,
   },
 });
