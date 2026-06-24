@@ -5,7 +5,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Image, ImageBackground, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { uiAssets } from "../../constants/uiAssets";
-import { generateProgressQuests } from "../../lib/questGeneration";
+import {
+  buildProgressionQuests,
+  buildStretchQuest,
+  displayStreak,
+  getCategoryProgressionState,
+  markProgressionDayComplete,
+  tierLabelForLevel,
+  type ProgressionState,
+} from "../../lib/questProgression";
 
 const mylitLogo = require("../../assets/ui/logo/mylit-logo.png");
 
@@ -201,6 +209,9 @@ export default function HomeScreen() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileChecked, setProfileChecked] = useState(false);
   const [latestIntention, setLatestIntention] = useState<PreSleepIntention | null>(null);
+  const [progression, setProgression] = useState<ProgressionState | null>(null);
+
+  const activeCategory = profile?.dreamCategory?.trim() || "Purpose";
 
   const latestCheckInDay = latestCheckIn?.createdAt
     ? new Date(latestCheckIn.createdAt).toLocaleDateString("en-CA")
@@ -263,6 +274,20 @@ export default function HomeScreen() {
       setHasSavedCheckIn(true);
     }
   }, [hasRouteEnergy, rawMode, routeEnergyNumber]);
+
+  // Roll the day-over-day quest journey forward whenever the active category is
+  // known (covers app open and a new calendar day).
+  useEffect(() => {
+    let cancelled = false;
+
+    getCategoryProgressionState(activeCategory, getTodayKey()).then((state) => {
+      if (!cancelled) setProgression(state);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeCategory]);
 
   async function lightHaptic() {
     try {
@@ -713,10 +738,25 @@ export default function HomeScreen() {
     let baseQuests: Quest[];
 
     if (isProgress) {
-      // Progress mode: goal-anchored daily quests from the offline quest DB,
-      // personalized with the user's specific goal.
-      const progressQuests = generateProgressQuests({ category, specificGoal }, 5);
-      baseQuests = [...progressQuests, resourceQuest, movementQuest, transportQuest];
+      // Progress mode: a sustainable, day-over-day journey. The capstone makes
+      // "one step past yesterday" explicit, and the quests below escalate
+      // (rotating + scaling) with the category's current level.
+      const level = progression?.level ?? 1;
+      const stretchQuest = buildStretchQuest({ category, specificGoal }, level);
+      const progressQuests = buildProgressionQuests({ category, specificGoal }, level, 4);
+
+      baseQuests = [
+        { title: stretchQuest.title, type: stretchQuest.type, steps: stretchQuest.steps, description: stretchQuest.description },
+        ...progressQuests.map((quest) => ({
+          title: quest.title,
+          type: quest.type,
+          steps: quest.steps,
+          description: quest.description,
+        })),
+        resourceQuest,
+        movementQuest,
+        transportQuest,
+      ];
     } else {
       // Recovery mode (unchanged for now): gentle category quests + goal steps.
       const categoryQuests = getCategoryQuests(category, "Recovery");
@@ -764,6 +804,28 @@ export default function HomeScreen() {
 
   const focusValue = `${completedVisibleQuests}/${visibleQuests.length || 0}`;
   const reflectValue = visibleQuests.some((q) => q.title.toLowerCase().includes("reflect")) ? 1 : 0;
+
+  const allVisibleQuestsDone =
+    visibleQuests.length > 0 && completedVisibleQuests === visibleQuests.length;
+
+  // Finishing today's board advances the journey: today is banked, and the
+  // next day's roll-forward steps the level up.
+  useEffect(() => {
+    if (!isProgress || !hasEnergyData || !allVisibleQuestsDone) return;
+    if (progression?.completedToday) return;
+
+    markProgressionDayComplete(activeCategory, getTodayKey()).then(setProgression);
+  }, [
+    isProgress,
+    hasEnergyData,
+    allVisibleQuestsDone,
+    activeCategory,
+    progression?.completedToday,
+  ]);
+
+  const journeyLevel = progression?.level ?? 1;
+  const journeyStreak = displayStreak(progression);
+  const journeyTier = tierLabelForLevel(journeyLevel);
 
   if (!profileChecked) return null;
 
@@ -895,8 +957,16 @@ export default function HomeScreen() {
               <View style={[styles.questBoard, { borderColor: theme.accent }]}>
                 <View style={styles.questHeaderRow}>
                   <Text style={[styles.questTitle, { color: theme.accent }]}>{isRecovery ? "+ QUEST BOARD +" : "⚔ QUEST BOARD"}</Text>
-                  <Text style={[styles.questCount, { color: theme.accent }]}>{isNeutral ? "LOCKED" : isProgress ? `${visibleQuests.length} ACTIVE` : `${completedVisibleQuests}/${visibleQuests.length || 0}`}</Text>
+                  <Text style={[styles.questCount, { color: theme.accent }]}>{isNeutral ? "LOCKED" : isProgress ? `DAY ${journeyLevel} · 🔥${journeyStreak}` : `${completedVisibleQuests}/${visibleQuests.length || 0}`}</Text>
                 </View>
+
+                {isProgress ? (
+                  <Text style={[styles.questProgressionNote, { color: theme.soft }]} numberOfLines={1}>
+                    {allVisibleQuestsDone
+                      ? `Day ${journeyLevel} banked — tomorrow goes one step further.`
+                      : `${journeyTier} tier · each day builds one step further.`}
+                  </Text>
+                ) : null}
 
                 {isNeutral ? (
                   <View style={styles.questLockedCard}>
@@ -1349,6 +1419,13 @@ const styles = StyleSheet.create({
   questCount: {
     fontSize: 13,
     fontWeight: "900",
+  },
+  questProgressionNote: {
+    fontSize: 9,
+    fontWeight: "800",
+    marginTop: -3,
+    marginBottom: 6,
+    letterSpacing: 0.3,
   },
   questLockedCard: {
     flex: 1,
