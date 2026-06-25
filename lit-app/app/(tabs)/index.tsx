@@ -2,20 +2,16 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { Link, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Image, ImageBackground, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
 
 import { uiAssets } from "../../constants/uiAssets";
 import { generateProgressQuests } from "../../lib/questGeneration";
 
-const mylitLogo = require("../../assets/ui/logo/mylit-logo.png");
+const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
+const MAX_FRAME_WIDTH = 520;
 
-const fireAssets = {
-  ember: require("../../assets/ui/fires/ember.png"),
-  lowFlame: require("../../assets/ui/fires/low-flame.png"),
-  steadyFlame: require("../../assets/ui/fires/steady-flame.png"),
-  brightFlame: require("../../assets/ui/fires/bright-flame.png"),
-  blazingFlame: require("../../assets/ui/fires/blazing-flame.png"),
-};
+const mylitLogo = uiAssets.logo.mylit;
+const fireAssets = uiAssets.fires;
 
 type Quest = {
   title: string;
@@ -139,28 +135,29 @@ function clampEnergy(value: number) {
 }
 
 function getFlameState(score: number) {
-  if (score >= 80) {
-    return { image: fireAssets.blazingFlame, label: "Blazing Flame", size: 74 };
+  if (score >= 81) {
+    return { image: fireAssets.blazingFlame, emoji: "🔥", label: "Blazing Flame", size: 74 };
   }
 
-  if (score >= 60) {
-    return { image: fireAssets.brightFlame, label: "Bright Flame", size: 62 };
+  if (score >= 61) {
+    return { image: fireAssets.brightFlame, emoji: "🔥", label: "Bright Flame", size: 62 };
   }
 
-  if (score >= 40) {
-    return { image: fireAssets.steadyFlame, label: "Steady Flame", size: 50 };
+  if (score >= 41) {
+    return { image: fireAssets.steadyFlame, emoji: "🔥", label: "Steady Flame", size: 50 };
   }
 
-  if (score >= 25) {
-    return { image: fireAssets.lowFlame, label: "Low Flame", size: 40 };
+  if (score >= 21) {
+    return { image: fireAssets.lowFlame, emoji: "🔥", label: "Low Flame", size: 40 };
   }
 
-  return { image: fireAssets.ember, label: "Ember", size: 30 };
+  return { image: fireAssets.ember, emoji: "✨", label: "Ember", size: 30 };
 }
 
 export default function HomeScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
 
   const rawMode = Array.isArray(params.mode) ? params.mode[0] : params.mode;
   const rawEnergy = Array.isArray(params.energy) ? params.energy[0] : params.energy;
@@ -221,6 +218,15 @@ export default function HomeScreen() {
     latestCheckIn !== null &&
     isSavedCheckInToday &&
     isSavedCheckInAfterPath;
+
+  const safeViewportWidth = Math.max(0, viewportWidth - 24);
+  const safeViewportHeight = Math.max(0, viewportHeight - 24);
+  const frameWidth = Math.min(
+    MAX_FRAME_WIDTH,
+    safeViewportWidth,
+    safeViewportHeight * APP_FRAME_ASPECT_RATIO
+  );
+  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   const hasEnergyData = hasRouteEnergy || hasSavedEnergyData;
 
@@ -544,10 +550,6 @@ export default function HomeScreen() {
         mode: "BALANCED MODE",
       };
 
-  function getAccentColor() {
-    return theme.accent;
-  }
-
   function getCategoryQuests(category: string, modeType: "Recovery" | "Progress"): Quest[] {
     const normalized = category || "Purpose";
 
@@ -746,6 +748,12 @@ export default function HomeScreen() {
   const quests = generateQuests();
   const visibleQuests = quests.slice(0, 3);
 
+  const currentBackground = isRecovery
+    ? uiAssets.backgrounds.recovery
+    : isProgress
+    ? uiAssets.backgrounds.progress
+    : uiAssets.backgrounds.neutral;
+
   const completedSteps = visibleQuests
     .filter((quest) => completedQuests.includes(quest.title))
     .reduce((sum, quest) => sum + quest.steps, 0);
@@ -769,9 +777,15 @@ export default function HomeScreen() {
 
   return (
     <View style={styles.pageRoot}>
-      <View style={styles.phoneFrame}>
-        <ImageBackground source={uiAssets.backgrounds.default} style={styles.phoneBackground} resizeMode="cover">
-          <View style={styles.worldOverlay}>
+      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight }]}>
+        <View pointerEvents="none" style={styles.backgroundLayer}>
+          <Image
+            source={currentBackground}
+            style={styles.backgroundImage}
+            resizeMode="cover"
+          />
+        </View>
+        <View style={styles.worldOverlay}>
             <ScrollView
               style={styles.screenScroller}
               contentContainerStyle={styles.hudContent}
@@ -828,15 +842,19 @@ export default function HomeScreen() {
                 </View>
               </View>
 
-              <View style={[styles.guideScene, isNeutral && styles.guideSceneNeutral]}>
-                {!isNeutral ? (
+              {!isNeutral ? (
+                <View style={styles.guideScene}>
                   <Image source={guideImage} style={[styles.guideEmblem, { borderColor: theme.accent }]} resizeMode="contain" />
-                ) : null}
-                <View style={[styles.speechBubble, { borderColor: theme.accent }, isNeutral && styles.neutralSpeechBubble]}>
-                  <Text style={styles.speechText}>{isNeutral ? modeInstruction : guideMessage}</Text>
-                  {!isNeutral ? <Text style={[styles.speechName, { color: theme.accent }]}>{guideName} {isRecovery ? "💜" : "💚"}</Text> : null}
+                  <View style={[styles.speechBubble, { borderColor: theme.accent }]}>
+                    <Text style={styles.speechText}>{guideMessage}</Text>
+                    <Text style={[styles.speechName, { color: theme.accent }]}>{guideName} {isRecovery ? "💜" : "💚"}</Text>
+                  </View>
                 </View>
-              </View>
+              ) : (
+                <View style={styles.neutralStatusPanel}>
+                  <Text style={[styles.neutralStatusText, { color: theme.glow }]}>{modeInstruction}</Text>
+                </View>
+              )}
 
               <View style={[styles.energyCard, { borderColor: theme.accent }]}>
                 <View style={styles.energyHeaderRow}>
@@ -845,17 +863,37 @@ export default function HomeScreen() {
                     <Text style={[styles.energyPillText, { color: theme.accent }]}>{isNeutral ? "STEADY" : isRecovery ? "RECOVERY" : "PROGRESS"}</Text>
                   </View>
                 </View>
-                <Image
-                  source={hasEnergyData ? flameState.image : fireAssets.steadyFlame}
-                  style={[
-                    styles.energyFlame,
-                    {
-                      height: hasEnergyData ? flameState.size + 42 : 92,
-                      width: hasEnergyData ? flameState.size + 42 : 92,
-                    },
-                  ]}
-                  resizeMode="contain"
-                />
+                {hasEnergyData && flameState.image ? (
+                  <Image
+                    source={flameState.image}
+                    style={[
+                      styles.energyFlame,
+                      {
+                        height: flameState.size + 58,
+                        width: flameState.size + 58,
+                      },
+                    ]}
+                    resizeMode="contain"
+                  />
+                ) : !hasEnergyData && fireAssets.steadyFlame ? (
+                  <Image
+                    source={fireAssets.steadyFlame}
+                    style={[
+                      styles.energyFlame,
+                      {
+                        height: 112,
+                        width: 112,
+                      },
+                    ]}
+                    resizeMode="contain"
+                  />
+                ) : (
+                  <View style={styles.energyFlameFallback}>
+                    <Text style={styles.energyFlameFallbackText}>
+                      {hasEnergyData ? flameState.emoji : "🔥"}
+                    </Text>
+                  </View>
+                )}
                 <View style={styles.energyScoreLine}>
                   <Text style={[styles.energyScore, { color: theme.glow }]}>{hasEnergyData ? energyYield : "—"}</Text>
                   <Text style={styles.energyOutOf}> / 100</Text>
@@ -989,8 +1027,7 @@ export default function HomeScreen() {
                 <Text style={styles.navLabel}>BAG</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </ImageBackground>
+        </View>
       </View>
     </View>
   );
@@ -1002,40 +1039,48 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  phoneFrame: {
-    flex: 1,
-    width: "100%",
-    maxWidth: 430,
+  phoneStage: {
     alignSelf: "center",
     backgroundColor: "#050814",
     overflow: "hidden",
+    position: "relative",
+    borderWidth: 2,
+    borderColor: "rgba(251, 191, 36, 0.55)",
+    shadowColor: "#000",
+    shadowOpacity: 0.85,
+    shadowRadius: 0,
+    shadowOffset: { width: 6, height: 6 },
   },
-  phoneBackground: {
-    flex: 1,
+  backgroundLayer: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  backgroundImage: {
+    width: "100%",
+    height: "100%",
   },
   worldOverlay: {
     flex: 1,
-    backgroundColor: "rgba(2, 6, 12, 0.08)",
+    backgroundColor: "rgba(2, 6, 12, 0.02)",
   },
   screenScroller: {
     flex: 1,
   },
   hudContent: {
     minHeight: "100%",
-    paddingTop: 10,
-    paddingHorizontal: 12,
-    paddingBottom: 86,
+    paddingTop: 9,
+    paddingHorizontal: 14,
+    paddingBottom: 82,
     justifyContent: "space-between",
   },
   topHud: {
-    minHeight: 92,
+    minHeight: 86,
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
   },
   cornerButton: {
-    height: 52,
-    width: 52,
+    height: 48,
+    width: 48,
     borderWidth: 3,
     borderRadius: 8,
     backgroundColor: "rgba(6, 10, 18, 0.94)",
@@ -1050,8 +1095,8 @@ const styles = StyleSheet.create({
     fontSize: 24,
   },
   heroLogo: {
-    height: 86,
-    width: 238,
+    height: 82,
+    width: 250,
     marginTop: -2,
   },
   modeRow: {
@@ -1173,9 +1218,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     marginVertical: 3,
   },
-  guideSceneNeutral: {
-    minHeight: 78,
+  neutralStatusPanel: {
+    alignSelf: "center",
+    width: "76%",
+    minHeight: 44,
+    marginVertical: 6,
+    borderWidth: 2,
+    borderColor: "rgba(248, 200, 74, 0.85)",
+    backgroundColor: "rgba(8, 12, 20, 0.82)",
+    alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  neutralStatusText: {
+    fontSize: 11,
+    fontWeight: "900",
+    textAlign: "center",
+    textShadowColor: "#000",
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 0,
   },
   guideEmblem: {
     height: 86,
@@ -1193,10 +1254,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
   },
-  neutralSpeechBubble: {
-    flex: 0,
-    width: "72%",
-  },
   speechText: {
     color: "#F8F1D7",
     fontSize: 13,
@@ -1209,13 +1266,13 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
   energyCard: {
-    width: "58%",
-    minHeight: 188,
+    width: "64%",
+    minHeight: 202,
     alignSelf: "center",
     backgroundColor: "rgba(6, 10, 18, 0.96)",
     borderWidth: 4,
     borderRadius: 5,
-    paddingVertical: 9,
+    paddingVertical: 12,
     paddingHorizontal: 10,
     alignItems: "center",
     justifyContent: "center",
@@ -1247,17 +1304,31 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   energyFlame: {
-    marginTop: 2,
-    marginBottom: -4,
+    marginTop: 8,
+    marginBottom: 2,
   },
   energyScoreLine: {
     flexDirection: "row",
     alignItems: "baseline",
   },
+  energyFlameFallback: {
+    height: 112,
+    width: 112,
+    marginTop: 8,
+    marginBottom: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  energyFlameFallbackText: {
+    fontSize: 76,
+    textShadowColor: "#000",
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 0,
+  },
   energyScore: {
-    fontSize: 44,
+    fontSize: 52,
     fontWeight: "900",
-    lineHeight: 48,
+    lineHeight: 56,
     textShadowColor: "#000",
     textShadowOffset: { width: 2, height: 2 },
     textShadowRadius: 0,
@@ -1286,7 +1357,7 @@ const styles = StyleSheet.create({
   },
   checkInCard: {
     flex: 1,
-    minHeight: 82,
+    minHeight: 76,
     backgroundColor: "rgba(6, 10, 18, 0.95)",
     borderWidth: 3,
     borderRadius: 4,
@@ -1328,7 +1399,7 @@ const styles = StyleSheet.create({
     marginLeft: 3,
   },
   questBoard: {
-    minHeight: 150,
+    minHeight: 142,
     backgroundColor: "rgba(5, 9, 17, 0.96)",
     borderWidth: 3,
     borderRadius: 4,
@@ -1352,7 +1423,7 @@ const styles = StyleSheet.create({
   },
   questLockedCard: {
     flex: 1,
-    minHeight: 92,
+    minHeight: 86,
     borderWidth: 2,
     borderColor: "#334155",
     backgroundColor: "rgba(15, 23, 42, 0.9)",
@@ -1465,7 +1536,7 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   statsBar: {
-    minHeight: 62,
+    minHeight: 58,
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "rgba(5, 9, 17, 0.96)",
@@ -1505,7 +1576,7 @@ const styles = StyleSheet.create({
     left: 8,
     right: 8,
     bottom: 8,
-    height: 66,
+    height: 62,
     backgroundColor: "rgba(4, 8, 16, 0.98)",
     borderWidth: 3,
     borderRadius: 5,
