@@ -1,9 +1,19 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  Image,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
+} from "react-native";
 
 import { GOAL_HORIZON_LABELS } from "../constants/goalMilestoneTemplates";
+import { uiAssets } from "../constants/uiAssets";
 
 type UserProfile = {
   name: string;
@@ -27,7 +37,23 @@ type UserProfile = {
   hasFoodControl?: boolean;
 };
 
+type SummaryCard = {
+  label: string;
+  value: string;
+  icon: string;
+};
+
+type MilestoneCard = {
+  label: string;
+  caption: string;
+  text: string;
+  icon: string;
+  tone: "gold" | "green";
+};
+
 const PROFILE_KEY = "lit_user_profile";
+const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
+const MAX_FRAME_WIDTH = 520;
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -36,24 +62,19 @@ const pixelFont = Platform.select({
   default: "monospace",
 });
 
-type NavItem = {
-  label: string;
-  icon: string;
-  route: "/" | "/sleep" | "/calendar" | "/mind" | "/path" | "/stats";
-};
-
-const NAV_ITEMS: NavItem[] = [
-  { label: "Home", icon: "🏠", route: "/" },
-  { label: "Sleep", icon: "🌙", route: "/sleep" },
-  { label: "Calendar", icon: "📅", route: "/calendar" },
-  { label: "Mind", icon: "🧠", route: "/mind" },
-  { label: "Path", icon: "🧭", route: "/path" },
-  { label: "Stats", icon: "📊", route: "/stats" },
-];
-
 export default function PathScreen() {
   const router = useRouter();
+  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
   const [profile, setProfile] = useState<UserProfile | null>(null);
+
+  const safeViewportWidth = Math.max(0, viewportWidth - 24);
+  const safeViewportHeight = Math.max(0, viewportHeight - 24);
+  const frameWidth = Math.min(
+    MAX_FRAME_WIDTH,
+    safeViewportWidth,
+    safeViewportHeight * APP_FRAME_ASPECT_RATIO
+  );
+  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   useEffect(() => {
     loadProfile();
@@ -68,7 +89,7 @@ export default function PathScreen() {
 
   const longTermDream = profile?.longTermDream?.trim() || "Not set yet";
   const dreamCategory = profile?.dreamCategory?.trim() || "Not set yet";
-  const specificGoal = profile?.specificGoal?.trim() || "";
+  const specificGoal = profile?.specificGoal?.trim() || "Not set yet";
   // Prefer the new tiered fields, fall back to legacy goalOne / Two / Three
   // for users whose profile was saved before the tiered flow existed.
   const shortTermGoal =
@@ -79,272 +100,581 @@ export default function PathScreen() {
     profile?.longTermGoal?.trim() || profile?.goalThree?.trim() || "Not set yet";
   const progressMeaning = profile?.progressMeaning?.trim() || "Not set yet";
 
+  const summaryCards: SummaryCard[] = [
+    { label: "Long-Term Dream", value: longTermDream, icon: "📕" },
+    { label: "Dream Category", value: dreamCategory, icon: "🍃" },
+    { label: "Specific Goal", value: specificGoal, icon: "🎯" },
+  ];
+
+  const milestones: MilestoneCard[] = [
+    {
+      label: GOAL_HORIZON_LABELS.longTerm.label,
+      caption: GOAL_HORIZON_LABELS.longTerm.caption,
+      text: longTermGoal,
+      icon: "🏆",
+      tone: "gold",
+    },
+    {
+      label: GOAL_HORIZON_LABELS.midTerm.label,
+      caption: GOAL_HORIZON_LABELS.midTerm.caption,
+      text: midTermGoal,
+      icon: "🏳️",
+      tone: "green",
+    },
+    {
+      label: GOAL_HORIZON_LABELS.shortTerm.label,
+      caption: GOAL_HORIZON_LABELS.shortTerm.caption,
+      text: shortTermGoal,
+      icon: "📍",
+      tone: "green",
+    },
+  ];
+
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
-      <View style={styles.shell}>
-        <View style={styles.hero}>
-          <Text style={styles.heroLabel}>PATH BOARD</Text>
-          <Text style={styles.title}>PATH</Text>
-          <Text style={styles.subtitle}>Keep your direction visible and update it when life changes.</Text>
+    <View style={styles.pageRoot}>
+      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight }]}>
+        <View pointerEvents="none" style={styles.backgroundLayer}>
+          <Image source={uiAssets.backgrounds.default} style={styles.backgroundImage} resizeMode="cover" />
         </View>
-
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>LONG-TERM DREAM</Text>
-          <Text style={styles.cardMain}>{longTermDream}</Text>
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>DREAM CATEGORY</Text>
-          <Text style={styles.cardText}>{dreamCategory}</Text>
-        </View>
-
-        {specificGoal ? (
-          <View style={styles.card}>
-            <Text style={styles.cardLabel}>SPECIFIC GOAL</Text>
-            <Text style={styles.cardText}>{specificGoal}</Text>
-          </View>
-        ) : null}
-
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>PATH MILESTONES</Text>
-
-          <View style={styles.milestoneRow}>
-            <View style={styles.milestoneHeaderRow}>
-              <Text style={styles.milestoneLabel}>{GOAL_HORIZON_LABELS.shortTerm.label}</Text>
-              <Text style={styles.milestoneCaption}>{GOAL_HORIZON_LABELS.shortTerm.caption}</Text>
+        <View style={styles.worldOverlay}>
+          <ScrollView
+            style={styles.screenScroller}
+            contentContainerStyle={styles.hudContent}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+          >
+            <View style={styles.hero}>
+              <View style={styles.heroCopy}>
+                <Text style={styles.heroLabel}>PATH BOARD</Text>
+                <Text style={styles.title}>PATH</Text>
+                <Text style={styles.subtitle}>
+                  Keep your direction visible and update it when life changes.
+                </Text>
+              </View>
+              <View style={styles.heroIconBox}>
+                <Text style={styles.heroIcon}>🏮</Text>
+              </View>
             </View>
-            <Text style={styles.goalText}>{shortTermGoal}</Text>
-          </View>
 
-          <View style={styles.milestoneRow}>
-            <View style={styles.milestoneHeaderRow}>
-              <Text style={styles.milestoneLabel}>{GOAL_HORIZON_LABELS.midTerm.label}</Text>
-              <Text style={styles.milestoneCaption}>{GOAL_HORIZON_LABELS.midTerm.caption}</Text>
+            <View style={styles.summaryStack}>
+              {summaryCards.map((card) => (
+                <View key={card.label} style={styles.summaryCard}>
+                  <View style={styles.summaryIconBox}>
+                    <Text style={styles.summaryIcon}>{card.icon}</Text>
+                  </View>
+                  <View style={styles.summaryCopy}>
+                    <Text style={styles.summaryLabel}>{card.label}</Text>
+                    <Text style={styles.summaryValue}>{card.value}</Text>
+                  </View>
+                </View>
+              ))}
             </View>
-            <Text style={styles.goalText}>{midTermGoal}</Text>
-          </View>
 
-          <View style={styles.milestoneRow}>
-            <View style={styles.milestoneHeaderRow}>
-              <Text style={styles.milestoneLabel}>{GOAL_HORIZON_LABELS.longTerm.label}</Text>
-              <Text style={styles.milestoneCaption}>{GOAL_HORIZON_LABELS.longTerm.caption}</Text>
+            <View style={styles.milestonesPanel}>
+              <Text style={styles.milestonesTitle}>PATH MILESTONES</Text>
+              <View style={styles.mapBody}>
+                <View style={styles.routeColumn}>
+                  <View style={styles.routeLine} />
+                  {milestones.map((milestone, index) => (
+                    <View key={milestone.label} style={styles.markerWrap}>
+                      <View
+                        style={[
+                          styles.marker,
+                          milestone.tone === "gold" ? styles.markerGold : styles.markerGreen,
+                        ]}
+                      >
+                        <Text style={styles.markerText}>{milestone.icon}</Text>
+                      </View>
+                      {index < milestones.length - 1 ? <View style={styles.routeDash} /> : null}
+                    </View>
+                  ))}
+                </View>
+
+                <View style={styles.milestoneCards}>
+                  {milestones.map((milestone) => (
+                    <View key={milestone.label} style={styles.milestoneCard}>
+                      <View style={styles.milestoneHeaderRow}>
+                        <Text
+                          style={[
+                            styles.milestoneLabel,
+                            milestone.tone === "gold" ? styles.milestoneGold : styles.milestoneGreen,
+                          ]}
+                        >
+                          {milestone.label}
+                        </Text>
+                        <Text style={styles.milestoneCaption}>{milestone.caption}</Text>
+                      </View>
+                      <Text style={styles.goalText}>{milestone.text}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
             </View>
-            <Text style={styles.goalText}>{longTermGoal}</Text>
-          </View>
-        </View>
 
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>PROGRESS MEANING</Text>
-          <Text style={styles.cardText}>{progressMeaning}</Text>
-        </View>
+            <View style={styles.meaningCard}>
+              <View style={styles.meaningIconBox}>
+                <Text style={styles.meaningIcon}>💖</Text>
+              </View>
+              <View style={styles.meaningCopy}>
+                <Text style={styles.meaningLabel}>PROGRESS MEANING</Text>
+                <Text style={styles.meaningText}>{progressMeaning}</Text>
+              </View>
+            </View>
 
-        <TouchableOpacity style={styles.actionButton} onPress={() => router.push("/onboarding")}>
-          <Text style={styles.actionButtonText}>Set My Path</Text>
-        </TouchableOpacity>
+            <TouchableOpacity style={styles.primaryActionButton} onPress={() => router.push("/onboarding")}>
+              <Text style={styles.actionIcon}>🗡️</Text>
+              <Text style={styles.primaryActionText}>Set My Path</Text>
+              <Text style={styles.actionArrow}>›</Text>
+            </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.actionButton, styles.secondaryActionButton]}
-          onPress={() => router.push("/next-chapter")}
-        >
-          <Text style={styles.actionButtonText}>Set Your Next Long-Term Goal</Text>
-        </TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryActionButton} onPress={() => router.push("/next-chapter")}>
+              <Text style={styles.actionIcon}>🚩</Text>
+              <Text style={styles.secondaryActionText}>Set Your Next Long-Term Goal</Text>
+              <Text style={styles.secondaryActionArrow}>›</Text>
+            </TouchableOpacity>
+          </ScrollView>
 
-        <View style={styles.bottomNav}>
-          <Text style={styles.bottomTitle}>NAVIGATION</Text>
-          <View style={styles.navGrid}>
-            {NAV_ITEMS.map((item) => {
-              const isActive = item.route === "/path";
-              return (
-                <TouchableOpacity
-                  key={item.route}
-                  style={[styles.navButton, isActive && styles.navButtonActive]}
-                  onPress={() => router.push(item.route)}
-                >
-                  <Text style={[styles.navText, isActive && styles.navTextActive]}>
-                    {item.icon} {item.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
+          <View style={styles.bottomNav}>
+            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}>
+              <Text style={styles.navText}>🏠</Text>
+              <Text style={styles.navLabel}>HOME</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/sleep")}>
+              <Text style={styles.navText}>🌙</Text>
+              <Text style={styles.navLabel}>SLEEP</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/mind")}>
+              <Text style={styles.navText}>🧠</Text>
+              <Text style={styles.navLabel}>MIND</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={() => router.push("/path")}>
+              <Text style={styles.navTextActive}>🌲</Text>
+              <Text style={styles.navLabelActive}>PATH</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/calendar")}>
+              <Text style={styles.navText}>📅</Text>
+              <Text style={styles.navLabel}>CAL</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/stats")}>
+              <Text style={styles.navText}>🎒</Text>
+              <Text style={styles.navLabel}>BAG</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
+  pageRoot: {
     flex: 1,
-    backgroundColor: "#0B1220",
+    backgroundColor: "#02040A",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  container: {
-    paddingTop: 28,
-    paddingBottom: 42,
-  },
-  shell: {
-    width: "100%",
-    maxWidth: 520,
+  phoneStage: {
     alignSelf: "center",
-    paddingHorizontal: 18,
+    backgroundColor: "#050814",
+    overflow: "hidden",
+    position: "relative",
+    borderWidth: 2,
+    borderColor: "rgba(251, 191, 36, 0.64)",
+    shadowColor: "#000",
+    shadowOpacity: 0.85,
+    shadowRadius: 0,
+    shadowOffset: { width: 6, height: 6 },
+  },
+  backgroundLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  backgroundImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: "100%",
+    height: "100%",
+  },
+  worldOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(4, 8, 14, 0.05)",
+  },
+  screenScroller: {
+    flex: 1,
+  },
+  hudContent: {
+    minHeight: "100%",
+    paddingTop: 18,
+    paddingHorizontal: 12,
+    paddingBottom: 82,
   },
   hero: {
-    backgroundColor: "#0F1E1A",
-    borderWidth: 3,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(8, 13, 18, 0.90)",
+    borderWidth: 4,
     borderColor: "#FBBF24",
-    borderRadius: 22,
-    padding: 18,
-    marginBottom: 14,
+    borderRadius: 8,
+    paddingVertical: 15,
+    paddingHorizontal: 14,
+    marginBottom: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.7,
+    shadowRadius: 0,
+    shadowOffset: { width: 4, height: 4 },
+  },
+  heroCopy: {
+    flex: 1,
   },
   heroLabel: {
-    color: "#86EFAC",
+    color: "#4ADE80",
     fontFamily: pixelFont,
-    fontSize: 11,
-    letterSpacing: 1.2,
-    fontWeight: "800",
-    marginBottom: 8,
+    fontSize: 13,
+    fontWeight: "900",
+    letterSpacing: 1.8,
+    marginBottom: 7,
   },
   title: {
     color: "#F9FAFB",
     fontFamily: pixelFont,
-    fontSize: 30,
+    fontSize: 40,
     fontWeight: "900",
-    letterSpacing: 1,
-    marginBottom: 8,
+    letterSpacing: 4,
+    lineHeight: 45,
+    textShadowColor: "#000",
+    textShadowOffset: { width: 3, height: 3 },
+    textShadowRadius: 0,
   },
   subtitle: {
-    color: "#D1FAE5",
-    fontSize: 14,
-    lineHeight: 21,
-    fontWeight: "600",
+    color: "#F8F1D7",
+    fontFamily: pixelFont,
+    fontSize: 13,
+    fontWeight: "800",
+    lineHeight: 20,
+    marginTop: 8,
   },
-  card: {
-    backgroundColor: "#111827",
+  heroIconBox: {
+    height: 74,
+    width: 74,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(15, 23, 42, 0.74)",
     borderWidth: 2,
-    borderColor: "#334155",
-    borderRadius: 18,
-    padding: 14,
+    borderColor: "rgba(251, 191, 36, 0.58)",
+    borderRadius: 6,
+    marginLeft: 12,
+  },
+  heroIcon: {
+    fontSize: 42,
+    textShadowColor: "#000",
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 0,
+  },
+  summaryStack: {
+    width: "62%",
+    gap: 8,
     marginBottom: 12,
   },
-  cardLabel: {
+  summaryCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    minHeight: 70,
+    backgroundColor: "rgba(8, 13, 18, 0.88)",
+    borderWidth: 2,
+    borderColor: "rgba(148, 163, 184, 0.48)",
+    borderRadius: 8,
+    padding: 8,
+  },
+  summaryIconBox: {
+    height: 52,
+    width: 52,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(15, 23, 42, 0.78)",
+    borderRadius: 6,
+    marginRight: 10,
+  },
+  summaryIcon: {
+    fontSize: 29,
+  },
+  summaryCopy: {
+    flex: 1,
+  },
+  summaryLabel: {
     color: "#FDE68A",
     fontFamily: pixelFont,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "900",
     letterSpacing: 0.8,
-    marginBottom: 8,
+    textTransform: "uppercase",
   },
-  cardMain: {
+  summaryValue: {
     color: "#F9FAFB",
-    fontSize: 18,
-    lineHeight: 24,
-    fontWeight: "800",
-  },
-  cardText: {
-    color: "#CBD5E1",
+    fontFamily: pixelFont,
     fontSize: 14,
-    lineHeight: 20,
-  },
-  goalText: {
-    color: "#E2E8F0",
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 4,
-    fontWeight: "700",
-  },
-  milestoneRow: {
+    fontWeight: "900",
+    lineHeight: 19,
     marginTop: 4,
-    marginBottom: 6,
-    paddingTop: 6,
-    borderTopWidth: 1,
-    borderTopColor: "#1F2937",
+  },
+  milestonesPanel: {
+    backgroundColor: "rgba(8, 13, 18, 0.84)",
+    borderWidth: 3,
+    borderColor: "rgba(148, 163, 184, 0.52)",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 12,
+  },
+  milestonesTitle: {
+    color: "#4ADE80",
+    fontFamily: pixelFont,
+    fontSize: 16,
+    fontWeight: "900",
+    letterSpacing: 1.3,
+    marginBottom: 12,
+  },
+  mapBody: {
+    flexDirection: "row",
+  },
+  routeColumn: {
+    width: 58,
+    alignItems: "center",
+    position: "relative",
+  },
+  routeLine: {
+    position: "absolute",
+    top: 22,
+    bottom: 28,
+    width: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(251, 191, 36, 0.72)",
+  },
+  markerWrap: {
+    height: 108,
+    alignItems: "center",
+  },
+  marker: {
+    height: 42,
+    width: 42,
+    borderRadius: 21,
+    borderWidth: 3,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(15, 23, 42, 0.95)",
+    zIndex: 2,
+  },
+  markerGold: {
+    borderColor: "#FBBF24",
+  },
+  markerGreen: {
+    borderColor: "#22C55E",
+  },
+  markerText: {
+    fontSize: 21,
+  },
+  routeDash: {
+    width: 13,
+    height: 13,
+    borderRadius: 7,
+    backgroundColor: "rgba(251, 191, 36, 0.85)",
+    marginTop: 20,
+  },
+  milestoneCards: {
+    flex: 1,
+    gap: 10,
+  },
+  milestoneCard: {
+    minHeight: 98,
+    backgroundColor: "rgba(8, 13, 18, 0.92)",
+    borderWidth: 2,
+    borderColor: "rgba(148, 163, 184, 0.46)",
+    borderRadius: 8,
+    padding: 11,
   },
   milestoneHeaderRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 4,
+    justifyContent: "space-between",
+    gap: 8,
+    marginBottom: 7,
   },
   milestoneLabel: {
-    color: "#FDE68A",
-    fontFamily: pixelFont,
-    fontSize: 11,
-    fontWeight: "900",
-    letterSpacing: 0.6,
-  },
-  milestoneCaption: {
-    color: "#94A3B8",
-    fontSize: 10,
-    fontFamily: pixelFont,
-    fontWeight: "700",
-    letterSpacing: 0.4,
-  },
-  actionButton: {
-    backgroundColor: "#166534",
-    borderWidth: 2,
-    borderColor: "#FBBF24",
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    marginBottom: 10,
-    alignItems: "center",
-  },
-  secondaryActionButton: {
-    backgroundColor: "#0F172A",
-    borderColor: "#22C55E",
-  },
-  actionButtonText: {
-    color: "#F9FAFB",
+    flex: 1,
     fontFamily: pixelFont,
     fontSize: 13,
     fontWeight: "900",
-    letterSpacing: 0.5,
+    letterSpacing: 0.7,
+    textTransform: "uppercase",
+  },
+  milestoneGold: {
+    color: "#FDE68A",
+  },
+  milestoneGreen: {
+    color: "#4ADE80",
+  },
+  milestoneCaption: {
+    color: "#F8F1D7",
+    fontFamily: pixelFont,
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  goalText: {
+    color: "#F9FAFB",
+    fontFamily: pixelFont,
+    fontSize: 13,
+    fontWeight: "800",
+    lineHeight: 19,
+  },
+  meaningCard: {
+    minHeight: 70,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(8, 13, 18, 0.90)",
+    borderWidth: 2,
+    borderColor: "rgba(148, 163, 184, 0.52)",
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+  },
+  meaningIconBox: {
+    height: 50,
+    width: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 11,
+  },
+  meaningIcon: {
+    fontSize: 33,
+  },
+  meaningCopy: {
+    flex: 1,
+  },
+  meaningLabel: {
+    color: "#FDE68A",
+    fontFamily: pixelFont,
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.9,
+  },
+  meaningText: {
+    color: "#F9FAFB",
+    fontFamily: pixelFont,
+    fontSize: 13,
+    fontWeight: "800",
+    lineHeight: 19,
+    marginTop: 4,
+  },
+  primaryActionButton: {
+    minHeight: 54,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(22, 101, 52, 0.96)",
+    borderWidth: 3,
+    borderColor: "#FBBF24",
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    marginBottom: 10,
+    shadowColor: "#000",
+    shadowOpacity: 0.7,
+    shadowRadius: 0,
+    shadowOffset: { width: 4, height: 4 },
+  },
+  secondaryActionButton: {
+    minHeight: 54,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(15, 23, 42, 0.96)",
+    borderWidth: 3,
+    borderColor: "#22C55E",
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    marginBottom: 10,
+    shadowColor: "#000",
+    shadowOpacity: 0.7,
+    shadowRadius: 0,
+    shadowOffset: { width: 4, height: 4 },
+  },
+  actionIcon: {
+    fontSize: 26,
+    marginRight: 10,
+  },
+  primaryActionText: {
+    flex: 1,
+    color: "#F9FAFB",
+    fontFamily: pixelFont,
+    fontSize: 18,
+    fontWeight: "900",
     textAlign: "center",
   },
-  bottomNav: {
-    backgroundColor: "#0F172A",
-    borderWidth: 3,
-    borderColor: "#334155",
-    borderRadius: 18,
-    padding: 12,
-    marginTop: 6,
-  },
-  bottomTitle: {
-    color: "#E2E8F0",
+  secondaryActionText: {
+    flex: 1,
+    color: "#F9FAFB",
     fontFamily: pixelFont,
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 1.1,
-    marginBottom: 8,
+    fontSize: 15,
+    fontWeight: "900",
+    textAlign: "center",
   },
-  navGrid: {
+  actionArrow: {
+    color: "#FDE68A",
+    fontSize: 30,
+    fontWeight: "900",
+    marginLeft: 8,
+  },
+  secondaryActionArrow: {
+    color: "#4ADE80",
+    fontSize: 30,
+    fontWeight: "900",
+    marginLeft: 8,
+  },
+  bottomNav: {
+    position: "absolute",
+    left: 8,
+    right: 8,
+    bottom: 8,
+    height: 62,
+    backgroundColor: "rgba(4, 8, 16, 0.98)",
+    borderWidth: 3,
+    borderColor: "#FBBF24",
+    borderRadius: 5,
+    padding: 4,
     flexDirection: "row",
-    flexWrap: "wrap",
     justifyContent: "space-between",
   },
   navButton: {
-    width: "48.5%",
+    flex: 1,
     backgroundColor: "#111827",
     borderWidth: 2,
-    borderColor: "#334155",
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    marginBottom: 8,
+    borderColor: "#3A4558",
+    borderRadius: 3,
+    paddingVertical: 4,
+    marginHorizontal: 2,
     alignItems: "center",
+    justifyContent: "center",
   },
   navButtonActive: {
-    backgroundColor: "#14532D",
+    backgroundColor: "#162314",
     borderColor: "#FBBF24",
   },
   navText: {
-    color: "#CBD5E1",
-    fontFamily: pixelFont,
-    fontSize: 12,
-    fontWeight: "800",
-    textAlign: "center",
+    color: "#E2E8F0",
+    fontSize: 17,
+    fontWeight: "900",
   },
   navTextActive: {
     color: "#FDE68A",
+    fontSize: 17,
+    fontWeight: "900",
+  },
+  navLabel: {
+    color: "#CBD5E1",
+    fontSize: 8,
+    fontWeight: "900",
+    marginTop: 1,
+    fontFamily: pixelFont,
+  },
+  navLabelActive: {
+    color: "#FDE68A",
+    fontSize: 8,
+    fontWeight: "900",
+    marginTop: 1,
+    fontFamily: pixelFont,
   },
 });

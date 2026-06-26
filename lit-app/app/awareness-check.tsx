@@ -3,14 +3,18 @@ import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
+  Image,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
+
+import { uiAssets } from "../constants/uiAssets";
 
 type AwarenessCheck = {
   id: string;
@@ -23,6 +27,8 @@ type AwarenessCheck = {
 };
 
 const AWARENESS_CHECKS_KEY = "lit_awareness_checks";
+const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
+const MAX_FRAME_WIDTH = 520;
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -33,14 +39,23 @@ const pixelFont = Platform.select({
 
 export default function AwarenessCheckScreen() {
   const router = useRouter();
+  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
 
   const [attentionFocus, setAttentionFocus] = useState("");
   const [automaticOrIntentional, setAutomaticOrIntentional] =
     useState<"Mostly automatic" | "Mixed" | "Mostly intentional">("Mixed");
   const [pulledAway, setPulledAway] = useState("");
   const [broughtBack, setBroughtBack] = useState("");
-  const [presentMoment, setPresentMoment] = useState("");
   const [checks, setChecks] = useState<AwarenessCheck[]>([]);
+
+  const safeViewportWidth = Math.max(0, viewportWidth - 24);
+  const safeViewportHeight = Math.max(0, viewportHeight - 24);
+  const frameWidth = Math.min(
+    MAX_FRAME_WIDTH,
+    safeViewportWidth,
+    safeViewportHeight * APP_FRAME_ASPECT_RATIO
+  );
+  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   useEffect(() => {
     loadChecks();
@@ -63,11 +78,7 @@ export default function AwarenessCheckScreen() {
   }
 
   async function saveAwarenessCheck() {
-    const hasEntry =
-      attentionFocus.trim() ||
-      pulledAway.trim() ||
-      broughtBack.trim() ||
-      presentMoment.trim();
+    const hasEntry = attentionFocus.trim() || pulledAway.trim() || broughtBack.trim();
 
     if (!hasEntry) return;
 
@@ -77,7 +88,7 @@ export default function AwarenessCheckScreen() {
       automaticOrIntentional,
       pulledAway: pulledAway.trim(),
       broughtBack: broughtBack.trim(),
-      presentMoment: presentMoment.trim(),
+      presentMoment: "",
       createdAt: new Date().toLocaleString(),
     };
 
@@ -90,7 +101,6 @@ export default function AwarenessCheckScreen() {
     setAutomaticOrIntentional("Mixed");
     setPulledAway("");
     setBroughtBack("");
-    setPresentMoment("");
 
     await successHaptic();
   }
@@ -100,395 +110,411 @@ export default function AwarenessCheckScreen() {
     await AsyncStorage.setItem(AWARENESS_CHECKS_KEY, JSON.stringify([]));
   }
 
+  const intentionOptions: AwarenessCheck["automaticOrIntentional"][] = [
+    "Mostly automatic",
+    "Mixed",
+    "Mostly intentional",
+  ];
+
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
-      <View style={styles.shell}>
-        <View style={styles.hero}>
-          <Text style={styles.heroLabel}>ATTENTION PRACTICE</Text>
-          <Text style={styles.title}>MEDITATIONS</Text>
-          <Text style={styles.subtitle}>Notice attention. Come back gently.</Text>
+    <View style={styles.pageRoot}>
+      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight }]}>
+        <View pointerEvents="none" style={styles.backgroundLayer}>
+          <Image source={uiAssets.backgrounds.neutral} style={styles.backgroundImage} resizeMode="cover" />
         </View>
-
-        <View style={styles.lunaCard}>
-          <Text style={styles.lunaName}>Luna</Text>
-          <Text style={styles.lunaText}>
-            Write what had your focus, what pulled you away, and what helped you come back.
-          </Text>
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.label}>Where was your attention most of the day?</Text>
-          <TextInput
-            style={styles.textArea}
-            multiline
-            placeholder="Example: school, work, my phone, anxiety, friends, a goal, or just getting through the day."
-            placeholderTextColor="#94A3B8"
-            value={attentionFocus}
-            onChangeText={setAttentionFocus}
-          />
-
-          <Text style={styles.label}>Were you moving automatically or with intention?</Text>
-
-          <TouchableOpacity
-            style={
-              automaticOrIntentional === "Mostly automatic"
-                ? styles.selectedOption
-                : styles.option
-            }
-            onPress={() => setAutomaticOrIntentional("Mostly automatic")}
+        <View style={styles.worldOverlay}>
+          <ScrollView
+            style={styles.screenScroller}
+            contentContainerStyle={styles.hudContent}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
           >
-            <Text
-              style={
-                automaticOrIntentional === "Mostly automatic"
-                  ? styles.selectedOptionText
-                  : styles.optionText
-              }
-            >
-              {automaticOrIntentional === "Mostly automatic" ? "✓ " : ""}Mostly automatic
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={automaticOrIntentional === "Mixed" ? styles.selectedOption : styles.option}
-            onPress={() => setAutomaticOrIntentional("Mixed")}
-          >
-            <Text
-              style={
-                automaticOrIntentional === "Mixed"
-                  ? styles.selectedOptionText
-                  : styles.optionText
-              }
-            >
-              {automaticOrIntentional === "Mixed" ? "✓ " : ""}Mixed
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={
-              automaticOrIntentional === "Mostly intentional"
-                ? styles.selectedOption
-                : styles.option
-            }
-            onPress={() => setAutomaticOrIntentional("Mostly intentional")}
-          >
-            <Text
-              style={
-                automaticOrIntentional === "Mostly intentional"
-                  ? styles.selectedOptionText
-                  : styles.optionText
-              }
-            >
-              {automaticOrIntentional === "Mostly intentional" ? "✓ " : ""}Mostly intentional
-            </Text>
-          </TouchableOpacity>
-
-          <Text style={styles.label}>What pulled you away?</Text>
-          <TextInput
-            style={styles.textArea}
-            multiline
-            placeholder="Example: scrolling, stress, tiredness, comparison, overthinking, or not knowing where to start."
-            placeholderTextColor="#94A3B8"
-            value={pulledAway}
-            onChangeText={setPulledAway}
-          />
-
-          <Text style={styles.label}>What brought you back?</Text>
-          <TextInput
-            style={styles.textArea}
-            multiline
-            placeholder="Example: a reminder, a person, music, journaling, a walk, or one small task."
-            placeholderTextColor="#94A3B8"
-            value={broughtBack}
-            onChangeText={setBroughtBack}
-          />
-
-          <Text style={styles.label}>When did you feel most present?</Text>
-          <TextInput
-            style={styles.textArea}
-            multiline
-            placeholder="Example: eating, walking outside, talking to someone, working quietly, or resting."
-            placeholderTextColor="#94A3B8"
-            value={presentMoment}
-            onChangeText={setPresentMoment}
-          />
-
-          <TouchableOpacity style={styles.saveButton} onPress={saveAwarenessCheck}>
-            <Text style={styles.saveButtonText}>Save Meditation</Text>
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.sectionTitle}>RECENT MEDITATIONS</Text>
-
-        {checks.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <Text style={styles.emptyText}>
-              No meditations yet. Start with one honest observation.
-            </Text>
-          </View>
-        ) : (
-          checks.map((check) => (
-            <View key={check.id} style={styles.entryCard}>
-              <Text style={styles.entryTitle}>{check.automaticOrIntentional}</Text>
-              <Text style={styles.entryDate}>{check.createdAt}</Text>
-
-              {check.attentionFocus ? (
-                <Text style={styles.entryText}>Attention: {check.attentionFocus}</Text>
-              ) : null}
-
-              {check.pulledAway ? (
-                <Text style={styles.entryText}>Pulled away: {check.pulledAway}</Text>
-              ) : null}
-
-              {check.broughtBack ? (
-                <Text style={styles.entryText}>Brought back: {check.broughtBack}</Text>
-              ) : null}
-
-              {check.presentMoment ? (
-                <Text style={styles.presentText}>Present moment: {check.presentMoment}</Text>
-              ) : null}
+            <View style={styles.hero}>
+              <Text style={styles.heroLabel}>ATTENTION PRACTICE</Text>
+              <Text style={styles.title}>AWARENESS</Text>
+              <Text style={styles.subtitle}>Notice attention. Come back gently.</Text>
             </View>
-          ))
-        )}
 
-        {checks.length > 0 && (
-          <TouchableOpacity style={styles.clearButton} onPress={clearChecks}>
-            <Text style={styles.clearButtonText}>Clear Meditations</Text>
-          </TouchableOpacity>
-        )}
+            <View style={styles.lunaCard}>
+              <Image source={uiAssets.guides.luna} style={styles.lunaAvatar} resizeMode="contain" />
+              <View style={styles.lunaCopy}>
+                <Text style={styles.lunaName}>Luna</Text>
+                <Text style={styles.lunaText}>
+                  Name what had your focus, what pulled you away, and what helped you return.
+                </Text>
+              </View>
+            </View>
 
-        <TouchableOpacity style={styles.homeButton} onPress={() => router.push("/")}>
-          <Text style={styles.homeButtonText}>Back to Today</Text>
-        </TouchableOpacity>
+            <View style={styles.card}>
+              <Text style={styles.label}>Where did your attention go today?</Text>
+              <TextInput
+                style={styles.largeTextArea}
+                multiline
+                textAlignVertical="top"
+                placeholder="School, work, your phone, stress, a person, a goal, or just getting through the day."
+                placeholderTextColor="#94A3B8"
+                value={attentionFocus}
+                onChangeText={setAttentionFocus}
+              />
+
+              <Text style={styles.label}>How did it feel?</Text>
+              <View style={styles.optionRow}>
+                {intentionOptions.map((option) => {
+                  const isSelected = automaticOrIntentional === option;
+                  return (
+                    <TouchableOpacity
+                      key={option}
+                      style={[styles.option, isSelected && styles.selectedOption]}
+                      onPress={() => setAutomaticOrIntentional(option)}
+                    >
+                      <Text style={isSelected ? styles.selectedOptionText : styles.optionText}>
+                        {option}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              <Text style={styles.label}>What pulled you away?</Text>
+              <TextInput
+                style={styles.largeTextArea}
+                multiline
+                textAlignVertical="top"
+                placeholder="Scrolling, stress, tiredness, comparison, overthinking, or not knowing where to start."
+                placeholderTextColor="#94A3B8"
+                value={pulledAway}
+                onChangeText={setPulledAway}
+              />
+
+              <Text style={styles.label}>What helped you come back?</Text>
+              <TextInput
+                style={styles.largeTextArea}
+                multiline
+                textAlignVertical="top"
+                placeholder="A reminder, a person, music, journaling, a walk, or one small task."
+                placeholderTextColor="#94A3B8"
+                value={broughtBack}
+                onChangeText={setBroughtBack}
+              />
+
+              <TouchableOpacity style={styles.saveButton} onPress={saveAwarenessCheck}>
+                <Text style={styles.saveButtonText}>Save Awareness Check</Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.sectionTitle}>RECENT CHECKS</Text>
+
+            {checks.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyText}>No awareness checks yet. Start with one honest observation.</Text>
+              </View>
+            ) : (
+              checks.map((check) => (
+                <View key={check.id} style={styles.entryCard}>
+                  <Text style={styles.entryTitle}>{check.automaticOrIntentional}</Text>
+                  <Text style={styles.entryDate}>{check.createdAt}</Text>
+
+                  {check.attentionFocus ? (
+                    <Text style={styles.entryText}>Attention: {check.attentionFocus}</Text>
+                  ) : null}
+
+                  {check.pulledAway ? (
+                    <Text style={styles.entryText}>Pulled away: {check.pulledAway}</Text>
+                  ) : null}
+
+                  {check.broughtBack ? (
+                    <Text style={styles.entryText}>Came back: {check.broughtBack}</Text>
+                  ) : null}
+                </View>
+              ))
+            )}
+
+            {checks.length > 0 && (
+              <TouchableOpacity style={styles.clearButton} onPress={clearChecks}>
+                <Text style={styles.clearButtonText}>Clear Awareness Checks</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity style={styles.homeButton} onPress={() => router.push("/")}>
+              <Text style={styles.homeButtonText}>Back to Today</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
+  pageRoot: {
     flex: 1,
-    backgroundColor: "#0B1120",
+    backgroundColor: "#02040A",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  container: {
-    paddingTop: 32,
-    paddingBottom: 36,
-  },
-  shell: {
-    width: "100%",
-    maxWidth: 520,
+  phoneStage: {
     alignSelf: "center",
-    paddingHorizontal: 18,
+    backgroundColor: "#050814",
+    overflow: "hidden",
+    position: "relative",
+    borderWidth: 2,
+    borderColor: "rgba(251, 191, 36, 0.64)",
+    shadowColor: "#000",
+    shadowOpacity: 0.85,
+    shadowRadius: 0,
+    shadowOffset: { width: 6, height: 6 },
+  },
+  backgroundLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  backgroundImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: "100%",
+    height: "100%",
+  },
+  worldOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(4, 8, 14, 0.16)",
+  },
+  screenScroller: {
+    flex: 1,
+  },
+  hudContent: {
+    minHeight: "100%",
+    paddingTop: 24,
+    paddingHorizontal: 14,
+    paddingBottom: 24,
   },
   hero: {
-    backgroundColor: "#1E1B4B",
+    backgroundColor: "rgba(31, 27, 75, 0.95)",
+    borderWidth: 4,
     borderColor: "#A78BFA",
-    borderWidth: 3,
-    borderRadius: 24,
-    padding: 18,
-    marginBottom: 14,
+    borderRadius: 8,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.7,
+    shadowRadius: 0,
+    shadowOffset: { width: 4, height: 4 },
   },
   heroLabel: {
-    color: "#C4B5FD",
+    color: "#C4A7FF",
     fontFamily: pixelFont,
-    fontSize: 11,
-    letterSpacing: 1.2,
-    fontWeight: "800",
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 1.4,
     marginBottom: 8,
   },
   title: {
-    fontSize: 30,
-    fontFamily: pixelFont,
-    letterSpacing: 1.2,
-    fontWeight: "900",
     color: "#F9FAFB",
-    marginBottom: 8,
+    fontFamily: pixelFont,
+    fontSize: 32,
+    fontWeight: "900",
+    lineHeight: 38,
   },
   subtitle: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: "#DDD6FE",
+    color: "#F8F1D7",
     fontFamily: pixelFont,
-    fontWeight: "700",
+    fontSize: 13,
+    fontWeight: "800",
+    lineHeight: 19,
+    marginTop: 8,
   },
   lunaCard: {
-    backgroundColor: "#2E1065",
-    borderRadius: 20,
-    padding: 16,
-    marginBottom: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(8, 13, 24, 0.95)",
+    borderWidth: 3,
+    borderColor: "#A78BFA",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  lunaAvatar: {
+    height: 58,
+    width: 58,
+    borderRadius: 29,
     borderWidth: 2,
-    borderColor: "#C4B5FD",
+    borderColor: "#C4A7FF",
+    backgroundColor: "rgba(49, 46, 129, 0.72)",
+    marginRight: 12,
+  },
+  lunaCopy: {
+    flex: 1,
   },
   lunaName: {
-    fontSize: 18,
-    fontWeight: "900",
-    color: "#F9FAFB",
-    marginBottom: 8,
+    color: "#F0ABFC",
     fontFamily: pixelFont,
-    letterSpacing: 1,
+    fontSize: 15,
+    fontWeight: "900",
+    marginBottom: 6,
+    textTransform: "uppercase",
   },
   lunaText: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: "#E5E7EB",
-    fontWeight: "600",
+    color: "#F8F1D7",
+    fontFamily: pixelFont,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
   },
   card: {
-    backgroundColor: "#111827",
-    borderRadius: 22,
-    padding: 16,
-    marginBottom: 14,
-    borderWidth: 2,
-    borderColor: "#8B5CF6",
+    backgroundColor: "rgba(8, 13, 24, 0.96)",
+    borderWidth: 4,
+    borderColor: "#A78BFA",
+    borderRadius: 8,
+    padding: 14,
+    marginBottom: 16,
   },
   label: {
+    color: "#F9FAFB",
+    fontFamily: pixelFont,
     fontSize: 12,
     fontWeight: "900",
-    color: "#E9D5FF",
-    marginBottom: 8,
-    marginTop: 10,
-    textTransform: "uppercase",
     letterSpacing: 1,
-    fontFamily: pixelFont,
+    marginTop: 12,
+    marginBottom: 8,
+    textTransform: "uppercase",
   },
-  textArea: {
-    backgroundColor: "#020617",
-    borderRadius: 16,
-    padding: 13,
-    minHeight: 88,
-    fontSize: 15,
-    color: "#F9FAFB",
-    marginBottom: 6,
-    textAlignVertical: "top",
+  largeTextArea: {
+    minHeight: 118,
+    backgroundColor: "rgba(15, 23, 42, 0.96)",
     borderWidth: 2,
     borderColor: "#475569",
+    borderRadius: 6,
+    color: "#F9FAFB",
+    fontFamily: pixelFont,
+    fontSize: 14,
+    fontWeight: "800",
+    lineHeight: 20,
+    padding: 12,
+  },
+  optionRow: {
+    gap: 8,
   },
   option: {
-    backgroundColor: "#1F2937",
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 8,
+    backgroundColor: "rgba(15, 23, 42, 0.96)",
     borderWidth: 2,
-    borderColor: "#475569",
+    borderColor: "#334155",
+    borderRadius: 6,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
   },
   selectedOption: {
-    backgroundColor: "#111827",
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 8,
-    borderWidth: 2,
-    borderColor: "#FBBF24",
-  },
-  optionText: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: "#E5E7EB",
-  },
-  selectedOptionText: {
-    fontSize: 14,
-    fontWeight: "900",
-    color: "#F9FAFB",
-  },
-  saveButton: {
-    backgroundColor: "#6D28D9",
-    paddingVertical: 14,
-    borderRadius: 16,
-    alignItems: "center",
-    marginTop: 14,
-    borderWidth: 2,
-    borderColor: "#FBBF24",
-  },
-  saveButtonText: {
-    color: "#F9FAFB",
-    fontSize: 15,
-    fontWeight: "900",
-    fontFamily: pixelFont,
-    letterSpacing: 0.8,
-  },
-  sectionTitle: {
-    fontSize: 21,
-    fontWeight: "900",
-    color: "#F9FAFB",
-    marginBottom: 10,
-    fontFamily: pixelFont,
-    letterSpacing: 1,
-  },
-  emptyCard: {
-    backgroundColor: "#111827",
-    borderRadius: 18,
-    padding: 15,
-    borderWidth: 2,
-    borderColor: "#4B5563",
-    marginBottom: 12,
-  },
-  emptyText: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: "#CBD5E1",
-  },
-  entryCard: {
-    backgroundColor: "#0F172A",
-    borderRadius: 18,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 2,
+    backgroundColor: "rgba(49, 46, 129, 0.96)",
     borderColor: "#A78BFA",
   },
-  entryTitle: {
-    fontSize: 16,
+  optionText: {
+    color: "#CBD5E1",
+    fontFamily: pixelFont,
+    fontSize: 12,
     fontWeight: "900",
+  },
+  selectedOptionText: {
     color: "#F9FAFB",
     fontFamily: pixelFont,
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  saveButton: {
+    backgroundColor: "#A78BFA",
+    borderWidth: 3,
+    borderColor: "#E9D5FF",
+    borderRadius: 6,
+    paddingVertical: 14,
+    alignItems: "center",
+    marginTop: 16,
+  },
+  saveButtonText: {
+    color: "#0F172A",
+    fontFamily: pixelFont,
+    fontSize: 13,
+    fontWeight: "900",
+    letterSpacing: 1,
+    textTransform: "uppercase",
+  },
+  sectionTitle: {
+    color: "#FDE68A",
+    fontFamily: pixelFont,
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 1.2,
+    marginBottom: 8,
+  },
+  emptyCard: {
+    backgroundColor: "rgba(8, 13, 24, 0.95)",
+    borderWidth: 2,
+    borderColor: "#334155",
+    borderRadius: 6,
+    padding: 12,
+  },
+  emptyText: {
+    color: "#CBD5E1",
+    fontFamily: pixelFont,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: "800",
+  },
+  entryCard: {
+    backgroundColor: "rgba(8, 13, 24, 0.95)",
+    borderWidth: 2,
+    borderColor: "#334155",
+    borderRadius: 6,
+    padding: 12,
+    marginBottom: 10,
+  },
+  entryTitle: {
+    color: "#E9D5FF",
+    fontFamily: pixelFont,
+    fontSize: 13,
+    fontWeight: "900",
   },
   entryDate: {
-    fontSize: 12,
     color: "#94A3B8",
-    marginTop: 4,
-    marginBottom: 8,
     fontFamily: pixelFont,
+    fontSize: 10,
+    fontWeight: "800",
+    marginTop: 4,
   },
   entryText: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: "#E5E7EB",
+    color: "#F8F1D7",
+    fontFamily: pixelFont,
+    fontSize: 12,
     fontWeight: "700",
-    marginBottom: 4,
-  },
-  presentText: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: "#C4B5FD",
-    fontWeight: "800",
-    marginTop: 3,
+    lineHeight: 18,
+    marginTop: 8,
   },
   clearButton: {
-    backgroundColor: "#3F1D1D",
-    paddingVertical: 13,
-    borderRadius: 15,
+    backgroundColor: "rgba(8, 13, 24, 0.94)",
+    borderWidth: 2,
+    borderColor: "#334155",
+    borderRadius: 6,
+    paddingVertical: 12,
     alignItems: "center",
     marginTop: 6,
-    borderWidth: 2,
-    borderColor: "#EF4444",
   },
   clearButtonText: {
-    color: "#FCA5A5",
-    fontSize: 14,
-    fontWeight: "900",
+    color: "#FECACA",
     fontFamily: pixelFont,
+    fontSize: 12,
+    fontWeight: "900",
+    textTransform: "uppercase",
   },
   homeButton: {
-    backgroundColor: "#111827",
-    paddingVertical: 14,
-    borderRadius: 16,
+    backgroundColor: "rgba(8, 13, 24, 0.94)",
+    borderWidth: 2,
+    borderColor: "#334155",
+    borderRadius: 6,
+    paddingVertical: 12,
     alignItems: "center",
     marginTop: 10,
-    borderWidth: 2,
-    borderColor: "#FBBF24",
   },
   homeButtonText: {
-    color: "#F9FAFB",
-    fontSize: 15,
-    fontWeight: "900",
+    color: "#E2E8F0",
     fontFamily: pixelFont,
-    letterSpacing: 0.8,
+    fontSize: 12,
+    fontWeight: "900",
+    textTransform: "uppercase",
   },
 });
