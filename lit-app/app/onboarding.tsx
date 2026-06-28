@@ -120,6 +120,82 @@ function normalizeDreamCategory(category?: string): DreamCategory | "" {
 function databaseCategoryFor(category: DreamCategory): string {
   return category === "Social Life" ? "Friends / Connection" : category;
 }
+function ToggleButton({
+  label,
+  value,
+  onPress,
+}: {
+  label: string;
+  value: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={[styles.toggleButton, value && styles.activeToggleButton]} onPress={onPress}>
+      <Text style={[styles.toggleText, value && styles.activeToggleText]}>
+        {value ? "✓" : "□"} {label}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+function NumberBadge({ value }: { value: string }) {
+  return (
+    <View style={styles.numberBadge}>
+      <Text style={styles.numberBadgeText}>{value}</Text>
+    </View>
+  );
+}
+
+function SectionShell({
+  number,
+  title,
+  children,
+}: {
+  number: string;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <View style={styles.sectionRow}>
+      <NumberBadge value={number} />
+      <View style={styles.sectionPanel}>
+        <Text style={styles.sectionTitle}>{title}</Text>
+        {children}
+      </View>
+    </View>
+  );
+}
+
+function MilestoneField({
+  horizon,
+  value,
+  onChange,
+}: {
+  horizon: GoalHorizon;
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const meta = GOAL_HORIZON_LABELS[horizon];
+  const cardMeta = MILESTONE_META[horizon];
+
+  return (
+    <View style={styles.milestoneCard}>
+      <View style={[styles.milestoneBanner, { backgroundColor: cardMeta.tone }]}>
+        <Text style={styles.milestoneBannerText}>{cardMeta.title}</Text>
+      </View>
+      <Text style={styles.milestoneIcon}>{cardMeta.icon}</Text>
+      <Text style={styles.milestoneCaption}>{meta.caption}</Text>
+      <TextInput
+        style={styles.milestoneInput}
+        multiline
+        placeholder={`Your ${meta.label.toLowerCase()}`}
+        placeholderTextColor="#8A5D2B"
+        value={value}
+        onChangeText={onChange}
+      />
+    </View>
+  );
+}
 
 export default function OnboardingScreen() {
   const router = useRouter();
@@ -301,83 +377,6 @@ export default function OnboardingScreen() {
     router.push("/");
   }
 
-  function ToggleButton({
-    label,
-    value,
-    onPress,
-  }: {
-    label: string;
-    value: boolean;
-    onPress: () => void;
-  }) {
-    return (
-      <TouchableOpacity style={[styles.toggleButton, value && styles.activeToggleButton]} onPress={onPress}>
-        <Text style={[styles.toggleText, value && styles.activeToggleText]}>
-          {value ? "✓" : "□"} {label}
-        </Text>
-      </TouchableOpacity>
-    );
-  }
-
-  function NumberBadge({ value }: { value: string }) {
-    return (
-      <View style={styles.numberBadge}>
-        <Text style={styles.numberBadgeText}>{value}</Text>
-      </View>
-    );
-  }
-
-  function SectionShell({
-    number,
-    title,
-    children,
-  }: {
-    number: string;
-    title: string;
-    children: ReactNode;
-  }) {
-    return (
-      <View style={styles.sectionRow}>
-        <NumberBadge value={number} />
-        <View style={styles.sectionPanel}>
-          <Text style={styles.sectionTitle}>{title}</Text>
-          {children}
-        </View>
-      </View>
-    );
-  }
-
-  function MilestoneField({
-    horizon,
-    value,
-    onChange,
-  }: {
-    horizon: GoalHorizon;
-    value: string;
-    onChange: (next: string) => void;
-  }) {
-    const meta = GOAL_HORIZON_LABELS[horizon];
-    const cardMeta = MILESTONE_META[horizon];
-
-    return (
-      <View style={styles.milestoneCard}>
-        <View style={[styles.milestoneBanner, { backgroundColor: cardMeta.tone }]}>
-          <Text style={styles.milestoneBannerText}>{cardMeta.title}</Text>
-        </View>
-        <Text style={styles.milestoneIcon}>{cardMeta.icon}</Text>
-        <Text style={styles.milestoneCaption}>{meta.caption}</Text>
-        <TextInput
-          style={styles.milestoneInput}
-          multiline
-          placeholder={`Your ${meta.label.toLowerCase()}`}
-          placeholderTextColor="#8A5D2B"
-          value={value}
-          onChangeText={onChange}
-        />
-      </View>
-    );
-  }
-
   const canRegenerate =
     dreamCategory !== "" && hasGenerated && variantCountFor(databaseCategoryFor(dreamCategory)) > 1;
 
@@ -387,7 +386,7 @@ export default function OnboardingScreen() {
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={pathBackground} style={styles.backgroundImage} resizeMode="stretch" />
         </View>
-        <ScrollView style={styles.screenScroller} contentContainerStyle={styles.boardContent} showsVerticalScrollIndicator={false}>
+        <ScrollView style={styles.screenScroller} contentContainerStyle={styles.boardContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <Image source={uiAssets.logo.mylit} style={styles.logo} resizeMode="contain" />
 
           <View style={styles.bannerPanel}>

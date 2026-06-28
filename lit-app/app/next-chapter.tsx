@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Link } from "expo-router";
 import { useEffect, useState } from "react";
 import {
+  Image,
   Platform,
   ScrollView,
   StyleSheet,
@@ -10,6 +11,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+
+import { uiAssets } from "../constants/uiAssets";
+
+type DirectionChoice = "recovery" | "connection" | "future" | "stronger" | null;
 
 type UserProfile = {
   name: string;
@@ -28,12 +33,22 @@ type UserProfile = {
 };
 
 const PROFILE_KEY = "lit_user_profile";
+const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
+const MAX_FRAME_WIDTH = 520;
+const pathBackground = require("../assets/ui/backgrounds/path-background.png");
 
 const pixelFont = Platform.select({
   ios: "Menlo",
   android: "monospace",
   web: "monospace",
   default: "monospace",
+});
+
+const readableFont = Platform.select({
+  ios: "Arial",
+  android: "sans-serif",
+  web: "Arial",
+  default: undefined,
 });
 
 export default function NextChapterScreen() {
@@ -46,6 +61,7 @@ export default function NextChapterScreen() {
   const [goalThree, setGoalThree] = useState("");
   const [progressMeaning, setProgressMeaning] = useState("");
   const [chapterNote, setChapterNote] = useState("");
+  const [selectedDirection, setSelectedDirection] = useState<DirectionChoice>(null);
 
   useEffect(() => {
     loadProfile();
@@ -85,6 +101,7 @@ export default function NextChapterScreen() {
   }
 
   function setRecoveryExample() {
+    setSelectedDirection("recovery");
     setGoalOne("improve sleep");
     setGoalTwo("journal honestly");
     setGoalThree("take one small step daily");
@@ -92,6 +109,7 @@ export default function NextChapterScreen() {
   }
 
   function setConnectionExample() {
+    setSelectedDirection("connection");
     setGoalOne("make new friends");
     setGoalTwo("build confidence socially");
     setGoalThree("reach out to people more often");
@@ -99,6 +117,7 @@ export default function NextChapterScreen() {
   }
 
   function setFutureExample() {
+    setSelectedDirection("future");
     setGoalOne("make money");
     setGoalTwo("build a useful skill");
     setGoalThree("create a project or portfolio");
@@ -106,407 +125,513 @@ export default function NextChapterScreen() {
   }
 
   function levelUpCurrentGoals() {
+    setSelectedDirection("stronger");
     setProgressMeaning(
       "Progress means taking a slightly stronger step while still respecting my energy and current life."
     );
     setChapterNote(
-      "Luna suggestion: Keep your current goals, but make the next step slightly more active this week."
+      "Evie suggestion: Keep your current goals, but make the next step slightly more active this week."
+    );
+  }
+
+  function DirectionCard({
+    id,
+    title,
+    text,
+    onPress,
+  }: {
+    id: Exclude<DirectionChoice, null>;
+    title: string;
+    text: string;
+    onPress: () => void;
+  }) {
+    const selected = selectedDirection === id;
+
+    return (
+      <TouchableOpacity
+        style={[styles.directionCard, selected && styles.directionCardSelected]}
+        onPress={onPress}
+      >
+        <View style={styles.directionTopRow}>
+          <Text style={[styles.directionTitle, selected && styles.directionTitleSelected]}>{title}</Text>
+          <Text style={styles.directionArrow}>{selected ? "✓" : "›"}</Text>
+        </View>
+        <Text style={styles.directionText}>{text}</Text>
+      </TouchableOpacity>
     );
   }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
-      <View style={styles.shell}>
-        <View style={styles.hero}>
-          <Text style={styles.heroLabel}>PATH UPDATE</Text>
-          <Text style={styles.title}>SET YOUR NEXT LONG-TERM GOAL</Text>
-          <Text style={styles.subtitle}>Update the direction your quests should follow.</Text>
+    <View style={styles.pageRoot}>
+      <View style={styles.phoneStage}>
+        <View pointerEvents="none" style={styles.backgroundLayer}>
+          <Image source={pathBackground} style={styles.backgroundImage} resizeMode="stretch" />
         </View>
 
-        <View style={styles.lunaCard}>
-          <Text style={styles.lunaName}>Luna</Text>
-          <Text style={styles.lunaText}>
-            Your direction can change. Choose the next path that fits your real life right now.
-          </Text>
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>CURRENT DIRECTION</Text>
-          <Text style={styles.statText}>Long-term dream: {longTermDream || "Not set yet"}</Text>
-          <Text style={styles.statText}>Category: {dreamCategory || "Not set yet"}</Text>
-          <Text style={styles.goalText}>1. {goalOne || "Not set yet"}</Text>
-          <Text style={styles.goalText}>2. {goalTwo || "Not set yet"}</Text>
-          <Text style={styles.goalText}>3. {goalThree || "Not set yet"}</Text>
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>CHOOSE A DIRECTION</Text>
-          <Text style={styles.helperText}>
-            These are examples. You can choose one or write your own version below.
-          </Text>
-
-          <TouchableOpacity style={[styles.chapterButton, styles.recoveryBorder]} onPress={setRecoveryExample}>
-            <Text style={styles.chapterTitle}>Recovery Direction</Text>
-            <Text style={styles.chapterText}>Sleep, journaling, small steps, stability.</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.chapterButton, styles.connectionBorder]}
-            onPress={setConnectionExample}
-          >
-            <Text style={styles.chapterTitle}>Connection Direction</Text>
-            <Text style={styles.chapterText}>Friends, confidence, social growth.</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={[styles.chapterButton, styles.futureBorder]} onPress={setFutureExample}>
-            <Text style={styles.chapterTitle}>Future Direction</Text>
-            <Text style={styles.chapterText}>Money, skills, projects, career direction.</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.levelButton} onPress={levelUpCurrentGoals}>
-            <Text style={styles.levelButtonText}>Make Current Goals Stronger</Text>
-          </TouchableOpacity>
-        </View>
-
-        {chapterNote ? (
-          <View style={styles.noteCard}>
-            <Text style={styles.noteTitle}>UPDATE MESSAGE</Text>
-            <Text style={styles.noteText}>{chapterNote}</Text>
+        <ScrollView style={styles.screenScroller} contentContainerStyle={styles.boardContent} showsVerticalScrollIndicator={false}>
+          <View style={styles.titleBanner}>
+            <Text style={styles.kicker}>PATH UPDATE</Text>
+            <Text style={styles.title}>NEXT CHAPTER</Text>
+            <Text style={styles.subtitle}>Choose the next direction your quests should follow.</Text>
           </View>
-        ) : null}
 
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>EDIT YOUR NEXT PATH</Text>
+          <View style={styles.eviePanel}>
+            <Image source={uiAssets.guides.evie} style={styles.evieImage} resizeMode="contain" />
+            <Text style={styles.evieText}>
+              <Text style={styles.evieName}>Evie</Text> — You finished or outgrew your current path. Choose what matters next, and I’ll help shape a new direction your quests can follow.
+            </Text>
+          </View>
 
-          <Text style={styles.label}>Long-term dream</Text>
-          <TextInput
-            style={styles.textArea}
-            multiline
-            value={longTermDream}
-            onChangeText={setLongTermDream}
-            placeholder="Example: Build a stable life with strong health, focus, and income."
-            placeholderTextColor="#94A3B8"
-          />
+          <View style={styles.sectionPanel}>
+            <Text style={styles.sectionTitle}>1 · CURRENT PATH</Text>
+            <View style={styles.summaryGrid}>
+              <Text style={styles.summaryText}><Text style={styles.summaryLabel}>Dream: </Text>{longTermDream || "Not set yet"}</Text>
+              <Text style={styles.summaryText}><Text style={styles.summaryLabel}>Category: </Text>{dreamCategory || "Not set yet"}</Text>
+              <Text style={styles.summaryText}><Text style={styles.summaryLabel}>Short: </Text>{goalOne || "Not set yet"}</Text>
+              <Text style={styles.summaryText}><Text style={styles.summaryLabel}>Mid: </Text>{goalTwo || "Not set yet"}</Text>
+              <Text style={styles.summaryText}><Text style={styles.summaryLabel}>Long: </Text>{goalThree || "Not set yet"}</Text>
+              <Text style={styles.summaryText}><Text style={styles.summaryLabel}>Meaning: </Text>{progressMeaning || "Not set yet"}</Text>
+            </View>
+          </View>
 
-          <Text style={styles.label}>Dream category</Text>
-          <TextInput
-            style={styles.input}
-            value={dreamCategory}
-            onChangeText={setDreamCategory}
-            placeholder="Example: School / Work"
-            placeholderTextColor="#94A3B8"
-          />
+          <View style={styles.sectionPanel}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>2 · CHOOSE YOUR NEXT DIRECTION</Text>
+              <TouchableOpacity style={styles.secondaryButton} onPress={levelUpCurrentGoals}>
+                <Text style={styles.secondaryButtonText}>MAKE STRONGER</Text>
+              </TouchableOpacity>
+            </View>
 
-          <Text style={styles.label}>What does progress mean now?</Text>
-          <TextInput
-            style={styles.textArea}
-            multiline
-            value={progressMeaning}
-            onChangeText={setProgressMeaning}
-            placeholder="Example: Progress means making more friends, sleeping better, or building money skills."
-            placeholderTextColor="#94A3B8"
-          />
+            <DirectionCard
+              id="recovery"
+              title="Recovery Direction"
+              text="Sleep, journaling, small steps, stability."
+              onPress={setRecoveryExample}
+            />
+            <DirectionCard
+              id="connection"
+              title="Connection Direction"
+              text="Friends, confidence, social growth."
+              onPress={setConnectionExample}
+            />
+            <DirectionCard
+              id="future"
+              title="Future Direction"
+              text="Money, skills, projects, career direction."
+              onPress={setFutureExample}
+            />
+          </View>
 
-          <Text style={styles.label}>Life direction 1</Text>
-          <TextInput
-            style={styles.input}
-            value={goalOne}
-            onChangeText={setGoalOne}
-            placeholder="Example: make money"
-            placeholderTextColor="#94A3B8"
-          />
+          {chapterNote ? (
+            <View style={styles.notePanel}>
+              <Text style={styles.noteTitle}>EVIE NOTE</Text>
+              <Text style={styles.noteText}>{chapterNote}</Text>
+            </View>
+          ) : null}
 
-          <Text style={styles.label}>Life direction 2</Text>
-          <TextInput
-            style={styles.input}
-            value={goalTwo}
-            onChangeText={setGoalTwo}
-            placeholder="Example: build a useful skill"
-            placeholderTextColor="#94A3B8"
-          />
+          <View style={styles.sectionPanel}>
+            <Text style={styles.sectionTitle}>3 · EDIT YOUR NEXT PATH</Text>
 
-          <Text style={styles.label}>Life direction 3</Text>
-          <TextInput
-            style={styles.input}
-            value={goalThree}
-            onChangeText={setGoalThree}
-            placeholder="Example: start a project"
-            placeholderTextColor="#94A3B8"
-          />
+            <Text style={styles.label}>LONG-TERM DREAM</Text>
+            <TextInput
+              style={styles.textArea}
+              multiline
+              value={longTermDream}
+              onChangeText={setLongTermDream}
+              placeholder="Example: Build a stable life with strong health, focus, and income."
+              placeholderTextColor="#8A5D2B"
+            />
 
-          <TouchableOpacity style={styles.saveButton} onPress={saveNextChapter}>
-            <Text style={styles.saveButtonText}>Save Long-Term Goal</Text>
-          </TouchableOpacity>
-        </View>
+            <Text style={styles.label}>CATEGORY</Text>
+            <TextInput
+              style={styles.input}
+              value={dreamCategory}
+              onChangeText={setDreamCategory}
+              placeholder="Example: School / Work"
+              placeholderTextColor="#8A5D2B"
+            />
 
-        <View style={styles.truthCard}>
-          <Text style={styles.truthTitle}>REMINDER</Text>
-          <Text style={styles.truthText}>
-            Leveling up does not mean abandoning who you are. It means choosing a new
-            step because your life, energy, or confidence has changed.
-          </Text>
-        </View>
+            <Text style={styles.label}>WHAT DOES PROGRESS MEAN NOW?</Text>
+            <TextInput
+              style={styles.textArea}
+              multiline
+              value={progressMeaning}
+              onChangeText={setProgressMeaning}
+              placeholder="Example: Progress means making more friends, sleeping better, or building money skills."
+              placeholderTextColor="#8A5D2B"
+            />
 
-        <Link href="/" asChild>
-          <TouchableOpacity style={styles.homeButton}>
-            <Text style={styles.homeButtonText}>Back to Today</Text>
-          </TouchableOpacity>
-        </Link>
+            <Text style={styles.label}>SHORT-TERM DIRECTION</Text>
+            <TextInput
+              style={styles.input}
+              value={goalOne}
+              onChangeText={setGoalOne}
+              placeholder="Example: make money"
+              placeholderTextColor="#8A5D2B"
+            />
+
+            <Text style={styles.label}>MID-TERM DIRECTION</Text>
+            <TextInput
+              style={styles.input}
+              value={goalTwo}
+              onChangeText={setGoalTwo}
+              placeholder="Example: build a useful skill"
+              placeholderTextColor="#8A5D2B"
+            />
+
+            <Text style={styles.label}>LONG-TERM DIRECTION</Text>
+            <TextInput
+              style={styles.input}
+              value={goalThree}
+              onChangeText={setGoalThree}
+              placeholder="Example: start a project"
+              placeholderTextColor="#8A5D2B"
+            />
+
+            <TouchableOpacity style={styles.saveButton} onPress={saveNextChapter}>
+              <Text style={styles.saveButtonText}>SAVE NEXT CHAPTER</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.reminderPanel}>
+            <Text style={styles.reminderTitle}>REMINDER</Text>
+            <Text style={styles.reminderText}>
+              A new chapter does not erase your progress. It means your life, energy, or confidence has changed — and your path can change with it.
+            </Text>
+          </View>
+
+          <Link href="/" asChild>
+            <TouchableOpacity style={styles.homeButton}>
+              <Text style={styles.homeButtonText}>Back to Today</Text>
+            </TouchableOpacity>
+          </Link>
+        </ScrollView>
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
+  pageRoot: {
     flex: 1,
-    backgroundColor: "#0B1220",
+    backgroundColor: "#0E0703",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  container: {
-    paddingTop: 28,
-    paddingBottom: 42,
-  },
-  shell: {
+  phoneStage: {
     width: "100%",
-    maxWidth: 520,
+    maxWidth: MAX_FRAME_WIDTH,
+    aspectRatio: APP_FRAME_ASPECT_RATIO,
     alignSelf: "center",
-    paddingHorizontal: 18,
+    backgroundColor: "#2A1608",
+    overflow: "hidden",
+    position: "relative",
   },
-  hero: {
-    backgroundColor: "#0F1E1A",
-    borderColor: "#FBBF24",
-    borderWidth: 3,
-    borderRadius: 24,
-    padding: 18,
-    marginBottom: 14,
+  backgroundLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
   },
-  heroLabel: {
-    color: "#86EFAC",
-    fontFamily: pixelFont,
-    fontSize: 11,
-    letterSpacing: 1.2,
-    fontWeight: "800",
+  backgroundImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: "100%",
+    height: "100%",
+  },
+  screenScroller: {
+    flex: 1,
+    zIndex: 1,
+  },
+  boardContent: {
+    paddingTop: 24,
+    paddingHorizontal: 36,
+    paddingBottom: 28,
+  },
+  titleBanner: {
+    backgroundColor: "rgba(245, 205, 125, 0.86)",
+    borderWidth: 2,
+    borderColor: "#4B2A0B",
+    borderRadius: 5,
+    paddingVertical: 9,
+    paddingHorizontal: 11,
     marginBottom: 8,
+    shadowColor: "#2B1403",
+    shadowOpacity: 0.55,
+    shadowRadius: 0,
+    shadowOffset: { width: 3, height: 3 },
+  },
+  kicker: {
+    color: "#14532D",
+    fontFamily: pixelFont,
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 1,
+    marginBottom: 2,
   },
   title: {
+    color: "#2A1707",
+    fontFamily: pixelFont,
     fontSize: 28,
     fontWeight: "900",
-    color: "#F9FAFB",
-    marginBottom: 8,
-    letterSpacing: 0.8,
-    fontFamily: pixelFont,
+    letterSpacing: 1.5,
   },
   subtitle: {
+    color: "#2A1707",
+    fontFamily: readableFont,
     fontSize: 14,
-    color: "#D1FAE5",
-    lineHeight: 21,
-    fontWeight: "600",
+    fontWeight: "800",
+    lineHeight: 18,
+    marginTop: 3,
   },
-  lunaCard: {
-    backgroundColor: "#132A23",
-    borderRadius: 20,
-    padding: 16,
-    marginBottom: 14,
+  eviePanel: {
+    minHeight: 76,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(24, 80, 34, 0.95)",
+    borderWidth: 3,
+    borderColor: "#8B5E16",
+    borderRadius: 7,
+    paddingVertical: 7,
+    paddingHorizontal: 8,
+    marginBottom: 7,
+  },
+  evieImage: {
+    width: 54,
+    height: 54,
+    marginRight: 10,
+  },
+  evieText: {
+    flex: 1,
+    color: "#FFF8E6",
+    fontFamily: readableFont,
+    fontSize: 13,
+    fontWeight: "800",
+    lineHeight: 17,
+  },
+  evieName: {
+    color: "#9BE331",
+    fontWeight: "900",
+    fontSize: 15,
+  },
+  sectionPanel: {
+    backgroundColor: "rgba(250, 220, 157, 0.87)",
     borderWidth: 2,
-    borderColor: "#22C55E",
+    borderColor: "#4B2A0B",
+    borderRadius: 5,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginBottom: 7,
   },
-  lunaName: {
+  sectionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
+    marginBottom: 6,
+  },
+  sectionTitle: {
+    color: "#2A1707",
+    fontFamily: pixelFont,
+    fontSize: 15,
+    fontWeight: "900",
+    letterSpacing: 0.6,
+    marginBottom: 6,
+  },
+  summaryGrid: {
+    gap: 3,
+  },
+  summaryText: {
+    color: "#2A1707",
+    fontFamily: readableFont,
+    fontSize: 13,
+    fontWeight: "800",
+    lineHeight: 17,
+  },
+  summaryLabel: {
+    color: "#14532D",
+    fontWeight: "900",
+  },
+  directionCard: {
+    backgroundColor: "rgba(255, 239, 197, 0.84)",
+    borderWidth: 2,
+    borderColor: "#A46B1C",
+    borderRadius: 5,
+    paddingVertical: 8,
+    paddingHorizontal: 9,
+    marginBottom: 6,
+    shadowColor: "#2B1403",
+    shadowOpacity: 0.25,
+    shadowRadius: 0,
+    shadowOffset: { width: 2, height: 2 },
+  },
+  directionCardSelected: {
+    backgroundColor: "rgba(218, 247, 166, 0.86)",
+    borderColor: "#166534",
+  },
+  directionTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  directionTitle: {
+    color: "#2A1707",
+    fontFamily: pixelFont,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  directionTitleSelected: {
+    color: "#0F3D18",
+  },
+  directionArrow: {
+    color: "#166534",
+    fontFamily: pixelFont,
     fontSize: 18,
     fontWeight: "900",
-    color: "#F9FAFB",
-    marginBottom: 8,
-    letterSpacing: 0.8,
-    fontFamily: pixelFont,
   },
-  lunaText: {
-    fontSize: 14,
-    color: "#DCFCE7",
-    lineHeight: 20,
-  },
-  card: {
-    backgroundColor: "#111827",
-    borderRadius: 22,
-    padding: 16,
-    marginBottom: 14,
-    borderWidth: 2,
-    borderColor: "#334155",
-  },
-  cardLabel: {
-    fontSize: 12,
-    fontWeight: "900",
-    color: "#F8FAFC",
-    textTransform: "uppercase",
-    marginBottom: 10,
-    letterSpacing: 0.8,
-    fontFamily: pixelFont,
-  },
-  statText: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: "#E2E8F0",
-    marginBottom: 4,
-    fontWeight: "700",
-  },
-  goalText: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: "#F9FAFB",
-    fontWeight: "800",
-    marginBottom: 3,
-  },
-  helperText: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: "#CBD5E1",
-    marginBottom: 12,
-  },
-  chapterButton: {
-    backgroundColor: "#1F2937",
-    borderRadius: 16,
-    padding: 14,
-    marginBottom: 10,
-    borderWidth: 2,
-  },
-  recoveryBorder: {
-    borderColor: "#22C55E",
-  },
-  connectionBorder: {
-    borderColor: "#38BDF8",
-  },
-  futureBorder: {
-    borderColor: "#A78BFA",
-  },
-  chapterTitle: {
-    fontSize: 15,
-    fontWeight: "900",
-    color: "#F9FAFB",
-    marginBottom: 4,
-    fontFamily: pixelFont,
-  },
-  chapterText: {
+  directionText: {
+    color: "#3D2408",
+    fontFamily: readableFont,
     fontSize: 13,
-    lineHeight: 19,
-    color: "#CBD5E1",
-    fontWeight: "700",
-  },
-  levelButton: {
-    backgroundColor: "#0F172A",
-    borderRadius: 16,
-    padding: 14,
-    alignItems: "center",
+    fontWeight: "800",
+    lineHeight: 16,
     marginTop: 2,
-    borderWidth: 2,
-    borderColor: "#FBBF24",
   },
-  levelButtonText: {
-    color: "#F9FAFB",
-    fontSize: 14,
-    fontWeight: "900",
+  secondaryButton: {
+    backgroundColor: "#12321B",
+    borderWidth: 2,
+    borderColor: "#D99A16",
+    borderRadius: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    shadowColor: "#2B1403",
+    shadowOpacity: 0.35,
+    shadowRadius: 0,
+    shadowOffset: { width: 2, height: 2 },
+  },
+  secondaryButtonText: {
+    color: "#FFF8E6",
     fontFamily: pixelFont,
-    letterSpacing: 0.5,
+    fontSize: 10,
+    fontWeight: "900",
   },
-  noteCard: {
-    backgroundColor: "#1F2937",
-    borderRadius: 18,
-    padding: 14,
-    marginBottom: 14,
+  notePanel: {
+    backgroundColor: "rgba(255, 239, 197, 0.88)",
     borderWidth: 2,
-    borderColor: "#FBBF24",
+    borderColor: "#D99A16",
+    borderRadius: 5,
+    padding: 9,
+    marginBottom: 7,
   },
   noteTitle: {
+    color: "#14532D",
+    fontFamily: pixelFont,
     fontSize: 13,
     fontWeight: "900",
-    color: "#FDE68A",
-    marginBottom: 6,
-    letterSpacing: 0.7,
-    fontFamily: pixelFont,
+    marginBottom: 3,
   },
   noteText: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: "#F9FAFB",
+    color: "#2A1707",
+    fontFamily: readableFont,
+    fontSize: 13,
+    fontWeight: "800",
+    lineHeight: 17,
   },
   label: {
+    color: "#2A1707",
+    fontFamily: pixelFont,
     fontSize: 12,
     fontWeight: "900",
-    color: "#F8FAFC",
-    marginBottom: 8,
-    marginTop: 10,
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-    fontFamily: pixelFont,
+    letterSpacing: 0.5,
+    marginTop: 6,
+    marginBottom: 3,
   },
   input: {
-    backgroundColor: "#020617",
-    borderRadius: 16,
-    padding: 12,
-    fontSize: 15,
-    color: "#F9FAFB",
-    marginBottom: 6,
+    minHeight: 38,
+    backgroundColor: "rgba(255, 242, 201, 0.94)",
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#6F4312",
+    borderRadius: 3,
+    color: "#1F1306",
+    fontFamily: readableFont,
+    fontSize: 15,
+    fontWeight: "800",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
   textArea: {
-    backgroundColor: "#020617",
-    borderRadius: 16,
-    padding: 12,
-    minHeight: 96,
-    fontSize: 15,
-    color: "#F9FAFB",
-    marginBottom: 6,
-    textAlignVertical: "top",
+    minHeight: 62,
+    backgroundColor: "rgba(255, 242, 201, 0.94)",
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#6F4312",
+    borderRadius: 3,
+    color: "#1F1306",
+    fontFamily: readableFont,
+    fontSize: 15,
+    fontWeight: "800",
+    lineHeight: 19,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    textAlignVertical: "top",
   },
   saveButton: {
-    backgroundColor: "#166534",
-    paddingVertical: 15,
-    borderRadius: 16,
+    minHeight: 54,
+    backgroundColor: "#14532D",
+    borderWidth: 4,
+    borderColor: "#F3B32B",
+    borderRadius: 7,
     alignItems: "center",
-    marginTop: 14,
-    borderWidth: 2,
-    borderColor: "#FBBF24",
+    justifyContent: "center",
+    marginTop: 10,
+    shadowColor: "#2B1403",
+    shadowOpacity: 0.65,
+    shadowRadius: 0,
+    shadowOffset: { width: 4, height: 4 },
   },
   saveButtonText: {
-    color: "#F9FAFB",
-    fontSize: 16,
-    fontWeight: "900",
-    letterSpacing: 0.8,
+    color: "#FFF8E6",
     fontFamily: pixelFont,
+    fontSize: 19,
+    fontWeight: "900",
+    letterSpacing: 1,
+    textShadowColor: "#1B0C01",
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 0,
   },
-  truthCard: {
-    backgroundColor: "#111827",
-    borderRadius: 20,
-    padding: 16,
-    marginBottom: 14,
+  reminderPanel: {
+    backgroundColor: "rgba(250, 220, 157, 0.82)",
     borderWidth: 2,
-    borderColor: "#22C55E",
+    borderColor: "#A46B1C",
+    borderRadius: 5,
+    padding: 9,
+    marginBottom: 8,
   },
-  truthTitle: {
-    fontSize: 14,
-    fontWeight: "900",
-    color: "#86EFAC",
-    marginBottom: 7,
+  reminderTitle: {
+    color: "#14532D",
     fontFamily: pixelFont,
-    letterSpacing: 0.8,
+    fontSize: 13,
+    fontWeight: "900",
+    marginBottom: 4,
   },
-  truthText: {
-    fontSize: 14,
-    lineHeight: 21,
-    color: "#F9FAFB",
+  reminderText: {
+    color: "#2A1707",
+    fontFamily: readableFont,
+    fontSize: 13,
+    fontWeight: "800",
+    lineHeight: 17,
   },
   homeButton: {
-    backgroundColor: "#111827",
-    paddingVertical: 14,
-    borderRadius: 16,
-    alignItems: "center",
+    alignSelf: "center",
+    minWidth: 150,
+    backgroundColor: "rgba(42, 23, 7, 0.88)",
     borderWidth: 2,
-    borderColor: "#64748B",
+    borderColor: "#A46B1C",
+    borderRadius: 5,
+    paddingVertical: 9,
+    paddingHorizontal: 16,
+    alignItems: "center",
   },
   homeButtonText: {
-    color: "#CBD5E1",
-    fontSize: 15,
-    fontWeight: "900",
+    color: "#FFF8E6",
     fontFamily: pixelFont,
+    fontSize: 12,
+    fontWeight: "900",
   },
 });
