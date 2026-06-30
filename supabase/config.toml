@@ -1,0 +1,8 @@
+# MYLIT beta auth — disable confirmation emails to avoid SMTP rate limits.
+# Push: npx supabase config push --project-ref qepkwlchduhnqzeegpeh
+
+project_id = "qepkwlchduhnqzeegpeh"
+
+[auth.email]
+enable_confirmations = false
+double_confirm_changes = false

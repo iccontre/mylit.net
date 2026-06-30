@@ -22,7 +22,7 @@ import {
 } from "../constants/goalMilestoneTemplates";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
-import { updateProfile } from "../lib/auth";
+import { getOrCreateProfile, updateProfile } from "../lib/auth";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { isSupabaseConfigured } from "../lib/supabase";
 import { logGoalFeedback } from "../lib/feedbackLog";
@@ -292,40 +292,43 @@ export default function OnboardingScreen() {
   async function loadProfile() {
     const saved = await AsyncStorage.getItem(PROFILE_KEY);
 
-    if (!saved) return;
+    if (saved) {
+      try {
+        const profile = JSON.parse(saved) as Partial<UserProfile>;
+        const savedCategory = normalizeDreamCategory(profile.dreamCategory);
 
-    try {
-      const profile = JSON.parse(saved) as Partial<UserProfile>;
-      const savedCategory = normalizeDreamCategory(profile.dreamCategory);
+        setName(profile.name || "");
+        setLongTermDream(profile.longTermDream || "");
+        setDreamCategory(savedCategory);
+        setProgressMeaning(profile.progressMeaning || "");
+        setSpecificGoal(profile.specificGoal || "");
 
-      setName(profile.name || "");
-      setLongTermDream(profile.longTermDream || "");
-      setDreamCategory(savedCategory);
-      setProgressMeaning(profile.progressMeaning || "");
-      setSpecificGoal(profile.specificGoal || "");
+        const loadedShort = profile.shortTermGoal || profile.goalOne || "";
+        const loadedMid = profile.midTermGoal || profile.goalTwo || "";
+        const loadedLong = profile.longTermGoal || profile.goalThree || "";
+        setShortTermGoal(loadedShort);
+        setMidTermGoal(loadedMid);
+        setLongTermGoal(loadedLong);
+        if (loadedShort || loadedMid || loadedLong) {
+          setHasGenerated(true);
+          setLastGenerated({ shortTerm: loadedShort, midTerm: loadedMid, longTerm: loadedLong });
+        }
+        if (profile.goalsSource) setGenerationSource(profile.goalsSource);
 
-      // Prefer tiered fields; fall back to legacy goalOne/Two/Three so users
-      // who set up their path before this flow existed don't lose anything.
-      const loadedShort = profile.shortTermGoal || profile.goalOne || "";
-      const loadedMid = profile.midTermGoal || profile.goalTwo || "";
-      const loadedLong = profile.longTermGoal || profile.goalThree || "";
-      setShortTermGoal(loadedShort);
-      setMidTermGoal(loadedMid);
-      setLongTermGoal(loadedLong);
-      if (loadedShort || loadedMid || loadedLong) {
-        setHasGenerated(true);
-        setLastGenerated({ shortTerm: loadedShort, midTerm: loadedMid, longTerm: loadedLong });
+        setBiggestObstacle(profile.biggestObstacle || "");
+        setHasWorkOrSchool(profile.hasWorkOrSchool ?? true);
+        setHasTransportation(profile.hasTransportation ?? false);
+        setHasGymAccess(profile.hasGymAccess ?? false);
+        setHasQuietSpace(profile.hasQuietSpace ?? false);
+        setHasFoodControl(profile.hasFoodControl ?? false);
+      } catch {
+        // Keep defaults on parse failure
       }
-      if (profile.goalsSource) setGenerationSource(profile.goalsSource);
+    }
 
-      setBiggestObstacle(profile.biggestObstacle || "");
-      setHasWorkOrSchool(profile.hasWorkOrSchool ?? true);
-      setHasTransportation(profile.hasTransportation ?? false);
-      setHasGymAccess(profile.hasGymAccess ?? false);
-      setHasQuietSpace(profile.hasQuietSpace ?? false);
-      setHasFoodControl(profile.hasFoodControl ?? false);
-    } catch {
-      // Keep defaults on parse failure
+    const betaProfile = await getOrCreateProfile();
+    if (betaProfile?.display_name) {
+      setName((current) => current || betaProfile.display_name || "");
     }
   }
 

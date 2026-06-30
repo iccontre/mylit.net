@@ -117,5 +117,22 @@ export function mapSupabaseAuthError(message: string): string {
     return "Email or password did not match. Try again or sign up first.";
   }
 
+  if (
+    lower.includes("rate limit") ||
+    lower.includes("over_email_send") ||
+    lower.includes("email rate limit")
+  ) {
+    return "Too many signup emails were sent recently. If you already created an account, tap Sign In instead. Otherwise wait a few minutes and try again.";
+  }
+
+  if (
+    lower.includes("already registered") ||
+    lower.includes("already been registered") ||
+    lower.includes("email_exists") ||
+    lower.includes("user already registered")
+  ) {
+    return "This email already has an account. Tap Sign In and use the same password.";
+  }
+
   return message;
 }

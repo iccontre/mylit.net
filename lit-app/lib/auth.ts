@@ -30,14 +30,60 @@ function clean(value: string | null | undefined): string {
   return (value ?? "").trim();
 }
 
+async function signInAfterSignUp(
+  supabase: NonNullable<ReturnType<typeof getSupabaseClient>>,
+  email: string,
+  password: string
+): Promise<AuthResult> {
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (!error && data.session) return { ok: true };
+  return { ok: false, error: error ? mapSupabaseAuthError(error.message) : undefined };
+}
+
+function shouldRetrySignInAfterSignUpFailure(message: string): boolean {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("rate limit") ||
+    lower.includes("over_email_send") ||
+    lower.includes("already registered") ||
+    lower.includes("already been registered") ||
+    lower.includes("email_exists") ||
+    lower.includes("user already registered")
+  );
+}
+
 export async function signUpWithEmail(email: string, password: string): Promise<AuthResult> {
   const supabase = getSupabaseClient();
   if (!supabase) {
     return { ok: false, error: "Supabase is not configured for this build." };
   }
 
-  const { error } = await supabase.auth.signUp({ email: clean(email), password });
-  if (error) return { ok: false, error: mapSupabaseAuthError(error.message) };
+  const cleanedEmail = clean(email);
+  const emailRedirectTo =
+    typeof window !== "undefined" && window.location?.origin
+      ? `${window.location.origin}/auth`
+      : undefined;
+
+  const { data, error } = await supabase.auth.signUp({
+    email: cleanedEmail,
+    password,
+    options: emailRedirectTo ? { emailRedirectTo } : undefined,
+  });
+
+  if (error) {
+    if (shouldRetrySignInAfterSignUpFailure(error.message)) {
+      const recovered = await signInAfterSignUp(supabase, cleanedEmail, password);
+      if (recovered.ok) return recovered;
+    }
+    return { ok: false, error: mapSupabaseAuthError(error.message) };
+  }
+
+  if (data.session) return { ok: true };
+
+  // When email confirmation is off, Supabase may still omit the session on signUp.
+  const recovered = await signInAfterSignUp(supabase, cleanedEmail, password);
+  if (recovered.ok) return recovered;
+
   return { ok: true };
 }
 

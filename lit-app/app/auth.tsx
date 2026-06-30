@@ -20,7 +20,6 @@ import {
   getSession,
   isLocalOnboardingComplete,
   isOnboardingComplete,
-  isProfileComplete,
   isSupabaseConfigured,
   signInWithEmail,
   signUpWithEmail,
@@ -70,11 +69,6 @@ export default function AuthScreen() {
   async function handleContinueToMylit() {
     await clearAuthAwaitingContinue();
     const profile = await getOrCreateProfile();
-    if (!isProfileComplete(profile)) {
-      router.replace("/profile-setup");
-      return;
-    }
-
     const onboardingDone = await isOnboardingComplete(profile);
     router.replace(onboardingDone ? "/(tabs)" : "/onboarding");
   }

@@ -6,7 +6,6 @@ import {
   getSession,
   isLocalOnboardingComplete,
   isOnboardingComplete,
-  isProfileComplete,
   isSupabaseConfigured,
   WELCOME_SEEN_KEY,
 } from "./auth";
@@ -55,8 +54,6 @@ export async function markWelcomeSeen(): Promise<void> {
 
 export async function resolvePostAuthRoute(): Promise<Href> {
   const profile = await getOrCreateProfile();
-  if (!isProfileComplete(profile)) return "/profile-setup";
-
   const onboardingDone = await isOnboardingComplete(profile);
   return onboardingDone ? "/(tabs)" : "/onboarding";
 }
@@ -77,8 +74,6 @@ export async function resolveInitialRoute(): Promise<Href> {
   }
 
   const profile = await getOrCreateProfile();
-  if (!isProfileComplete(profile)) return "/profile-setup";
-
   const onboardingDone = await isOnboardingComplete(profile);
   return onboardingDone ? "/(tabs)" : "/onboarding";
 }
@@ -90,13 +85,12 @@ export async function resolveRequiredRouteForPath(pathname: string): Promise<Hre
   if (segment === "onboarding") return null;
 
   if (segment === "auth" && (await isAuthAwaitingContinue())) return null;
-  if (segment === "profile-setup" && (await isProfileAwaitingContinue())) return null;
+  if (segment === "profile-setup") return "/onboarding";
 
   const required = await resolveInitialRoute();
 
   if (required === "/welcome" && segment !== "welcome") return "/welcome";
   if (required === "/auth" && segment !== "auth" && segment !== "welcome") return "/auth";
-  if (required === "/profile-setup" && segment !== "profile-setup") return "/profile-setup";
   if (required === "/onboarding" && shouldEnforceFlow(pathname)) return "/onboarding";
   if (required === "/(tabs)" && (segment === "welcome" || segment === "auth" || segment === "profile-setup")) {
     return "/(tabs)";
