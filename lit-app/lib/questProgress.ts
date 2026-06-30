@@ -169,23 +169,53 @@ export function formatCapacityHeader(plannedMinutes: number, mode: "Progress" | 
 
 const DEFAULT_TODAY_QUEST_TITLES = new Set(["choose one honest quest for today"]);
 
+/** Day Plan quest or checklist — unlocks the full MYLIT quest pool on the board. */
+export function hasUserDayPlanItems(input: {
+  todayQuest?: RawTodayQuest | null;
+  checklist: RawChecklistItem[];
+}): boolean {
+  const questTitle = input.todayQuest?.title?.trim().toLowerCase() ?? "";
+  if (questTitle && !DEFAULT_TODAY_QUEST_TITLES.has(questTitle)) return true;
+
+  return input.checklist.some((item) => (item.text || item.title || "").trim());
+}
+
+export function hasTodayQuickThoughts(input: { quickThoughts: QueueItem[]; todayKey: string }): boolean {
+  return input.quickThoughts.some((item) => {
+    const itemDate = item.date ?? item.dateKey ?? input.todayKey;
+    if (itemDate !== input.todayKey) return false;
+    if (item.status === "completed" || item.completedAt || String(item.status) === "missed") return false;
+    const title = (item.text || item.title || item.task || item.note || "").trim();
+    return Boolean(title);
+  });
+}
+
+/** @deprecated Use getQuestBoardFocus for board composition. */
 export function hasUserCreatedQuestItems(input: {
   todayQuest?: RawTodayQuest | null;
   checklist: RawChecklistItem[];
   quickThoughts: QueueItem[];
   todayKey: string;
 }): boolean {
-  const questTitle = input.todayQuest?.title?.trim().toLowerCase() ?? "";
-  if (questTitle && !DEFAULT_TODAY_QUEST_TITLES.has(questTitle)) return true;
+  return (
+    hasUserDayPlanItems(input) ||
+    hasTodayQuickThoughts({ quickThoughts: input.quickThoughts, todayKey: input.todayKey })
+  );
+}
 
-  if (input.checklist.some((item) => (item.text || item.title || "").trim())) return true;
+export type QuestBoardFocus = "starter" | "quickThoughts" | "dayPlan";
 
-  return input.quickThoughts.some((item) => {
-    const itemDate = item.date ?? item.dateKey ?? input.todayKey;
-    if (itemDate !== input.todayKey) return false;
-    const title = (item.text || item.title || item.task || item.note || "").trim();
-    return Boolean(title);
-  });
+export function getQuestBoardFocus(input: {
+  todayQuest?: RawTodayQuest | null;
+  checklist: RawChecklistItem[];
+  quickThoughts: QueueItem[];
+  todayKey: string;
+}): QuestBoardFocus {
+  if (hasUserDayPlanItems(input)) return "dayPlan";
+  if (hasTodayQuickThoughts({ quickThoughts: input.quickThoughts, todayKey: input.todayKey })) {
+    return "quickThoughts";
+  }
+  return "starter";
 }
 
 type QuestPriorityTier = 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -211,7 +241,11 @@ export function sortQuestItemsByPriority(items: HomeQuestItem[]): HomeQuestItem[
   });
 }
 
-export function applyQuestBoardCapacity(items: HomeQuestItem[], mode: "Progress" | "Recovery", hasUserItems: boolean): {
+export function applyQuestBoardCapacity(
+  items: HomeQuestItem[],
+  mode: "Progress" | "Recovery",
+  focus: QuestBoardFocus
+): {
   visibleItems: HomeQuestItem[];
   hiddenCount: number;
   plannedMinutes: number;
@@ -220,7 +254,11 @@ export function applyQuestBoardCapacity(items: HomeQuestItem[], mode: "Progress"
   const capacityMinutes = getQuestCapacityMinutes(mode);
   let sorted = sortQuestItemsByPriority(items);
 
-  if (!hasUserItems) {
+  if (focus === "quickThoughts") {
+    sorted = sorted.filter((item) => item.source === "Quick Thought" || item.mandatory);
+  }
+
+  if (focus === "starter") {
     const firstRecommended =
       sorted.find((item) => item.mandatory) ??
       sorted.find((item) => item.starter) ??

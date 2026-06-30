@@ -22,9 +22,9 @@ import {
   findNextScheduledItem,
   formatCapacityHeader,
   getChecklistItemsForDay,
+  getQuestBoardFocus,
   getTodayKey,
   getWeekdayName,
-  hasUserCreatedQuestItems,
   kindAccent,
   loadTodayCompletions,
   loadTodayMissed,
@@ -35,6 +35,7 @@ import {
   type CompletionEntry,
   type HomeQuestItem,
   type MissedEntry,
+  type QuestBoardFocus,
   type QuestKind,
 } from "../../lib/questProgress";
 import { formatDurationLabel, inferScheduledClassification, parseTimeToMinutes } from "../../lib/scheduling";
@@ -638,15 +639,6 @@ export default function HomeScreen() {
     await missQuestItem(boardItem);
   }
 
-  async function toggleQuestItemFromRow(item: HomeQuestItem) {
-    if (activeItem && activeItem.id !== item.id) {
-      showLockMessage();
-      return;
-    }
-    if (completedQuests.some((entry) => entry.id === item.id)) return;
-    await completeQuestItem(item);
-  }
-
   const questContext: QuestProfileContext = {
     category: profile?.dreamCategory?.trim() || "Purpose",
     specificGoal: profile?.specificGoal?.trim() || "",
@@ -740,30 +732,92 @@ export default function HomeScreen() {
         mode: "BALANCED MODE",
       };
 
-  function generateQuickThoughtQuests(): Quest[] {
-    const unique = new Set<string>();
-    const result: Quest[] = [];
+  function generateQuests(boardFocus: QuestBoardFocus): Quest[] {
+    const mandatoryQuest = getMandatoryQuest();
 
-    queueItems.forEach((item) => {
-      const text =
-        item?.text?.trim() ||
-        item?.title?.trim() ||
-        item?.task?.trim() ||
-        item?.note?.trim();
+    if (boardFocus === "quickThoughts") {
+      return mandatoryQuest ? [mandatoryQuest] : [];
+    }
 
-      if (!text || unique.has(text)) return;
+    const napQuest: Quest = {
+      title: "Take a recovery nap",
+      type: "Recovery",
+      steps: 1,
+      description: "Aim for 30–60 minutes if your schedule allows.",
+    };
 
-      unique.add(text);
+    const dayPlanQuest: Quest | null = todayPlanText
+      ? {
+          title: `Today’s Quest: ${todayPlanText}`,
+          type: "Personal",
+          steps: 2,
+          description: "A personal quest from your Day Plan.",
+        }
+      : null;
 
-      result.push({
-        title: `Quick thought: ${text}`,
-        type: "Quick Thought",
-        steps: 1,
-        description: item?.type ? `Saved from Quick Thoughts (${item.type})` : "Saved from Quick Thoughts",
-      });
-    });
+    if (boardFocus === "starter") {
+      if (isNeutral) {
+        return [
+          { title: "Complete Morning Check-In", type: "Start", steps: 1 },
+          ...(dayPlanQuest ? [dayPlanQuest] : []),
+        ];
+      }
 
-    return result;
+      const starterQuest = generateStarterQuest(questContext, isProgress ? "progress" : "recovery");
+      return [
+        ...(mandatoryQuest ? [mandatoryQuest] : []),
+        ...(dayPlanQuest ? [dayPlanQuest] : []),
+        ...(shouldSuggestNap ? [napQuest] : []),
+        starterQuest,
+      ];
+    }
+
+    if (isNeutral) {
+      const neutralBase: Quest[] = [
+        { title: "Complete Morning Check-In", type: "Start", steps: 1 },
+        { title: "Review your current path", type: "Direction", steps: 1 },
+        { title: "Choose one small action for today", type: "Plan", steps: 1 },
+      ];
+
+      return [
+        neutralBase[0],
+        ...(dayPlanQuest ? [dayPlanQuest] : []),
+        ...(shouldSuggestNap ? [napQuest] : []),
+        neutralBase[1],
+        neutralBase[2],
+      ];
+    }
+
+    const starterQuest = generateStarterQuest(questContext, isProgress ? "progress" : "recovery");
+
+    const resourceQuest: Quest = profile?.hasQuietSpace
+      ? { title: "Use your quiet space for one focus block", type: "Focus", steps: 1 }
+      : { title: "Create a simple focus corner for 10 minutes", type: "Focus", steps: 1 };
+
+    const movementQuest: Quest = profile?.hasGymAccess
+      ? { title: "Movement option: gym or structured workout", type: "Body", steps: 1 }
+      : { title: "Movement option: walk, stretch, or home workout", type: "Body", steps: 1 };
+
+    const transportQuest: Quest = profile?.hasTransportation
+      ? { title: "Plan one out-of-home step you can reach", type: "Logistics", steps: 1 }
+      : { title: "Plan one step you can do from home", type: "Logistics", steps: 1 };
+
+    let baseQuests: Quest[];
+
+    if (isProgress) {
+      const progressQuests = generateProgressQuests(questContext, 4);
+      baseQuests = [starterQuest, ...progressQuests, resourceQuest, movementQuest, transportQuest];
+    } else {
+      const recoveryQuests = generateRecoveryQuests(questContext, 3);
+      baseQuests = [starterQuest, ...recoveryQuests, resourceQuest, movementQuest, transportQuest];
+    }
+
+    return [
+      ...(mandatoryQuest ? [mandatoryQuest] : []),
+      ...(dayPlanQuest ? [dayPlanQuest] : []),
+      ...(shouldSuggestNap ? [napQuest] : []),
+      ...baseQuests,
+    ];
   }
 
   function getMandatoryQuest(): Quest | null {
@@ -801,99 +855,31 @@ export default function HomeScreen() {
     return null;
   }
 
-  function generateQuests(): Quest[] {
-    const napQuest: Quest = {
-      title: "Take a recovery nap",
-      type: "Recovery",
-      steps: 1,
-      description: "Aim for 30–60 minutes if your schedule allows.",
-    };
-
-    const dayPlanQuest: Quest | null = todayPlanText
-      ? {
-          title: `Today’s Quest: ${todayPlanText}`,
-          type: "Personal",
-          steps: 2,
-          description: "A personal quest from your Day Plan.",
-        }
-      : null;
-
-    const quickThoughtQuests = generateQuickThoughtQuests();
-    const mandatoryQuest = getMandatoryQuest();
-
-    if (isNeutral) {
-      const neutralBase: Quest[] = [
-        { title: "Complete Morning Check-In", type: "Start", steps: 1 },
-        { title: "Review your current path", type: "Direction", steps: 1 },
-        { title: "Choose one small action for today", type: "Plan", steps: 1 },
-      ];
-
-      return [
-        neutralBase[0],
-        ...(dayPlanQuest ? [dayPlanQuest] : []),
-        ...(shouldSuggestNap ? [napQuest] : []),
-        neutralBase[1],
-        neutralBase[2],
-        ...quickThoughtQuests,
-      ];
-    }
-
-    const starterQuest = generateStarterQuest(questContext, isProgress ? "progress" : "recovery");
-
-    const resourceQuest: Quest = profile?.hasQuietSpace
-      ? { title: "Use your quiet space for one focus block", type: "Focus", steps: 1 }
-      : { title: "Create a simple focus corner for 10 minutes", type: "Focus", steps: 1 };
-
-    const movementQuest: Quest = profile?.hasGymAccess
-      ? { title: "Movement option: gym or structured workout", type: "Body", steps: 1 }
-      : { title: "Movement option: walk, stretch, or home workout", type: "Body", steps: 1 };
-
-    const transportQuest: Quest = profile?.hasTransportation
-      ? { title: "Plan one out-of-home step you can reach", type: "Logistics", steps: 1 }
-      : { title: "Plan one step you can do from home", type: "Logistics", steps: 1 };
-
-    let baseQuests: Quest[];
-
-    if (isProgress) {
-      const progressQuests = generateProgressQuests(questContext, 4);
-      baseQuests = [starterQuest, ...progressQuests, resourceQuest, movementQuest, transportQuest];
-    } else {
-      const recoveryQuests = generateRecoveryQuests(questContext, 3);
-      baseQuests = [starterQuest, ...recoveryQuests, resourceQuest, movementQuest, transportQuest];
-    }
-
-    return [
-      ...(mandatoryQuest ? [mandatoryQuest] : []),
-      ...(dayPlanQuest ? [dayPlanQuest] : []),
-      ...(shouldSuggestNap ? [napQuest] : []),
-      ...baseQuests,
-      ...quickThoughtQuests,
-    ];
-  }
-
-  const quests = generateQuests();
-
   const todayKey = getTodayKey();
   const todayChecklist: RawChecklistItem[] = getChecklistItemsForDay(dayPlanRaw, todayName);
-  const calendarItems = collectTodayCalendarItems(dayPlanRaw, queueItems, todayKey);
-  const completedIds = new Set(completedQuests.map((entry) => entry.id));
-  const missedIds = new Set(missedQuests.map((entry) => entry.id));
-  const hasUserItems = hasUserCreatedQuestItems({
+  const boardFocus = getQuestBoardFocus({
     todayQuest: dayPlanRaw?.todayQuest ?? null,
     checklist: todayChecklist,
     quickThoughts: queueItems,
     todayKey,
   });
+  const quests = generateQuests(boardFocus);
+  const calendarItems = collectTodayCalendarItems(dayPlanRaw, queueItems, todayKey);
+  const completedIds = new Set(completedQuests.map((entry) => entry.id));
+  const missedIds = new Set(missedQuests.map((entry) => entry.id));
   const boardMode: "Progress" | "Recovery" = isRecovery ? "Recovery" : "Progress";
 
   const allHomeItems: HomeQuestItem[] =
     hasEnergyData && !isNeutral
       ? normalizeQuestItems({
           quests,
-          todayQuest: dayPlanRaw?.todayQuest ?? null,
-          checklist: todayChecklist,
+          todayQuest: boardFocus === "quickThoughts" ? null : dayPlanRaw?.todayQuest ?? null,
+          checklist: boardFocus === "quickThoughts" ? [] : todayChecklist,
           quickThoughts: queueItems,
-          calendarItems,
+          calendarItems:
+            boardFocus === "quickThoughts"
+              ? calendarItems.filter((item) => item.source === "quickThought")
+              : calendarItems,
           todayKey,
           completedIds,
           missedIds,
@@ -901,7 +887,7 @@ export default function HomeScreen() {
       : [];
 
   const availableItems = allHomeItems.filter((item) => item.id !== activeItem?.id);
-  const boardCapacity = applyQuestBoardCapacity(availableItems, boardMode, hasUserItems);
+  const boardCapacity = applyQuestBoardCapacity(availableItems, boardMode, boardFocus);
   const visibleItems = boardCapacity.visibleItems;
   const extraItemCount = boardCapacity.hiddenCount;
   const capacityLabel = formatCapacityHeader(boardCapacity.plannedMinutes, boardMode);
@@ -1163,12 +1149,10 @@ export default function HomeScreen() {
                   </View>
                 ) : (
                   <>
-                    {visibleItems.map((item) => {
-                      const isDone = completedQuests.some((entry) => entry.id === item.id);
-                      return (
+                    {visibleItems.map((item) => (
                       <TouchableOpacity
                         key={item.id}
-                        style={[styles.questRow, { borderColor: item.mandatory ? "#F87171" : "#2E3542" }, isDone && styles.questRowDone]}
+                        style={[styles.questRow, { borderColor: item.mandatory ? "#F87171" : "#2E3542" }]}
                         onPress={() => openQuestItem(item)}
                         activeOpacity={0.85}
                       >
@@ -1184,18 +1168,9 @@ export default function HomeScreen() {
                             <Text style={[styles.questSteps, { color: kindAccent(item.kind) }]}>+{item.steps}</Text>
                           </View>
                         </View>
-                        <TouchableOpacity
-                          style={[styles.checkBox, { borderColor: theme.accent }, isDone && styles.checkBoxDone]}
-                          onPress={(event) => {
-                            event.stopPropagation?.();
-                            void toggleQuestItemFromRow(item);
-                          }}
-                        >
-                          <Text style={styles.checkBoxText}>{isDone ? "✓" : ""}</Text>
-                        </TouchableOpacity>
                         <Text style={[styles.startChevron, { color: theme.accent }]}>▶</Text>
                       </TouchableOpacity>
-                    );})}
+                    ))}
                     {lockMessage ? <Text style={styles.lockMessage}>{lockMessage}</Text> : null}
                     {extraItemCount > 0 ? (
                       <Text style={styles.moreHint}>+{extraItemCount} more beyond today&apos;s capacity</Text>
@@ -1243,7 +1218,7 @@ export default function HomeScreen() {
                   <Text style={styles.modalTitle}>How the Quest Board works</Text>
                   <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false} bounces={false}>
                     <Text style={styles.modalDescription}>
-                      The Quest Board keeps today focused. Your Day Plan, checklist items, Quick Thoughts, and MYLIT quests can appear here. Path milestones are benchmarks — your first quest is a small starter step, not the whole short-term goal. Start one timed quest at a time; while it runs, the board locks so you do not overload yourself. Complete gives steps. Missed? is not punishment — it helps you reflect and adjust. To protect your energy, MYLIT limits continuous progress work to 2 hours. After that, it adds a 1-hour recovery period before more progress tasks. Recovery counts.
+                      The Quest Board keeps today focused. Tap a quest to view it, then START to begin the timer — you cannot check quests off from the list. Your Day Plan, checklist items, Quick Thoughts, and MYLIT quests can appear here. Path milestones are benchmarks — your first quest is a small starter step, not the whole short-term goal. Quick Thoughts for today add only those items to your board. Start one timed quest at a time; while it runs, the board locks so you do not overload yourself. Complete gives steps after the timer. Missed? is not punishment — it helps you reflect and adjust. To protect your energy, MYLIT limits continuous progress work to 2 hours. After that, it adds a 1-hour recovery period before more progress tasks. Recovery counts.
                     </Text>
                   </ScrollView>
                   <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowQuestHelp(false)}>
@@ -1287,17 +1262,11 @@ export default function HomeScreen() {
                       <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setSelectedItem(null)}>
                         <Text style={styles.modalCancelText}>CLOSE</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.modalCompleteBtn}
-                        onPress={() => void completeQuestItem(selectedItem)}
-                      >
-                        <Text style={styles.modalCompleteText}>COMPLETE</Text>
-                      </TouchableOpacity>
-                    </View>
-                    <View style={styles.modalButtonRow}>
                       <TouchableOpacity style={styles.modalStartBtn} onPress={() => startTimedItem(selectedItem)}>
                         <Text style={styles.modalStartText}>START</Text>
                       </TouchableOpacity>
+                    </View>
+                    <View style={styles.modalButtonRow}>
                       <TouchableOpacity
                         style={styles.modalMissedBtn}
                         onPress={() => void missQuestItem(selectedItem)}
