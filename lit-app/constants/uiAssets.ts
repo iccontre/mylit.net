@@ -11,11 +11,11 @@ export const uiAssets = {
     evie: require("../assets/ui/guides/evie-guide.png"),
   },
   fires: {
-    ember: null,
-    lowFlame: null,
-    steadyFlame: null,
-    brightFlame: null,
-    blazingFlame: null,
+    ember: require("../assets/ui/fires/ember-image.png"),
+    lowFlame: require("../assets/ui/fires/low-flame.png"),
+    steadyFlame: require("../assets/ui/fires/steady-flame.png"),
+    brightFlame: require("../assets/ui/fires/bright-flame.png"),
+    blazingFlame: require("../assets/ui/fires/blazing-flame.png"),
   },
   logo: {
     mylit: require("../assets/ui/logo/mylit-logo.png"),
