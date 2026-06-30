@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useRouter, useFocusEffect } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 import { FormScreen } from "../components/FormScreen";
@@ -75,6 +75,7 @@ type QuestDay = { date: Date; dateKey: string; weekday: string; label: string; d
 
 const STORAGE_KEY = "lit_tomorrow_queue";
 const DAY_PLAN_KEY = "lit_day_plan";
+const CHECKIN_KEY = "lit_latest_checkin";
 const TIME_SLOTS = generateTimeSlots(7, 22, 30);
 const DURATIONS = ["30 min", "45 min", "1 hr"];
 const WEEKDAY_LABELS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
@@ -141,6 +142,11 @@ function formatSavedDate(item: QueueItem) {
   return `${item.weekday} ${Number(month)}/${Number(day)}`;
 }
 
+type CheckIn = {
+  mode?: "Recovery" | "Progress";
+  energy?: number;
+};
+
 export default function TomorrowQueueScreen() {
   const router = useRouter();
   const mobile = useMobileFrame();
@@ -149,6 +155,7 @@ export default function TomorrowQueueScreen() {
   const [request, setRequest] = useState("");
   const [items, setItems] = useState<QueueItem[]>([]);
   const [dayPlan, setDayPlan] = useState<Record<string, unknown> | null>(null);
+  const [boardMode, setBoardMode] = useState<"Progress" | "Recovery">("Progress");
   const [selectedDateKey, setSelectedDateKey] = useState(todayInWeek.dateKey);
   const [selectedTime, setSelectedTime] = useState("9:00 AM");
   const [selectedDuration, setSelectedDuration] = useState("30 min");
@@ -161,28 +168,35 @@ export default function TomorrowQueueScreen() {
   const selectedDay = weekDays.find((day: QuestDay) => day.dateKey === selectedDateKey) || todayInWeek;
   const selectedDayIsPast = isPastDateKey(selectedDay.dateKey);
   const selectedSteps = getQuickThoughtSteps(selectedDuration);
-  const capacityMode = selectedKind === "recovery" ? "Recovery" : "Progress";
   const selectedDayPlannedMinutes = computeUserScheduledMinutesForDay({
     dateKey: selectedDay.dateKey,
     weekday: selectedDay.weekday as WeekdayName,
     quickThoughts: items,
     dayPlan,
-    kind: selectedKind,
   });
-  const selectedDayCapacityMinutes = getQuestCapacityMinutes(capacityMode);
-  const selectedDayAtCapacity = selectedDayPlannedMinutes >= selectedDayCapacityMinutes;
+  const selectedDayCapacityMinutes = getQuestCapacityMinutes(boardMode);
+  const selectedDayRemainingMinutes = Math.max(0, selectedDayCapacityMinutes - selectedDayPlannedMinutes);
+  const selectedDayAtCapacity = selectedDayRemainingMinutes <= 0;
 
   useEffect(() => {
-    loadQueue();
+    void loadQueue();
   }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      void loadQueue();
+    }, [])
+  );
+
   async function loadQueue() {
-    const [saved, plan] = await Promise.all([
+    const [saved, plan, checkIn] = await Promise.all([
       readJson<Partial<QueueItem>[]>(STORAGE_KEY, []),
       readJson<Record<string, unknown> | null>(DAY_PLAN_KEY, null),
+      readJson<CheckIn | null>(CHECKIN_KEY, null),
     ]);
     setItems(Array.isArray(saved) ? saved.map(normalizeQueueItem) : []);
     setDayPlan(plan);
+    setBoardMode(checkIn?.mode === "Recovery" ? "Recovery" : "Progress");
   }
 
   async function saveQueue(nextItems: QueueItem[]) {
@@ -208,14 +222,13 @@ export default function TomorrowQueueScreen() {
       quickThoughts: items,
       dayPlan,
       additionalMinutes: durationMinutes,
-      kind: selectedKind,
+      boardMode,
     });
 
     if (!capacity.allowed) {
       const capLabel = formatPlannedDurationLabel(capacity.capacityMinutes);
-      const plannedLabel = formatPlannedDurationLabel(capacity.plannedMinutes);
       setMessage(
-        `Quest Board limit reached for this day — ${capacity.modeLabel} allows up to ${capLabel} of planned quests (${plannedLabel} already scheduled).`
+        `Quest Board limit reached for this day — your ${capacity.modeLabel} check-in allows up to ${capLabel} of planned quests (${formatPlannedDurationLabel(capacity.remainingMinutes)} left).`
       );
       return;
     }
@@ -292,7 +305,7 @@ export default function TomorrowQueueScreen() {
               <Image source={uiAssets.guides.evie} style={styles.evieAvatar} resizeMode="contain" />
               <View style={styles.evieCopy}>
                 <Text style={styles.evieName}>EVIE</Text>
-                <Text style={styles.evieText}>Quick Thoughts schedule quests for your board. The Quest Board caps planned time at 8h (Progress) or 5h (Recovery) per day — saving stops when that limit is reached.</Text>
+                <Text style={styles.evieText}>Quick Thoughts schedule quests for your board. Your check-in mode sets the daily cap — 8h in Progress, 5h in Recovery.</Text>
               </View>
               <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
                 <Text style={styles.infoBtnText}>?</Text>
@@ -360,7 +373,7 @@ export default function TomorrowQueueScreen() {
             <View style={styles.savedHeaderRow}>
               <Text style={styles.savedTitle}>🎒 SAVED QUESTS</Text>
               <Text style={styles.savedCount}>
-                {formatPlannedDurationLabel(selectedDayPlannedMinutes)} / {capacityMode === "Recovery" ? "5h" : "8h"} ({capacityMode})
+                {formatPlannedDurationLabel(selectedDayRemainingMinutes)} left · {boardMode} ({boardMode === "Recovery" ? "5h" : "8h"} limit)
               </Text>
             </View>
 
@@ -409,7 +422,7 @@ function InfoOverlay({ onClose }: { onClose: () => void }) {
         <ScrollView style={styles.infoScroll} showsVerticalScrollIndicator={false} bounces={false}>
           <Text style={styles.infoBullet}>{"• Quick Thoughts are for tasks and ideas that should become future quests."}</Text>
           <Text style={styles.infoBullet}>{"• Scheduled Quick Thoughts can appear on Home and Calendar when their day arrives."}</Text>
-          <Text style={styles.infoBullet}>{"• Quest Board time limits apply: up to 8h planned Progress quests or 5h Recovery quests per day (including Day Plan items)."}</Text>
+          <Text style={styles.infoBullet}>{"• Quest Board time limits follow your latest check-in: 8h in Progress mode, 5h in Recovery mode."}</Text>
           <Text style={styles.infoBullet}>{"• Duration affects possible steps: 30 or 45 min = +1 step. 1 hr = +2 steps."}</Text>
           <Text style={styles.infoBullet}>{"• Completing the item later earns steps."}</Text>
           <Text style={styles.infoBullet}>{"• Saving the thought alone does not award steps."}</Text>

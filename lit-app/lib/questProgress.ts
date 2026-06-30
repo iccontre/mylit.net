@@ -187,13 +187,12 @@ function isActiveScheduledItem(status?: string, completedAt?: string): boolean {
   return true;
 }
 
-/** User-scheduled quest minutes for a day (Quick Thoughts + Day Plan), by progress/recovery kind. */
+/** User-scheduled quest minutes for a day (Quick Thoughts + Day Plan), all kinds combined. */
 export function computeUserScheduledMinutesForDay(input: {
   dateKey: string;
   weekday: WeekdayName;
   quickThoughts: QueueItem[];
   dayPlan: DayPlanRaw | null | undefined;
-  kind: QuestKind;
 }): number {
   let total = 0;
 
@@ -201,7 +200,6 @@ export function computeUserScheduledMinutesForDay(input: {
     const itemDate = raw.date ?? raw.dateKey;
     if (itemDate !== input.dateKey) continue;
     if (!isActiveScheduledItem(raw.status, raw.completedAt)) continue;
-    if (scheduledItemKind(raw) !== input.kind) continue;
     total += parseDurationMinutes(raw.durationMinutes ?? raw.duration, 30);
   }
 
@@ -210,9 +208,7 @@ export function computeUserScheduledMinutesForDay(input: {
     const questDate = todayQuest.date ?? input.dateKey;
     if (questDate === input.dateKey) {
       if (isActiveScheduledItem(todayQuest.status)) {
-        if (scheduledItemKind(todayQuest) === input.kind) {
-          total += parseDurationMinutes(todayQuest.durationMinutes ?? todayQuest.duration, 60);
-        }
+        total += parseDurationMinutes(todayQuest.durationMinutes ?? todayQuest.duration, 60);
       }
     }
   }
@@ -220,7 +216,6 @@ export function computeUserScheduledMinutesForDay(input: {
   const checklist = getChecklistItemsForDay(input.dayPlan, input.weekday);
   for (const raw of checklist) {
     if (raw.checked || !isActiveScheduledItem(raw.status)) continue;
-    if (scheduledItemKind(raw) !== input.kind) continue;
     total += parseDurationMinutes(raw.durationMinutes ?? raw.duration, 30);
   }
 
@@ -233,16 +228,17 @@ export function checkUserScheduledQuestCapacity(input: {
   quickThoughts: QueueItem[];
   dayPlan: DayPlanRaw | null | undefined;
   additionalMinutes: number;
-  kind: QuestKind;
-}): { allowed: boolean; plannedMinutes: number; capacityMinutes: number; modeLabel: "Progress" | "Recovery" } {
+  boardMode: "Progress" | "Recovery";
+}): { allowed: boolean; plannedMinutes: number; capacityMinutes: number; remainingMinutes: number; modeLabel: "Progress" | "Recovery" } {
   const plannedMinutes = computeUserScheduledMinutesForDay(input);
-  const modeLabel: "Progress" | "Recovery" = input.kind === "recovery" ? "Recovery" : "Progress";
-  const capacityMinutes = getQuestCapacityMinutes(modeLabel);
+  const capacityMinutes = getQuestCapacityMinutes(input.boardMode);
+  const remainingMinutes = Math.max(0, capacityMinutes - plannedMinutes);
   return {
     allowed: plannedMinutes + input.additionalMinutes <= capacityMinutes,
     plannedMinutes,
     capacityMinutes,
-    modeLabel,
+    remainingMinutes,
+    modeLabel: input.boardMode,
   };
 }
 
