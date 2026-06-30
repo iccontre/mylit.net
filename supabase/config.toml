@@ -1,7 +1,16 @@
-# MYLIT beta auth — disable confirmation emails to avoid SMTP rate limits.
+# MYLIT beta auth — email confirm returns to /auth-confirmed with return-to-app instructions.
 # Push: npx supabase config push --project-ref qepkwlchduhnqzeegpeh
 
 project_id = "qepkwlchduhnqzeegpeh"
+
+[auth]
+site_url = "https://mylit.net"
+additional_redirect_urls = [
+  "https://mylit.net/auth-confirmed",
+  "https://www.mylit.net/auth-confirmed",
+  "https://mylit-beta.vercel.app/auth-confirmed",
+  "http://localhost:8081/auth-confirmed",
+]
 
 [auth.email]
 enable_confirmations = false

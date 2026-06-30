@@ -24,8 +24,16 @@ import {
   signInWithEmail,
   signUpWithEmail,
 } from "../lib/auth";
-import { getSupabaseConfigHelp, getSupabaseConfigIssue } from "../lib/supabase";
-import { markWelcomeSeen, markAuthAwaitingContinue, clearAuthAwaitingContinue, isAuthAwaitingContinue } from "../lib/authFlow";
+import { getSupabaseConfigHelp, getSupabaseConfigIssue, getSupabaseClient } from "../lib/supabase";
+import {
+  markWelcomeSeen,
+  markAuthAwaitingContinue,
+  clearAuthAwaitingContinue,
+  isAuthAwaitingContinue,
+  markAuthPendingEmailConfirm,
+  clearAuthPendingEmailConfirm,
+  getAuthPendingEmailConfirm,
+} from "../lib/authFlow";
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -55,16 +63,53 @@ export default function AuthScreen() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [authComplete, setAuthComplete] = useState(false);
+  const [awaitingEmailConfirm, setAwaitingEmailConfirm] = useState(false);
 
   useEffect(() => {
-    void (async () => {
+    const supabase = getSupabaseClient();
+
+    async function bootstrapAuthState() {
+      if (typeof window !== "undefined" && window.location.href.includes("access_token=")) {
+        router.replace("/auth-confirmed");
+        return;
+      }
+
+      const pendingEmail = await getAuthPendingEmailConfirm();
+      if (pendingEmail) {
+        setEmail((current) => current || pendingEmail);
+        setAwaitingEmailConfirm(true);
+        setIsSignUpMode(false);
+      }
+
+      const session = await getSession();
       const awaiting = await isAuthAwaitingContinue();
-      if (awaiting && (await getSession())) {
+      if (session && awaiting) {
         setAuthComplete(true);
+        setAwaitingEmailConfirm(false);
         setMessage("You're signed in. Continue when you're ready.");
       }
-    })();
-  }, []);
+    }
+
+    void bootstrapAuthState();
+
+    if (!supabase) return undefined;
+
+    const { data } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN" && session) {
+        void (async () => {
+          await markAuthAwaitingContinue();
+          await clearAuthPendingEmailConfirm();
+          setAwaitingEmailConfirm(false);
+          setAuthComplete(true);
+          setMessage("You're signed in. Continue when you're ready.");
+        })();
+      }
+    });
+
+    return () => {
+      data.subscription.unsubscribe();
+    };
+  }, [router]);
 
   async function handleContinueToMylit() {
     await clearAuthAwaitingContinue();
@@ -96,8 +141,12 @@ export default function AuthScreen() {
 
     const session = await getSession();
     if (!session) {
-      setMessage("Check your email to confirm your account, then sign in.");
+      await markAuthPendingEmailConfirm(trimmedEmail);
+      setAwaitingEmailConfirm(true);
       setIsSignUpMode(false);
+      setMessage(
+        "We sent a confirmation link to your email. After you confirm, return to the MYLIT app on your Home Screen and sign in — then tap Continue to MYLIT."
+      );
       return;
     }
 
@@ -159,6 +208,52 @@ export default function AuthScreen() {
               <TouchableOpacity style={styles.primaryButton} onPress={handleContinueToMylit}>
                 <Text style={styles.primaryButtonText}>CONTINUE TO MYLIT</Text>
               </TouchableOpacity>
+            </View>
+          ) : awaitingEmailConfirm ? (
+            <View style={styles.successPanel}>
+              <Text style={styles.successTitle}>Check your email</Text>
+              <Text style={styles.successText}>
+                Confirm your email from the link we sent. When you're done, return to the MYLIT app on your Home
+                Screen.
+              </Text>
+              {message ? <Text style={styles.messageText}>{message}</Text> : null}
+              <Text style={styles.pendingHint}>
+                After confirming, sign in below with the same email and password. MYLIT will show Continue to MYLIT.
+              </Text>
+              <View style={styles.formPanel}>
+                <Text style={styles.fieldLabel}>EMAIL</Text>
+                <TextInput
+                  style={styles.input}
+                  value={email}
+                  onChangeText={setEmail}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="email-address"
+                  placeholder="you@example.com"
+                  placeholderTextColor="#64748B"
+                />
+                <Text style={styles.fieldLabel}>PASSWORD</Text>
+                <TextInput
+                  style={styles.input}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry
+                  placeholder="••••••••"
+                  placeholderTextColor="#64748B"
+                />
+                {error ? <Text style={styles.errorText}>{error}</Text> : null}
+                <TouchableOpacity
+                  style={[styles.primaryButton, busy && styles.buttonDisabled]}
+                  onPress={() => handleAuth("signIn")}
+                  disabled={busy}
+                >
+                  {busy ? (
+                    <ActivityIndicator color="#FFF8E6" />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>SIGN IN AFTER CONFIRM</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
             </View>
           ) : (
             <>
@@ -402,6 +497,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "700",
     lineHeight: 19,
+    textAlign: "center",
+    marginBottom: 12,
+  },
+  pendingHint: {
+    color: "#86EFAC",
+    fontFamily: pixelFont,
+    fontSize: 10,
+    fontWeight: "900",
+    lineHeight: 15,
     textAlign: "center",
     marginBottom: 12,
   },

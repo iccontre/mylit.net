@@ -13,6 +13,7 @@ import {
 export const FLOW_ROUTES = new Set(["welcome", "auth", "profile-setup", "onboarding"]);
 export const AUTH_AWAITING_CONTINUE_KEY = "lit_auth_awaiting_continue";
 export const PROFILE_AWAITING_CONTINUE_KEY = "lit_profile_awaiting_continue";
+export const AUTH_PENDING_EMAIL_CONFIRM_KEY = "lit_auth_pending_email_confirm";
 
 export async function markAuthAwaitingContinue(): Promise<void> {
   await AsyncStorage.setItem(AUTH_AWAITING_CONTINUE_KEY, "true");
@@ -38,9 +39,27 @@ export async function isProfileAwaitingContinue(): Promise<boolean> {
   return (await AsyncStorage.getItem(PROFILE_AWAITING_CONTINUE_KEY)) === "true";
 }
 
-export function shouldEnforceFlow(pathname: string): boolean {
+export async function markAuthPendingEmailConfirm(email: string): Promise<void> {
+  await AsyncStorage.setItem(AUTH_PENDING_EMAIL_CONFIRM_KEY, email.trim());
+}
+
+export async function clearAuthPendingEmailConfirm(): Promise<void> {
+  await AsyncStorage.removeItem(AUTH_PENDING_EMAIL_CONFIRM_KEY);
+}
+
+export async function getAuthPendingEmailConfirm(): Promise<string | null> {
+  const value = await AsyncStorage.getItem(AUTH_PENDING_EMAIL_CONFIRM_KEY);
+  return value?.trim() || null;
+}
+
+export function isAuthFlowPath(pathname: string): boolean {
   const segment = pathname.replace(/^\//, "").split("/")[0] ?? "";
-  return !FLOW_ROUTES.has(segment);
+  if (segment === "auth-confirmed") return true;
+  return FLOW_ROUTES.has(segment);
+}
+
+export function shouldEnforceFlow(pathname: string): boolean {
+  return !isAuthFlowPath(pathname);
 }
 
 export async function hasSeenWelcome(): Promise<boolean> {
@@ -73,6 +92,10 @@ export async function resolveInitialRoute(): Promise<Href> {
     return "/auth";
   }
 
+  if (await isAuthAwaitingContinue()) {
+    return "/auth";
+  }
+
   const profile = await getOrCreateProfile();
   const onboardingDone = await isOnboardingComplete(profile);
   return onboardingDone ? "/(tabs)" : "/onboarding";
@@ -85,14 +108,20 @@ export async function resolveRequiredRouteForPath(pathname: string): Promise<Hre
   if (segment === "onboarding") return null;
 
   if (segment === "auth" && (await isAuthAwaitingContinue())) return null;
+  if (segment === "auth-confirmed") return null;
   if (segment === "profile-setup") return "/onboarding";
 
   const required = await resolveInitialRoute();
 
   if (required === "/welcome" && segment !== "welcome") return "/welcome";
-  if (required === "/auth" && segment !== "auth" && segment !== "welcome") return "/auth";
+  if (required === "/auth" && segment !== "auth" && segment !== "welcome" && segment !== "auth-confirmed") {
+    return "/auth";
+  }
   if (required === "/onboarding" && shouldEnforceFlow(pathname)) return "/onboarding";
-  if (required === "/(tabs)" && (segment === "welcome" || segment === "auth" || segment === "profile-setup")) {
+  if (
+    required === "/(tabs)" &&
+    (segment === "welcome" || segment === "auth" || segment === "profile-setup" || segment === "auth-confirmed")
+  ) {
     return "/(tabs)";
   }
 

@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+import { getAuthEmailConfirmRedirectUrl } from "./authEmailConfirm";
 import { getSupabaseClient, isSupabaseConfigured, mapSupabaseAuthError } from "./supabase";
 
 export const WELCOME_SEEN_KEY = "lit_welcome_seen";
@@ -59,10 +60,7 @@ export async function signUpWithEmail(email: string, password: string): Promise<
   }
 
   const cleanedEmail = clean(email);
-  const emailRedirectTo =
-    typeof window !== "undefined" && window.location?.origin
-      ? `${window.location.origin}/auth`
-      : undefined;
+  const emailRedirectTo = getAuthEmailConfirmRedirectUrl();
 
   const { data, error } = await supabase.auth.signUp({
     email: cleanedEmail,

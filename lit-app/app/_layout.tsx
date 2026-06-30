@@ -20,6 +20,7 @@ export default function RootLayout() {
           <Stack.Screen name="index" />
           <Stack.Screen name="welcome" />
           <Stack.Screen name="auth" />
+          <Stack.Screen name="auth-confirmed" />
           <Stack.Screen name="profile-setup" />
           <Stack.Screen name="onboarding" />
           <Stack.Screen name="(tabs)" />
