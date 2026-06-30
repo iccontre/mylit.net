@@ -9,12 +9,12 @@ import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 
 const LUNA_SLEEP_GUIDE_BULLETS = [
   "The Sleep Guide suggests timing — not strict rules.",
-  "Set your desired sleep time and wake time to generate your personal cutoffs.",
-  "Caffeine cut-off: 11–12 hours before sleep.",
-  "Last meal: 3–4 hours before sleep.",
-  "Blue screen: at least 1 hour before sleep.",
+  "Set your desired sleep and wake times to generate personal cutoffs.",
+  "Caffeine cutoff, screen cutoff, meals, and exercise timing help protect sleep quality.",
+  "Caffeine cut-off: about 11–12 hours before sleep.",
+  "Last meal: 3–4 hours before sleep. Blue screen: at least 1 hour before sleep.",
   "Last exercise: avoid intense activity within 3 hours of sleep.",
-  "Imperfect sleep is okay. The guide is here to support, not to judge.",
+  "Imperfect sleep is okay. Recovery nights still count.",
 ];
 
 type CheckIn = {

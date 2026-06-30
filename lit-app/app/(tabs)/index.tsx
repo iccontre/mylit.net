@@ -1301,9 +1301,11 @@ export default function HomeScreen() {
                 <View style={[styles.modalPanel, { borderColor: theme.accent }]}>
                   <Text style={[styles.modalSource, { color: theme.accent }]}>QUEST BOARD HELP</Text>
                   <Text style={styles.modalTitle}>How the Quest Board works</Text>
-                  <Text style={styles.modalDescription}>
-                    The Quest Board keeps today focused. In Progress mode, MYLIT shows up to 8 planned hours. In Recovery mode, it shows up to 5. Your Day Plan, checklist items, Quick Thoughts, and app quests can all appear here. Start one timed quest at a time; the board locks until it ends. Complete gives steps. Missed? helps you reflect without losing your progress.
-                  </Text>
+                  <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false} bounces={false}>
+                    <Text style={styles.modalDescription}>
+                      The Quest Board keeps today focused. Your Day Plan, checklist items, Quick Thoughts, and MYLIT quests can appear here. Start one timed quest at a time; while it runs, the board locks so you do not overload yourself. Complete gives steps. Missed? is not punishment — it helps you reflect and adjust. To protect your energy, MYLIT limits continuous progress work to 2 hours. After that, it adds a 1-hour recovery period before more progress tasks. Recovery counts.
+                    </Text>
+                  </ScrollView>
                   <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowQuestHelp(false)}>
                     <Text style={styles.modalCancelText}>CLOSE</Text>
                   </TouchableOpacity>
@@ -2057,6 +2059,10 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 17,
     marginTop: 10,
+  },
+  modalScroll: {
+    maxHeight: 220,
+    marginTop: 4,
   },
   modalButtonRow: {
     flexDirection: "row",

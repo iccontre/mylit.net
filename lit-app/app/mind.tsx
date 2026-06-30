@@ -7,23 +7,20 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
 
 import { GuideInfoModal } from "../components/GuideInfoModal";
+import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 
 const LUNA_MIND_BULLETS = [
-  "Mind Hub is where you process what happened, where attention went, and what you missed.",
-  "Journal captures what happened, what you noticed, and what to remember.",
-  "Meditations are short attention checks — notice where focus went and return gently.",
-  "Reflection turns missed quests into useful data without self-judgment.",
-  "All three tools together help MYLIT reveal patterns in your thinking over time.",
+  "Mind tools help you notice patterns without judgment.",
+  "Journal is for honest notes and thought patterns — one sentence is enough.",
+  "Meditation/Awareness is for grounding and attention, not perfection.",
+  "Reflection helps you process missed or completed quests as useful data.",
+  "Mind tools are not about being perfect — they are about clarity.",
 ];
-
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -66,17 +63,8 @@ const MIND_CARDS: MindCard[] = [
 
 export default function MindScreen() {
   const router = useRouter();
-  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const mobile = useMobileFrame();
   const [showInfo, setShowInfo] = useState(false);
-
-  const safeViewportWidth = Math.max(0, viewportWidth - 24);
-  const safeViewportHeight = Math.max(0, viewportHeight - 24);
-  const frameWidth = Math.min(
-    MAX_FRAME_WIDTH,
-    safeViewportWidth,
-    safeViewportHeight * APP_FRAME_ASPECT_RATIO
-  );
-  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   function renderMindCard(card: MindCard) {
     return (
@@ -100,15 +88,15 @@ export default function MindScreen() {
   }
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight }]}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.phoneStageStyle, mobile.isFullscreen && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={uiAssets.backgrounds.neutral} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
           <ScrollView
             style={styles.screenScroller}
-            contentContainerStyle={styles.hudContent}
+            contentContainerStyle={[styles.hudContent, { paddingBottom: mobile.scrollPaddingBottom }]}
             showsVerticalScrollIndicator={false}
             bounces={false}
           >
@@ -144,7 +132,7 @@ export default function MindScreen() {
             accentColor="#C4A7FF"
           />
 
-          <View style={styles.bottomNav}>
+          <View style={[styles.bottomNav, { bottom: mobile.bottomNavOffset }]}>
             <TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}>
               <Text style={styles.navText}>🏠</Text>
               <Text style={styles.navLabel}>HOME</Text>
@@ -180,8 +168,6 @@ const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
     backgroundColor: "#02040A",
-    alignItems: "center",
-    justifyContent: "center",
   },
   phoneStage: {
     alignSelf: "center",
@@ -194,6 +180,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.85,
     shadowRadius: 0,
     shadowOffset: { width: 6, height: 6 },
+  },
+  phoneStageFullscreen: {
+    borderWidth: 0,
+    maxWidth: undefined,
+    aspectRatio: undefined,
+    shadowOpacity: 0,
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -215,7 +207,6 @@ const styles = StyleSheet.create({
     minHeight: "100%",
     paddingTop: 28,
     paddingHorizontal: 14,
-    paddingBottom: 82,
   },
   hero: {
     width: "82%",

@@ -18,12 +18,12 @@ import { GuideInfoModal } from "../components/GuideInfoModal";
 import { uiAssets } from "../constants/uiAssets";
 
 const LUNA_DREAM_BULLETS = [
-  "Most dreams fade within 10 minutes of waking — write yours down quickly.",
+  "Dream Journal helps you capture dreams quickly after waking.",
+  "Most dreams fade within 10 minutes — write yours down fast.",
   "Add a title, describe the dream, and choose how it felt.",
   "Any saved dream earns +1 step.",
   "Even a single image, fragment, or feeling is worth recording.",
   "Over time, entries may help you notice patterns in your dream life.",
-  "There is no pressure to write perfectly — just capture what you remember.",
 ];
 
 type DreamEntry = {

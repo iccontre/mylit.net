@@ -18,11 +18,11 @@ import { GuideInfoModal } from "../components/GuideInfoModal";
 import { uiAssets } from "../constants/uiAssets";
 
 const LUNA_MEDITATIONS_BULLETS = [
-  "Meditations are short attention check-ins — not traditional seated meditation.",
-  "The goal is to name where focus went, what pulled it away, and what helped you return.",
-  "You do not need to have meditated well. Honest answers are more useful than perfect ones.",
-  "Over time, patterns in what pulls you away reveal important data about your environment.",
-  "Use this after a work session, before bed, or any time you want to understand where your mind went.",
+  "Meditation/Awareness is for grounding and attention — not traditional seated meditation.",
+  "Name where focus went, what pulled it away, and what helped you return.",
+  "Honest answers are more useful than perfect ones.",
+  "Patterns in what pulls you away reveal important data about your environment.",
+  "Use this after a work session, before bed, or any time you want clarity.",
 ];
 
 type AwarenessCheck = {

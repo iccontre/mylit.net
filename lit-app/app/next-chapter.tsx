@@ -210,7 +210,8 @@ export default function NextChapterScreen() {
             <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent} showsVerticalScrollIndicator={false}>
               {[
                 "Next Chapter updates your direction without erasing progress.",
-                "Choose what matters next.",
+                "Choose what matters next — your steps and history stay.",
+                "Short-term = around 2 weeks. Mid-term = around 1 month. Long-term = around 3 months.",
                 "Your new category and resources guide future quests and checklist habits.",
                 "Your path can change when your life, energy, or confidence changes.",
               ].map((bullet, i) => (

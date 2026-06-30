@@ -18,12 +18,13 @@ import { GuideInfoModal } from "../components/GuideInfoModal";
 import { uiAssets } from "../constants/uiAssets";
 
 const EVIE_MORNING_BULLETS = [
-  "This page helps you compare last night's intention with how you feel this morning.",
-  "Write honestly in the reflection box — there is no wrong answer.",
+  "Morning Reflection connects sleep, intention, and the day's energy.",
+  "Compare last night's intention with how you feel this morning.",
+  "Write honestly — there is no wrong answer.",
   "More than 8.5 hours of sleep earns +2 steps. At least 7 hours earns +1 step.",
-  "Morning Support helps you pick one concrete first action to start the day.",
-  "This page should feel encouraging, not like a report card.",
+  "Morning Support helps you pick one concrete first action.",
   "Even if last night's intention did not carry through, noting that is still useful.",
+  "This page should feel encouraging, not like a report card.",
 ];
 
 type PreSleepIntention = {

@@ -79,13 +79,13 @@ const RANK_SIZE = 100;
 const pixelFont = Platform.select({ ios: "Menlo", android: "monospace", web: "monospace", default: "monospace" });
 
 const INFO_COPY: Record<NonNullable<ActiveInfo>, { title: string; body: string }> = {
-  stats: { title: "STATS BOARD", body: "Your Stats Board tracks growth, behavior patterns, and rank progress over time. Everything here comes from what you actually did — check-ins, quests, reflections, and habits." },
+  stats: { title: "STATS BOARD", body: "Stats are feedback, not judgment. Steps come from completed actions only — saving a task does not earn steps. Completing quests, checklist items, reflections, and sleep actions can earn steps when supported. Rank progress grows from accumulated completed steps. Missed items are useful data, not failure." },
   evie: { title: "EVIE'S NOTE", body: "Stats are for learning, not judging. Look for patterns that help you adjust your next step honestly. One good data point is enough to move forward." },
   weekly: { title: "WEEKLY SUMMARY", body: "Weekly Summary shows what happened this week: energy, steps, completed quests, saved thoughts, sleep and mind entries, and your progress vs recovery balance." },
-  rank: { title: "RANK PROGRESS", body: "Rank Progress turns completed actions into visible growth. Every 100 steps unlocks the next rank, and each new rank grants a one-time +10 step bonus." },
+  rank: { title: "RANK PROGRESS", body: "Rank Progress turns completed actions into visible growth. Every 100 steps unlocks the next rank, and each new rank grants a one-time +10 step bonus. Only completed actions count toward rank." },
   behavior: { title: "BEHAVIOR", body: "Behavior shows patterns across energy, sleep, recovery, progress, and cognitive habits so you can adjust without judging yourself." },
   weeklyPopup: { title: "WEEKLY SUMMARY", body: "Weekly Summary shows what happened this week: energy, steps, completed quests, saved thoughts, sleep and mind entries, and your progress vs recovery balance." },
-  rankPopup: { title: "RANK PROGRESS", body: "Rank Progress turns completed actions into visible growth. Every 100 steps unlocks the next rank, and each new rank grants a one-time +10 step bonus." },
+  rankPopup: { title: "RANK PROGRESS", body: "Rank Progress turns completed actions into visible growth. Every 100 steps unlocks the next rank, and each new rank grants a one-time +10 step bonus. Only completed actions count toward rank." },
   behaviorPopup: { title: "BEHAVIOR", body: "Behavior shows patterns across energy, sleep, recovery, progress, and cognitive habits so you can adjust without judging yourself." },
 };
 

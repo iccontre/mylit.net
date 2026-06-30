@@ -489,10 +489,14 @@ function InfoOverlay({ onClose }: { onClose: () => void }) {
     <View style={styles.infoOverlay}>
       <View style={styles.infoCard}>
         <Text style={styles.infoTitle}>CALENDAR</Text>
-        <Text style={styles.infoBullet}>{"• Shows quests, checklist habits, quick thoughts, sleep guide times, and recovery blocks in one weekly view."}</Text>
-        <Text style={styles.infoBullet}>{"• Tap any event to inspect it. Missed events show a Reflect option."}</Text>
-        <Text style={styles.infoBullet}>{"• Blue = sleep guide timing. Gold = progress. Purple = recovery. Green = day focus (no steps)."}</Text>
-        <Text style={styles.infoBullet}>{"• Day Plan and Quick Thought quests earn steps only when marked complete."}</Text>
+        <ScrollView style={styles.infoScroll} showsVerticalScrollIndicator={false} bounces={false}>
+          <Text style={styles.infoBullet}>{"• Calendar shows sleep guides, quests, checklist habits, Quick Thoughts, recovery blocks, and day focus."}</Text>
+          <Text style={styles.infoBullet}>{"• Blue = sleep guide / sleep timing. Gold = progress. Purple = recovery. Green = day focus / no-step focus."}</Text>
+          <Text style={styles.infoBullet}>{"• Tap an item to inspect it when supported."}</Text>
+          <Text style={styles.infoBullet}>{"• Completed items earn steps only when marked complete."}</Text>
+          <Text style={styles.infoBullet}>{"• Missed or reflected items do not award steps unless the app says otherwise."}</Text>
+          <Text style={styles.infoBullet}>{"• Recovery blocks may appear after too much continuous progress work."}</Text>
+        </ScrollView>
         <TouchableOpacity style={styles.infoClose} onPress={onClose}>
           <Text style={styles.infoCloseText}>RETURN</Text>
         </TouchableOpacity>
@@ -544,6 +548,7 @@ const styles = StyleSheet.create({
   infoOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.82)", justifyContent: "center", alignItems: "center", padding: 20, zIndex: 25 },
   infoCard: { backgroundColor: "rgba(8,13,24,0.99)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 12, padding: 16, width: "100%" },
   infoTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", marginBottom: 10 },
+  infoScroll: { maxHeight: 280 },
   infoBullet: { color: "#CBD5E1", fontSize: 13, lineHeight: 20, fontWeight: "700", marginBottom: 6 },
   infoClose: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", paddingVertical: 11, alignItems: "center", marginTop: 12 },
   infoCloseText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900" },

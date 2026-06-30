@@ -9,20 +9,21 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
 
 import { GuideInfoModal } from "../components/GuideInfoModal";
+import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 
 const LUNA_SLEEP_HUB_BULLETS = [
-  "This is your center for nighttime and morning sleep tools.",
-  "Pre-Sleep Intention sets one clear direction for tomorrow before you sleep.",
-  "Morning Reflection returns in the morning to check if the intention carried through.",
-  "Sleep Guide helps plan your sleep/wake window and daily cutoffs like caffeine and screen time.",
-  "Dream Journal captures dream details before they fade — most are gone within 10 minutes.",
-  "These tools work together to improve energy, reflection, and daily direction.",
+  "Sleep is the foundation of your energy mode — rest supports everything else in MYLIT.",
+  "Sleep Guide suggestions are not strict rules. They help protect sleep quality.",
+  "Caffeine cutoff, screen cutoff, meals, and exercise timing all support better rest.",
+  "Pre-Sleep Intention gives your mind one clear signal before bed.",
+  "Dream Journal helps you capture dreams quickly after waking — most fade within minutes.",
+  "Morning Reflection connects sleep, intention, and the day's energy.",
+  "Recovery nights still count. Imperfect sleep is data, not failure.",
 ];
 
 type DreamEntry = {
@@ -47,8 +48,6 @@ type MenuCard = {
 };
 
 const DREAM_JOURNAL_KEY = "lit_dream_journal";
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -59,18 +58,9 @@ const pixelFont = Platform.select({
 
 export default function SleepScreen() {
   const router = useRouter();
-  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const mobile = useMobileFrame();
   const [latestDream, setLatestDream] = useState<DreamEntry | null>(null);
   const [showInfo, setShowInfo] = useState(false);
-
-  const safeViewportWidth = Math.max(0, viewportWidth - 24);
-  const safeViewportHeight = Math.max(0, viewportHeight - 24);
-  const frameWidth = Math.min(
-    MAX_FRAME_WIDTH,
-    safeViewportWidth,
-    safeViewportHeight * APP_FRAME_ASPECT_RATIO
-  );
-  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   useFocusEffect(
     useCallback(() => {
@@ -165,15 +155,15 @@ export default function SleepScreen() {
   }
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight }]}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.phoneStageStyle, mobile.isFullscreen && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={uiAssets.backgrounds.recovery} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
           <ScrollView
             style={styles.screenScroller}
-            contentContainerStyle={styles.hudContent}
+            contentContainerStyle={[styles.hudContent, { paddingBottom: mobile.scrollPaddingBottom }]}
             showsVerticalScrollIndicator={false}
             bounces={false}
           >
@@ -216,7 +206,7 @@ export default function SleepScreen() {
             accentColor="#C4A7FF"
           />
 
-          <View style={styles.bottomNav}>
+          <View style={[styles.bottomNav, { bottom: mobile.bottomNavOffset }]}>
             <TouchableOpacity style={styles.navButton} onPress={() => navigate("/")}>
               <Text style={styles.navText}>🏠</Text>
               <Text style={styles.navLabel}>HOME</Text>
@@ -252,8 +242,6 @@ const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
     backgroundColor: "#02040A",
-    alignItems: "center",
-    justifyContent: "center",
   },
   phoneStage: {
     alignSelf: "center",
@@ -266,6 +254,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.85,
     shadowRadius: 0,
     shadowOffset: { width: 6, height: 6 },
+  },
+  phoneStageFullscreen: {
+    borderWidth: 0,
+    maxWidth: undefined,
+    aspectRatio: undefined,
+    shadowOpacity: 0,
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -287,7 +281,6 @@ const styles = StyleSheet.create({
     minHeight: "100%",
     paddingTop: 28,
     paddingHorizontal: 14,
-    paddingBottom: 82,
   },
   titlePanel: {
     width: "78%",

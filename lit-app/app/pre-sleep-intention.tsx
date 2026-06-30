@@ -18,12 +18,13 @@ import { GuideInfoModal } from "../components/GuideInfoModal";
 import { uiAssets } from "../constants/uiAssets";
 
 const LUNA_PRE_SLEEP_BULLETS = [
-  "Write one intention before sleep to prime tomorrow's mindset.",
+  "Pre-Sleep Intention gives your mind one clear signal before bed.",
+  "Write one intention to prime tomorrow's mindset.",
   "Pick a Feeling to clarify what state you want to wake up in.",
-  "Pick a Support option to give yourself a simple wind-down anchor for tonight.",
+  "Pick a Support option for a simple wind-down anchor tonight.",
   "Saving a complete intention earns +1 step.",
   "Your intention appears in Morning Reflection the next day.",
-  "You do not need to force anything — one clear direction is enough.",
+  "One clear direction is enough — you do not need to force anything.",
 ];
 
 type PreSleepIntention = {

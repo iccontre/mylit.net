@@ -441,10 +441,12 @@ export default function OnboardingScreen() {
             <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent} showsVerticalScrollIndicator={false}>
               {[
                 "Set My Path creates your starting direction.",
+                "Path sets where MYLIT should focus — it does not reset your progress.",
+                "Short-term = around 2 weeks. Mid-term = around 1 month. Long-term = around 3 months.",
                 "Your category and resources shape future quests and checklist habits.",
-                "Milestones use 2 weeks, 1 month, and 3 months.",
                 "Resources help MYLIT suggest realistic habits.",
                 "Obstacles help MYLIT avoid quests that ignore your real life.",
+                "Updating your path later is safe — your steps and history stay.",
               ].map((bullet, i) => (
                 <View key={i} style={styles.modalBulletRow}>
                   <Text style={styles.modalBullet}>›</Text>

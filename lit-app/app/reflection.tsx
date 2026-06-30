@@ -17,11 +17,11 @@ import { GuideInfoModal } from "../components/GuideInfoModal";
 import { uiAssets } from "../constants/uiAssets";
 
 const LUNA_REFLECTION_BULLETS = [
-  "Reflection is not self-criticism — it is investigation. You are looking for data, not a verdict.",
-  "Missed quests are not failures. They are information about what the step actually needed.",
+  "Reflection helps process missed or completed quests — it is not self-criticism.",
+  "Missed quests are information about what the step actually needed.",
   "Ask what got in the way before asking what to do differently.",
-  "The smaller next step field is the most important one — make the quest easier to start.",
-  "Saving a reflection earns steps: every honest entry is progress, even about something that did not go well.",
+  "The smaller next step field is the most important — make the quest easier to start.",
+  "Saving a reflection earns steps. Honest entries are progress, even about hard moments.",
 ];
 
 type ReflectionEntry = {

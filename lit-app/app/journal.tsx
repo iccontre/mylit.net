@@ -17,11 +17,11 @@ import { GuideInfoModal } from "../components/GuideInfoModal";
 import { uiAssets } from "../constants/uiAssets";
 
 const LUNA_JOURNAL_BULLETS = [
-  "Journal is for writing what happened, what mood or pattern showed up, and what to remember.",
-  "It does not need to be perfect — one honest sentence is enough to start.",
+  "Journal is for honest notes and thought patterns — not perfection.",
+  "Write what happened, what mood or pattern showed up, and what to remember.",
+  "One honest sentence is enough to start.",
   "Honest entries help MYLIT reveal patterns in your thinking over time.",
-  "Morning and Evening entries help you track how the day opened and closed.",
-  "The 'What do you want to remember?' field keeps the most useful part of the day.",
+  "Morning and Evening entries track how the day opened and closed.",
 ];
 
 type JournalEntry = {

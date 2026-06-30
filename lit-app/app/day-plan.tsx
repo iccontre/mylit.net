@@ -512,7 +512,7 @@ export default function DayPlanScreen() {
             <TouchableOpacity style={styles.saveButton} onPress={() => savePlan(dayPlan)}><Text style={styles.saveButtonText}>SAVE DAY PLAN</Text></TouchableOpacity>
             <TouchableOpacity style={styles.backButton} onPress={() => router.push("/calendar")}><Text style={styles.backButtonText}>BACK TO CALENDAR</Text></TouchableOpacity>
           </FormScreen>
-          <BottomNav router={router} />
+          <BottomNav router={router} bottomOffset={mobile.bottomNavOffset} />
           {showInfo ? <InfoOverlay onClose={() => setShowInfo(false)} /> : null}
         </View>
       </View>
@@ -563,10 +563,15 @@ function InfoOverlay({ onClose }: { onClose: () => void }) {
     <View style={styles.infoOverlay}>
       <View style={styles.infoCard}>
         <Text style={styles.infoTitle}>DAY PLAN</Text>
-        <Text style={styles.infoBullet}>{"• Today's Focus is your daily theme. It appears on Calendar as a green marker but earns no steps."}</Text>
-        <Text style={styles.infoBullet}>{"• Today's Quest is the actual goal for today. It earns +2 steps only when you mark it complete."}</Text>
-        <Text style={styles.infoBullet}>{"• Checklist items are recurring habits. Each earns steps only when checked off — never on save."}</Text>
-        <Text style={styles.infoBullet}>{"• Use Reflect on any item you missed to log a reflection."}</Text>
+        <ScrollView style={styles.infoScroll} showsVerticalScrollIndicator={false} bounces={false}>
+          <Text style={styles.infoBullet}>{"• Today's Quest is the main quest for the selected day."}</Text>
+          <Text style={styles.infoBullet}>{"• Today's Focus is your daily theme. It appears on Calendar as green — no steps awarded."}</Text>
+          <Text style={styles.infoBullet}>{"• Checklist items can apply only to selected days or weekdays — they do not appear every day unless you choose that."}</Text>
+          <Text style={styles.infoBullet}>{"• Progress checklist durations can earn steps when completed."}</Text>
+          <Text style={styles.infoBullet}>{"• Recovery checklist items support rest and reset."}</Text>
+          <Text style={styles.infoBullet}>{"• Day Plan items may appear on Home Quest Board and Calendar."}</Text>
+          <Text style={styles.infoBullet}>{"• Completing — not merely saving — earns steps."}</Text>
+        </ScrollView>
         <TouchableOpacity style={styles.infoClose} onPress={onClose}>
           <Text style={styles.infoCloseText}>RETURN</Text>
         </TouchableOpacity>
@@ -575,8 +580,8 @@ function InfoOverlay({ onClose }: { onClose: () => void }) {
   );
 }
 
-function BottomNav({ router }: { router: ReturnType<typeof useRouter> }) {
-  return <View style={styles.bottomNav}><TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}><Text style={styles.navIcon}>🏠</Text><Text style={styles.navLabel}>HOME</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/sleep")}><Text style={styles.navIcon}>🌙</Text><Text style={styles.navLabel}>SLEEP</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/mind")}><Text style={styles.navIcon}>🧠</Text><Text style={styles.navLabel}>MIND</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/path")}><Text style={styles.navIcon}>🌲</Text><Text style={styles.navLabel}>PATH</Text></TouchableOpacity><TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={() => router.push("/calendar")}><Text style={styles.navIcon}>📅</Text><Text style={[styles.navLabel, styles.navLabelActive]}>CAL</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/stats")}><Text style={styles.navIcon}>🎒</Text><Text style={styles.navLabel}>BAG</Text></TouchableOpacity></View>;
+function BottomNav({ router, bottomOffset }: { router: ReturnType<typeof useRouter>; bottomOffset: number }) {
+  return <View style={[styles.bottomNav, { bottom: bottomOffset }]}><TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}><Text style={styles.navIcon}>🏠</Text><Text style={styles.navLabel}>HOME</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/sleep")}><Text style={styles.navIcon}>🌙</Text><Text style={styles.navLabel}>SLEEP</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/mind")}><Text style={styles.navIcon}>🧠</Text><Text style={styles.navLabel}>MIND</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/path")}><Text style={styles.navIcon}>🌲</Text><Text style={styles.navLabel}>PATH</Text></TouchableOpacity><TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={() => router.push("/calendar")}><Text style={styles.navIcon}>📅</Text><Text style={[styles.navLabel, styles.navLabelActive]}>CAL</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/stats")}><Text style={styles.navIcon}>🎒</Text><Text style={styles.navLabel}>BAG</Text></TouchableOpacity></View>;
 }
 
 const styles = StyleSheet.create({
@@ -671,6 +676,7 @@ const styles = StyleSheet.create({
   infoOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.82)", justifyContent: "center", alignItems: "center", padding: 20, zIndex: 25 },
   infoCard: { backgroundColor: "rgba(8,13,24,0.99)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 12, padding: 16, width: "100%" },
   infoTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", marginBottom: 10 },
+  infoScroll: { maxHeight: 280 },
   infoBullet: { color: "#CBD5E1", fontSize: 13, lineHeight: 20, fontWeight: "700", marginBottom: 6 },
   infoClose: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", paddingVertical: 11, alignItems: "center", marginTop: 12 },
   infoCloseText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900" },

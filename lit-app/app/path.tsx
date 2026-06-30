@@ -17,11 +17,13 @@ import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 
 const EVIE_PATH_BULLETS = [
-  "Path Board shows your current direction — keep it visible and update it when life changes.",
-  "Your category and resources help MYLIT choose better quests and checklist habits over time.",
-  "Milestones give you three concrete checkpoints: 2 weeks, 1 month, and 3 months out.",
-  "Progress Meaning is your personal definition of moving forward — use it as your gut check.",
-  "Tap 'Set My Path' to edit any of these fields. Tap 'Start Next Chapter' when you are ready to change direction.",
+  "Path sets your direction. It helps MYLIT suggest more relevant quests.",
+  "Short-term = around 2 weeks. Mid-term = around 1 month. Long-term = around 3 months.",
+  "Your category and resources help MYLIT choose better quests and checklist habits.",
+  "Progress Meaning is your personal definition of moving forward.",
+  "Updating the path does not reset your progress.",
+  "Set My Path opens path setup — it does not reset the whole app.",
+  "Tap Start Next Chapter when you are ready to change direction.",
 ];
 
 type UserProfile = {
