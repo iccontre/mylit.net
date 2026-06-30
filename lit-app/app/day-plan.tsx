@@ -80,6 +80,39 @@ function todayWeekday(): WeekdayName {
   return day === "Sunday" ? "Sunday" : day;
 }
 
+function parseTimeInput(raw: string): string {
+  const s = raw.trim().toUpperCase();
+  const m24 = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (m24) {
+    const h = Number(m24[1]);
+    const min = Number(m24[2]);
+    const p = h >= 12 ? "PM" : "AM";
+    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    return `${h12}:${String(min).padStart(2, "0")} ${p}`;
+  }
+  const m12 = s.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/);
+  if (m12) {
+    let h = Number(m12[1]);
+    const min = Number(m12[2] ?? "0");
+    const p = m12[3];
+    if (p === "PM" && h !== 12) h += 12;
+    if (p === "AM" && h === 12) h = 0;
+    const fp = h >= 12 ? "PM" : "AM";
+    const fh = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    return `${fh}:${String(min).padStart(2, "0")} ${fp}`;
+  }
+  const mBare = s.match(/^(\d{1,2})$/);
+  if (mBare) {
+    const h = Number(mBare[1]);
+    if (h >= 0 && h <= 23) {
+      const p = h >= 12 ? "PM" : "AM";
+      const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+      return `${h12}:00 ${p}`;
+    }
+  }
+  return "";
+}
+
 function normalizeKind(value: ScheduledClassification): "progress" | "recovery" {
   return value === "recovery" ? "recovery" : "progress";
 }
@@ -205,6 +238,7 @@ export default function DayPlanScreen() {
   const [selectedDay, setSelectedDay] = useState<WeekdayName>(todayWeekday());
   const [isLowEnergy, setIsLowEnergy] = useState(false);
   const [savedMessage, setSavedMessage] = useState("");
+  const [showInfo, setShowInfo] = useState(false);
 
   useEffect(() => {
     loadDayPlan();
@@ -322,7 +356,7 @@ export default function DayPlanScreen() {
     <View style={styles.pageRoot}>
       <View style={styles.phoneStage}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
-          <Image source={uiAssets.backgrounds.default} style={styles.backgroundImage} resizeMode="cover" />
+          <Image source={uiAssets.backgrounds.neutral} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
           <ScrollView style={styles.screenScroller} contentContainerStyle={styles.hudContent} showsVerticalScrollIndicator={false} bounces={false}>
@@ -335,11 +369,33 @@ export default function DayPlanScreen() {
               </View>
             </View>
 
+            <View style={styles.eviePanel}>
+              <Image source={uiAssets.guides.evie} style={styles.evieAvatar} resizeMode="contain" />
+              <View style={styles.evieCopy}>
+                <Text style={styles.evieName}>EVIE</Text>
+                <Text style={styles.evieText}>Day Plan separates your daily focus from the quest that earns steps. Checklist habits only add steps when checked off.</Text>
+              </View>
+              <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
+                <Text style={styles.infoBtnText}>?</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.panelGreen}>
+              <Text style={styles.sectionTitle}>TODAY’S FOCUS — THEME ONLY</Text>
+              <Text style={styles.helperText}>Your daily role. Shown on Calendar as a green marker. No steps awarded.</Text>
+              <TextInput style={styles.input} value={dayPlan.todayFocus} onChangeText={updateFocus} placeholder="Coding Day" placeholderTextColor="#94A3B8" />
+            </View>
+
             <View style={dayPlan.todayQuest.kind === "recovery" ? styles.panelPurple : styles.panelGold}>
               <Text style={styles.sectionTitle}>TODAY’S QUEST — QUEST BOARD • +2 STEPS</Text>
-              <Text style={styles.helperText}>This is the actual quest for today. It appears on Calendar and is worth +2 steps.</Text>
+              <Text style={styles.helperText}>This is the actual quest for today. It appears on Calendar and earns +2 steps only when completed.</Text>
               <TextInput style={styles.input} value={dayPlan.todayQuest.title} onChangeText={updateTodayQuestTitle} placeholder="Finish profile page layout" placeholderTextColor="#94A3B8" />
               <TimeStepper value={dayPlan.todayQuest.startTime} onChange={(next) => setDayPlan((current: DayPlan) => ({ ...current, todayQuest: { ...current.todayQuest, startTime: next } }))} />
+              {dayPlan.todayQuest.status !== "completed" ? (
+                <TouchableOpacity style={styles.reflectButton} onPress={() => router.push("/reflection")}>
+                  <Text style={styles.reflectButtonText}>REFLECT ON TODAY’S QUEST</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
 
             <View style={styles.panel}>
@@ -389,6 +445,11 @@ export default function DayPlanScreen() {
                     ))}
                     <Text style={styles.stepsText}>+{item.steps} step</Text>
                   </View>
+                  {!item.checked && selectedDay === todayWeekday() ? (
+                    <TouchableOpacity style={styles.reflectButton} onPress={() => router.push("/reflection")}>
+                      <Text style={styles.reflectButtonText}>REFLECT</Text>
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
               ))}
               <View style={styles.addRow}>
@@ -412,6 +473,7 @@ export default function DayPlanScreen() {
             <TouchableOpacity style={styles.backButton} onPress={() => router.push("/calendar")}><Text style={styles.backButtonText}>BACK TO CALENDAR</Text></TouchableOpacity>
           </ScrollView>
           <BottomNav router={router} />
+          {showInfo ? <InfoOverlay onClose={() => setShowInfo(false)} /> : null}
         </View>
       </View>
     </View>
@@ -419,11 +481,56 @@ export default function DayPlanScreen() {
 }
 
 function TimeStepper({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  const [timeError, setTimeError] = useState("");
+
+  useEffect(() => { setDraft(value); }, [value]);
+
+  function commitDraft() {
+    const parsed = parseTimeInput(draft);
+    if (parsed) {
+      setTimeError("");
+      onChange(parsed);
+      setDraft(parsed);
+    } else {
+      setTimeError("Try: 9 AM, 2:30 PM, or 14:00");
+    }
+  }
+
   return (
-    <View style={styles.timeStepperRow}>
-      <TouchableOpacity style={styles.timeStepButton} onPress={() => onChange(shiftTimeSlot(value, -1, TIME_SLOTS))}><Text style={styles.timeStepText}>←</Text></TouchableOpacity>
-      <Text style={styles.timeValue}>{value}</Text>
-      <TouchableOpacity style={styles.timeStepButton} onPress={() => onChange(shiftTimeSlot(value, 1, TIME_SLOTS))}><Text style={styles.timeStepText}>→</Text></TouchableOpacity>
+    <View>
+      <View style={styles.timeStepperRow}>
+        <TouchableOpacity style={styles.timeStepButton} onPress={() => onChange(shiftTimeSlot(value, -1, TIME_SLOTS))}><Text style={styles.timeStepText}>←</Text></TouchableOpacity>
+        <TextInput
+          style={styles.timeValue}
+          value={draft}
+          onChangeText={(t) => { setDraft(t); setTimeError(""); }}
+          onBlur={commitDraft}
+          onSubmitEditing={commitDraft}
+          returnKeyType="done"
+          placeholder="9:00 AM"
+          placeholderTextColor="#64748B"
+        />
+        <TouchableOpacity style={styles.timeStepButton} onPress={() => onChange(shiftTimeSlot(value, 1, TIME_SLOTS))}><Text style={styles.timeStepText}>→</Text></TouchableOpacity>
+      </View>
+      {timeError ? <Text style={styles.timeError}>{timeError}</Text> : null}
+    </View>
+  );
+}
+
+function InfoOverlay({ onClose }: { onClose: () => void }) {
+  return (
+    <View style={styles.infoOverlay}>
+      <View style={styles.infoCard}>
+        <Text style={styles.infoTitle}>DAY PLAN</Text>
+        <Text style={styles.infoBullet}>{"• Today's Focus is your daily theme. It appears on Calendar as a green marker but earns no steps."}</Text>
+        <Text style={styles.infoBullet}>{"• Today's Quest is the actual goal for today. It earns +2 steps only when you mark it complete."}</Text>
+        <Text style={styles.infoBullet}>{"• Checklist items are recurring habits. Each earns steps only when checked off — never on save."}</Text>
+        <Text style={styles.infoBullet}>{"• Use Reflect on any item you missed to log a reflection."}</Text>
+        <TouchableOpacity style={styles.infoClose} onPress={onClose}>
+          <Text style={styles.infoCloseText}>RETURN</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -458,7 +565,8 @@ const styles = StyleSheet.create({
   timeStepperRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: 10 },
   timeStepButton: { width: 42, height: 36, borderWidth: 2, borderColor: "#FBBF24", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(69, 43, 8, 0.5)" },
   timeStepText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 18, fontWeight: "900" },
-  timeValue: { minWidth: 120, color: "#F8FAFC", textAlign: "center", fontFamily: pixelFont, fontSize: 15, fontWeight: "900" },
+  timeValue: { flex: 1, color: "#F8FAFC", textAlign: "center", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", borderBottomWidth: 1, borderBottomColor: "#475569", paddingVertical: 4 },
+  timeError: { color: "#FCA5A5", fontFamily: pixelFont, fontSize: 10, textAlign: "center", marginTop: 4 },
   dayStepperRow: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
   arrowButton: { width: 42, height: 42, borderWidth: 2, borderColor: "#FBBF24", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(69, 43, 8, 0.55)" },
   arrowText: { color: "#FDE68A", fontSize: 18, fontWeight: "900" },
@@ -503,10 +611,26 @@ const styles = StyleSheet.create({
   saveButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900", letterSpacing: 1 },
   backButton: { borderWidth: 2, borderColor: "#FBBF24", backgroundColor: "rgba(69,43,8,0.6)", paddingVertical: 13, alignItems: "center", marginBottom: 10 },
   backButtonText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 14, fontWeight: "900", letterSpacing: 1 },
-  bottomNav: { position: "absolute", bottom: 8, left: 10, right: 10, flexDirection: "row", justifyContent: "space-between", backgroundColor: "rgba(8,17,34,0.96)", borderWidth: 2, borderColor: "#334155", borderRadius: 16, padding: 6 },
-  navButton: { flex: 1, alignItems: "center", borderRadius: 12, paddingVertical: 6, borderWidth: 1, borderColor: "transparent" },
-  navButtonActive: { backgroundColor: "rgba(120, 53, 15, 0.55)", borderColor: "#FBBF24" },
-  navIcon: { fontSize: 20 },
-  navLabel: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 10, fontWeight: "900", marginTop: 2 },
-  navLabelActive: { color: "#FBBF24" },
+  eviePanel: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(8,13,24,0.95)", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, padding: 10, marginBottom: 12 },
+  evieAvatar: { width: 44, height: 52, marginRight: 10 },
+  evieCopy: { flex: 1 },
+  evieName: { color: "#FDE047", fontFamily: pixelFont, fontSize: 10, fontWeight: "900" },
+  evieText: { color: "#CBD5E1", fontSize: 12, lineHeight: 16, fontWeight: "700", marginTop: 2 },
+  infoBtn: { width: 28, height: 28, borderWidth: 2, borderColor: "#FBBF24", borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(113,63,18,0.7)", marginLeft: 8 },
+  infoBtnText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 14, fontWeight: "900" },
+  panelGreen: { backgroundColor: "rgba(5,28,16,0.95)", borderRadius: 8, padding: 12, marginBottom: 12, borderWidth: 3, borderColor: "#22C55E" },
+  reflectButton: { borderWidth: 1, borderColor: "#A78BFA", paddingVertical: 7, paddingHorizontal: 12, backgroundColor: "rgba(88,28,135,0.45)", marginTop: 8, alignSelf: "flex-start" },
+  reflectButtonText: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 10, fontWeight: "900" },
+  infoOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.82)", justifyContent: "center", alignItems: "center", padding: 20, zIndex: 25 },
+  infoCard: { backgroundColor: "rgba(8,13,24,0.99)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 12, padding: 16, width: "100%" },
+  infoTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", marginBottom: 10 },
+  infoBullet: { color: "#CBD5E1", fontSize: 13, lineHeight: 20, fontWeight: "700", marginBottom: 6 },
+  infoClose: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", paddingVertical: 11, alignItems: "center", marginTop: 12 },
+  infoCloseText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900" },
+  bottomNav: { position: "absolute", bottom: 8, left: 8, right: 8, height: 62, flexDirection: "row", justifyContent: "space-between", backgroundColor: "rgba(4,8,16,0.98)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 5, padding: 4 },
+  navButton: { flex: 1, backgroundColor: "#111827", borderWidth: 2, borderColor: "#3A4558", borderRadius: 3, paddingVertical: 4, marginHorizontal: 2, alignItems: "center", justifyContent: "center" },
+  navButtonActive: { backgroundColor: "#162314", borderColor: "#FBBF24" },
+  navIcon: { fontSize: 18 },
+  navLabel: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", marginTop: 1 },
+  navLabelActive: { color: "#FDE68A" },
 });

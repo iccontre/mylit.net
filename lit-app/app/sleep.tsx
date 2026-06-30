@@ -13,7 +13,17 @@ import {
   View,
 } from "react-native";
 
+import { GuideInfoModal } from "../components/GuideInfoModal";
 import { uiAssets } from "../constants/uiAssets";
+
+const LUNA_SLEEP_HUB_BULLETS = [
+  "This is your center for nighttime and morning sleep tools.",
+  "Pre-Sleep Intention sets one clear direction for tomorrow before you sleep.",
+  "Morning Reflection returns in the morning to check if the intention carried through.",
+  "Sleep Guide helps plan your sleep/wake window and daily cutoffs like caffeine and screen time.",
+  "Dream Journal captures dream details before they fade — most are gone within 10 minutes.",
+  "These tools work together to improve energy, reflection, and daily direction.",
+];
 
 type DreamEntry = {
   id: string;
@@ -33,6 +43,7 @@ type MenuCard = {
   icon: string;
   onPress: () => void;
   featured?: boolean;
+  unlockable?: boolean;
 };
 
 const DREAM_JOURNAL_KEY = "lit_dream_journal";
@@ -50,6 +61,7 @@ export default function SleepScreen() {
   const router = useRouter();
   const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
   const [latestDream, setLatestDream] = useState<DreamEntry | null>(null);
+  const [showInfo, setShowInfo] = useState(false);
 
   const safeViewportWidth = Math.max(0, viewportWidth - 24);
   const safeViewportHeight = Math.max(0, viewportHeight - 24);
@@ -95,53 +107,34 @@ export default function SleepScreen() {
     }
   }
 
-  const topCards: MenuCard[] = [
-    {
-      title: "Morning\nCheck-In",
-      description: "Start your day with intention.",
-      icon: "🌅",
-      onPress: () => navigate("/sleep-checkin"),
-    },
-    {
-      title: "Afternoon\nCheck-In",
-      description: "Recalibrate. Keep going.",
-      icon: "🌇",
-      onPress: () =>
-        router.push({
-          pathname: "/sleep-checkin",
-          params: { checkInType: "afternoon" },
-        }),
-    },
-  ];
-
-  const middleCards: MenuCard[] = [
-    {
-      title: "Morning\nReflection",
-      description: "Reflect on your night and growth.",
-      icon: "✦",
-      onPress: () => navigate("/morning-intention-reflection"),
-    },
-    {
-      title: "Sleep\nCalendar",
-      description: "View sleep patterns and plan ahead.",
-      icon: "📅",
-      onPress: () => navigate("/sleep-calendar"),
-    },
-  ];
-
   const preSleepCard: MenuCard = {
-    title: "Pre-Sleep Intention",
+    title: "Pre-Sleep\nIntention",
     description: "Set one clear signal for tomorrow before bed.",
     icon: "☾",
     featured: true,
     onPress: () => navigate("/pre-sleep-intention"),
   };
 
+  const morningCard: MenuCard = {
+    title: "Morning\nReflection",
+    description: "Reflect on sleep and set the morning tone.",
+    icon: "✦",
+    unlockable: true,
+    onPress: () => navigate("/morning-intention-reflection"),
+  };
+
+  const sleepGuideCard: MenuCard = {
+    title: "Sleep\nGuide",
+    description: "Set sleep window and daily cutoffs.",
+    icon: "☽",
+    onPress: () => navigate("/sleep-calendar"),
+  };
+
   const dreamCard: MenuCard = {
-    title: "Dream Journal",
+    title: "Dream\nJournal",
     description: latestDream
       ? `Latest: ${latestDream.title || "Untitled dream"}`
-      : "Track dreams, insights, and subconscious clues.",
+      : "Capture dreams before they fade.",
     icon: "📖",
     featured: true,
     onPress: () => navigate("/dream-journal"),
@@ -164,6 +157,7 @@ export default function SleepScreen() {
         <View style={styles.cardCopy}>
           <Text style={[styles.cardTitle, variant === "wide" && styles.wideCardTitle]}>{card.title}</Text>
           <Text style={styles.cardDescription}>{card.description}</Text>
+          {card.unlockable && <Text style={styles.unlockBadge}>🔓 UNLOCK</Text>}
         </View>
         <Text style={styles.cardArrow}>›</Text>
       </TouchableOpacity>
@@ -184,9 +178,9 @@ export default function SleepScreen() {
             bounces={false}
           >
             <View style={styles.titlePanel}>
-              <Text style={styles.kicker}>+ SLEEP HUB +</Text>
-              <Text style={styles.title}>SLEEP</Text>
-              <Text style={styles.subtitle}>Intentions, timing, dreams, and sleep tools.</Text>
+              <Text style={styles.kicker}>SLEEP HUB</Text>
+              <Text style={[styles.title, { fontSize: 34, letterSpacing: 3 }]}>SLEEP HUB</Text>
+              <Text style={styles.subtitle}>Rest, intention, and dream tools.</Text>
             </View>
 
             <View style={styles.lunaPanel}>
@@ -197,16 +191,30 @@ export default function SleepScreen() {
                 </Text>
                 <Text style={styles.lunaName}>Luna ♥</Text>
               </View>
+              <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
+                <Text style={styles.infoBtnText}>?</Text>
+              </TouchableOpacity>
             </View>
-
-            <View style={styles.cardRow}>{topCards.map((card) => renderCard(card, "half"))}</View>
 
             {renderCard(preSleepCard, "wide")}
 
-            <View style={styles.cardRow}>{middleCards.map((card) => renderCard(card, "half"))}</View>
+            <View style={styles.cardRow}>
+              {renderCard(morningCard, "half")}
+              {renderCard(sleepGuideCard, "half")}
+            </View>
 
             {renderCard(dreamCard, "wide")}
           </ScrollView>
+
+          <GuideInfoModal
+            visible={showInfo}
+            onClose={() => setShowInfo(false)}
+            guideAvatar={uiAssets.guides.luna}
+            guideName="Luna"
+            title="How Sleep Hub Works"
+            bullets={LUNA_SLEEP_HUB_BULLETS}
+            accentColor="#C4A7FF"
+          />
 
           <View style={styles.bottomNav}>
             <TouchableOpacity style={styles.navButton} onPress={() => navigate("/")}>
@@ -446,6 +454,32 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     marginTop: 7,
     fontFamily: pixelFont,
+  },
+  infoBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+    backgroundColor: "rgba(49,46,129,0.72)",
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "flex-start",
+  },
+  infoBtnText: {
+    color: "#C4A7FF",
+    fontFamily: pixelFont,
+    fontSize: 14,
+    fontWeight: "900",
+    lineHeight: 18,
+  },
+  unlockBadge: {
+    color: "#FDE68A",
+    fontFamily: pixelFont,
+    fontSize: 10,
+    fontWeight: "900",
+    marginTop: 5,
+    letterSpacing: 0.5,
   },
   cardArrow: {
     color: "#C084FC",

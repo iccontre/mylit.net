@@ -13,7 +13,16 @@ import {
   View,
 } from "react-native";
 
+import { GuideInfoModal } from "../components/GuideInfoModal";
 import { uiAssets } from "../constants/uiAssets";
+
+const LUNA_REFLECTION_BULLETS = [
+  "Reflection is not self-criticism — it is investigation. You are looking for data, not a verdict.",
+  "Missed quests are not failures. They are information about what the step actually needed.",
+  "Ask what got in the way before asking what to do differently.",
+  "The smaller next step field is the most important one — make the quest easier to start.",
+  "Saving a reflection earns steps: every honest entry is progress, even about something that did not go well.",
+];
 
 type ReflectionEntry = {
   id: string;
@@ -44,6 +53,7 @@ export default function ReflectionScreen() {
   const rawQuest = Array.isArray(params.quest) ? params.quest[0] : params.quest;
   const quest = rawQuest || "Open reflection";
 
+  const [showInfo, setShowInfo] = useState(false);
   const [whatGotInTheWay, setWhatGotInTheWay] = useState("");
   const [whatWasOff, setWhatWasOff] = useState("");
   const [smallerVersion, setSmallerVersion] = useState("");
@@ -90,8 +100,8 @@ export default function ReflectionScreen() {
             bounces={false}
           >
             <View style={styles.hero}>
-              <Text style={styles.heroLabel}>QUEST REFLECTION</Text>
-              <Text style={styles.heroTitle}>REFLECT, DON’T JUDGE</Text>
+              <Text style={styles.heroLabel}>MIND HUB</Text>
+              <Text style={[styles.heroTitle, { fontSize: 34, letterSpacing: 3 }]}>REFLECTION</Text>
               <Text style={styles.heroSubtitle}>Missed goals are data, not defeat.</Text>
             </View>
 
@@ -103,12 +113,17 @@ export default function ReflectionScreen() {
                   You are not explaining failure. You are learning what the next step should look like.
                 </Text>
               </View>
+              <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
+                <Text style={styles.infoBtnText}>?</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.questCard}>
+              <Text style={styles.sectionLabel}>QUEST</Text>
+              <Text style={styles.questText}>{quest}</Text>
             </View>
 
             <View style={styles.panel}>
-              <Text style={styles.sectionLabel}>QUEST</Text>
-              <Text style={styles.questText}>{quest}</Text>
-
               <Text style={styles.label}>What got in the way?</Text>
               <TextInput
                 style={styles.textArea}
@@ -147,10 +162,47 @@ export default function ReflectionScreen() {
               <Text style={styles.primaryText}>Save Reflection</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.push("/")}>
-              <Text style={styles.secondaryText}>Back to Today</Text>
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.push("/mind")}>
+              <Text style={styles.secondaryText}>← Back to Mind Hub</Text>
             </TouchableOpacity>
           </ScrollView>
+
+          <GuideInfoModal
+            visible={showInfo}
+            onClose={() => setShowInfo(false)}
+            guideAvatar={uiAssets.guides.luna}
+            guideName="Luna"
+            title="How Reflection Works"
+            bullets={LUNA_REFLECTION_BULLETS}
+            accentColor="#C4A7FF"
+          />
+
+          <View style={styles.bottomNav}>
+            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}>
+              <Text style={styles.navText}>🏠</Text>
+              <Text style={styles.navLabel}>HOME</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/sleep")}>
+              <Text style={styles.navText}>🌙</Text>
+              <Text style={styles.navLabel}>SLEEP</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={() => router.push("/mind")}>
+              <Text style={styles.navTextActive}>🧠</Text>
+              <Text style={styles.navLabelActive}>MIND</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/path")}>
+              <Text style={styles.navText}>🌲</Text>
+              <Text style={styles.navLabel}>PATH</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/calendar")}>
+              <Text style={styles.navText}>📅</Text>
+              <Text style={styles.navLabel}>CAL</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/stats")}>
+              <Text style={styles.navText}>🎒</Text>
+              <Text style={styles.navLabel}>BAG</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </View>
@@ -196,7 +248,7 @@ const styles = StyleSheet.create({
     minHeight: "100%",
     paddingTop: 24,
     paddingHorizontal: 14,
-    paddingBottom: 24,
+    paddingBottom: 82,
   },
   hero: {
     backgroundColor: "rgba(8, 13, 24, 0.96)",
@@ -270,8 +322,16 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     lineHeight: 18,
   },
-  panel: {
+  questCard: {
     backgroundColor: "rgba(31, 27, 75, 0.95)",
+    borderWidth: 3,
+    borderColor: "#FDE68A",
+    borderRadius: 8,
+    padding: 14,
+    marginBottom: 12,
+  },
+  panel: {
+    backgroundColor: "rgba(8, 13, 24, 0.96)",
     borderWidth: 3,
     borderColor: "#A78BFA",
     borderRadius: 8,
@@ -291,7 +351,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "800",
     marginTop: 6,
-    marginBottom: 10,
     lineHeight: 19,
   },
   label: {
@@ -345,5 +404,76 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "900",
     textTransform: "uppercase",
+  },
+  infoBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+    backgroundColor: "rgba(49,46,129,0.72)",
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "flex-start",
+  },
+  infoBtnText: {
+    color: "#C4A7FF",
+    fontFamily: pixelFont,
+    fontSize: 14,
+    fontWeight: "900",
+    lineHeight: 18,
+  },
+  bottomNav: {
+    position: "absolute",
+    left: 8,
+    right: 8,
+    bottom: 8,
+    height: 62,
+    backgroundColor: "rgba(4, 8, 16, 0.98)",
+    borderWidth: 3,
+    borderColor: "#A78BFA",
+    borderRadius: 5,
+    padding: 4,
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  navButton: {
+    flex: 1,
+    backgroundColor: "#111827",
+    borderWidth: 2,
+    borderColor: "#3A4558",
+    borderRadius: 3,
+    paddingVertical: 4,
+    marginHorizontal: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  navButtonActive: {
+    backgroundColor: "#162314",
+    borderColor: "#FDE68A",
+  },
+  navText: {
+    color: "#E2E8F0",
+    fontSize: 17,
+    fontWeight: "900",
+  },
+  navTextActive: {
+    color: "#FDE68A",
+    fontSize: 17,
+    fontWeight: "900",
+  },
+  navLabel: {
+    color: "#CBD5E1",
+    fontSize: 8,
+    fontWeight: "900",
+    marginTop: 1,
+    fontFamily: pixelFont,
+  },
+  navLabelActive: {
+    color: "#FDE68A",
+    fontSize: 8,
+    fontWeight: "900",
+    marginTop: 1,
+    fontFamily: pixelFont,
   },
 });

@@ -3,12 +3,14 @@ import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Image,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 
@@ -199,6 +201,9 @@ function MilestoneField({
 
 export default function OnboardingScreen() {
   const router = useRouter();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const modalWidth = Math.min(screenWidth - 32, 480);
+  const modalMaxHeight = Math.min(screenHeight * 0.78, 620);
 
   const [name, setName] = useState("");
   const [longTermDream, setLongTermDream] = useState("");
@@ -219,6 +224,7 @@ export default function OnboardingScreen() {
   const [hasQuietSpace, setHasQuietSpace] = useState(false);
   const [hasFoodControl, setHasFoodControl] = useState(false);
   const [validationMessage, setValidationMessage] = useState("");
+  const [showInfo, setShowInfo] = useState(false);
 
   useEffect(() => {
     loadProfile();
@@ -382,10 +388,48 @@ export default function OnboardingScreen() {
 
   return (
     <View style={styles.pageRoot}>
+      <Modal
+        visible={showInfo}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowInfo(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { width: modalWidth, maxHeight: modalMaxHeight }]}>
+            <View style={styles.modalHeader}>
+              <Image source={uiAssets.guides.evie} style={styles.modalAvatar} resizeMode="contain" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalGuideName}>Evie</Text>
+                <Text style={styles.modalTitle}>How Set My Path Works</Text>
+              </View>
+            </View>
+            <View style={styles.modalDivider} />
+            <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent} showsVerticalScrollIndicator={false}>
+              {[
+                "Set My Path creates your starting direction.",
+                "Your category and resources shape future quests and checklist habits.",
+                "Milestones use 2 weeks, 1 month, and 3 months.",
+                "Resources help MYLIT suggest realistic habits.",
+                "Obstacles help MYLIT avoid quests that ignore your real life.",
+              ].map((bullet, i) => (
+                <View key={i} style={styles.modalBulletRow}>
+                  <Text style={styles.modalBullet}>›</Text>
+                  <Text style={styles.modalBulletText}>{bullet}</Text>
+                </View>
+              ))}
+            </ScrollView>
+            <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setShowInfo(false)}>
+              <Text style={styles.modalCloseBtnText}>RETURN</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <View style={styles.phoneStage}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={pathBackground} style={styles.backgroundImage} resizeMode="stretch" />
         </View>
+        <View style={styles.pageContainer}>
         <ScrollView style={styles.screenScroller} contentContainerStyle={styles.boardContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           <Image source={uiAssets.logo.mylit} style={styles.logo} resizeMode="contain" />
 
@@ -397,8 +441,11 @@ export default function OnboardingScreen() {
           <View style={styles.eviePanel}>
             <Image source={uiAssets.guides.evie} style={styles.evieImage} resizeMode="contain" />
             <Text style={styles.evieText}>
-              <Text style={styles.evieName}>Evie</Text> — I’ll be your guide. Tell me your dream, your goal, and what support you already have. I’ll help turn it into short-, mid-, and long-term milestones you can adjust.
+              <Text style={styles.evieName}>Evie</Text> — Set your path once, then adjust it whenever life changes. I’ll use this to shape quests and checklist habits that fit your real life.
             </Text>
+            <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
+              <Text style={styles.infoBtnText}>?</Text>
+            </TouchableOpacity>
           </View>
 
           <SectionShell number="1" title="ENTER YOUR NAME">
@@ -528,6 +575,8 @@ export default function OnboardingScreen() {
             <Text style={styles.saveButtonText}>SAVE MY PATH</Text>
           </TouchableOpacity>
         </ScrollView>
+
+        </View>
       </View>
     </View>
   );
@@ -565,7 +614,7 @@ const styles = StyleSheet.create({
   boardContent: {
     paddingTop: 12,
     paddingHorizontal: 34,
-    paddingBottom: 22,
+    paddingBottom: 28,
   },
   logo: {
     width: "68%",
@@ -601,6 +650,9 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     marginTop: 2,
     textAlign: "center",
+  },
+  pageContainer: {
+    flex: 1,
   },
   eviePanel: {
     minHeight: 68,
@@ -906,5 +958,113 @@ const styles = StyleSheet.create({
     textShadowColor: "#1B0C01",
     textShadowOffset: { width: 2, height: 2 },
     textShadowRadius: 0,
+  },
+  infoBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: "#9BE331",
+    backgroundColor: "rgba(20, 83, 45, 0.72)",
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "flex-start",
+    marginLeft: 6,
+  },
+  infoBtnText: {
+    color: "#9BE331",
+    fontFamily: pixelFont,
+    fontSize: 13,
+    fontWeight: "900",
+    lineHeight: 17,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.82)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 24,
+  },
+  modalCard: {
+    backgroundColor: "#0A1A0C",
+    borderWidth: 2,
+    borderColor: "#22C55E",
+    borderRadius: 12,
+    padding: 16,
+    overflow: "hidden",
+  },
+  modalScroll: {
+    flexGrow: 0,
+  },
+  modalScrollContent: {
+    paddingBottom: 4,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 10,
+  },
+  modalAvatar: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 2,
+    borderColor: "#4ADE80",
+    backgroundColor: "rgba(20, 83, 45, 0.72)",
+  },
+  modalGuideName: {
+    color: "#4ADE80",
+    fontFamily: pixelFont,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  modalTitle: {
+    color: "#F8F1D7",
+    fontFamily: pixelFont,
+    fontSize: 13,
+    fontWeight: "900",
+    marginTop: 2,
+  },
+  modalDivider: {
+    height: 2,
+    backgroundColor: "rgba(34, 197, 94, 0.28)",
+    marginBottom: 10,
+  },
+  modalBulletRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 8,
+  },
+  modalBullet: {
+    color: "#4ADE80",
+    fontFamily: pixelFont,
+    fontSize: 15,
+    fontWeight: "900",
+    lineHeight: 19,
+  },
+  modalBulletText: {
+    flex: 1,
+    color: "#F8F1D7",
+    fontFamily: pixelFont,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
+  },
+  modalCloseBtn: {
+    marginTop: 12,
+    borderWidth: 2,
+    borderColor: "#22C55E",
+    borderRadius: 5,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  modalCloseBtnText: {
+    color: "#4ADE80",
+    fontFamily: pixelFont,
+    fontSize: 13,
+    fontWeight: "900",
+    letterSpacing: 1,
   },
 });

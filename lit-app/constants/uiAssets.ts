@@ -1,6 +1,7 @@
 export const uiAssets = {
   backgrounds: {
     default: require("../assets/ui/backgrounds/default-background.png"),
+    journal: require("../assets/ui/backgrounds/journal-background.png"),
     neutral: require("../assets/ui/backgrounds/neutral-background.png"),
     progress: require("../assets/ui/backgrounds/progress-background.png"),
     recovery: require("../assets/ui/backgrounds/recovery-background.png"),
