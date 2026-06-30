@@ -13,6 +13,7 @@ import {
 
 import { FormScreen } from "../components/FormScreen";
 import { GuideInfoModal } from "../components/GuideInfoModal";
+import { formStyles } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 
@@ -82,7 +83,7 @@ export default function ReflectionScreen() {
           <Image source={uiAssets.backgrounds.neutral} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
-          <FormScreen contentContainerStyle={[styles.hudContent, { paddingBottom: mobile.scrollPaddingBottom }]}>
+          <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={styles.hudContent}>
             <View style={styles.hero}>
               <Text style={styles.heroLabel}>MIND HUB</Text>
               <Text style={[styles.heroTitle, { fontSize: 34, letterSpacing: 3 }]}>REFLECTION</Text>
@@ -110,7 +111,7 @@ export default function ReflectionScreen() {
             <View style={styles.panel}>
               <Text style={styles.label}>What got in the way?</Text>
               <TextInput
-                style={styles.textArea}
+                style={[formStyles.textArea, styles.textArea]}
                 multiline
                 scrollEnabled
                 textAlignVertical="top"
@@ -122,7 +123,7 @@ export default function ReflectionScreen() {
 
               <Text style={styles.label}>Was the step too big?</Text>
               <TextInput
-                style={styles.textArea}
+                style={[formStyles.textArea, styles.textArea]}
                 multiline
                 scrollEnabled
                 textAlignVertical="top"
@@ -134,7 +135,7 @@ export default function ReflectionScreen() {
 
               <Text style={styles.label}>What is the smaller next step?</Text>
               <TextInput
-                style={styles.textArea}
+                style={[formStyles.textArea, styles.textArea]}
                 multiline
                 scrollEnabled
                 textAlignVertical="top"
@@ -236,10 +237,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   hudContent: {
-    minHeight: "100%",
+    flexGrow: 1,
     paddingTop: 24,
     paddingHorizontal: 14,
-    paddingBottom: 82,
   },
   hero: {
     backgroundColor: "rgba(8, 13, 24, 0.96)",
@@ -353,18 +353,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   textArea: {
-    minHeight: 112,
-    maxHeight: 200,
-    borderWidth: 2,
     borderColor: "#A78BFA",
-    borderRadius: 6,
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
-    padding: 12,
-    color: "#F9FAFB",
-    fontFamily: pixelFont,
-    fontSize: 14,
-    fontWeight: "800",
-    lineHeight: 20,
+    marginBottom: 4,
   },
   primaryBtn: {
     backgroundColor: "#FBBF24",

@@ -14,6 +14,7 @@ import {
 
 import { FormScreen } from "../components/FormScreen";
 import { GuideInfoModal } from "../components/GuideInfoModal";
+import { formStyles } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 
@@ -164,7 +165,7 @@ export default function DreamJournalScreen() {
           <Image source={uiAssets.backgrounds.recovery} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
-          <FormScreen contentContainerStyle={[styles.hudContent, { paddingBottom: mobile.scrollPaddingBottom }]}>
+          <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={styles.hudContent}>
             <View style={[styles.hero, { borderColor: theme.accent, backgroundColor: theme.panel }]}>
               <View style={styles.heroTopRow}>
                 <View style={styles.heroCopy}>
@@ -188,11 +189,11 @@ export default function DreamJournalScreen() {
 
             <View style={[styles.formCard, { borderColor: theme.accent }]}>
               <Text style={styles.label}>Dream title</Text>
-              <TextInput style={styles.input} placeholder="Example: The train under the ocean" placeholderTextColor="#94A3B8" value={title} onChangeText={setTitle} />
+              <TextInput style={[formStyles.input, styles.input]} placeholder="Example: The train under the ocean" placeholderTextColor="#94A3B8" value={title} onChangeText={setTitle} />
 
               <Text style={styles.label}>Write your dream</Text>
               <TextInput
-                style={styles.textArea}
+                style={[formStyles.textArea, styles.textArea]}
                 multiline
                 scrollEnabled
                 textAlignVertical="top"
@@ -314,10 +315,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   hudContent: {
-    minHeight: "100%",
+    flexGrow: 1,
     paddingTop: 18,
     paddingHorizontal: 16,
-    paddingBottom: 18,
   },
   hero: {
     borderWidth: 4,
@@ -431,27 +431,12 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   input: {
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
     borderRadius: 4,
-    padding: 12,
-    fontSize: 15,
-    color: "#F9FAFB",
-    borderWidth: 2,
-    borderColor: "#475569",
-    fontFamily: pixelFont,
+    marginBottom: 4,
   },
   textArea: {
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
     borderRadius: 4,
-    padding: 12,
-    minHeight: 120,
-    maxHeight: 220,
-    fontSize: 15,
-    color: "#F9FAFB",
-    textAlignVertical: "top",
-    borderWidth: 2,
-    borderColor: "#475569",
-    fontFamily: pixelFont,
+    marginBottom: 4,
   },
   chipRow: {
     flexDirection: "row",

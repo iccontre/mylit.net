@@ -204,13 +204,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   hudContent: {
-    minHeight: "100%",
+    flexGrow: 1,
     paddingTop: 28,
     paddingHorizontal: 14,
   },
   hero: {
-    width: "82%",
-    alignSelf: "center",
+    width: "100%",
+    alignSelf: "stretch",
     backgroundColor: "rgba(7, 11, 27, 0.94)",
     borderWidth: 4,
     borderColor: "#8B5CF6",
@@ -350,6 +350,7 @@ const styles = StyleSheet.create({
   },
   cardCopy: {
     flex: 1,
+    minWidth: 0,
   },
   cardTitle: {
     color: "#F5F3FF",

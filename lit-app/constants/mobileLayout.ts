@@ -6,6 +6,8 @@ export const MAX_FRAME_WIDTH = 520;
 export const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
 export const BOTTOM_NAV_HEIGHT = 62;
 export const BOTTOM_NAV_CLEARANCE = 82;
+/** Extra scroll room so form fields stay above keyboard + bottom nav on mobile. */
+export const FORM_KEYBOARD_CLEARANCE = 48;
 export const MOBILE_FULLSCREEN_BREAKPOINT = 768;
 
 export function isMobileFullscreen(width: number): boolean {
@@ -20,6 +22,7 @@ export type MobileFrame = {
   pageRootStyle: ViewStyle;
   phoneStageStyle: ViewStyle;
   scrollPaddingBottom: number;
+  formScrollPaddingBottom: number;
   bottomNavOffset: number;
 };
 
@@ -40,6 +43,7 @@ export function useMobileFrame(): MobileFrame {
   const fullscreen = isMobileFullscreen(layoutWidth);
   const bottomNavOffset = 8 + insets.bottom;
   const scrollPaddingBottom = BOTTOM_NAV_CLEARANCE + insets.bottom;
+  const formScrollPaddingBottom = scrollPaddingBottom + FORM_KEYBOARD_CLEARANCE;
 
   if (fullscreen) {
     return {
@@ -49,17 +53,16 @@ export function useMobileFrame(): MobileFrame {
       pageRootStyle: {
         flex: 1,
         width: "100%",
-        minHeight: layoutHeight,
         backgroundColor: "#02040A",
         paddingTop: insets.top,
       },
       phoneStageStyle: {
         flex: 1,
         width: "100%",
-        minHeight: layoutHeight - insets.top,
         alignSelf: "stretch",
       },
       scrollPaddingBottom,
+      formScrollPaddingBottom,
       bottomNavOffset,
     };
   }
@@ -85,6 +88,7 @@ export function useMobileFrame(): MobileFrame {
       alignSelf: "center",
     },
     scrollPaddingBottom,
+    formScrollPaddingBottom,
     bottomNavOffset,
   };
 }

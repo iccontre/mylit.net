@@ -13,6 +13,7 @@ import {
 
 import { FormScreen } from "../components/FormScreen";
 import { GuideInfoModal } from "../components/GuideInfoModal";
+import { formStyles } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 
@@ -109,7 +110,7 @@ export default function JournalScreen() {
           <Image source={uiAssets.backgrounds.journal} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
-          <FormScreen contentContainerStyle={[styles.hudContent, { paddingBottom: mobile.scrollPaddingBottom }]}>
+          <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={styles.hudContent}>
             <View style={styles.hero}>
               <Text style={styles.heroKicker}>MIND LOG</Text>
               <Text style={styles.title}>JOURNAL</Text>
@@ -153,7 +154,7 @@ export default function JournalScreen() {
 
               <Text style={styles.label}>Mood (1–10)</Text>
               <TextInput
-                style={styles.input}
+                style={[formStyles.input, styles.input]}
                 keyboardType="numeric"
                 placeholder="Optional"
                 placeholderTextColor="#94A3B8"
@@ -163,7 +164,7 @@ export default function JournalScreen() {
 
               <Text style={styles.label}>What happened today?</Text>
               <TextInput
-                style={styles.largeTextArea}
+                style={[formStyles.textArea, styles.largeTextArea]}
                 multiline
                 scrollEnabled
                 textAlignVertical="top"
@@ -175,7 +176,7 @@ export default function JournalScreen() {
 
               <Text style={styles.label}>What do you want to remember?</Text>
               <TextInput
-                style={styles.largeTextArea}
+                style={[formStyles.textArea, styles.largeTextArea]}
                 multiline
                 scrollEnabled
                 textAlignVertical="top"
@@ -307,10 +308,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   hudContent: {
-    minHeight: "100%",
+    flexGrow: 1,
     paddingTop: 24,
     paddingHorizontal: 14,
-    paddingBottom: 82,
   },
   hero: {
     backgroundColor: "rgba(31, 27, 75, 0.95)",
@@ -437,29 +437,10 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   input: {
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
-    borderWidth: 2,
-    borderColor: "#475569",
-    borderRadius: 6,
-    color: "#F9FAFB",
-    fontFamily: pixelFont,
-    fontSize: 14,
-    fontWeight: "800",
-    padding: 12,
+    marginBottom: 4,
   },
   largeTextArea: {
-    minHeight: 132,
-    maxHeight: 220,
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
-    borderWidth: 2,
-    borderColor: "#475569",
-    borderRadius: 6,
-    color: "#F9FAFB",
-    fontFamily: pixelFont,
-    fontSize: 14,
-    fontWeight: "800",
-    lineHeight: 20,
-    padding: 12,
+    marginBottom: 4,
   },
   saveButton: {
     backgroundColor: "#A78BFA",

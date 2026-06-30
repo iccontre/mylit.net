@@ -1,4 +1,4 @@
-import { type ReactNode } from "react";
+import { type ReactNode, useRef } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -8,20 +8,41 @@ import {
   type ViewStyle,
 } from "react-native";
 
+import { useKeyboardInset } from "../hooks/useKeyboardInset";
+
 type FormScreenProps = {
   children: ReactNode;
   contentContainerStyle?: StyleProp<ViewStyle>;
   style?: StyleProp<ViewStyle>;
+  /** Base bottom padding (nav clearance). Keyboard inset is added automatically. */
+  scrollPaddingBottom?: number;
 };
 
-export function FormScreen({ children, contentContainerStyle, style }: FormScreenProps) {
+export function FormScreen({
+  children,
+  contentContainerStyle,
+  style,
+  scrollPaddingBottom = 24,
+}: FormScreenProps) {
+  const keyboardInset = useKeyboardInset();
+  const scrollRef = useRef<ScrollView>(null);
+  const bottomPadding = scrollPaddingBottom + keyboardInset;
+
+  const contentStyle = [
+    styles.content,
+    { paddingBottom: bottomPadding },
+    contentContainerStyle,
+  ];
+
   if (Platform.OS === "web") {
     return (
       <ScrollView
+        ref={scrollRef}
         style={[styles.flex, style]}
-        contentContainerStyle={[styles.content, contentContainerStyle]}
+        contentContainerStyle={contentStyle}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        nestedScrollEnabled
       >
         {children}
       </ScrollView>
@@ -35,10 +56,12 @@ export function FormScreen({ children, contentContainerStyle, style }: FormScree
       keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
     >
       <ScrollView
+        ref={scrollRef}
         style={styles.flex}
-        contentContainerStyle={[styles.content, contentContainerStyle]}
+        contentContainerStyle={contentStyle}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
+        nestedScrollEnabled
       >
         {children}
       </ScrollView>
@@ -48,5 +71,5 @@ export function FormScreen({ children, contentContainerStyle, style }: FormScree
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  content: { flexGrow: 1, paddingBottom: 24 },
+  content: { flexGrow: 1 },
 });

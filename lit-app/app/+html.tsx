@@ -28,8 +28,7 @@ export default function Root({ children }: PropsWithChildren) {
               html, body, #root {
                 height: 100%;
                 width: 100%;
-                min-height: 100dvh;
-                max-height: 100dvh;
+                min-height: 100svh;
                 margin: 0;
                 padding: 0;
                 background: #02040A;
@@ -46,9 +45,13 @@ export default function Root({ children }: PropsWithChildren) {
                 flex-direction: column;
                 flex: 1;
                 min-height: 0;
+                height: 100%;
               }
               input, textarea, select {
                 font-size: 16px;
+              }
+              textarea:focus, input:focus {
+                scroll-margin-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
               }
               [role="tablist"] {
                 display: none !important;

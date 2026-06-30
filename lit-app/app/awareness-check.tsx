@@ -14,6 +14,7 @@ import {
 
 import { FormScreen } from "../components/FormScreen";
 import { GuideInfoModal } from "../components/GuideInfoModal";
+import { formStyles } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 
@@ -122,7 +123,7 @@ export default function AwarenessCheckScreen() {
           <Image source={uiAssets.backgrounds.neutral} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
-          <FormScreen contentContainerStyle={[styles.hudContent, { paddingBottom: mobile.scrollPaddingBottom }]}>
+          <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={styles.hudContent}>
             <View style={styles.hero}>
               <Text style={styles.heroLabel}>MIND HUB</Text>
               <Text style={[styles.title, { fontSize: 34, letterSpacing: 3 }]}>MEDITATIONS</Text>
@@ -145,7 +146,7 @@ export default function AwarenessCheckScreen() {
             <View style={styles.card}>
               <Text style={styles.label}>Where did your attention go today?</Text>
               <TextInput
-                style={styles.largeTextArea}
+                style={[formStyles.textArea, styles.largeTextArea]}
                 multiline
                 scrollEnabled
                 textAlignVertical="top"
@@ -175,7 +176,7 @@ export default function AwarenessCheckScreen() {
 
               <Text style={styles.label}>What pulled you away?</Text>
               <TextInput
-                style={styles.largeTextArea}
+                style={[formStyles.textArea, styles.largeTextArea]}
                 multiline
                 scrollEnabled
                 textAlignVertical="top"
@@ -187,7 +188,7 @@ export default function AwarenessCheckScreen() {
 
               <Text style={styles.label}>What helped you come back?</Text>
               <TextInput
-                style={styles.largeTextArea}
+                style={[formStyles.textArea, styles.largeTextArea]}
                 multiline
                 scrollEnabled
                 textAlignVertical="top"
@@ -322,10 +323,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   hudContent: {
-    minHeight: "100%",
+    flexGrow: 1,
     paddingTop: 24,
     paddingHorizontal: 14,
-    paddingBottom: 82,
   },
   hero: {
     backgroundColor: "rgba(31, 27, 75, 0.95)",
@@ -419,18 +419,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   largeTextArea: {
-    minHeight: 118,
-    maxHeight: 220,
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
-    borderWidth: 2,
-    borderColor: "#475569",
-    borderRadius: 6,
-    color: "#F9FAFB",
-    fontFamily: pixelFont,
-    fontSize: 14,
-    fontWeight: "800",
-    lineHeight: 20,
-    padding: 12,
+    marginBottom: 4,
   },
   optionRow: {
     gap: 8,

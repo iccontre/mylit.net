@@ -276,13 +276,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   hudContent: {
-    minHeight: "100%",
+    flexGrow: 1,
     paddingTop: 28,
     paddingHorizontal: 14,
   },
   titlePanel: {
-    width: "82%",
-    alignSelf: "center",
+    width: "100%",
+    alignSelf: "stretch",
     backgroundColor: "rgba(7, 11, 27, 0.94)",
     borderWidth: 4,
     borderColor: "#8B5CF6",
@@ -386,7 +386,8 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   cardStack: {
-    gap: 16,
+    gap: 14,
+    paddingBottom: 8,
   },
   card: {
     backgroundColor: "rgba(7, 11, 27, 0.95)",
@@ -404,7 +405,7 @@ const styles = StyleSheet.create({
   },
   cardTopRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
   },
   iconBox: {
     height: 62,
@@ -425,21 +426,24 @@ const styles = StyleSheet.create({
   },
   cardCopy: {
     flex: 1,
+    minWidth: 0,
   },
   cardTitle: {
     color: "#F5F3FF",
     fontFamily: pixelFont,
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: "900",
-    lineHeight: 25,
+    lineHeight: 24,
+    flexShrink: 1,
   },
   cardText: {
     color: "#EDE9FE",
     fontFamily: pixelFont,
     fontSize: 12,
     lineHeight: 18,
-    marginTop: 7,
+    marginTop: 6,
     fontWeight: "700",
+    flexShrink: 1,
   },
   unlockBadge: {
     color: "#FDE68A",
@@ -469,11 +473,12 @@ const styles = StyleSheet.create({
   actionText: {
     color: "#FDE68A",
     fontFamily: pixelFont,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "900",
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
     textTransform: "uppercase",
     flex: 1,
+    flexShrink: 1,
     paddingRight: 8,
   },
   actionArrow: {
