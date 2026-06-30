@@ -6,7 +6,7 @@ import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View }
 import { uiAssets } from "../constants/uiAssets";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
-import { collectDayPlanScheduledItems, collectQuickThoughtScheduledItems, formatDurationLabel, getDateKey, getQuickThoughtSteps, inferScheduledClassification, parseDurationMinutes, parseTimeToMinutes, type ScheduledClassification, type ScheduledQuestLike } from "../lib/scheduling";
+import { collectDayPlanScheduledItems, collectQuickThoughtScheduledItems, formatDurationLabel, getDateKey, getQuickThoughtSteps, inferScheduledClassification, parseDurationMinutes, parseSleepGuideTime, parseTimeToMinutes, type ScheduledClassification, type ScheduledQuestLike } from "../lib/scheduling";
 
 type WeekdayName = "Sunday" | "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "Saturday";
 type EventTone = "gold" | "purple" | "blue" | "green";
@@ -93,7 +93,7 @@ function buildDayLabel(date: Date) {
 
 function calendarTimeRow(time?: string): string {
   if (!time || time === "All day") return "7 AM";
-  const minutes = parseTimeToMinutes(time);
+  const minutes = parseSleepGuideTime(time) ?? parseTimeToMinutes(time);
   if (minutes === null) return "9 AM";
 
   let bestRow = TIME_ROWS[0];
@@ -310,7 +310,10 @@ export default function CalendarScreen() {
     }
 
     return dedupeCalendarEvents(events).sort(
-      (a, b) => a.priority - b.priority || (parseTimeToMinutes(a.startTime) ?? 0) - (parseTimeToMinutes(b.startTime) ?? 0)
+      (a, b) =>
+        a.priority - b.priority ||
+        (parseSleepGuideTime(a.startTime) ?? parseTimeToMinutes(a.startTime) ?? 0) -
+          (parseSleepGuideTime(b.startTime) ?? parseTimeToMinutes(b.startTime) ?? 0)
     );
   });
 
@@ -394,7 +397,8 @@ export default function CalendarScreen() {
                         .sort((a, b) => {
                           if (a.classification === "sleepGuide" && b.classification !== "sleepGuide") return 1;
                           if (b.classification === "sleepGuide" && a.classification !== "sleepGuide") return -1;
-                          return (parseTimeToMinutes(a.startTime) ?? 0) - (parseTimeToMinutes(b.startTime) ?? 0);
+                          return (parseSleepGuideTime(a.startTime) ?? parseTimeToMinutes(a.startTime) ?? 0) -
+                            (parseSleepGuideTime(b.startTime) ?? parseTimeToMinutes(b.startTime) ?? 0);
                         });
                       return (
                         <View key={`${date.toISOString()}-${row}`} style={styles.hourCell}>

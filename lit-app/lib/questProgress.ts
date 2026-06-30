@@ -60,6 +60,7 @@ export type HomeQuestItem = {
   description?: string;
   mandatory?: boolean;
   starter?: boolean;
+  suggested?: boolean;
 };
 
 type QuestLike = {
@@ -69,6 +70,7 @@ type QuestLike = {
   description?: string;
   mandatory?: boolean;
   starter?: boolean;
+  suggested?: boolean;
   durationMinutes?: number;
 };
 
@@ -203,9 +205,9 @@ export function hasUserCreatedQuestItems(input: {
   );
 }
 
-/** Starter + mandatory MYLIT quests, or items the user added via Day Plan / Quick Thoughts. */
+/** Starter + mandatory + app-suggested MYLIT quests, or items the user added via Day Plan / Quick Thoughts. */
 export function isQuestBoardItemAllowed(item: HomeQuestItem): boolean {
-  if (item.mandatory || item.starter) return true;
+  if (item.mandatory || item.starter || item.suggested) return true;
   if (
     item.source === "Today's Quest" ||
     item.source === "Checklist" ||
@@ -226,7 +228,7 @@ type QuestPriorityTier = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 function getItemPriorityTier(item: HomeQuestItem): QuestPriorityTier {
   if (item.scheduledTime && parseTimeToMinutes(item.scheduledTime) !== null) return 0;
   if (item.mandatory) return 1;
-  if (item.starter) return 2;
+  if (item.starter || item.suggested) return 2;
   if (item.source === "Today's Quest") return 3;
   if (item.source === "Checklist") return 4;
   if (item.source === "Quick Thought") return 5;
@@ -509,10 +511,11 @@ export function normalizeQuestItems(input: {
       source: "Quest",
       kind,
       steps: quest.steps ?? 1,
-      durationMinutes: quest.durationMinutes ?? (quest.starter ? 10 : 30),
+      durationMinutes: quest.durationMinutes ?? (quest.starter || quest.suggested ? 10 : 30),
       description: quest.description || quest.type,
       mandatory: quest.mandatory,
       starter: quest.starter,
+      suggested: quest.suggested,
     });
   });
 

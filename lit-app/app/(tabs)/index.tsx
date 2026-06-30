@@ -7,7 +7,7 @@ import { Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } fr
 import { uiAssets } from "../../constants/uiAssets";
 import { useMobileFrame } from "../../constants/mobileLayout";
 import {
-  generateStarterQuest,
+  getActiveSuggestedQuest,
   type QuestProfileContext,
 } from "../../lib/questGeneration";
 import { ANALYTICS_EVENTS, trackEvent } from "../../lib/analytics";
@@ -47,6 +47,7 @@ type Quest = {
   mandatory?: boolean;
   restoreEnergy?: number;
   starter?: boolean;
+  suggested?: boolean;
   durationMinutes?: number;
 };
 
@@ -721,8 +722,19 @@ export default function HomeScreen() {
       return [{ title: "Complete Morning Check-In", type: "Start", steps: 1 }];
     }
 
-    const starterQuest = generateStarterQuest(questContext, isProgress ? "progress" : "recovery");
-    return [...(mandatoryQuest ? [mandatoryQuest] : []), starterQuest];
+    const completedTitles = new Set(completedQuests.map((entry) => entry.title));
+    const missedTitles = new Set(missedQuests.map((entry) => entry.title));
+    const suggestedQuest = getActiveSuggestedQuest(
+      questContext,
+      isProgress ? "progress" : "recovery",
+      completedTitles,
+      missedTitles
+    );
+
+    return [
+      ...(mandatoryQuest ? [mandatoryQuest] : []),
+      ...(suggestedQuest ? [suggestedQuest] : []),
+    ];
   }
 
   function getMandatoryQuest(): Quest | null {
@@ -1114,7 +1126,7 @@ export default function HomeScreen() {
                   <Text style={styles.modalTitle}>How the Quest Board works</Text>
                   <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false} bounces={false}>
                     <Text style={styles.modalDescription}>
-                      The Quest Board keeps today focused. Each day MYLIT offers one small starter quest that moves you toward your short-term Path benchmark — nothing else fills the board automatically. Add quests only through Day Plan, checklist habits, or Quick Thoughts; only those items plus today&apos;s starter appear here. Tap a quest to view it, then START to begin the timer. Start one timed quest at a time; while it runs, the board locks. Complete gives steps after the timer. Missed? helps you reflect, not punish. MYLIT limits continuous progress work to 2 hours, then adds a 1-hour recovery period. Recovery counts.
+                      The Quest Board keeps today focused. MYLIT offers one optional suggested quest at a time — after you complete or skip it, the next small step appears to guide you toward your short-term Path benchmark. Your Day Plan, checklist habits, and Quick Thoughts always show alongside the current suggestion. Tap a quest to view it, then START to begin the timer. Start one timed quest at a time; while it runs, the board locks. Complete gives steps after the timer. Missed? helps you reflect, not punish. MYLIT limits continuous progress work to 2 hours, then adds a 1-hour recovery period. Recovery counts.
                     </Text>
                   </ScrollView>
                   <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowQuestHelp(false)}>

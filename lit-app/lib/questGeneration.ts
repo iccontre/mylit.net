@@ -23,6 +23,7 @@ export type GeneratedQuest = {
   steps: number;
   description?: string;
   starter?: boolean;
+  suggested?: boolean;
   durationMinutes?: number;
 };
 
@@ -96,11 +97,72 @@ export function generateStarterQuest(
     type: "Starter",
     steps: 1,
     starter: true,
+    suggested: true,
     durationMinutes: 10,
     description:
       benchmarkHint(context) ??
       "A small first step — milestones on your Path are benchmarks, not today's whole quest.",
   };
+}
+
+function buildSuggestedStarterSequence(context: QuestProfileContext, mode: StarterMode): GeneratedQuest[] {
+  const category = normalizeQuestCategory(context.category);
+  const pool = STARTER_QUESTS[category]?.[mode] ?? STARTER_QUESTS_FALLBACK[mode];
+  const hint =
+    benchmarkHint(context) ??
+    "Optional direction from MYLIT — milestones on your Path are benchmarks, not today's whole quest.";
+  const firstTitle = pickRotatingTemplate(pool, `${getTodayKey()}-${category}-${mode}`);
+  const seen = new Set<string>();
+  const quests: GeneratedQuest[] = [];
+
+  const pushTitle = (title: string) => {
+    const trimmed = title.trim();
+    if (!trimmed || seen.has(trimmed)) return;
+    seen.add(trimmed);
+    quests.push({
+      title: trimmed,
+      type: "Starter",
+      steps: 1,
+      starter: quests.length === 0,
+      suggested: true,
+      durationMinutes: 10,
+      description: hint,
+    });
+  };
+
+  pushTitle(firstTitle);
+  for (const title of pool) pushTitle(title);
+  for (const title of STARTER_QUESTS_FALLBACK[mode]) pushTitle(title);
+
+  return quests;
+}
+
+/** Full optional direction chain for the day — only one is shown on the board at a time. */
+export function generateSuggestedQuestSequence(
+  context: QuestProfileContext,
+  mode: StarterMode
+): GeneratedQuest[] {
+  const starters = buildSuggestedStarterSequence(context, mode);
+  const followUps = (mode === "progress" ? generateProgressQuests(context, 4) : generateRecoveryQuests(context, 3)).map(
+    (quest) => ({
+      ...quest,
+      suggested: true,
+    })
+  );
+  return [...starters, ...followUps];
+}
+
+export function getActiveSuggestedQuest(
+  context: QuestProfileContext,
+  mode: StarterMode,
+  completedTitles: Set<string>,
+  missedTitles: Set<string>
+): GeneratedQuest | null {
+  for (const quest of generateSuggestedQuestSequence(context, mode)) {
+    if (completedTitles.has(quest.title) || missedTitles.has(quest.title)) continue;
+    return quest;
+  }
+  return null;
 }
 
 const RECOVERY_CATEGORY_QUESTS: Record<string, string[]> = {

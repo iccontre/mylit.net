@@ -153,6 +153,18 @@ export function parseTimeToMinutes(time?: string | null): number | null {
   return null;
 }
 
+/** Parses a single time or sleep-guide range like "7:00 PM – 8:00 PM" (uses the first time for placement). */
+export function parseSleepGuideTime(value?: string | null): number | null {
+  if (!value) return null;
+  const trimmed = String(value).trim();
+  const rangeMatch = trimmed.match(/^(.+?)\s*[–—-]\s*(.+)$/);
+  if (rangeMatch) {
+    const start = parseTimeToMinutes(rangeMatch[1].trim());
+    if (start !== null) return start;
+  }
+  return parseTimeToMinutes(trimmed);
+}
+
 export function formatMinutesAsTime(minutes: number): string {
   const safe = ((minutes % 1440) + 1440) % 1440;
   const hour24 = Math.floor(safe / 60);
