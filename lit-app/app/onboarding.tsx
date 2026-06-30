@@ -189,15 +189,17 @@ function MilestoneField({
       <View style={[styles.milestoneBanner, { backgroundColor: cardMeta.tone }]}>
         <Text style={styles.milestoneBannerText}>{cardMeta.title}</Text>
       </View>
-      <Text style={styles.milestoneIcon}>{cardMeta.icon}</Text>
       <Text style={styles.milestoneCaption}>{meta.caption}</Text>
       <TextInput
         style={styles.milestoneInput}
         multiline
-        placeholder={`Your ${meta.label.toLowerCase()}`}
+        numberOfLines={3}
+        textAlignVertical="top"
+        placeholder={`Your ${meta.label.toLowerCase()} goal`}
         placeholderTextColor="#8A5D2B"
         value={value}
         onChangeText={onChange}
+        scrollEnabled={false}
       />
     </View>
   );
@@ -645,7 +647,7 @@ const styles = StyleSheet.create({
   },
   boardContent: {
     paddingTop: 12,
-    paddingHorizontal: 34,
+    paddingHorizontal: 18,
     paddingBottom: 28,
   },
   logo: {
@@ -869,26 +871,23 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
   milestoneGrid: {
-    gap: 6,
+    gap: 12,
   },
   milestoneCard: {
-    minHeight: 78,
-    backgroundColor: "rgba(255, 239, 197, 0.84)",
+    backgroundColor: "rgba(255, 239, 197, 0.9)",
     borderWidth: 2,
     borderColor: "#A46B1C",
-    borderRadius: 4,
-    padding: 6,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
+    borderRadius: 6,
+    padding: 10,
+    gap: 8,
   },
   milestoneBanner: {
-    width: 94,
+    alignSelf: "flex-start",
     borderWidth: 1,
     borderColor: "#2A1707",
-    borderRadius: 2,
+    borderRadius: 3,
     paddingVertical: 5,
-    alignItems: "center",
+    paddingHorizontal: 8,
   },
   milestoneBannerText: {
     color: "#FFF8E6",
@@ -902,25 +901,25 @@ const styles = StyleSheet.create({
   milestoneCaption: {
     color: "#2A1707",
     fontFamily: pixelFont,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "900",
-    textAlign: "center",
-    marginBottom: 4,
+    lineHeight: 16,
   },
   milestoneInput: {
-    flex: 1,
-    alignSelf: "stretch",
-    minHeight: 54,
-    backgroundColor: "rgba(255, 246, 214, 0.9)",
-    borderWidth: 1,
+    width: "100%",
+    minHeight: 88,
+    maxHeight: 160,
+    backgroundColor: "rgba(255, 246, 214, 0.96)",
+    borderWidth: 2,
     borderColor: "#A46B1C",
-    borderRadius: 3,
+    borderRadius: 4,
     color: "#1F1306",
     fontFamily: readableFont,
-    fontSize: 12,
-    fontWeight: "800",
-    lineHeight: 17,
-    padding: 6,
+    fontSize: 16,
+    fontWeight: "700",
+    lineHeight: 22,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
     textAlignVertical: "top",
   },
   resourceList: {

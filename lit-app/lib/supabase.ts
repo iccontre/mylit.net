@@ -1,8 +1,19 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-const supabaseUrl = (process.env.EXPO_PUBLIC_SUPABASE_URL ?? "").trim();
-const supabaseAnonKey = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? "").trim();
+function normalizeEnvValue(value: string | undefined): string {
+  const trimmed = (value ?? "").trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+}
+
+const supabaseUrl = normalizeEnvValue(process.env.EXPO_PUBLIC_SUPABASE_URL);
+const supabaseAnonKey = normalizeEnvValue(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY);
 
 export type SupabaseConfigIssue =
   | "missing_url"
@@ -17,16 +28,24 @@ function looksLikeJwt(value: string): boolean {
   return segments.length === 3 && segments.every((part) => part.length > 0) && value.length > 20;
 }
 
-function jwtRole(value: string): string | null {
+function decodeJwtPayload(value: string): { role?: string } | null {
   try {
     const payloadSegment = value.split(".")[1];
     if (!payloadSegment) return null;
     const normalized = payloadSegment.replace(/-/g, "+").replace(/_/g, "/");
-    const payload = JSON.parse(atob(normalized)) as { role?: string };
-    return payload.role ?? null;
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    const json =
+      typeof atob === "function"
+        ? atob(padded)
+        : Buffer.from(padded, "base64").toString("utf8");
+    return JSON.parse(json) as { role?: string };
   } catch {
     return null;
   }
+}
+
+function jwtRole(value: string): string | null {
+  return decodeJwtPayload(value)?.role ?? null;
 }
 
 export function getSupabaseConfigIssue(): SupabaseConfigIssue {
