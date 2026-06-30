@@ -14,7 +14,12 @@ import {
 import { FormScreen } from "../components/FormScreen";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
-import { getOrCreateProfile, isOnboardingComplete, updateProfile } from "../lib/auth";
+import { getOrCreateProfile, isProfileComplete, updateProfile } from "../lib/auth";
+import {
+  clearProfileAwaitingContinue,
+  isProfileAwaitingContinue,
+  markProfileAwaitingContinue,
+} from "../lib/authFlow";
 
 const AGE_RANGES = ["13-15", "16-17", "18-20", "21-24", "25+"] as const;
 
@@ -42,6 +47,7 @@ export default function ProfileSetupScreen() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [profileSaved, setProfileSaved] = useState(false);
 
   useEffect(() => {
     async function loadExisting() {
@@ -49,10 +55,19 @@ export default function ProfileSetupScreen() {
       if (profile?.display_name) setDisplayName(profile.display_name);
       if (profile?.age_range) setAgeRange(profile.age_range);
       if (profile?.beta_invite_code) setInviteCode(profile.beta_invite_code);
+      const awaiting = await isProfileAwaitingContinue();
+      if (awaiting && isProfileComplete(profile)) {
+        setProfileSaved(true);
+      }
       setLoading(false);
     }
     void loadExisting();
   }, []);
+
+  async function handleContinueToMylit() {
+    await clearProfileAwaitingContinue();
+    router.replace("/onboarding");
+  }
 
   async function handleSave() {
     const trimmedName = displayName.trim();
@@ -75,9 +90,9 @@ export default function ProfileSetupScreen() {
       return;
     }
 
-    const profile = await getOrCreateProfile();
-    const onboardingDone = await isOnboardingComplete(profile);
-    router.replace(onboardingDone ? "/(tabs)" : "/onboarding");
+    await markProfileAwaitingContinue();
+    setProfileSaved(true);
+    setError("");
   }
 
   if (loading) {
@@ -108,6 +123,8 @@ export default function ProfileSetupScreen() {
           </View>
 
           <View style={styles.formPanel}>
+            {!profileSaved ? (
+              <>
             <Text style={styles.fieldLabel}>DISPLAY NAME</Text>
             <TextInput
               style={styles.input}
@@ -158,6 +175,18 @@ export default function ProfileSetupScreen() {
                 <Text style={styles.primaryButtonText}>SAVE PROFILE</Text>
               )}
             </TouchableOpacity>
+              </>
+            ) : (
+              <View style={styles.successPanel}>
+                <Text style={styles.successTitle}>Profile saved.</Text>
+                <Text style={styles.successText}>
+                  Your beta profile is ready. Continue to set your path in onboarding.
+                </Text>
+                <TouchableOpacity style={styles.primaryButton} onPress={handleContinueToMylit}>
+                  <Text style={styles.primaryButtonText}>CONTINUE TO MYLIT</Text>
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </FormScreen>
       </View>
@@ -314,5 +343,25 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     marginTop: 8,
     lineHeight: 16,
+  },
+  successPanel: {
+    alignItems: "center",
+  },
+  successTitle: {
+    color: "#9BE331",
+    fontFamily: pixelFont,
+    fontSize: 18,
+    fontWeight: "900",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  successText: {
+    color: "#CBD5E1",
+    fontFamily: readableFont,
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 19,
+    textAlign: "center",
+    marginBottom: 14,
   },
 });

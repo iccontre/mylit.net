@@ -1435,11 +1435,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   hudContent: {
-    minHeight: "100%",
+    flexGrow: 1,
     paddingTop: 9,
     paddingHorizontal: 14,
     paddingBottom: 82,
-    justifyContent: "flex-start",
   },
   topHud: {
     minHeight: 64,

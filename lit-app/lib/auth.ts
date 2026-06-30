@@ -125,7 +125,6 @@ export async function getOrCreateProfile(): Promise<BetaProfile | null> {
     return existing as BetaProfile;
   }
 
-  const localOnboardingComplete = await isLocalOnboardingComplete();
   const localBeta = await loadLocalBetaProfile();
 
   const { data: created, error: insertError } = await supabase
@@ -135,7 +134,7 @@ export async function getOrCreateProfile(): Promise<BetaProfile | null> {
       display_name: localBeta?.display_name ?? null,
       age_range: localBeta?.age_range ?? null,
       beta_invite_code: localBeta?.beta_invite_code ?? null,
-      onboarding_complete: localOnboardingComplete,
+      onboarding_complete: false,
     })
     .select("id, display_name, age_range, beta_invite_code, onboarding_complete, path_focus")
     .single();
@@ -185,8 +184,12 @@ export async function updateProfile(updates: ProfileUpdateInput): Promise<AuthRe
 }
 
 export async function isOnboardingComplete(profile?: BetaProfile | null): Promise<boolean> {
-  if (profile?.onboarding_complete) return true;
-  return isLocalOnboardingComplete();
+  const localDone = await isLocalOnboardingComplete();
+  if (!localDone) return false;
+  if (isSupabaseConfigured() && profile) {
+    return Boolean(profile.onboarding_complete);
+  }
+  return true;
 }
 
 export { isSupabaseConfigured };

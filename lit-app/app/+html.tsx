@@ -9,7 +9,7 @@ export default function Root({ children }: PropsWithChildren) {
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
         <meta
           name="viewport"
-          content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover"
+          content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=overlays-content"
         />
         <meta name="theme-color" content="#7CFF3A" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -27,23 +27,31 @@ export default function Root({ children }: PropsWithChildren) {
             __html: `
               html, body, #root {
                 height: 100%;
-                min-height: 100vh;
+                width: 100%;
                 min-height: 100dvh;
+                max-height: 100dvh;
                 margin: 0;
                 padding: 0;
                 background: #02040A;
+                overflow: hidden;
               }
               body {
-                overflow: hidden;
                 overscroll-behavior: none;
                 -webkit-text-size-adjust: 100%;
+                position: fixed;
+                inset: 0;
               }
               #root {
                 display: flex;
                 flex-direction: column;
+                flex: 1;
+                min-height: 0;
               }
               input, textarea, select {
                 font-size: 16px;
+              }
+              [role="tablist"] {
+                display: none !important;
               }
             `,
           }}

@@ -13,6 +13,7 @@ import {
 
 export const FLOW_ROUTES = new Set(["welcome", "auth", "profile-setup", "onboarding"]);
 export const AUTH_AWAITING_CONTINUE_KEY = "lit_auth_awaiting_continue";
+export const PROFILE_AWAITING_CONTINUE_KEY = "lit_profile_awaiting_continue";
 
 export async function markAuthAwaitingContinue(): Promise<void> {
   await AsyncStorage.setItem(AUTH_AWAITING_CONTINUE_KEY, "true");
@@ -24,6 +25,18 @@ export async function clearAuthAwaitingContinue(): Promise<void> {
 
 export async function isAuthAwaitingContinue(): Promise<boolean> {
   return (await AsyncStorage.getItem(AUTH_AWAITING_CONTINUE_KEY)) === "true";
+}
+
+export async function markProfileAwaitingContinue(): Promise<void> {
+  await AsyncStorage.setItem(PROFILE_AWAITING_CONTINUE_KEY, "true");
+}
+
+export async function clearProfileAwaitingContinue(): Promise<void> {
+  await AsyncStorage.removeItem(PROFILE_AWAITING_CONTINUE_KEY);
+}
+
+export async function isProfileAwaitingContinue(): Promise<boolean> {
+  return (await AsyncStorage.getItem(PROFILE_AWAITING_CONTINUE_KEY)) === "true";
 }
 
 export function shouldEnforceFlow(pathname: string): boolean {
@@ -77,6 +90,7 @@ export async function resolveRequiredRouteForPath(pathname: string): Promise<Hre
   if (segment === "onboarding") return null;
 
   if (segment === "auth" && (await isAuthAwaitingContinue())) return null;
+  if (segment === "profile-setup" && (await isProfileAwaitingContinue())) return null;
 
   const required = await resolveInitialRoute();
 
