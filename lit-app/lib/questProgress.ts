@@ -169,7 +169,7 @@ export function formatCapacityHeader(plannedMinutes: number, mode: "Progress" | 
 
 const DEFAULT_TODAY_QUEST_TITLES = new Set(["choose one honest quest for today"]);
 
-/** Day Plan quest or checklist — unlocks the full MYLIT quest pool on the board. */
+/** Day Plan today's quest or checklist habits scheduled for today. */
 export function hasUserDayPlanItems(input: {
   todayQuest?: RawTodayQuest | null;
   checklist: RawChecklistItem[];
@@ -190,7 +190,7 @@ export function hasTodayQuickThoughts(input: { quickThoughts: QueueItem[]; today
   });
 }
 
-/** @deprecated Use getQuestBoardFocus for board composition. */
+/** Whether the user has added Day Plan or Quick Thought items for the board. */
 export function hasUserCreatedQuestItems(input: {
   todayQuest?: RawTodayQuest | null;
   checklist: RawChecklistItem[];
@@ -203,19 +203,22 @@ export function hasUserCreatedQuestItems(input: {
   );
 }
 
-export type QuestBoardFocus = "starter" | "quickThoughts" | "dayPlan";
-
-export function getQuestBoardFocus(input: {
-  todayQuest?: RawTodayQuest | null;
-  checklist: RawChecklistItem[];
-  quickThoughts: QueueItem[];
-  todayKey: string;
-}): QuestBoardFocus {
-  if (hasUserDayPlanItems(input)) return "dayPlan";
-  if (hasTodayQuickThoughts({ quickThoughts: input.quickThoughts, todayKey: input.todayKey })) {
-    return "quickThoughts";
+/** Starter + mandatory MYLIT quests, or items the user added via Day Plan / Quick Thoughts. */
+export function isQuestBoardItemAllowed(item: HomeQuestItem): boolean {
+  if (item.mandatory || item.starter) return true;
+  if (
+    item.source === "Today's Quest" ||
+    item.source === "Checklist" ||
+    item.source === "Quick Thought" ||
+    item.source === "Calendar"
+  ) {
+    return true;
   }
-  return "starter";
+  return false;
+}
+
+export function filterQuestBoardItems(items: HomeQuestItem[]): HomeQuestItem[] {
+  return items.filter(isQuestBoardItemAllowed);
 }
 
 type QuestPriorityTier = 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -243,8 +246,7 @@ export function sortQuestItemsByPriority(items: HomeQuestItem[]): HomeQuestItem[
 
 export function applyQuestBoardCapacity(
   items: HomeQuestItem[],
-  mode: "Progress" | "Recovery",
-  focus: QuestBoardFocus
+  mode: "Progress" | "Recovery"
 ): {
   visibleItems: HomeQuestItem[];
   hiddenCount: number;
@@ -252,21 +254,7 @@ export function applyQuestBoardCapacity(
   capacityMinutes: number;
 } {
   const capacityMinutes = getQuestCapacityMinutes(mode);
-  let sorted = sortQuestItemsByPriority(items);
-
-  if (focus === "quickThoughts") {
-    sorted = sorted.filter((item) => item.source === "Quick Thought" || item.mandatory);
-  }
-
-  if (focus === "starter") {
-    const firstRecommended =
-      sorted.find((item) => item.mandatory) ??
-      sorted.find((item) => item.starter) ??
-      sorted.find((item) => item.source === "Quest") ??
-      sorted[0] ??
-      null;
-    sorted = firstRecommended ? [firstRecommended] : [];
-  }
+  const sorted = sortQuestItemsByPriority(filterQuestBoardItems(items));
 
   const visibleItems: HomeQuestItem[] = [];
   let plannedMinutes = 0;

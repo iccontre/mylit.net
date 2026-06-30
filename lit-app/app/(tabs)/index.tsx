@@ -7,8 +7,6 @@ import { Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } fr
 import { uiAssets } from "../../constants/uiAssets";
 import { useMobileFrame } from "../../constants/mobileLayout";
 import {
-  generateProgressQuests,
-  generateRecoveryQuests,
   generateStarterQuest,
   type QuestProfileContext,
 } from "../../lib/questGeneration";
@@ -22,7 +20,6 @@ import {
   findNextScheduledItem,
   formatCapacityHeader,
   getChecklistItemsForDay,
-  getQuestBoardFocus,
   getTodayKey,
   getWeekdayName,
   kindAccent,
@@ -35,7 +32,6 @@ import {
   type CompletionEntry,
   type HomeQuestItem,
   type MissedEntry,
-  type QuestBoardFocus,
   type QuestKind,
 } from "../../lib/questProgress";
 import { formatDurationLabel, inferScheduledClassification, parseTimeToMinutes } from "../../lib/scheduling";
@@ -668,21 +664,7 @@ export default function HomeScreen() {
     ? clampEnergy(baseEnergyYield - passiveDecay - completedNormalQuestCount * questEnergyCost + mandatoryRecoveryBoost)
     : 0;
 
-  const hoursSlept = latestCheckIn?.hours ? Number(latestCheckIn.hours) : null;
-  const shouldSuggestNap =
-    hasEnergyData &&
-    hoursSlept !== null &&
-    !Number.isNaN(hoursSlept) &&
-    hoursSlept < 7;
-
   const todayName = getWeekdayName();
-  const lowercaseTodayName = todayName.toLowerCase() as LowercaseWeekdayName;
-  const todayGoal = dayPlan.todayGoal?.trim() || "";
-  const todayRole =
-    dayPlan[todayName]?.trim() ||
-    dayPlan[lowercaseTodayName]?.trim() ||
-    "";
-  const todayPlanText = todayGoal || todayRole;
 
   const flameState = useMemo(() => getFireAssetForEnergy(energyYield), [energyYield]);
   const flameLabel = hasEnergyData ? flameState.label : "Check-in needed";
@@ -732,92 +714,15 @@ export default function HomeScreen() {
         mode: "BALANCED MODE",
       };
 
-  function generateQuests(boardFocus: QuestBoardFocus): Quest[] {
+  function generateQuests(): Quest[] {
     const mandatoryQuest = getMandatoryQuest();
 
-    if (boardFocus === "quickThoughts") {
-      return mandatoryQuest ? [mandatoryQuest] : [];
-    }
-
-    const napQuest: Quest = {
-      title: "Take a recovery nap",
-      type: "Recovery",
-      steps: 1,
-      description: "Aim for 30–60 minutes if your schedule allows.",
-    };
-
-    const dayPlanQuest: Quest | null = todayPlanText
-      ? {
-          title: `Today’s Quest: ${todayPlanText}`,
-          type: "Personal",
-          steps: 2,
-          description: "A personal quest from your Day Plan.",
-        }
-      : null;
-
-    if (boardFocus === "starter") {
-      if (isNeutral) {
-        return [
-          { title: "Complete Morning Check-In", type: "Start", steps: 1 },
-          ...(dayPlanQuest ? [dayPlanQuest] : []),
-        ];
-      }
-
-      const starterQuest = generateStarterQuest(questContext, isProgress ? "progress" : "recovery");
-      return [
-        ...(mandatoryQuest ? [mandatoryQuest] : []),
-        ...(dayPlanQuest ? [dayPlanQuest] : []),
-        ...(shouldSuggestNap ? [napQuest] : []),
-        starterQuest,
-      ];
-    }
-
     if (isNeutral) {
-      const neutralBase: Quest[] = [
-        { title: "Complete Morning Check-In", type: "Start", steps: 1 },
-        { title: "Review your current path", type: "Direction", steps: 1 },
-        { title: "Choose one small action for today", type: "Plan", steps: 1 },
-      ];
-
-      return [
-        neutralBase[0],
-        ...(dayPlanQuest ? [dayPlanQuest] : []),
-        ...(shouldSuggestNap ? [napQuest] : []),
-        neutralBase[1],
-        neutralBase[2],
-      ];
+      return [{ title: "Complete Morning Check-In", type: "Start", steps: 1 }];
     }
 
     const starterQuest = generateStarterQuest(questContext, isProgress ? "progress" : "recovery");
-
-    const resourceQuest: Quest = profile?.hasQuietSpace
-      ? { title: "Use your quiet space for one focus block", type: "Focus", steps: 1 }
-      : { title: "Create a simple focus corner for 10 minutes", type: "Focus", steps: 1 };
-
-    const movementQuest: Quest = profile?.hasGymAccess
-      ? { title: "Movement option: gym or structured workout", type: "Body", steps: 1 }
-      : { title: "Movement option: walk, stretch, or home workout", type: "Body", steps: 1 };
-
-    const transportQuest: Quest = profile?.hasTransportation
-      ? { title: "Plan one out-of-home step you can reach", type: "Logistics", steps: 1 }
-      : { title: "Plan one step you can do from home", type: "Logistics", steps: 1 };
-
-    let baseQuests: Quest[];
-
-    if (isProgress) {
-      const progressQuests = generateProgressQuests(questContext, 4);
-      baseQuests = [starterQuest, ...progressQuests, resourceQuest, movementQuest, transportQuest];
-    } else {
-      const recoveryQuests = generateRecoveryQuests(questContext, 3);
-      baseQuests = [starterQuest, ...recoveryQuests, resourceQuest, movementQuest, transportQuest];
-    }
-
-    return [
-      ...(mandatoryQuest ? [mandatoryQuest] : []),
-      ...(dayPlanQuest ? [dayPlanQuest] : []),
-      ...(shouldSuggestNap ? [napQuest] : []),
-      ...baseQuests,
-    ];
+    return [...(mandatoryQuest ? [mandatoryQuest] : []), starterQuest];
   }
 
   function getMandatoryQuest(): Quest | null {
@@ -857,13 +762,7 @@ export default function HomeScreen() {
 
   const todayKey = getTodayKey();
   const todayChecklist: RawChecklistItem[] = getChecklistItemsForDay(dayPlanRaw, todayName);
-  const boardFocus = getQuestBoardFocus({
-    todayQuest: dayPlanRaw?.todayQuest ?? null,
-    checklist: todayChecklist,
-    quickThoughts: queueItems,
-    todayKey,
-  });
-  const quests = generateQuests(boardFocus);
+  const quests = generateQuests();
   const calendarItems = collectTodayCalendarItems(dayPlanRaw, queueItems, todayKey);
   const completedIds = new Set(completedQuests.map((entry) => entry.id));
   const missedIds = new Set(missedQuests.map((entry) => entry.id));
@@ -873,13 +772,10 @@ export default function HomeScreen() {
     hasEnergyData && !isNeutral
       ? normalizeQuestItems({
           quests,
-          todayQuest: boardFocus === "quickThoughts" ? null : dayPlanRaw?.todayQuest ?? null,
-          checklist: boardFocus === "quickThoughts" ? [] : todayChecklist,
+          todayQuest: dayPlanRaw?.todayQuest ?? null,
+          checklist: todayChecklist,
           quickThoughts: queueItems,
-          calendarItems:
-            boardFocus === "quickThoughts"
-              ? calendarItems.filter((item) => item.source === "quickThought")
-              : calendarItems,
+          calendarItems,
           todayKey,
           completedIds,
           missedIds,
@@ -887,7 +783,7 @@ export default function HomeScreen() {
       : [];
 
   const availableItems = allHomeItems.filter((item) => item.id !== activeItem?.id);
-  const boardCapacity = applyQuestBoardCapacity(availableItems, boardMode, boardFocus);
+  const boardCapacity = applyQuestBoardCapacity(availableItems, boardMode);
   const visibleItems = boardCapacity.visibleItems;
   const extraItemCount = boardCapacity.hiddenCount;
   const capacityLabel = formatCapacityHeader(boardCapacity.plannedMinutes, boardMode);
@@ -1218,7 +1114,7 @@ export default function HomeScreen() {
                   <Text style={styles.modalTitle}>How the Quest Board works</Text>
                   <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false} bounces={false}>
                     <Text style={styles.modalDescription}>
-                      The Quest Board keeps today focused. Tap a quest to view it, then START to begin the timer — you cannot check quests off from the list. Your Day Plan, checklist items, Quick Thoughts, and MYLIT quests can appear here. Path milestones are benchmarks — your first quest is a small starter step, not the whole short-term goal. Quick Thoughts for today add only those items to your board. Start one timed quest at a time; while it runs, the board locks so you do not overload yourself. Complete gives steps after the timer. Missed? is not punishment — it helps you reflect and adjust. To protect your energy, MYLIT limits continuous progress work to 2 hours. After that, it adds a 1-hour recovery period before more progress tasks. Recovery counts.
+                      The Quest Board keeps today focused. Each day MYLIT offers one small starter quest that moves you toward your short-term Path benchmark — nothing else fills the board automatically. Add quests only through Day Plan, checklist habits, or Quick Thoughts; only those items plus today&apos;s starter appear here. Tap a quest to view it, then START to begin the timer. Start one timed quest at a time; while it runs, the board locks. Complete gives steps after the timer. Missed? helps you reflect, not punish. MYLIT limits continuous progress work to 2 hours, then adds a 1-hour recovery period. Recovery counts.
                     </Text>
                   </ScrollView>
                   <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowQuestHelp(false)}>
