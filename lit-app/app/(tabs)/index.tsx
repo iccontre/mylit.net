@@ -6,7 +6,12 @@ import { Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } fr
 
 import { uiAssets } from "../../constants/uiAssets";
 import { useMobileFrame } from "../../constants/mobileLayout";
-import { generateProgressQuests } from "../../lib/questGeneration";
+import {
+  generateProgressQuests,
+  generateRecoveryQuests,
+  generateStarterQuest,
+  type QuestProfileContext,
+} from "../../lib/questGeneration";
 import { ANALYTICS_EVENTS, trackEvent } from "../../lib/analytics";
 import { syncQuestCompleted, syncQuestMissed, syncQuestStarted } from "../../lib/progressSync";
 import {
@@ -44,6 +49,8 @@ type Quest = {
   description?: string;
   mandatory?: boolean;
   restoreEnergy?: number;
+  starter?: boolean;
+  durationMinutes?: number;
 };
 
 type QueueItem = {
@@ -640,17 +647,14 @@ export default function HomeScreen() {
     await completeQuestItem(item);
   }
 
-  // Prefer the new tiered milestone fields; fall back to legacy goalOne/Two/Three
-  // so older profiles keep working until users re-save through PATH SETUP.
-  const topGoal =
-    profile?.shortTermGoal?.trim() || profile?.goalOne?.trim() || "your top goal";
-  const secondGoal =
-    profile?.midTermGoal?.trim() || profile?.goalTwo?.trim() || "your next goal";
-  const thirdGoal =
-    profile?.longTermGoal?.trim() || profile?.goalThree?.trim() || "your future";
-
-  // The specific goal anchors goal-aware quest generation (Progress mode).
-  const specificGoal = profile?.specificGoal?.trim() || "";
+  const questContext: QuestProfileContext = {
+    category: profile?.dreamCategory?.trim() || "Purpose",
+    specificGoal: profile?.specificGoal?.trim() || "",
+    progressMeaning: profile?.progressMeaning?.trim() || "",
+    shortTermBenchmark: profile?.shortTermGoal?.trim() || profile?.goalOne?.trim() || "",
+    midTermBenchmark: profile?.midTermGoal?.trim() || profile?.goalTwo?.trim() || "",
+    longTermBenchmark: profile?.longTermGoal?.trim() || profile?.goalThree?.trim() || "",
+  };
 
   const completedMandatoryTitles = completedQuests.filter(
     (entry) => entry.title === "Eat to restore energy" || entry.title === "Relax for 30 minutes"
@@ -735,56 +739,6 @@ export default function HomeScreen() {
         status: "STEADY",
         mode: "BALANCED MODE",
       };
-
-  function getCategoryQuests(category: string, modeType: "Recovery" | "Progress"): Quest[] {
-    const normalized = category || "Purpose";
-
-    const map: Record<string, { Recovery: string[]; Progress: string[] }> = {
-      Health: {
-        Progress: ["Do 15 minutes of movement", "Choose one better nutrition action", "Protect your sleep window tonight"],
-        Recovery: ["Stretch for 5 calm minutes", "Choose one easy healthy meal", "Rest and protect sleep tonight"],
-      },
-      Money: {
-        Progress: ["Research one income opportunity", "Spend 15 minutes building a useful skill", "Track one spending or saving decision"],
-        Recovery: ["Write one small money step for tomorrow", "Review your goal without pressure", "Protect sleep so you can act with more energy"],
-      },
-      Mind: {
-        Progress: ["Journal one honest page", "Notice one thought pattern today", "Pause before one reaction"],
-        Recovery: ["Write a gentle brain-dump", "Name one feeling without judging it", "Take 3 deep breaths before your next task"],
-      },
-      "Friends / Connection": {
-        Progress: ["Send one message to someone", "Start one small conversation", "Plan one social step"],
-        Recovery: ["Reflect on one person you want to reconnect with", "Send a low-pressure message if it feels realistic", "Journal about what makes connection hard"],
-      },
-      "School / Work": {
-        Progress: ["Complete one focus block", "Plan your top assignment early", "Clear one unfinished task"],
-        Recovery: ["Pick one simple work/school priority", "Set up materials for tomorrow", "Rest so your focus can recover"],
-      },
-      Confidence: {
-        Progress: ["Keep one promise to yourself", "Do one uncomfortable but safe action", "Write down one small win"],
-        Recovery: ["Choose one tiny promise you can keep", "Speak kindly to yourself once today", "Reflect on a moment you handled well"],
-      },
-      Creativity: {
-        Progress: ["Work on one creative project", "Capture and save one idea", "Make 20 minutes for creative practice"],
-        Recovery: ["Open your project for 5 minutes", "Collect one inspiration", "Rest so your creativity can recharge"],
-      },
-      Sleep: {
-        Progress: ["Keep a consistent sleep target", "Reduce phone use before bed", "Plan a calm wind-down tonight"],
-        Recovery: ["Take one short rest break", "Use a low-stimulation wind-down", "Protect your bedtime tonight"],
-      },
-      "Phone Use": {
-        Progress: ["Notice one screen-time trigger", "Replace one scroll with a useful action", "Create one phone-free focus block"],
-        Recovery: ["Use one short phone break", "Move distracting apps out of reach", "Journal what pulls you into scrolling"],
-      },
-      Purpose: {
-        Progress: ["Define what progress means today", "Take one honest step daily", "Reflect on what feels meaningful"],
-        Recovery: ["Write one reason your path matters", "Choose one tiny step for tomorrow", "Rest and reconnect with your why"],
-      },
-    };
-
-    const categorySet = map[normalized] ?? map.Purpose;
-    return categorySet[modeType].map((title) => ({ title, type: normalized, steps: 1 }));
-  }
 
   function generateQuickThoughtQuests(): Quest[] {
     const unique = new Set<string>();
@@ -884,7 +838,7 @@ export default function HomeScreen() {
       ];
     }
 
-    const category = profile?.dreamCategory?.trim() || "Purpose";
+    const starterQuest = generateStarterQuest(questContext, isProgress ? "progress" : "recovery");
 
     const resourceQuest: Quest = profile?.hasQuietSpace
       ? { title: "Use your quiet space for one focus block", type: "Focus", steps: 1 }
@@ -901,25 +855,11 @@ export default function HomeScreen() {
     let baseQuests: Quest[];
 
     if (isProgress) {
-      // Progress mode: goal-anchored daily quests from the offline quest DB,
-      // personalized with the user's specific goal.
-      const progressQuests = generateProgressQuests({ category, specificGoal }, 5);
-      baseQuests = [...progressQuests, resourceQuest, movementQuest, transportQuest];
+      const progressQuests = generateProgressQuests(questContext, 4);
+      baseQuests = [starterQuest, ...progressQuests, resourceQuest, movementQuest, transportQuest];
     } else {
-      // Recovery mode (unchanged for now): gentle category quests + goal steps.
-      const categoryQuests = getCategoryQuests(category, "Recovery");
-      const goalQuests: Quest[] = [
-        { title: `Goal step: ${topGoal}`, type: "Goal", steps: 1 },
-        { title: `Goal step: ${secondGoal}`, type: "Goal", steps: 1 },
-        { title: `Goal step: ${thirdGoal}`, type: "Goal", steps: 1 },
-      ];
-      baseQuests = [
-        ...categoryQuests,
-        ...goalQuests,
-        resourceQuest,
-        movementQuest,
-        transportQuest,
-      ];
+      const recoveryQuests = generateRecoveryQuests(questContext, 3);
+      baseQuests = [starterQuest, ...recoveryQuests, resourceQuest, movementQuest, transportQuest];
     }
 
     return [
@@ -1303,7 +1243,7 @@ export default function HomeScreen() {
                   <Text style={styles.modalTitle}>How the Quest Board works</Text>
                   <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false} bounces={false}>
                     <Text style={styles.modalDescription}>
-                      The Quest Board keeps today focused. Your Day Plan, checklist items, Quick Thoughts, and MYLIT quests can appear here. Start one timed quest at a time; while it runs, the board locks so you do not overload yourself. Complete gives steps. Missed? is not punishment — it helps you reflect and adjust. To protect your energy, MYLIT limits continuous progress work to 2 hours. After that, it adds a 1-hour recovery period before more progress tasks. Recovery counts.
+                      The Quest Board keeps today focused. Your Day Plan, checklist items, Quick Thoughts, and MYLIT quests can appear here. Path milestones are benchmarks — your first quest is a small starter step, not the whole short-term goal. Start one timed quest at a time; while it runs, the board locks so you do not overload yourself. Complete gives steps. Missed? is not punishment — it helps you reflect and adjust. To protect your energy, MYLIT limits continuous progress work to 2 hours. After that, it adds a 1-hour recovery period before more progress tasks. Recovery counts.
                     </Text>
                   </ScrollView>
                   <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowQuestHelp(false)}>

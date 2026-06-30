@@ -17,7 +17,7 @@ import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 
 const EVIE_PATH_BULLETS = [
-  "Path sets your direction. It helps MYLIT suggest more relevant quests.",
+  "Path sets your direction. Short, mid, and long-term goals are benchmarks — not single-day quests.",
   "Short-term = around 2 weeks. Mid-term = around 1 month. Long-term = around 3 months.",
   "Your category and resources help MYLIT choose better quests and checklist habits.",
   "Progress Meaning is your personal definition of moving forward.",

@@ -59,6 +59,7 @@ export type HomeQuestItem = {
   scheduledTime?: string;
   description?: string;
   mandatory?: boolean;
+  starter?: boolean;
 };
 
 type QuestLike = {
@@ -67,6 +68,8 @@ type QuestLike = {
   steps?: number;
   description?: string;
   mandatory?: boolean;
+  starter?: boolean;
+  durationMinutes?: number;
 };
 
 type RawChecklistItem = {
@@ -185,15 +188,16 @@ export function hasUserCreatedQuestItems(input: {
   });
 }
 
-type QuestPriorityTier = 0 | 1 | 2 | 3 | 4 | 5;
+type QuestPriorityTier = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
 function getItemPriorityTier(item: HomeQuestItem): QuestPriorityTier {
   if (item.scheduledTime && parseTimeToMinutes(item.scheduledTime) !== null) return 0;
   if (item.mandatory) return 1;
-  if (item.source === "Today's Quest") return 2;
-  if (item.source === "Checklist") return 3;
-  if (item.source === "Quick Thought") return 4;
-  return 5;
+  if (item.starter) return 2;
+  if (item.source === "Today's Quest") return 3;
+  if (item.source === "Checklist") return 4;
+  if (item.source === "Quick Thought") return 5;
+  return 6;
 }
 
 export function sortQuestItemsByPriority(items: HomeQuestItem[]): HomeQuestItem[] {
@@ -219,6 +223,7 @@ export function applyQuestBoardCapacity(items: HomeQuestItem[], mode: "Progress"
   if (!hasUserItems) {
     const firstRecommended =
       sorted.find((item) => item.mandatory) ??
+      sorted.find((item) => item.starter) ??
       sorted.find((item) => item.source === "Quest") ??
       sorted[0] ??
       null;
@@ -478,9 +483,10 @@ export function normalizeQuestItems(input: {
       source: "Quest",
       kind,
       steps: quest.steps ?? 1,
-      durationMinutes: 30,
+      durationMinutes: quest.durationMinutes ?? (quest.starter ? 10 : 30),
       description: quest.description || quest.type,
       mandatory: quest.mandatory,
+      starter: quest.starter,
     });
   });
 
