@@ -1,11 +1,18 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
-import { Link, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Image, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
 
 import { uiAssets } from "../../constants/uiAssets";
 import { generateProgressQuests } from "../../lib/questGeneration";
+import {
+  formatDurationLabel,
+  getQuickThoughtSteps,
+  inferScheduledClassification,
+  parseDurationMinutes,
+  parseTimeToMinutes,
+} from "../../lib/scheduling";
 
 const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
 const MAX_FRAME_WIDTH = 520;
@@ -29,6 +36,78 @@ type QueueItem = {
   task?: string;
   note?: string;
   type?: string;
+  // Optional scheduling fields written by Tomorrow Queue / Calendar. Beta data may
+  // not include all of these, so every consumer below parses them defensively.
+  date?: string;
+  dateKey?: string;
+  time?: string;
+  startTime?: string;
+  duration?: string;
+  durationMinutes?: number;
+  steps?: number;
+  status?: string;
+  completedAt?: string;
+  classification?: QuestKind;
+  kind?: string;
+};
+
+// Quest Board domain types ---------------------------------------------------
+type QuestSource = "Quest" | "Day Plan" | "Checklist" | "Quick Thought";
+type QuestKind = "progress" | "recovery";
+
+type HomeQuestItem = {
+  id: string;
+  title: string;
+  source: QuestSource;
+  kind: QuestKind;
+  steps: number;
+  durationMinutes: number;
+  scheduledTime?: string;
+  description?: string;
+  mandatory?: boolean;
+};
+
+type ActiveTimedItem = {
+  id: string;
+  title: string;
+  source: QuestSource;
+  kind: QuestKind;
+  steps: number;
+  durationMinutes: number;
+  startedAt: number;
+  endsAt: number;
+  scheduledTime?: string;
+};
+
+type RawChecklistItem = {
+  id?: string;
+  text?: string;
+  title?: string;
+  checked?: boolean;
+  steps?: number;
+  startTime?: string;
+  time?: string;
+  duration?: string;
+  durationMinutes?: number;
+  kind?: QuestKind;
+  status?: string;
+};
+
+type RawTodayQuest = {
+  id?: string;
+  title?: string;
+  startTime?: string;
+  duration?: string;
+  durationMinutes?: number;
+  steps?: number;
+  kind?: QuestKind;
+  status?: string;
+  date?: string;
+};
+
+type DayPlanRaw = {
+  todayQuest?: RawTodayQuest;
+  weekdayChecklists?: Partial<Record<WeekdayName, RawChecklistItem[]>>;
 };
 
 type CheckIn = {
@@ -88,25 +167,16 @@ type UserProfile = {
   goalsGeneratedAt?: string;
 };
 
-type PreSleepIntention = {
-  id: string;
-  date: string;
-  intention: string;
-  whyItMatters: string;
-  firstSmallAction: string;
-  dreamSymbol: string;
-  createdAt: string;
-};
-
 type ModeState = "Recovery" | "Progress" | "Neutral";
 
 const COMPLETED_QUESTS_KEY = "lit_completed_quests";
 const TODAY_PROGRESS_DATE_KEY = "lit_today_progress_date";
 const PROFILE_KEY = "lit_user_profile";
 const CHECKIN_KEY = "lit_latest_checkin";
-const LATEST_PRE_SLEEP_INTENTION_KEY = "lit_latest_pre_sleep_intention";
 const TOMORROW_QUEUE_KEY = "lit_tomorrow_queue";
 const DAY_PLAN_KEY = "lit_day_plan";
+const ACTIVE_TIMED_ITEM_KEY = "mylit_active_timed_item";
+const MAX_VISIBLE_QUEST_ITEMS = 4;
 const PROGRESS_QUEST_ENERGY_COST = 8;
 const RECOVERY_QUEST_ENERGY_COST = 6;
 const PASSIVE_DECAY_POINTS = 5;
@@ -134,24 +204,206 @@ function clampEnergy(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-function getFlameState(score: number) {
-  if (score >= 81) {
+// Maps the energy reserve to one of the five emotive fire PNG assets.
+// Bands: 0–24 ember · 25–44 low · 45–64 steady · 65–84 bright · 85–100 blazing.
+function getFireAssetForEnergy(score: number) {
+  if (score >= 85) {
     return { image: fireAssets.blazingFlame, emoji: "🔥", label: "Blazing Flame", size: 74 };
   }
 
-  if (score >= 61) {
+  if (score >= 65) {
     return { image: fireAssets.brightFlame, emoji: "🔥", label: "Bright Flame", size: 62 };
   }
 
-  if (score >= 41) {
+  if (score >= 45) {
     return { image: fireAssets.steadyFlame, emoji: "🔥", label: "Steady Flame", size: 50 };
   }
 
-  if (score >= 21) {
+  if (score >= 25) {
     return { image: fireAssets.lowFlame, emoji: "🔥", label: "Low Flame", size: 40 };
   }
 
   return { image: fireAssets.ember, emoji: "✨", label: "Ember", size: 30 };
+}
+
+// Day / Time Track spans 6 AM → 12 PM → 6 PM → 12 AM (an 18-hour window).
+// Times before 6 AM wrap to the far (late-night) end so the marker stays valid.
+function getCurrentTimeTrackPosition(now: Date): number {
+  const minutes = now.getHours() * 60 + now.getMinutes();
+  const startMinutes = 6 * 60;
+  const spanMinutes = 18 * 60;
+  let offset = minutes - startMinutes;
+  if (offset < 0) offset += 24 * 60;
+  const pct = (offset / spanMinutes) * 100;
+  return Math.max(2, Math.min(98, pct));
+}
+
+function formatCountdown(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const mins = Math.floor((totalSeconds % 3600) / 60);
+  const secs = totalSeconds % 60;
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return hours > 0 ? `${pad(hours)}:${pad(mins)}:${pad(secs)}` : `${pad(mins)}:${pad(secs)}`;
+}
+
+function kindAccent(kind: QuestKind): string {
+  return kind === "recovery" ? "#C4A7FF" : "#84CC16";
+}
+
+function sourceIcon(source: QuestSource): string {
+  if (source === "Day Plan") return "🗺";
+  if (source === "Checklist") return "📋";
+  if (source === "Quick Thought") return "💭";
+  return "📜";
+}
+
+function stepsForChecklistItem(kind: QuestKind, durationMinutes: number): number {
+  if (kind === "recovery") return durationMinutes >= 30 ? 1 : 0;
+  return durationMinutes >= 60 ? 2 : 1;
+}
+
+// Builds the unified, de-duplicated Quest Board list from every today-relevant
+// source. Parsing is intentionally defensive because beta data can be partial.
+function normalizeQuestItems(input: {
+  quests: Quest[];
+  todayQuest?: RawTodayQuest | null;
+  checklist: RawChecklistItem[];
+  quickThoughts: QueueItem[];
+  todayKey: string;
+}): HomeQuestItem[] {
+  const items: HomeQuestItem[] = [];
+  const seenTitles = new Set<string>();
+
+  const pushItem = (item: HomeQuestItem) => {
+    const titleKey = item.title.trim().toLowerCase();
+    if (!titleKey || seenTitles.has(titleKey)) return;
+    seenTitles.add(titleKey);
+    items.push(item);
+  };
+
+  // 1) Today's Day Plan quest (richest single quest).
+  const todayQuest = input.todayQuest;
+  if (todayQuest?.title?.trim() && todayQuest.status !== "completed") {
+    const durationMinutes = parseDurationMinutes(todayQuest.durationMinutes ?? todayQuest.duration, 60);
+    const kind: QuestKind =
+      todayQuest.kind === "recovery"
+        ? "recovery"
+        : inferScheduledClassification(todayQuest.title) === "recovery"
+        ? "recovery"
+        : "progress";
+    pushItem({
+      id: `dayquest-${todayQuest.id ?? todayQuest.title}`,
+      title: todayQuest.title.trim(),
+      source: "Day Plan",
+      kind,
+      steps: typeof todayQuest.steps === "number" ? todayQuest.steps : 2,
+      durationMinutes,
+      scheduledTime: todayQuest.startTime,
+      description: "Your main quest from today's Day Plan.",
+    });
+  }
+
+  // 2) Today's Day Plan checklist items (skip already-checked habits).
+  input.checklist.forEach((raw, index) => {
+    const title = (raw.text || raw.title || "").trim();
+    if (!title) return;
+    if (raw.checked === true || raw.status === "completed") return;
+    const durationMinutes = parseDurationMinutes(raw.durationMinutes ?? raw.duration, 30);
+    const kind: QuestKind =
+      raw.kind === "recovery"
+        ? "recovery"
+        : inferScheduledClassification(title) === "recovery"
+        ? "recovery"
+        : "progress";
+    pushItem({
+      id: `checklist-${raw.id ?? index}-${title}`,
+      title,
+      source: "Checklist",
+      kind,
+      steps: typeof raw.steps === "number" ? raw.steps : stepsForChecklistItem(kind, durationMinutes),
+      durationMinutes,
+      scheduledTime: raw.startTime || raw.time,
+      description: "Recurring habit from your Day Plan checklist.",
+    });
+  });
+
+  // 3) Today's Quick Thoughts / Tomorrow Queue items.
+  input.quickThoughts.forEach((raw, index) => {
+    const itemDate = raw.date ?? raw.dateKey;
+    if (itemDate && itemDate !== input.todayKey) return;
+    if (raw.status === "completed" || raw.completedAt) return;
+    const title = (raw.text || raw.title || raw.task || raw.note || "").trim();
+    if (!title) return;
+    const durationMinutes = parseDurationMinutes(raw.durationMinutes ?? raw.duration, 30);
+    const kind: QuestKind =
+      raw.classification === "recovery"
+        ? "recovery"
+        : inferScheduledClassification(title) === "recovery"
+        ? "recovery"
+        : "progress";
+    pushItem({
+      id: `quick-${raw.id ?? index}-${title}`,
+      title,
+      source: "Quick Thought",
+      kind,
+      steps: typeof raw.steps === "number" ? raw.steps : getQuickThoughtSteps(durationMinutes),
+      durationMinutes,
+      scheduledTime: raw.time || raw.startTime,
+      description: raw.type ? `Saved from Quick Thoughts (${raw.type})` : "Saved from Quick Thoughts.",
+    });
+  });
+
+  // 4) Generated Quest Board quests (the Day Plan + Quick Thought variants are
+  // skipped here because they were added above with richer metadata).
+  input.quests.forEach((quest) => {
+    if (quest.type === "Personal" || quest.type === "Quick Thought") return;
+    const kind: QuestKind = quest.mandatory
+      ? "recovery"
+      : inferScheduledClassification(quest.title) === "recovery"
+      ? "recovery"
+      : "progress";
+    pushItem({
+      id: `quest-${quest.title}`,
+      title: quest.title,
+      source: "Quest",
+      // Generated quests carry no stored duration, so default to 30 min.
+      kind,
+      steps: quest.steps,
+      durationMinutes: 30,
+      description: quest.description || quest.type,
+      mandatory: quest.mandatory,
+    });
+  });
+
+  const rankOf = (item: HomeQuestItem) => (item.mandatory ? 0 : item.scheduledTime ? 1 : 2);
+  items.sort((a, b) => {
+    const ra = rankOf(a);
+    const rb = rankOf(b);
+    if (ra !== rb) return ra - rb;
+    if (ra === 1) {
+      return (parseTimeToMinutes(a.scheduledTime) ?? 0) - (parseTimeToMinutes(b.scheduledTime) ?? 0);
+    }
+    return 0;
+  });
+
+  return items;
+}
+
+function findNextScheduledItem(
+  items: HomeQuestItem[],
+  activeId: string | null,
+  nowMinutes: number
+): HomeQuestItem | null {
+  const candidates = items.filter((item) => item.id !== activeId);
+  if (candidates.length === 0) return null;
+
+  const timed = candidates
+    .filter((item) => item.scheduledTime && parseTimeToMinutes(item.scheduledTime) !== null)
+    .sort((a, b) => (parseTimeToMinutes(a.scheduledTime) ?? 0) - (parseTimeToMinutes(b.scheduledTime) ?? 0));
+
+  const upcoming = timed.find((item) => (parseTimeToMinutes(item.scheduledTime) ?? 0) >= nowMinutes);
+  return upcoming ?? timed[0] ?? candidates[0] ?? null;
 }
 
 export default function HomeScreen() {
@@ -197,7 +449,14 @@ export default function HomeScreen() {
   const [completedQuests, setCompletedQuests] = useState<string[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileChecked, setProfileChecked] = useState(false);
-  const [latestIntention, setLatestIntention] = useState<PreSleepIntention | null>(null);
+
+  const [dayPlanRaw, setDayPlanRaw] = useState<DayPlanRaw | null>(null);
+  const [activeItem, setActiveItem] = useState<ActiveTimedItem | null>(null);
+  const [selectedItem, setSelectedItem] = useState<HomeQuestItem | null>(null);
+  const [lockMessage, setLockMessage] = useState("");
+  const [timeNow, setTimeNow] = useState<Date>(() => new Date());
+  const [countdownNow, setCountdownNow] = useState<number>(() => Date.now());
+  const lockMessageTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const latestCheckInDay = latestCheckIn?.createdAt
     ? new Date(latestCheckIn.createdAt).toLocaleDateString("en-CA")
@@ -250,6 +509,7 @@ export default function HomeScreen() {
       loadLatestCheckIn();
       loadQuickThoughts();
       loadDayPlan();
+      loadActiveItem();
     }, [])
   );
 
@@ -257,9 +517,29 @@ export default function HomeScreen() {
     loadCompletedQuests();
     loadProfile();
     loadLatestCheckIn();
-    loadLatestIntention();
     loadQuickThoughts();
     loadDayPlan();
+    loadActiveItem();
+  }, []);
+
+  // Keep the Day / Time Track marker on the real local time (refresh every 30s).
+  useEffect(() => {
+    const id = setInterval(() => setTimeNow(new Date()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Tick the active countdown once per second while a timed item is running.
+  useEffect(() => {
+    if (!activeItem) return;
+    setCountdownNow(Date.now());
+    const id = setInterval(() => setCountdownNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [activeItem]);
+
+  useEffect(() => {
+    return () => {
+      if (lockMessageTimeout.current) clearTimeout(lockMessageTimeout.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -341,6 +621,7 @@ export default function HomeScreen() {
     try {
       const parsed = JSON.parse(saved) as Partial<DayPlan> & Record<string, string | undefined>;
 
+      setDayPlanRaw(parsed as DayPlanRaw);
       setDayPlan({
         todayGoal: parsed.todayGoal || "",
         Monday: parsed.Monday || parsed.monday || "",
@@ -409,12 +690,99 @@ export default function HomeScreen() {
     }
   }
 
-  async function loadLatestIntention() {
-    const saved = await AsyncStorage.getItem(LATEST_PRE_SLEEP_INTENTION_KEY);
+  async function loadActiveItem() {
+    const saved = await AsyncStorage.getItem(ACTIVE_TIMED_ITEM_KEY);
 
-    if (saved) {
-      setLatestIntention(JSON.parse(saved));
+    if (!saved) {
+      setActiveItem(null);
+      return;
     }
+
+    try {
+      const parsed = JSON.parse(saved) as ActiveTimedItem;
+      if (parsed && typeof parsed.title === "string" && typeof parsed.endsAt === "number") {
+        setActiveItem(parsed);
+      } else {
+        setActiveItem(null);
+      }
+    } catch {
+      setActiveItem(null);
+    }
+  }
+
+  async function saveActiveItem(item: ActiveTimedItem) {
+    setActiveItem(item);
+    await AsyncStorage.setItem(ACTIVE_TIMED_ITEM_KEY, JSON.stringify(item));
+  }
+
+  async function clearActiveItem() {
+    setActiveItem(null);
+    await AsyncStorage.removeItem(ACTIVE_TIMED_ITEM_KEY);
+  }
+
+  function showLockMessage() {
+    mediumHaptic();
+    setLockMessage("Finish the current quest first.");
+    if (lockMessageTimeout.current) clearTimeout(lockMessageTimeout.current);
+    lockMessageTimeout.current = setTimeout(() => setLockMessage(""), 2500);
+  }
+
+  function openQuestItem(item: HomeQuestItem) {
+    if (activeItem) {
+      showLockMessage();
+      return;
+    }
+    lightHaptic();
+    setSelectedItem(item);
+  }
+
+  async function startTimedItem(item: HomeQuestItem) {
+    if (activeItem) {
+      showLockMessage();
+      return;
+    }
+
+    const durationMinutes = item.durationMinutes > 0 ? item.durationMinutes : 30;
+    const startedAt = Date.now();
+    const next: ActiveTimedItem = {
+      id: item.id,
+      title: item.title,
+      source: item.source,
+      kind: item.kind,
+      steps: item.steps,
+      durationMinutes,
+      startedAt,
+      endsAt: startedAt + durationMinutes * 60 * 1000,
+      scheduledTime: item.scheduledTime,
+    };
+
+    setSelectedItem(null);
+    await saveActiveItem(next);
+    await mediumHaptic();
+  }
+
+  // Completion is the ONLY place steps are awarded — never on Start.
+  async function completeActiveItem() {
+    if (!activeItem) return;
+
+    const title = activeItem.title;
+    const nextCompleted = completedQuests.includes(title)
+      ? completedQuests
+      : [...completedQuests, title];
+
+    await successHaptic();
+    await saveCompletedQuests(nextCompleted);
+    await clearActiveItem();
+  }
+
+  // Missed / Reflect routes to the existing reflection screen and awards no steps.
+  async function reflectActiveItem() {
+    if (!activeItem) return;
+
+    const title = activeItem.title;
+    await lightHaptic();
+    await clearActiveItem();
+    router.push({ pathname: "/reflection", params: { quest: title } });
   }
 
   async function saveCompletedQuests(nextCompleted: string[]) {
@@ -423,34 +791,6 @@ export default function HomeScreen() {
     setCompletedQuests(nextCompleted);
     await AsyncStorage.setItem(TODAY_PROGRESS_DATE_KEY, today);
     await AsyncStorage.setItem(COMPLETED_QUESTS_KEY, JSON.stringify(nextCompleted));
-  }
-
-  async function toggleQuest(quest: Quest) {
-    const mandatoryQuest = getMandatoryQuest();
-
-    if (mandatoryQuest && !quest.mandatory && !completedQuests.includes(mandatoryQuest.title)) {
-      await mediumHaptic();
-      return;
-    }
-
-    const isAlreadyComplete = completedQuests.includes(quest.title);
-
-    const nextCompleted = isAlreadyComplete
-      ? completedQuests.filter((item) => item !== quest.title)
-      : [...completedQuests, quest.title];
-
-    if (isAlreadyComplete) {
-      await lightHaptic();
-    } else {
-      await successHaptic();
-    }
-
-    await saveCompletedQuests(nextCompleted);
-  }
-
-  async function resetTodayProgress() {
-    await mediumHaptic();
-    await saveCompletedQuests([]);
   }
 
   // Prefer the new tiered milestone fields; fall back to legacy goalOne/Two/Three
@@ -501,10 +841,9 @@ export default function HomeScreen() {
     "";
   const todayPlanText = todayGoal || todayRole;
 
-  const flameState = useMemo(() => getFlameState(energyYield), [energyYield]);
+  const flameState = useMemo(() => getFireAssetForEnergy(energyYield), [energyYield]);
   const flameLabel = hasEnergyData ? flameState.label : "Check-in needed";
 
-  const modeTitle = isNeutral ? "Balanced Mode" : isRecovery ? "Recovery Mode" : "Progress Mode";
   const modeInstruction = isNeutral
     ? "A new day awaits. Small steps today, bright tomorrows."
     : isRecovery
@@ -746,7 +1085,38 @@ export default function HomeScreen() {
   }
 
   const quests = generateQuests();
-  const visibleQuests = quests.slice(0, 3);
+
+  const todayChecklist: RawChecklistItem[] = (() => {
+    const lists = dayPlanRaw?.weekdayChecklists;
+    if (!lists) return [];
+    const todayList = lists[todayName];
+    return Array.isArray(todayList) ? todayList : [];
+  })();
+
+  const allHomeItems: HomeQuestItem[] =
+    hasEnergyData && !isNeutral
+      ? normalizeQuestItems({
+          quests,
+          todayQuest: dayPlanRaw?.todayQuest ?? null,
+          checklist: todayChecklist,
+          quickThoughts: queueItems,
+          todayKey: getTodayKey(),
+        })
+      : [];
+
+  const availableItems = allHomeItems.filter(
+    (item) => !completedQuests.includes(item.title) && item.id !== activeItem?.id
+  );
+  const visibleItems = availableItems.slice(0, MAX_VISIBLE_QUEST_ITEMS);
+  const extraItemCount = Math.max(0, availableItems.length - visibleItems.length);
+
+  const remainingMs = activeItem ? Math.max(0, activeItem.endsAt - countdownNow) : 0;
+  const timerFinished = activeItem !== null && remainingMs <= 0;
+  const isBoardLocked = activeItem !== null;
+
+  const nowMinutes = timeNow.getHours() * 60 + timeNow.getMinutes();
+  const timeTrackPosition = getCurrentTimeTrackPosition(timeNow);
+  const nextItem = activeItem ? findNextScheduledItem(availableItems, activeItem.id, nowMinutes) : null;
 
   const currentBackground = isRecovery
     ? uiAssets.backgrounds.recovery
@@ -754,24 +1124,11 @@ export default function HomeScreen() {
     ? uiAssets.backgrounds.progress
     : uiAssets.backgrounds.neutral;
 
-  const completedSteps = visibleQuests
-    .filter((quest) => completedQuests.includes(quest.title))
-    .reduce((sum, quest) => sum + quest.steps, 0);
-
-  const completedVisibleQuests = visibleQuests.filter((quest) =>
-    completedQuests.includes(quest.title)
-  ).length;
-
+  const completedHomeItems = allHomeItems.filter((item) => completedQuests.includes(item.title));
+  const completedSteps = completedHomeItems.reduce((sum, item) => sum + item.steps, 0);
+  const completedCount = completedHomeItems.length;
+  const totalCount = allHomeItems.length;
   const rank = completedSteps >= 5 ? "Consistent" : "Beginner";
-
-  const moveQuestDone = visibleQuests.some(
-    (q) => (q.type === "Body" || q.title.toLowerCase().includes("movement")) && completedQuests.includes(q.title)
-  )
-    ? 1
-    : 0;
-
-  const focusValue = `${completedVisibleQuests}/${visibleQuests.length || 0}`;
-  const reflectValue = visibleQuests.some((q) => q.title.toLowerCase().includes("reflect")) ? 1 : 0;
 
   if (!profileChecked) return null;
 
@@ -793,15 +1150,7 @@ export default function HomeScreen() {
               bounces={false}
             >
               <View style={styles.topHud}>
-                <TouchableOpacity style={[styles.cornerButton, { borderColor: theme.accent }]} onPress={() => navigateWithHaptic("/onboarding")}>
-                  <Text style={styles.cornerButtonText}>🌲</Text>
-                </TouchableOpacity>
-
                 <Image source={mylitLogo} style={styles.heroLogo} resizeMode="contain" />
-
-                <TouchableOpacity style={[styles.cornerButton, { borderColor: theme.accent }]} onPress={() => navigateWithHaptic("/onboarding")}>
-                  <Text style={styles.cornerButtonText}>⚙️</Text>
-                </TouchableOpacity>
               </View>
 
               <View style={styles.modeRow}>
@@ -823,14 +1172,11 @@ export default function HomeScreen() {
                   <Text style={styles.timelineIcon}>🌙</Text>
                 </View>
                 <View style={styles.timelineTrack}>
-                  <View style={[styles.timelineFill, { backgroundColor: theme.accent }]} />
+                  <View style={[styles.timelineFill, { backgroundColor: theme.accent, width: `${timeTrackPosition}%` }]} />
                   <View
                     style={[
                       styles.timelineMarker,
-                      { borderColor: theme.accent, backgroundColor: theme.glow },
-                      isNeutral && styles.timelineMarkerNeutral,
-                      isProgress && styles.timelineMarkerProgress,
-                      isRecovery && styles.timelineMarkerRecovery,
+                      { borderColor: theme.accent, backgroundColor: theme.glow, left: `${timeTrackPosition}%` },
                     ]}
                   />
                 </View>
@@ -930,10 +1276,12 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               </View>
 
-              <View style={[styles.questBoard, { borderColor: theme.accent }]}>
+              <View style={[styles.questBoard, { borderColor: isBoardLocked && activeItem ? kindAccent(activeItem.kind) : theme.accent }]}>
                 <View style={styles.questHeaderRow}>
                   <Text style={[styles.questTitle, { color: theme.accent }]}>{isRecovery ? "+ QUEST BOARD +" : "⚔ QUEST BOARD"}</Text>
-                  <Text style={[styles.questCount, { color: theme.accent }]}>{isNeutral ? "LOCKED" : isProgress ? `${visibleQuests.length} ACTIVE` : `${completedVisibleQuests}/${visibleQuests.length || 0}`}</Text>
+                  <Text style={[styles.questCount, { color: theme.accent }]}>
+                    {isNeutral ? "LOCKED" : isBoardLocked ? "LOCKED" : `${availableItems.length} ACTIVE`}
+                  </Text>
                 </View>
 
                 {isNeutral ? (
@@ -944,33 +1292,88 @@ export default function HomeScreen() {
                       <Text style={styles.questLockedButtonText}>START CHECK-IN</Text>
                     </TouchableOpacity>
                   </View>
-                ) : (
-                  visibleQuests.map((quest) => {
-                    const isDone = completedQuests.includes(quest.title);
+                ) : isBoardLocked && activeItem ? (
+                  <View style={[styles.activeCard, { borderColor: kindAccent(activeItem.kind) }]}>
+                    <View style={styles.activeHeaderRow}>
+                      <Text style={[styles.activeLockLabel, { color: timerFinished ? "#22C55E" : theme.glow }]}>
+                        {timerFinished ? "QUEST COMPLETE" : "QUEST BOARD LOCKED"}
+                      </Text>
+                      <View style={[styles.kindPill, { borderColor: kindAccent(activeItem.kind) }]}>
+                        <Text style={[styles.kindPillText, { color: kindAccent(activeItem.kind) }]}>
+                          {activeItem.kind === "recovery" ? "RECOVERY" : "PROGRESS"}
+                        </Text>
+                      </View>
+                    </View>
 
-                    return (
-                      <View key={quest.title} style={[styles.questRow, isDone && styles.questRowDone]}>
-                        <View style={styles.questIconSlot}>
-                          <Text style={styles.questIcon}>{quest.mandatory ? "!" : quest.type === "Body" ? "🏋️" : quest.type === "Focus" ? "📓" : "📜"}</Text>
-                        </View>
-                        <View style={styles.questCopy}>
-                          <Text style={styles.questText} numberOfLines={1}>{quest.title}</Text>
-                          <View style={styles.questMetaRow}>
-                            <Text style={[styles.questMeta, { color: theme.soft }]} numberOfLines={1}>{quest.description || quest.type}</Text>
-                            <Text style={[styles.questSteps, { color: theme.accent }]}>+{quest.steps}</Text>
-                          </View>
-                        </View>
-                        <Link href={{ pathname: "/reflection", params: { quest: quest.title } }} asChild>
-                          <TouchableOpacity style={styles.reflectButton}>
-                            <Text style={styles.reflectButtonText}>↺</Text>
+                    <Text style={styles.activeTitle} numberOfLines={2}>{activeItem.title}</Text>
+                    <Text style={[styles.countdownText, { color: timerFinished ? "#22C55E" : theme.glow }]}>
+                      {formatCountdown(remainingMs)}
+                    </Text>
+                    <Text style={styles.activeMeta} numberOfLines={1}>
+                      {activeItem.source} · {formatDurationLabel(activeItem.durationMinutes)} · +{activeItem.steps} steps
+                    </Text>
+
+                    {!timerFinished ? (
+                      <>
+                        {nextItem ? (
+                          <TouchableOpacity style={styles.nextRow} onPress={showLockMessage} activeOpacity={0.85}>
+                            <Text style={[styles.nextLabel, { color: theme.accent }]}>NEXT</Text>
+                            <Text style={styles.nextTitle} numberOfLines={1}>{nextItem.title}</Text>
+                            <Text style={styles.nextMeta} numberOfLines={1}>
+                              {nextItem.scheduledTime ? `${nextItem.scheduledTime} · ` : ""}{formatDurationLabel(nextItem.durationMinutes)}
+                            </Text>
                           </TouchableOpacity>
-                        </Link>
-                        <TouchableOpacity style={[styles.checkBox, isDone && styles.checkBoxDone, { borderColor: isDone ? "#22C55E" : theme.soft }]} onPress={() => toggleQuest(quest)}>
-                          <Text style={styles.checkBoxText}>{isDone ? "✓" : ""}</Text>
+                        ) : (
+                          <Text style={styles.nextEmpty}>Next: No scheduled item yet.</Text>
+                        )}
+                        {lockMessage ? <Text style={styles.lockMessage}>{lockMessage}</Text> : null}
+                      </>
+                    ) : (
+                      <View style={styles.completeRow}>
+                        <TouchableOpacity style={[styles.completeBtn]} onPress={completeActiveItem}>
+                          <Text style={styles.completeBtnText}>COMPLETE</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.reflectBtn, { borderColor: theme.accent }]} onPress={reflectActiveItem}>
+                          <Text style={styles.reflectBtnText}>REFLECT / MISSED</Text>
                         </TouchableOpacity>
                       </View>
-                    );
-                  })
+                    )}
+                  </View>
+                ) : availableItems.length === 0 ? (
+                  <View style={styles.questLockedCard}>
+                    <Text style={styles.questLockedTitle}>No quests yet</Text>
+                    <Text style={styles.questLockedText} numberOfLines={2}>Add items in Day Plan or Quick Thoughts to fill your board.</Text>
+                  </View>
+                ) : (
+                  <>
+                    {visibleItems.map((item) => (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={[styles.questRow, { borderColor: item.mandatory ? "#F87171" : "#2E3542" }]}
+                        onPress={() => openQuestItem(item)}
+                        activeOpacity={0.85}
+                      >
+                        <View style={styles.questIconSlot}>
+                          <Text style={styles.questIcon}>{item.mandatory ? "!" : sourceIcon(item.source)}</Text>
+                        </View>
+                        <View style={styles.questCopy}>
+                          <Text style={styles.questText} numberOfLines={1}>{item.title}</Text>
+                          <View style={styles.questMetaRow}>
+                            <Text style={[styles.questMeta, { color: theme.soft }]} numberOfLines={1}>
+                              {item.source} · {formatDurationLabel(item.durationMinutes)}{item.scheduledTime ? ` · ${item.scheduledTime}` : ""}
+                            </Text>
+                            <Text style={[styles.questSteps, { color: kindAccent(item.kind) }]}>+{item.steps}</Text>
+                          </View>
+                        </View>
+                        <View style={[styles.kindDot, { backgroundColor: kindAccent(item.kind) }]} />
+                        <Text style={[styles.startChevron, { color: theme.accent }]}>▶</Text>
+                      </TouchableOpacity>
+                    ))}
+                    {lockMessage ? <Text style={styles.lockMessage}>{lockMessage}</Text> : null}
+                    {extraItemCount > 0 ? (
+                      <Text style={styles.moreHint}>+{extraItemCount} more in Calendar / Day Plan</Text>
+                    ) : null}
+                  </>
                 )}
               </View>
 
@@ -995,11 +1398,53 @@ export default function HomeScreen() {
                   <Text style={styles.statIcon}>🎒</Text>
                   <View>
                     <Text style={[styles.statLabel, { color: theme.accent }]}>INVENTORY</Text>
-                    <Text style={styles.statValue}>{completedVisibleQuests} / {visibleQuests.length || 0}</Text>
+                    <Text style={styles.statValue}>{completedCount} / {totalCount || 0}</Text>
                   </View>
                 </View>
               </View>
             </ScrollView>
+
+            <Modal
+              visible={selectedItem !== null}
+              transparent
+              animationType="fade"
+              onRequestClose={() => setSelectedItem(null)}
+            >
+              <View style={styles.modalBackdrop}>
+                {selectedItem ? (
+                  <View style={[styles.modalPanel, { borderColor: kindAccent(selectedItem.kind) }]}>
+                    <Text style={[styles.modalSource, { color: kindAccent(selectedItem.kind) }]}>
+                      {selectedItem.source.toUpperCase()}
+                    </Text>
+                    <Text style={styles.modalTitle}>{selectedItem.title}</Text>
+
+                    <View style={styles.modalMetaGrid}>
+                      <Text style={styles.modalMeta}>Type: {selectedItem.kind === "recovery" ? "Recovery" : "Progress"}</Text>
+                      <Text style={styles.modalMeta}>Duration: {formatDurationLabel(selectedItem.durationMinutes)}</Text>
+                      <Text style={styles.modalMeta}>Steps possible: +{selectedItem.steps}</Text>
+                      {selectedItem.scheduledTime ? (
+                        <Text style={styles.modalMeta}>Scheduled: {selectedItem.scheduledTime}</Text>
+                      ) : (
+                        <Text style={styles.modalMeta}>Scheduled: Anytime today</Text>
+                      )}
+                    </View>
+
+                    {selectedItem.description ? (
+                      <Text style={styles.modalDescription}>{selectedItem.description}</Text>
+                    ) : null}
+
+                    <View style={styles.modalButtonRow}>
+                      <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setSelectedItem(null)}>
+                        <Text style={styles.modalCancelText}>CANCEL</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.modalStartBtn} onPress={() => startTimedItem(selectedItem)}>
+                        <Text style={styles.modalStartText}>START</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : null}
+              </View>
+            </Modal>
 
             <View style={[styles.bottomNav, { borderColor: theme.accent }]}>
               <TouchableOpacity style={[styles.navButton, styles.navButtonActive, { borderColor: theme.accent }]} onPress={lightHaptic}>
@@ -1073,26 +1518,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
   },
   topHud: {
-    minHeight: 86,
+    minHeight: 64,
     flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-  },
-  cornerButton: {
-    height: 48,
-    width: 48,
-    borderWidth: 3,
-    borderRadius: 8,
-    backgroundColor: "rgba(6, 10, 18, 0.94)",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.7,
-    shadowRadius: 0,
-    shadowOffset: { width: 3, height: 3 },
-  },
-  cornerButtonText: {
-    fontSize: 24,
   },
   heroLogo: {
     height: 82,
@@ -1188,6 +1617,7 @@ const styles = StyleSheet.create({
     top: -9,
     height: 22,
     width: 22,
+    marginLeft: -11,
     borderWidth: 3,
     transform: [{ rotate: "45deg" }],
     shadowColor: "#000",
@@ -1195,9 +1625,6 @@ const styles = StyleSheet.create({
     shadowRadius: 0,
     shadowOffset: { width: 2, height: 2 },
   },
-  timelineMarkerNeutral: { left: "23%" },
-  timelineMarkerProgress: { left: "42%" },
-  timelineMarkerRecovery: { left: "10%" },
   timelineLabelsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1502,6 +1929,225 @@ const styles = StyleSheet.create({
   questSteps: {
     fontSize: 10,
     fontWeight: "900",
+  },
+  kindDot: {
+    height: 9,
+    width: 9,
+    borderRadius: 5,
+    marginLeft: 6,
+  },
+  startChevron: {
+    fontSize: 14,
+    fontWeight: "900",
+    marginLeft: 6,
+  },
+  moreHint: {
+    color: "#CBD5E1",
+    fontSize: 9,
+    fontWeight: "800",
+    textAlign: "center",
+    marginTop: 2,
+  },
+  lockMessage: {
+    color: "#FCA5A5",
+    fontSize: 10,
+    fontWeight: "900",
+    textAlign: "center",
+    marginTop: 4,
+  },
+  activeCard: {
+    minHeight: 120,
+    borderWidth: 2,
+    borderRadius: 4,
+    backgroundColor: "rgba(10, 14, 26, 0.96)",
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  activeHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  activeLockLabel: {
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  kindPill: {
+    borderWidth: 2,
+    backgroundColor: "rgba(9, 14, 24, 0.95)",
+    paddingVertical: 2,
+    paddingHorizontal: 7,
+  },
+  kindPillText: {
+    fontSize: 8,
+    fontWeight: "900",
+  },
+  activeTitle: {
+    color: "#F8F1D7",
+    fontSize: 13,
+    fontWeight: "900",
+    marginTop: 6,
+  },
+  countdownText: {
+    fontSize: 34,
+    fontWeight: "900",
+    letterSpacing: 1,
+    marginTop: 2,
+    textShadowColor: "#000",
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 0,
+  },
+  activeMeta: {
+    color: "#CBD5E1",
+    fontSize: 10,
+    fontWeight: "800",
+    marginTop: 1,
+  },
+  nextRow: {
+    marginTop: 8,
+    borderWidth: 2,
+    borderColor: "#2E3542",
+    backgroundColor: "rgba(15, 23, 42, 0.9)",
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  nextLabel: {
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
+  nextTitle: {
+    color: "#F8F1D7",
+    fontSize: 12,
+    fontWeight: "900",
+    marginTop: 1,
+  },
+  nextMeta: {
+    color: "#94A3B8",
+    fontSize: 9,
+    fontWeight: "800",
+    marginTop: 1,
+  },
+  nextEmpty: {
+    color: "#94A3B8",
+    fontSize: 11,
+    fontWeight: "800",
+    marginTop: 8,
+  },
+  completeRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 10,
+  },
+  completeBtn: {
+    flex: 1,
+    borderWidth: 2,
+    borderColor: "#22C55E",
+    backgroundColor: "#14532D",
+    paddingVertical: 9,
+    alignItems: "center",
+  },
+  completeBtnText: {
+    color: "#DCFCE7",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
+  reflectBtn: {
+    flex: 1,
+    borderWidth: 2,
+    backgroundColor: "rgba(8, 13, 24, 0.94)",
+    paddingVertical: 9,
+    alignItems: "center",
+  },
+  reflectBtnText: {
+    color: "#F8F1D7",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(2, 4, 10, 0.78)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 22,
+  },
+  modalPanel: {
+    width: "100%",
+    maxWidth: 320,
+    borderWidth: 3,
+    borderRadius: 6,
+    backgroundColor: "rgba(8, 12, 22, 0.98)",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.8,
+    shadowRadius: 0,
+    shadowOffset: { width: 5, height: 5 },
+  },
+  modalSource: {
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1.2,
+  },
+  modalTitle: {
+    color: "#F8F1D7",
+    fontSize: 17,
+    fontWeight: "900",
+    marginTop: 6,
+    lineHeight: 22,
+  },
+  modalMetaGrid: {
+    marginTop: 12,
+    gap: 5,
+  },
+  modalMeta: {
+    color: "#CBD5E1",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  modalDescription: {
+    color: "#94A3B8",
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17,
+    marginTop: 10,
+  },
+  modalButtonRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 18,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    borderWidth: 2,
+    borderColor: "#334155",
+    backgroundColor: "rgba(15, 23, 42, 0.95)",
+    paddingVertical: 11,
+    alignItems: "center",
+  },
+  modalCancelText: {
+    color: "#E2E8F0",
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
+  modalStartBtn: {
+    flex: 1,
+    borderWidth: 3,
+    borderColor: "#FBBF24",
+    backgroundColor: "#3B2F0B",
+    paddingVertical: 11,
+    alignItems: "center",
+  },
+  modalStartText: {
+    color: "#FDE68A",
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.5,
   },
   reflectButton: {
     height: 25,
