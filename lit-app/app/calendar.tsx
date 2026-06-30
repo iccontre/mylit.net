@@ -64,7 +64,7 @@ const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
 const MAX_FRAME_WIDTH = 520;
 const WEEKDAY_NAMES: WeekdayName[] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const WEEKDAY_LABELS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
-const TIME_ROWS = ["7 AM", "8 AM", "9 AM", "10 AM", "11 AM", "12 PM", "1 PM", "2 PM", "3 PM", "4 PM", "5 PM", "6 PM", "7 PM", "8 PM", "9 PM", "10 PM"];
+const TIME_ROWS = ["7 AM", "8 AM", "9 AM", "10 AM", "11 AM", "12 PM", "1 PM", "2 PM", "3 PM", "4 PM", "5 PM", "6 PM", "7 PM", "8 PM", "9 PM", "10 PM", "11 PM"];
 
 const pixelFont = Platform.select({ ios: "Menlo", android: "monospace", web: "monospace", default: "monospace" });
 
@@ -91,14 +91,36 @@ function buildDayLabel(date: Date) {
   return `${WEEKDAY_LABELS[date.getDay()]} ${formatShortDate(date)}`;
 }
 
-function timeBucket(time?: string) {
-  if (time === "All day") return "7 AM";
-  const minutes = parseTimeToMinutes(time || "9 AM") ?? 9 * 60;
-  const clamped = Math.max(7 * 60, Math.min(22 * 60, minutes));
-  const hour = Math.floor(clamped / 60);
-  const period = hour >= 12 ? "PM" : "AM";
-  const hour12 = hour % 12 || 12;
-  return `${hour12} ${period}`;
+function calendarTimeRow(time?: string): string {
+  if (!time || time === "All day") return "7 AM";
+  const minutes = parseTimeToMinutes(time);
+  if (minutes === null) return "9 AM";
+
+  let bestRow = TIME_ROWS[0];
+  let bestDistance = Number.MAX_SAFE_INTEGER;
+  for (const row of TIME_ROWS) {
+    const rowMinutes = parseTimeToMinutes(row);
+    if (rowMinutes === null) continue;
+    const distance = Math.abs(minutes - rowMinutes);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestRow = row;
+    }
+  }
+  return bestRow;
+}
+
+function dedupeCalendarEvents(events: CalendarEvent[]): CalendarEvent[] {
+  const seen = new Map<string, CalendarEvent>();
+  for (const event of events) {
+    const key = `${event.date}|${event.classification}|${event.startTime ?? ""}|${event.title}`;
+    if (!seen.has(key)) seen.set(key, event);
+  }
+  return Array.from(seen.values());
+}
+
+function sleepGuideDedupeKey(event: CalendarEvent): string {
+  return `${event.date}|${event.classification}|${event.startTime ?? ""}|${event.cellLabel}`;
 }
 
 function eventTone(classification: ScheduledClassification): EventTone {
@@ -285,7 +307,9 @@ export default function CalendarScreen() {
       });
     }
 
-    return events.sort((a, b) => a.priority - b.priority || (parseTimeToMinutes(a.startTime) ?? 0) - (parseTimeToMinutes(b.startTime) ?? 0));
+    return dedupeCalendarEvents(events).sort(
+      (a, b) => a.priority - b.priority || (parseTimeToMinutes(a.startTime) ?? 0) - (parseTimeToMinutes(b.startTime) ?? 0)
+    );
   });
 
   const todayKey = getDateKey(today);
@@ -363,15 +387,28 @@ export default function CalendarScreen() {
                       </TouchableOpacity>
                     ) : null}
                     {TIME_ROWS.map((row) => {
-                      const rowEvents = events.filter((event: CalendarEvent) => event.classification !== "focus" && timeBucket(event.startTime) === row);
+                      const rowEvents = events
+                        .filter((event: CalendarEvent) => event.classification !== "focus" && calendarTimeRow(event.startTime) === row)
+                        .sort((a, b) => {
+                          if (a.classification === "sleepGuide" && b.classification !== "sleepGuide") return 1;
+                          if (b.classification === "sleepGuide" && a.classification !== "sleepGuide") return -1;
+                          return (parseTimeToMinutes(a.startTime) ?? 0) - (parseTimeToMinutes(b.startTime) ?? 0);
+                        });
+                      const primaryEvent = rowEvents[0] ?? null;
+                      const overflowCount = Math.max(0, rowEvents.length - 1);
                       return (
                         <View key={`${date.toISOString()}-${row}`} style={styles.hourCell}>
-                          {rowEvents.map((event: CalendarEvent) => (
-                            <TouchableOpacity key={event.id} style={[styles.eventBlock, getEventToneStyle(event.tone)]} onPress={() => setSelectedEvent(event)}>
-                              <Text style={styles.eventTime} numberOfLines={1}>{event.startTime || "—"}</Text>
-                              <Text style={styles.eventText} numberOfLines={2}>{event.cellLabel}</Text>
+                          {primaryEvent ? (
+                            <TouchableOpacity
+                              key={primaryEvent.classification === "sleepGuide" ? sleepGuideDedupeKey(primaryEvent) : primaryEvent.id}
+                              style={[styles.eventBlock, getEventToneStyle(primaryEvent.tone)]}
+                              onPress={() => setSelectedEvent(primaryEvent)}
+                            >
+                              <Text style={styles.eventTime} numberOfLines={1}>{primaryEvent.startTime || "—"}</Text>
+                              <Text style={styles.eventText} numberOfLines={2}>{primaryEvent.cellLabel}</Text>
                             </TouchableOpacity>
-                          ))}
+                          ) : null}
+                          {overflowCount > 0 ? <Text style={styles.moreText}>+{overflowCount}</Text> : null}
                         </View>
                       );
                     })}
@@ -491,9 +528,10 @@ const styles = StyleSheet.create({
   weekArrowText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 18, fontWeight: "900" }, weekCenter: { flex: 1, alignItems: "center" }, weekKicker: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 9, fontWeight: "900" }, weekRange: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", marginTop: 3 },
   legendRow: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginBottom: 8 }, legendItem: { flexDirection: "row", alignItems: "center" }, legendDot: { width: 12, height: 12, borderRadius: 2, marginRight: 4 }, legendText: { color: "#CBD5E1", fontSize: 10, fontWeight: "800" },
   calendarGrid: { flexDirection: "row", backgroundColor: "rgba(8,13,24,0.92)", borderWidth: 2, borderColor: "#334155", borderRadius: 8, overflow: "hidden" },
-  timeColumn: { width: 42, borderRightWidth: 1, borderRightColor: "#334155" }, gridCorner: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 8, textAlign: "center", paddingVertical: 8 }, timeCell: { color: "#64748B", fontSize: 8, height: 54, textAlign: "center", paddingTop: 4 },
-  dayColumn: { flex: 1, borderRightWidth: 1, borderRightColor: "#1F2937", padding: 3 }, todayColumn: { backgroundColor: "rgba(34,197,94,0.08)", borderColor: "#86EFAC" }, dayHeader: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", textAlign: "center" }, dayHeaderToday: { color: "#FDE68A" }, dayNumber: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", textAlign: "center", marginBottom: 4 },
-  hourCell: { minHeight: 54, borderTopWidth: 1, borderTopColor: "rgba(51,65,85,0.55)", paddingTop: 2, gap: 2 }, focusTab: { minHeight: 28, borderWidth: 1, borderRadius: 4, padding: 3, marginBottom: 3 }, focusTabText: { color: "#F8FAFC", fontSize: 8, lineHeight: 10, fontWeight: "900" }, eventBlock: { borderWidth: 1, borderRadius: 4, padding: 3, minHeight: 36 }, eventTime: { color: "#F8FAFC", fontSize: 8, fontWeight: "900" }, eventText: { color: "#F8FAFC", fontSize: 8, lineHeight: 10, fontWeight: "800" }, moreText: { color: "#94A3B8", fontSize: 9, textAlign: "center", marginTop: 2 },
+  timeColumn: { width: 42, borderRightWidth: 1, borderRightColor: "#334155" }, gridCorner: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 8, textAlign: "center", paddingVertical: 8 },   timeCell: { color: "#64748B", fontSize: 8, height: 54, textAlign: "center", paddingTop: 4 },
+  dayColumn: { flex: 1, borderRightWidth: 1, borderRightColor: "#1F2937", padding: 3 },
+  todayColumn: { backgroundColor: "rgba(34,197,94,0.08)", borderColor: "#86EFAC" }, dayHeader: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", textAlign: "center" }, dayHeaderToday: { color: "#FDE68A" }, dayNumber: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", textAlign: "center", marginBottom: 4 },
+  hourCell: { height: 54, borderTopWidth: 1, borderTopColor: "rgba(51,65,85,0.55)", paddingTop: 2, overflow: "hidden", justifyContent: "flex-start" }, focusTab: { minHeight: 28, borderWidth: 1, borderRadius: 4, padding: 3, marginBottom: 3 }, focusTabText: { color: "#F8FAFC", fontSize: 8, lineHeight: 10, fontWeight: "900" }, eventBlock: { borderWidth: 1, borderRadius: 4, padding: 3, minHeight: 36 }, eventTime: { color: "#F8FAFC", fontSize: 8, fontWeight: "900" }, eventText: { color: "#F8FAFC", fontSize: 8, lineHeight: 10, fontWeight: "800" }, moreText: { color: "#94A3B8", fontSize: 9, textAlign: "center", marginTop: 2 },
   eventGold: { backgroundColor: "rgba(113,63,18,0.85)", borderColor: "#FBBF24" }, eventPurple: { backgroundColor: "rgba(88,28,135,0.85)", borderColor: "#A78BFA" }, eventBlue: { backgroundColor: "rgba(14,116,144,0.85)", borderColor: "#67E8F9" }, eventGreen: { backgroundColor: "rgba(20,83,45,0.65)", borderColor: "#86EFAC" },
   popupOverlay: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "center", padding: 18, zIndex: 10 }, popupCard: { backgroundColor: "rgba(8,13,24,0.98)", borderWidth: 3, borderRadius: 12, padding: 16 }, popupGold: { borderColor: "#FBBF24" }, popupPurple: { borderColor: "#A78BFA" }, popupBlue: { borderColor: "#67E8F9" }, popupGreen: { borderColor: "#86EFAC" }, popupTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 20, fontWeight: "900", marginBottom: 4 }, popupSource: { color: "#FDE047", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", marginBottom: 12 }, popupRow: { flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: "#1F2937", paddingVertical: 6 }, popupLabel: { color: "#94A3B8", fontSize: 12, fontWeight: "800" }, popupValue: { color: "#F8FAFC", fontSize: 12, fontWeight: "900", maxWidth: "60%", textAlign: "right" }, popupNote: { color: "#CBD5E1", fontSize: 13, lineHeight: 19, marginTop: 12 }, popupButton: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", paddingVertical: 12, alignItems: "center", marginTop: 14 }, popupButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900" },
   eviePanel: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(8,13,24,0.95)", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, padding: 10, marginBottom: 10 },

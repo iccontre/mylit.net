@@ -21,7 +21,13 @@ export const DAY_PLAN_KEY = "lit_day_plan";
 export const TOMORROW_QUEUE_KEY = "lit_tomorrow_queue";
 export const USER_STATS_KEY = "lit_user_stats";
 
+/** Progress mode allows up to 8 planned hours; Recovery mode allows up to 5. */
+export const PROGRESS_CAPACITY_MINUTES = 8 * 60;
+export const RECOVERY_CAPACITY_MINUTES = 5 * 60;
+
+/** @deprecated Item-count capacity — use minute-based capacity helpers instead. */
 export const PROGRESS_QUEST_CAPACITY = 8;
+/** @deprecated Item-count capacity — use minute-based capacity helpers instead. */
 export const RECOVERY_QUEST_CAPACITY = 5;
 
 export type QuestSource = "Quest" | "Today's Quest" | "Checklist" | "Quick Thought" | "Calendar";
@@ -130,8 +136,117 @@ export function getWeekdayName(date = new Date()): WeekdayName {
   return WEEKDAYS[date.getDay()];
 }
 
+export function getQuestCapacityMinutes(mode: "Progress" | "Recovery"): number {
+  return mode === "Recovery" ? RECOVERY_CAPACITY_MINUTES : PROGRESS_CAPACITY_MINUTES;
+}
+
+/** @deprecated Use getQuestCapacityMinutes for time-based board limits. */
 export function getQuestCapacity(mode: "Progress" | "Recovery"): number {
   return mode === "Recovery" ? RECOVERY_QUEST_CAPACITY : PROGRESS_QUEST_CAPACITY;
+}
+
+export function itemDurationMinutes(item: Pick<HomeQuestItem, "durationMinutes">): number {
+  const minutes = safeNumber(item.durationMinutes, 30);
+  return minutes > 0 ? minutes : 30;
+}
+
+export function formatPlannedDurationLabel(totalMinutes: number): string {
+  const safe = Math.max(0, Math.round(totalMinutes));
+  const hours = Math.floor(safe / 60);
+  const mins = safe % 60;
+  if (hours > 0 && mins > 0) return `${hours}h ${mins}m`;
+  if (hours > 0) return `${hours}h`;
+  return `${mins}m`;
+}
+
+export function formatCapacityHeader(plannedMinutes: number, mode: "Progress" | "Recovery"): string {
+  const capHours = mode === "Recovery" ? 5 : 8;
+  return `Planned ${formatPlannedDurationLabel(plannedMinutes)} / ${capHours}h`;
+}
+
+const DEFAULT_TODAY_QUEST_TITLES = new Set(["choose one honest quest for today"]);
+
+export function hasUserCreatedQuestItems(input: {
+  todayQuest?: RawTodayQuest | null;
+  checklist: RawChecklistItem[];
+  quickThoughts: QueueItem[];
+  todayKey: string;
+}): boolean {
+  const questTitle = input.todayQuest?.title?.trim().toLowerCase() ?? "";
+  if (questTitle && !DEFAULT_TODAY_QUEST_TITLES.has(questTitle)) return true;
+
+  if (input.checklist.some((item) => (item.text || item.title || "").trim())) return true;
+
+  return input.quickThoughts.some((item) => {
+    const itemDate = item.date ?? item.dateKey ?? input.todayKey;
+    if (itemDate !== input.todayKey) return false;
+    const title = (item.text || item.title || item.task || item.note || "").trim();
+    return Boolean(title);
+  });
+}
+
+type QuestPriorityTier = 0 | 1 | 2 | 3 | 4 | 5;
+
+function getItemPriorityTier(item: HomeQuestItem): QuestPriorityTier {
+  if (item.scheduledTime && parseTimeToMinutes(item.scheduledTime) !== null) return 0;
+  if (item.mandatory) return 1;
+  if (item.source === "Today's Quest") return 2;
+  if (item.source === "Checklist") return 3;
+  if (item.source === "Quick Thought") return 4;
+  return 5;
+}
+
+export function sortQuestItemsByPriority(items: HomeQuestItem[]): HomeQuestItem[] {
+  return [...items].sort((a, b) => {
+    const tierDiff = getItemPriorityTier(a) - getItemPriorityTier(b);
+    if (tierDiff !== 0) return tierDiff;
+    const aTime = parseTimeToMinutes(a.scheduledTime) ?? Number.MAX_SAFE_INTEGER;
+    const bTime = parseTimeToMinutes(b.scheduledTime) ?? Number.MAX_SAFE_INTEGER;
+    if (aTime !== bTime) return aTime - bTime;
+    return a.title.localeCompare(b.title);
+  });
+}
+
+export function applyQuestBoardCapacity(items: HomeQuestItem[], mode: "Progress" | "Recovery", hasUserItems: boolean): {
+  visibleItems: HomeQuestItem[];
+  hiddenCount: number;
+  plannedMinutes: number;
+  capacityMinutes: number;
+} {
+  const capacityMinutes = getQuestCapacityMinutes(mode);
+  let sorted = sortQuestItemsByPriority(items);
+
+  if (!hasUserItems) {
+    const firstRecommended =
+      sorted.find((item) => item.mandatory) ??
+      sorted.find((item) => item.source === "Quest") ??
+      sorted[0] ??
+      null;
+    sorted = firstRecommended ? [firstRecommended] : [];
+  }
+
+  const visibleItems: HomeQuestItem[] = [];
+  let plannedMinutes = 0;
+
+  for (const item of sorted) {
+    const duration = itemDurationMinutes(item);
+    if (visibleItems.length === 0) {
+      visibleItems.push(item);
+      plannedMinutes += duration;
+      continue;
+    }
+    if (plannedMinutes + duration <= capacityMinutes) {
+      visibleItems.push(item);
+      plannedMinutes += duration;
+    }
+  }
+
+  return {
+    visibleItems,
+    hiddenCount: Math.max(0, sorted.length - visibleItems.length),
+    plannedMinutes,
+    capacityMinutes,
+  };
 }
 
 export function buildStableItemId(
@@ -369,18 +484,7 @@ export function normalizeQuestItems(input: {
     });
   });
 
-  const rankOf = (item: HomeQuestItem) => (item.mandatory ? 0 : item.scheduledTime ? 1 : 2);
-  items.sort((a, b) => {
-    const ra = rankOf(a);
-    const rb = rankOf(b);
-    if (ra !== rb) return ra - rb;
-    if (ra === 1) {
-      return (parseTimeToMinutes(a.scheduledTime) ?? 0) - (parseTimeToMinutes(b.scheduledTime) ?? 0);
-    }
-    return 0;
-  });
-
-  return items;
+  return sortQuestItemsByPriority(items);
 }
 
 export function findNextScheduledItem(items: HomeQuestItem[], activeId: string | null, nowMinutes: number): HomeQuestItem | null {

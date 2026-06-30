@@ -8,13 +8,15 @@ import { uiAssets } from "../../constants/uiAssets";
 import { generateProgressQuests } from "../../lib/questGeneration";
 import {
   ACTIVE_TIMED_ITEM_KEY,
+  applyQuestBoardCapacity,
   collectTodayCalendarItems,
   computeTotalEarnedSteps,
   findNextScheduledItem,
+  formatCapacityHeader,
   getChecklistItemsForDay,
-  getQuestCapacity,
   getTodayKey,
   getWeekdayName,
+  hasUserCreatedQuestItems,
   kindAccent,
   loadTodayCompletions,
   loadTodayMissed,
@@ -274,6 +276,7 @@ export default function HomeScreen() {
   const [activeItem, setActiveItem] = useState<ActiveTimedItem | null>(null);
   const [selectedItem, setSelectedItem] = useState<HomeQuestItem | null>(null);
   const [lockMessage, setLockMessage] = useState("");
+  const [showQuestHelp, setShowQuestHelp] = useState(false);
   const [timeNow, setTimeNow] = useState<Date>(() => new Date());
   const [countdownNow, setCountdownNow] = useState<number>(() => Date.now());
   const lockMessageTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -933,11 +936,18 @@ export default function HomeScreen() {
 
   const quests = generateQuests();
 
+  const todayKey = getTodayKey();
   const todayChecklist: RawChecklistItem[] = getChecklistItemsForDay(dayPlanRaw, todayName);
-  const calendarItems = collectTodayCalendarItems(dayPlanRaw, queueItems, getTodayKey());
+  const calendarItems = collectTodayCalendarItems(dayPlanRaw, queueItems, todayKey);
   const completedIds = new Set(completedQuests.map((entry) => entry.id));
   const missedIds = new Set(missedQuests.map((entry) => entry.id));
-  const questCapacity = isRecovery ? getQuestCapacity("Recovery") : getQuestCapacity("Progress");
+  const hasUserItems = hasUserCreatedQuestItems({
+    todayQuest: dayPlanRaw?.todayQuest ?? null,
+    checklist: todayChecklist,
+    quickThoughts: queueItems,
+    todayKey,
+  });
+  const boardMode: "Progress" | "Recovery" = isRecovery ? "Recovery" : "Progress";
 
   const allHomeItems: HomeQuestItem[] =
     hasEnergyData && !isNeutral
@@ -947,15 +957,17 @@ export default function HomeScreen() {
           checklist: todayChecklist,
           quickThoughts: queueItems,
           calendarItems,
-          todayKey: getTodayKey(),
+          todayKey,
           completedIds,
           missedIds,
         })
       : [];
 
   const availableItems = allHomeItems.filter((item) => item.id !== activeItem?.id);
-  const visibleItems = availableItems.slice(0, questCapacity);
-  const extraItemCount = Math.max(0, availableItems.length - visibleItems.length);
+  const boardCapacity = applyQuestBoardCapacity(availableItems, boardMode, hasUserItems);
+  const visibleItems = boardCapacity.visibleItems;
+  const extraItemCount = boardCapacity.hiddenCount;
+  const capacityLabel = formatCapacityHeader(boardCapacity.plannedMinutes, boardMode);
 
   const remainingMs = activeItem ? Math.max(0, activeItem.endsAt - countdownNow) : 0;
   const timerFinished = activeItem !== null && remainingMs <= 0;
@@ -1139,9 +1151,16 @@ export default function HomeScreen() {
 
               <View style={[styles.questBoard, { borderColor: isBoardLocked && activeItem ? kindAccent(activeItem.kind) : theme.accent }]}>
                 <View style={styles.questHeaderRow}>
-                  <Text style={[styles.questTitle, { color: theme.accent }]}>{isRecovery ? "+ QUEST BOARD +" : "⚔ QUEST BOARD"}</Text>
+                  <View style={styles.questTitleRow}>
+                    <Text style={[styles.questTitle, { color: theme.accent }]}>{isRecovery ? "+ QUEST BOARD +" : "⚔ QUEST BOARD"}</Text>
+                    {!isNeutral ? (
+                      <TouchableOpacity style={[styles.questHelpBtn, { borderColor: theme.accent }]} onPress={() => setShowQuestHelp(true)}>
+                        <Text style={[styles.questHelpBtnText, { color: theme.accent }]}>?</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
                   <Text style={[styles.questCount, { color: theme.accent }]}>
-                    {isNeutral ? "LOCKED" : isBoardLocked ? "LOCKED" : `Quests ${availableItems.length} / ${questCapacity}`}
+                    {isNeutral ? "LOCKED" : isBoardLocked ? "LOCKED" : capacityLabel}
                   </Text>
                 </View>
 
@@ -1242,7 +1261,7 @@ export default function HomeScreen() {
                     );})}
                     {lockMessage ? <Text style={styles.lockMessage}>{lockMessage}</Text> : null}
                     {extraItemCount > 0 ? (
-                      <Text style={styles.moreHint}>+{extraItemCount} more scheduled</Text>
+                      <Text style={styles.moreHint}>+{extraItemCount} more beyond today&apos;s capacity</Text>
                     ) : null}
                   </>
                 )}
@@ -1274,6 +1293,26 @@ export default function HomeScreen() {
                 </View>
               </View>
             </ScrollView>
+
+            <Modal
+              visible={showQuestHelp}
+              transparent
+              animationType="fade"
+              onRequestClose={() => setShowQuestHelp(false)}
+            >
+              <View style={styles.modalBackdrop}>
+                <View style={[styles.modalPanel, { borderColor: theme.accent }]}>
+                  <Text style={[styles.modalSource, { color: theme.accent }]}>QUEST BOARD HELP</Text>
+                  <Text style={styles.modalTitle}>How the Quest Board works</Text>
+                  <Text style={styles.modalDescription}>
+                    The Quest Board keeps today focused. In Progress mode, MYLIT shows up to 8 planned hours. In Recovery mode, it shows up to 5. Your Day Plan, checklist items, Quick Thoughts, and app quests can all appear here. Start one timed quest at a time; the board locks until it ends. Complete gives steps. Missed? helps you reflect without losing your progress.
+                  </Text>
+                  <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowQuestHelp(false)}>
+                    <Text style={styles.modalCancelText}>CLOSE</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </Modal>
 
             <Modal
               visible={selectedItem !== null}
@@ -1724,6 +1763,25 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 7,
+  },
+  questTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexShrink: 1,
+  },
+  questHelpBtn: {
+    width: 22,
+    height: 22,
+    borderWidth: 2,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(15, 23, 42, 0.9)",
+  },
+  questHelpBtnText: {
+    fontSize: 12,
+    fontWeight: "900",
   },
   questTitle: {
     fontSize: 15,
