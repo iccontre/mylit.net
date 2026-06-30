@@ -48,5 +48,5 @@ export function FormScreen({ children, contentContainerStyle, style }: FormScree
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  content: { flexGrow: 1 },
+  content: { flexGrow: 1, paddingBottom: 24 },
 });

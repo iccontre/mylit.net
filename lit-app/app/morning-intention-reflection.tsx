@@ -5,16 +5,16 @@ import { useCallback, useState } from "react";
 import {
   Image,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
 
+import { FormScreen } from "../components/FormScreen";
 import { GuideInfoModal } from "../components/GuideInfoModal";
+import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 
 const EVIE_MORNING_BULLETS = [
@@ -55,8 +55,6 @@ const MORNING_SUPPORT_OPTIONS = [
   "Drink water / make food",
   "15 min of sunlight",
 ];
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -73,18 +71,13 @@ const theme = { accent: "#FBBF24", glow: "#FEF3C7", panel: "rgba(18, 16, 12, 0.9
 
 export default function MorningIntentionReflectionScreen() {
   const router = useRouter();
-  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const mobile = useMobileFrame();
 
   const [latestIntention, setLatestIntention] = useState<PreSleepIntention | null>(null);
   const [reflectionText, setReflectionText] = useState("");
   const [sleepHours, setSleepHours] = useState<"none" | "7hrs" | "8.5hrs">("none");
   const [morningSupport, setMorningSupport] = useState<string[]>([]);
   const [showInfo, setShowInfo] = useState(false);
-
-  const safeViewportWidth = Math.max(0, viewportWidth - 24);
-  const safeViewportHeight = Math.max(0, viewportHeight - 24);
-  const frameWidth = Math.min(MAX_FRAME_WIDTH, safeViewportWidth, safeViewportHeight * APP_FRAME_ASPECT_RATIO);
-  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   useFocusEffect(
     useCallback(() => {
@@ -137,13 +130,13 @@ export default function MorningIntentionReflectionScreen() {
   }
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight, borderColor: theme.accent }]}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.phoneStageStyle, mobile.isFullscreen && styles.phoneStageFullscreen, { borderColor: theme.accent }]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={uiAssets.backgrounds.progress} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
-          <ScrollView style={styles.screenScroller} contentContainerStyle={styles.hudContent} showsVerticalScrollIndicator={false} bounces={false}>
+          <FormScreen contentContainerStyle={[styles.hudContent, { paddingBottom: mobile.scrollPaddingBottom }]}>
             <View style={[styles.hero, { borderColor: theme.accent, backgroundColor: theme.panel }]}>
               <View style={styles.heroTopRow}>
                 <View style={styles.heroCopy}>
@@ -185,7 +178,16 @@ export default function MorningIntentionReflectionScreen() {
 
             <View style={[styles.panel, { borderColor: theme.accent }]}>
               <Text style={styles.label}>Morning reflection</Text>
-              <TextInput style={[styles.textArea, { minHeight: 110 }]} multiline placeholder="How are you feeling this morning? What is on your mind?" placeholderTextColor="#94A3B8" value={reflectionText} onChangeText={setReflectionText} />
+              <TextInput
+                style={styles.textArea}
+                multiline
+                scrollEnabled
+                textAlignVertical="top"
+                placeholder="How are you feeling this morning? What is on your mind?"
+                placeholderTextColor="#94A3B8"
+                value={reflectionText}
+                onChangeText={setReflectionText}
+              />
             </View>
 
             <View style={[styles.panel, { borderColor: theme.accent }]}>
@@ -234,7 +236,7 @@ export default function MorningIntentionReflectionScreen() {
             <TouchableOpacity style={styles.backButton} onPress={() => router.push("/sleep")}>
               <Text style={styles.backButtonText}>Back to Sleep Hub</Text>
             </TouchableOpacity>
-          </ScrollView>
+          </FormScreen>
 
           <GuideInfoModal
             visible={showInfo}
@@ -255,8 +257,6 @@ const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
     backgroundColor: "#02040A",
-    alignItems: "center",
-    justifyContent: "center",
   },
   phoneStage: {
     alignSelf: "center",
@@ -268,6 +268,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.85,
     shadowRadius: 0,
     shadowOffset: { width: 6, height: 6 },
+  },
+  phoneStageFullscreen: {
+    borderWidth: 0,
+    maxWidth: undefined,
+    aspectRatio: undefined,
+    shadowOpacity: 0,
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -479,7 +485,8 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(15, 23, 42, 0.96)",
     borderRadius: 4,
     padding: 12,
-    minHeight: 82,
+    minHeight: 110,
+    maxHeight: 220,
     fontSize: 15,
     color: "#F9FAFB",
     textAlignVertical: "top",

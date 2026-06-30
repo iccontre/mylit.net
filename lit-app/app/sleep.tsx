@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   Image,
   Platform,
@@ -38,11 +38,12 @@ type DreamEntry = {
   createdAt: string;
 };
 
-type MenuCard = {
+type SleepCard = {
   title: string;
   description: string;
+  buttonText: string;
   icon: string;
-  onPress: () => void;
+  route: "/pre-sleep-intention" | "/morning-intention-reflection" | "/sleep-calendar" | "/dream-journal";
   featured?: boolean;
   unlockable?: boolean;
 };
@@ -68,6 +69,45 @@ export default function SleepScreen() {
     }, [])
   );
 
+  const sleepCards = useMemo<SleepCard[]>(
+    () => [
+      {
+        title: "Pre-Sleep Intention",
+        description: "Set one clear signal for tomorrow before bed.",
+        buttonText: "Set Intention",
+        icon: "☾",
+        featured: true,
+        route: "/pre-sleep-intention",
+      },
+      {
+        title: "Morning Reflection",
+        description: "Reflect on sleep and set the morning tone.",
+        buttonText: "Open Reflection",
+        icon: "✦",
+        unlockable: true,
+        route: "/morning-intention-reflection",
+      },
+      {
+        title: "Sleep Guide",
+        description: "Set sleep window and daily cutoffs.",
+        buttonText: "Open Sleep Guide",
+        icon: "☽",
+        route: "/sleep-calendar",
+      },
+      {
+        title: "Dream Journal",
+        description: latestDream
+          ? `Latest: ${latestDream.title || "Untitled dream"}`
+          : "Capture dreams before they fade.",
+        buttonText: "Open Dream Journal",
+        icon: "📖",
+        featured: true,
+        route: "/dream-journal",
+      },
+    ],
+    [latestDream]
+  );
+
   async function lightHaptic() {
     try {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -76,7 +116,7 @@ export default function SleepScreen() {
     }
   }
 
-  async function navigate(path: any) {
+  async function navigate(path: Parameters<typeof router.push>[0]) {
     await lightHaptic();
     router.push(path);
   }
@@ -97,60 +137,25 @@ export default function SleepScreen() {
     }
   }
 
-  const preSleepCard: MenuCard = {
-    title: "Pre-Sleep\nIntention",
-    description: "Set one clear signal for tomorrow before bed.",
-    icon: "☾",
-    featured: true,
-    onPress: () => navigate("/pre-sleep-intention"),
-  };
-
-  const morningCard: MenuCard = {
-    title: "Morning\nReflection",
-    description: "Reflect on sleep and set the morning tone.",
-    icon: "✦",
-    unlockable: true,
-    onPress: () => navigate("/morning-intention-reflection"),
-  };
-
-  const sleepGuideCard: MenuCard = {
-    title: "Sleep\nGuide",
-    description: "Set sleep window and daily cutoffs.",
-    icon: "☽",
-    onPress: () => navigate("/sleep-calendar"),
-  };
-
-  const dreamCard: MenuCard = {
-    title: "Dream\nJournal",
-    description: latestDream
-      ? `Latest: ${latestDream.title || "Untitled dream"}`
-      : "Capture dreams before they fade.",
-    icon: "📖",
-    featured: true,
-    onPress: () => navigate("/dream-journal"),
-  };
-
-  function renderCard(card: MenuCard, variant: "half" | "wide") {
+  function renderSleepCard(card: SleepCard) {
     return (
-      <TouchableOpacity
-        key={card.title}
-        style={[
-          styles.menuCard,
-          variant === "half" ? styles.halfCard : styles.wideCard,
-          card.featured && styles.featuredCard,
-        ]}
-        onPress={card.onPress}
-      >
-        <View style={[styles.iconBox, variant === "wide" && styles.wideIconBox]}>
-          <Text style={[styles.cardIcon, variant === "wide" && styles.wideCardIcon]}>{card.icon}</Text>
+      <View key={card.title} style={[styles.card, card.featured && styles.featuredCard]}>
+        <View style={styles.cardTopRow}>
+          <View style={styles.iconBox}>
+            <Text style={styles.cardIcon}>{card.icon}</Text>
+          </View>
+          <View style={styles.cardCopy}>
+            <Text style={styles.cardTitle}>{card.title}</Text>
+            <Text style={styles.cardText}>{card.description}</Text>
+            {card.unlockable ? <Text style={styles.unlockBadge}>🔓 UNLOCK</Text> : null}
+          </View>
         </View>
-        <View style={styles.cardCopy}>
-          <Text style={[styles.cardTitle, variant === "wide" && styles.wideCardTitle]}>{card.title}</Text>
-          <Text style={styles.cardDescription}>{card.description}</Text>
-          {card.unlockable && <Text style={styles.unlockBadge}>🔓 UNLOCK</Text>}
-        </View>
-        <Text style={styles.cardArrow}>›</Text>
-      </TouchableOpacity>
+        <View style={styles.cardDivider} />
+        <TouchableOpacity style={styles.actionButton} onPress={() => navigate(card.route)}>
+          <Text style={styles.actionText}>{card.buttonText}</Text>
+          <Text style={styles.actionArrow}>›</Text>
+        </TouchableOpacity>
+      </View>
     );
   }
 
@@ -177,7 +182,7 @@ export default function SleepScreen() {
               <Image source={uiAssets.guides.luna} style={styles.lunaAvatar} resizeMode="contain" />
               <View style={styles.lunaCopy}>
                 <Text style={styles.lunaText}>
-                  It’s okay to take it slow, stargazer. Rest is part of becoming your brightest self.
+                  It's okay to take it slow, stargazer. Rest is part of becoming your brightest self.
                 </Text>
                 <Text style={styles.lunaName}>Luna ♥</Text>
               </View>
@@ -186,14 +191,7 @@ export default function SleepScreen() {
               </TouchableOpacity>
             </View>
 
-            {renderCard(preSleepCard, "wide")}
-
-            <View style={styles.cardRow}>
-              {renderCard(morningCard, "half")}
-              {renderCard(sleepGuideCard, "half")}
-            </View>
-
-            {renderCard(dreamCard, "wide")}
+            <View style={styles.cardStack}>{sleepCards.map(renderSleepCard)}</View>
           </ScrollView>
 
           <GuideInfoModal
@@ -283,7 +281,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   titlePanel: {
-    width: "78%",
+    width: "82%",
     alignSelf: "center",
     backgroundColor: "rgba(7, 11, 27, 0.94)",
     borderWidth: 4,
@@ -291,7 +289,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingVertical: 15,
     paddingHorizontal: 14,
-    marginBottom: 72,
+    marginBottom: 34,
     alignItems: "center",
     shadowColor: "#000",
     shadowOpacity: 0.7,
@@ -337,7 +335,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    marginBottom: 26,
+    marginBottom: 22,
     shadowColor: "#000",
     shadowOpacity: 0.7,
     shadowRadius: 0,
@@ -369,85 +367,6 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontFamily: pixelFont,
   },
-  cardRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 14,
-  },
-  menuCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(7, 11, 27, 0.94)",
-    borderWidth: 3,
-    borderColor: "#8B5CF6",
-    borderRadius: 8,
-    shadowColor: "#000",
-    shadowOpacity: 0.68,
-    shadowRadius: 0,
-    shadowOffset: { width: 4, height: 4 },
-  },
-  halfCard: {
-    flex: 1,
-    minHeight: 112,
-    paddingVertical: 10,
-    paddingHorizontal: 9,
-  },
-  wideCard: {
-    minHeight: 102,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    marginBottom: 16,
-  },
-  featuredCard: {
-    borderColor: "#A78BFA",
-  },
-  iconBox: {
-    height: 54,
-    width: 54,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(49, 46, 129, 0.72)",
-    borderWidth: 2,
-    borderColor: "#4C1D95",
-    borderRadius: 5,
-    marginRight: 9,
-  },
-  wideIconBox: {
-    height: 66,
-    width: 74,
-    marginRight: 14,
-  },
-  cardIcon: {
-    fontSize: 31,
-    textShadowColor: "#000",
-    textShadowOffset: { width: 2, height: 2 },
-    textShadowRadius: 0,
-  },
-  wideCardIcon: {
-    fontSize: 41,
-  },
-  cardCopy: {
-    flex: 1,
-  },
-  cardTitle: {
-    color: "#F5F3FF",
-    fontSize: 18,
-    fontWeight: "900",
-    lineHeight: 24,
-    fontFamily: pixelFont,
-  },
-  wideCardTitle: {
-    fontSize: 20,
-    lineHeight: 25,
-  },
-  cardDescription: {
-    color: "#EDE9FE",
-    fontSize: 12,
-    fontWeight: "700",
-    lineHeight: 17,
-    marginTop: 7,
-    fontFamily: pixelFont,
-  },
   infoBtn: {
     width: 28,
     height: 28,
@@ -466,6 +385,62 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     lineHeight: 18,
   },
+  cardStack: {
+    gap: 16,
+  },
+  card: {
+    backgroundColor: "rgba(7, 11, 27, 0.95)",
+    borderWidth: 3,
+    borderColor: "#8B5CF6",
+    borderRadius: 8,
+    padding: 13,
+    shadowColor: "#000",
+    shadowOpacity: 0.68,
+    shadowRadius: 0,
+    shadowOffset: { width: 4, height: 4 },
+  },
+  featuredCard: {
+    borderColor: "#A78BFA",
+  },
+  cardTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  iconBox: {
+    height: 62,
+    width: 62,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(49, 46, 129, 0.68)",
+    borderWidth: 2,
+    borderColor: "#4C1D95",
+    borderRadius: 5,
+    marginRight: 12,
+  },
+  cardIcon: {
+    fontSize: 34,
+    textShadowColor: "#000",
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 0,
+  },
+  cardCopy: {
+    flex: 1,
+  },
+  cardTitle: {
+    color: "#F5F3FF",
+    fontFamily: pixelFont,
+    fontSize: 20,
+    fontWeight: "900",
+    lineHeight: 25,
+  },
+  cardText: {
+    color: "#EDE9FE",
+    fontFamily: pixelFont,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 7,
+    fontWeight: "700",
+  },
   unlockBadge: {
     color: "#FDE68A",
     fontFamily: pixelFont,
@@ -474,14 +449,38 @@ const styles = StyleSheet.create({
     marginTop: 5,
     letterSpacing: 0.5,
   },
-  cardArrow: {
-    color: "#C084FC",
-    fontSize: 36,
+  cardDivider: {
+    height: 2,
+    backgroundColor: "rgba(196, 167, 255, 0.28)",
+    marginVertical: 11,
+  },
+  actionButton: {
+    minHeight: 38,
+    backgroundColor: "rgba(15, 23, 42, 0.96)",
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+    borderRadius: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  actionText: {
+    color: "#FDE68A",
+    fontFamily: pixelFont,
+    fontSize: 12,
     fontWeight: "900",
-    marginLeft: 5,
-    textShadowColor: "#000",
-    textShadowOffset: { width: 2, height: 2 },
-    textShadowRadius: 0,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    flex: 1,
+    paddingRight: 8,
+  },
+  actionArrow: {
+    color: "#C084FC",
+    fontSize: 24,
+    fontWeight: "900",
+    lineHeight: 26,
   },
   bottomNav: {
     position: "absolute",

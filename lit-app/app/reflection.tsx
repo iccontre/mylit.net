@@ -4,16 +4,16 @@ import { useState } from "react";
 import {
   Image,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
 
+import { FormScreen } from "../components/FormScreen";
 import { GuideInfoModal } from "../components/GuideInfoModal";
+import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 
 const LUNA_REFLECTION_BULLETS = [
@@ -35,8 +35,6 @@ type ReflectionEntry = {
 };
 
 const REFLECTIONS_KEY = "lit_reflections";
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -48,7 +46,7 @@ const pixelFont = Platform.select({
 export default function ReflectionScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const mobile = useMobileFrame();
 
   const rawQuest = Array.isArray(params.quest) ? params.quest[0] : params.quest;
   const quest = rawQuest || "Open reflection";
@@ -57,15 +55,6 @@ export default function ReflectionScreen() {
   const [whatGotInTheWay, setWhatGotInTheWay] = useState("");
   const [whatWasOff, setWhatWasOff] = useState("");
   const [smallerVersion, setSmallerVersion] = useState("");
-
-  const safeViewportWidth = Math.max(0, viewportWidth - 24);
-  const safeViewportHeight = Math.max(0, viewportHeight - 24);
-  const frameWidth = Math.min(
-    MAX_FRAME_WIDTH,
-    safeViewportWidth,
-    safeViewportHeight * APP_FRAME_ASPECT_RATIO
-  );
-  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   async function saveReflection() {
     const newEntry: ReflectionEntry = {
@@ -87,18 +76,13 @@ export default function ReflectionScreen() {
   }
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight }]}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.phoneStageStyle, mobile.isFullscreen && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={uiAssets.backgrounds.neutral} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
-          <ScrollView
-            style={styles.screenScroller}
-            contentContainerStyle={styles.hudContent}
-            showsVerticalScrollIndicator={false}
-            bounces={false}
-          >
+          <FormScreen contentContainerStyle={[styles.hudContent, { paddingBottom: mobile.scrollPaddingBottom }]}>
             <View style={styles.hero}>
               <Text style={styles.heroLabel}>MIND HUB</Text>
               <Text style={[styles.heroTitle, { fontSize: 34, letterSpacing: 3 }]}>REFLECTION</Text>
@@ -128,6 +112,7 @@ export default function ReflectionScreen() {
               <TextInput
                 style={styles.textArea}
                 multiline
+                scrollEnabled
                 textAlignVertical="top"
                 placeholder="Energy, timing, stress, distraction, fear, or something else."
                 placeholderTextColor="#94A3B8"
@@ -139,6 +124,7 @@ export default function ReflectionScreen() {
               <TextInput
                 style={styles.textArea}
                 multiline
+                scrollEnabled
                 textAlignVertical="top"
                 placeholder="What made it hard to start or finish?"
                 placeholderTextColor="#94A3B8"
@@ -150,6 +136,7 @@ export default function ReflectionScreen() {
               <TextInput
                 style={styles.textArea}
                 multiline
+                scrollEnabled
                 textAlignVertical="top"
                 placeholder="Make it easier, clearer, or better timed."
                 placeholderTextColor="#94A3B8"
@@ -165,7 +152,7 @@ export default function ReflectionScreen() {
             <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.push("/mind")}>
               <Text style={styles.secondaryText}>← Back to Mind Hub</Text>
             </TouchableOpacity>
-          </ScrollView>
+          </FormScreen>
 
           <GuideInfoModal
             visible={showInfo}
@@ -177,7 +164,7 @@ export default function ReflectionScreen() {
             accentColor="#C4A7FF"
           />
 
-          <View style={styles.bottomNav}>
+          <View style={[styles.bottomNav, { bottom: mobile.bottomNavOffset }]}>
             <TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}>
               <Text style={styles.navText}>🏠</Text>
               <Text style={styles.navLabel}>HOME</Text>
@@ -213,8 +200,6 @@ const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
     backgroundColor: "#02040A",
-    alignItems: "center",
-    justifyContent: "center",
   },
   phoneStage: {
     alignSelf: "center",
@@ -227,6 +212,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.85,
     shadowRadius: 0,
     shadowOffset: { width: 6, height: 6 },
+  },
+  phoneStageFullscreen: {
+    borderWidth: 0,
+    maxWidth: undefined,
+    aspectRatio: undefined,
+    shadowOpacity: 0,
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -363,6 +354,7 @@ const styles = StyleSheet.create({
   },
   textArea: {
     minHeight: 112,
+    maxHeight: 200,
     borderWidth: 2,
     borderColor: "#A78BFA",
     borderRadius: 6,

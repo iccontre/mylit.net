@@ -5,16 +5,16 @@ import { useEffect, useState } from "react";
 import {
   Image,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
 
+import { FormScreen } from "../components/FormScreen";
 import { GuideInfoModal } from "../components/GuideInfoModal";
+import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 
 const LUNA_MEDITATIONS_BULLETS = [
@@ -36,8 +36,6 @@ type AwarenessCheck = {
 };
 
 const AWARENESS_CHECKS_KEY = "lit_awareness_checks";
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -48,7 +46,7 @@ const pixelFont = Platform.select({
 
 export default function AwarenessCheckScreen() {
   const router = useRouter();
-  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const mobile = useMobileFrame();
 
   const [attentionFocus, setAttentionFocus] = useState("");
   const [automaticOrIntentional, setAutomaticOrIntentional] =
@@ -57,15 +55,6 @@ export default function AwarenessCheckScreen() {
   const [broughtBack, setBroughtBack] = useState("");
   const [checks, setChecks] = useState<AwarenessCheck[]>([]);
   const [showInfo, setShowInfo] = useState(false);
-
-  const safeViewportWidth = Math.max(0, viewportWidth - 24);
-  const safeViewportHeight = Math.max(0, viewportHeight - 24);
-  const frameWidth = Math.min(
-    MAX_FRAME_WIDTH,
-    safeViewportWidth,
-    safeViewportHeight * APP_FRAME_ASPECT_RATIO
-  );
-  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   useEffect(() => {
     loadChecks();
@@ -127,18 +116,13 @@ export default function AwarenessCheckScreen() {
   ];
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight }]}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.phoneStageStyle, mobile.isFullscreen && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={uiAssets.backgrounds.neutral} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
-          <ScrollView
-            style={styles.screenScroller}
-            contentContainerStyle={styles.hudContent}
-            showsVerticalScrollIndicator={false}
-            bounces={false}
-          >
+          <FormScreen contentContainerStyle={[styles.hudContent, { paddingBottom: mobile.scrollPaddingBottom }]}>
             <View style={styles.hero}>
               <Text style={styles.heroLabel}>MIND HUB</Text>
               <Text style={[styles.title, { fontSize: 34, letterSpacing: 3 }]}>MEDITATIONS</Text>
@@ -163,6 +147,7 @@ export default function AwarenessCheckScreen() {
               <TextInput
                 style={styles.largeTextArea}
                 multiline
+                scrollEnabled
                 textAlignVertical="top"
                 placeholder="School, work, your phone, stress, a person, a goal, or just getting through the day."
                 placeholderTextColor="#94A3B8"
@@ -192,6 +177,7 @@ export default function AwarenessCheckScreen() {
               <TextInput
                 style={styles.largeTextArea}
                 multiline
+                scrollEnabled
                 textAlignVertical="top"
                 placeholder="Scrolling, stress, tiredness, comparison, overthinking, or not knowing where to start."
                 placeholderTextColor="#94A3B8"
@@ -203,6 +189,7 @@ export default function AwarenessCheckScreen() {
               <TextInput
                 style={styles.largeTextArea}
                 multiline
+                scrollEnabled
                 textAlignVertical="top"
                 placeholder="A reminder, a person, music, journaling, a walk, or one small task."
                 placeholderTextColor="#94A3B8"
@@ -251,7 +238,7 @@ export default function AwarenessCheckScreen() {
             <TouchableOpacity style={styles.homeButton} onPress={() => router.push("/mind")}>
               <Text style={styles.homeButtonText}>← Back to Mind Hub</Text>
             </TouchableOpacity>
-          </ScrollView>
+          </FormScreen>
 
           <GuideInfoModal
             visible={showInfo}
@@ -263,7 +250,7 @@ export default function AwarenessCheckScreen() {
             accentColor="#C4A7FF"
           />
 
-          <View style={styles.bottomNav}>
+          <View style={[styles.bottomNav, { bottom: mobile.bottomNavOffset }]}>
             <TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}>
               <Text style={styles.navText}>🏠</Text>
               <Text style={styles.navLabel}>HOME</Text>
@@ -299,8 +286,6 @@ const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
     backgroundColor: "#02040A",
-    alignItems: "center",
-    justifyContent: "center",
   },
   phoneStage: {
     alignSelf: "center",
@@ -313,6 +298,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.85,
     shadowRadius: 0,
     shadowOffset: { width: 6, height: 6 },
+  },
+  phoneStageFullscreen: {
+    borderWidth: 0,
+    maxWidth: undefined,
+    aspectRatio: undefined,
+    shadowOpacity: 0,
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -429,6 +420,7 @@ const styles = StyleSheet.create({
   },
   largeTextArea: {
     minHeight: 118,
+    maxHeight: 220,
     backgroundColor: "rgba(15, 23, 42, 0.96)",
     borderWidth: 2,
     borderColor: "#475569",
