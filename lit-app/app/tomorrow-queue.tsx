@@ -177,6 +177,7 @@ export default function TomorrowQueueScreen() {
   const selectedDayCapacityMinutes = getQuestCapacityMinutes(boardMode);
   const selectedDayRemainingMinutes = Math.max(0, selectedDayCapacityMinutes - selectedDayPlannedMinutes);
   const selectedDayAtCapacity = selectedDayRemainingMinutes <= 0;
+  const savedItemsForSelectedDay = items.filter((item: QueueItem) => item.date === selectedDateKey);
 
   useEffect(() => {
     void loadQueue();
@@ -377,10 +378,10 @@ export default function TomorrowQueueScreen() {
               </Text>
             </View>
 
-            {items.length === 0 ? (
-              <View style={styles.emptyCard}><Text style={styles.emptyIcon}>🪶</Text><Text style={styles.emptyText}>No quick thought quests saved yet. Add one and it will appear on your calendar.</Text></View>
+            {savedItemsForSelectedDay.length === 0 ? (
+              <View style={styles.emptyCard}><Text style={styles.emptyIcon}>🪶</Text><Text style={styles.emptyText}>No quick thought quests saved for {selectedDay.label} yet. Add one and it will appear on your calendar.</Text></View>
             ) : (
-              items.map((item: QueueItem) => {
+              savedItemsForSelectedDay.map((item: QueueItem) => {
                 const isCompleted = Boolean(item.completedAt);
                 const isMissed = isPastDateKey(item.date) && !isCompleted;
                 return (
