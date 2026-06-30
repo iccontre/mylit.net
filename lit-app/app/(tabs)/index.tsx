@@ -1,29 +1,41 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
-import { Link, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Image, ImageBackground, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
 
 import { uiAssets } from "../../constants/uiAssets";
+import { generateProgressQuests } from "../../lib/questGeneration";
 import {
-  buildProgressionQuests,
-  buildStretchQuest,
-  displayStreak,
-  getCategoryProgressionState,
-  markProgressionDayComplete,
-  tierLabelForLevel,
-  type ProgressionState,
-} from "../../lib/questProgression";
+  ACTIVE_TIMED_ITEM_KEY,
+  applyQuestBoardCapacity,
+  collectTodayCalendarItems,
+  computeTotalEarnedSteps,
+  findNextScheduledItem,
+  formatCapacityHeader,
+  getChecklistItemsForDay,
+  getTodayKey,
+  getWeekdayName,
+  hasUserCreatedQuestItems,
+  kindAccent,
+  loadTodayCompletions,
+  loadTodayMissed,
+  markItemComplete,
+  markItemMissed,
+  normalizeQuestItems,
+  sourceIcon,
+  type CompletionEntry,
+  type HomeQuestItem,
+  type MissedEntry,
+  type QuestKind,
+} from "../../lib/questProgress";
+import { formatDurationLabel, inferScheduledClassification, parseTimeToMinutes } from "../../lib/scheduling";
 
-const mylitLogo = require("../../assets/ui/logo/mylit-logo.png");
+const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
+const MAX_FRAME_WIDTH = 520;
 
-const fireAssets = {
-  ember: require("../../assets/ui/fires/ember.png"),
-  lowFlame: require("../../assets/ui/fires/low-flame.png"),
-  steadyFlame: require("../../assets/ui/fires/steady-flame.png"),
-  brightFlame: require("../../assets/ui/fires/bright-flame.png"),
-  blazingFlame: require("../../assets/ui/fires/blazing-flame.png"),
-};
+const mylitLogo = uiAssets.logo.mylit;
+const fireAssets = uiAssets.fires;
 
 type Quest = {
   title: string;
@@ -41,6 +53,61 @@ type QueueItem = {
   task?: string;
   note?: string;
   type?: string;
+  date?: string;
+  dateKey?: string;
+  time?: string;
+  startTime?: string;
+  duration?: string;
+  durationMinutes?: number;
+  steps?: number;
+  status?: string;
+  completedAt?: string;
+  classification?: QuestKind;
+  kind?: string;
+};
+
+type ActiveTimedItem = {
+  id: string;
+  title: string;
+  source: HomeQuestItem["source"];
+  kind: QuestKind;
+  steps: number;
+  durationMinutes: number;
+  startedAt: number;
+  endsAt: number;
+  scheduledTime?: string;
+};
+
+type RawTodayQuest = {
+  id?: string;
+  title?: string;
+  startTime?: string;
+  duration?: string;
+  durationMinutes?: number;
+  steps?: number;
+  kind?: QuestKind;
+  status?: string;
+  date?: string;
+};
+
+type DayPlanRaw = {
+  todayQuest?: RawTodayQuest;
+  weekdayChecklists?: Partial<Record<WeekdayName, RawChecklistItem[]>>;
+};
+
+type RawChecklistItem = {
+  id?: string;
+  text?: string;
+  title?: string;
+  checked?: boolean;
+  steps?: number;
+  startTime?: string;
+  time?: string;
+  duration?: string;
+  durationMinutes?: number;
+  kind?: QuestKind;
+  status?: string;
+  weekdays?: WeekdayName[];
 };
 
 type CheckIn = {
@@ -100,75 +167,69 @@ type UserProfile = {
   goalsGeneratedAt?: string;
 };
 
-type PreSleepIntention = {
-  id: string;
-  date: string;
-  intention: string;
-  whyItMatters: string;
-  firstSmallAction: string;
-  dreamSymbol: string;
-  createdAt: string;
-};
-
 type ModeState = "Recovery" | "Progress" | "Neutral";
 
-const COMPLETED_QUESTS_KEY = "lit_completed_quests";
-const TODAY_PROGRESS_DATE_KEY = "lit_today_progress_date";
 const PROFILE_KEY = "lit_user_profile";
 const CHECKIN_KEY = "lit_latest_checkin";
-const LATEST_PRE_SLEEP_INTENTION_KEY = "lit_latest_pre_sleep_intention";
 const TOMORROW_QUEUE_KEY = "lit_tomorrow_queue";
 const DAY_PLAN_KEY = "lit_day_plan";
+const USER_STATS_KEY = "lit_user_stats";
 const PROGRESS_QUEST_ENERGY_COST = 8;
 const RECOVERY_QUEST_ENERGY_COST = 6;
 const PASSIVE_DECAY_POINTS = 5;
 const PASSIVE_DECAY_INTERVAL_HOURS = 2;
 
-function getTodayKey() {
-  return new Date().toLocaleDateString("en-CA");
-}
-
-function getWeekdayName(): WeekdayName {
-  const days: WeekdayName[] = [
-    "Sunday",
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-  ];
-
-  return days[new Date().getDay()];
-}
-
 function clampEnergy(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-function getFlameState(score: number) {
-  if (score >= 80) {
-    return { image: fireAssets.blazingFlame, label: "Blazing Flame", size: 74 };
+// Maps the energy reserve to one of the five emotive fire PNG assets.
+// Bands: 0–24 ember · 25–44 low · 45–64 steady · 65–84 bright · 85–100 blazing.
+function getFireAssetForEnergy(score: number) {
+  if (score >= 85) {
+    return { image: fireAssets.blazingFlame, emoji: "🔥", label: "Blazing Flame", size: 74 };
   }
 
-  if (score >= 60) {
-    return { image: fireAssets.brightFlame, label: "Bright Flame", size: 62 };
+  if (score >= 65) {
+    return { image: fireAssets.brightFlame, emoji: "🔥", label: "Bright Flame", size: 62 };
   }
 
-  if (score >= 40) {
-    return { image: fireAssets.steadyFlame, label: "Steady Flame", size: 50 };
+  if (score >= 45) {
+    return { image: fireAssets.steadyFlame, emoji: "🔥", label: "Steady Flame", size: 50 };
   }
 
   if (score >= 25) {
-    return { image: fireAssets.lowFlame, label: "Low Flame", size: 40 };
+    return { image: fireAssets.lowFlame, emoji: "🔥", label: "Low Flame", size: 40 };
   }
 
-  return { image: fireAssets.ember, label: "Ember", size: 30 };
+  return { image: fireAssets.ember, emoji: "✨", label: "Ember", size: 30 };
+}
+
+// Day / Time Track spans 6 AM → 12 PM → 6 PM → 12 AM (an 18-hour window).
+// Times before 6 AM wrap to the far (late-night) end so the marker stays valid.
+function getCurrentTimeTrackPosition(now: Date): number {
+  const minutes = now.getHours() * 60 + now.getMinutes();
+  const startMinutes = 6 * 60;
+  const spanMinutes = 18 * 60;
+  let offset = minutes - startMinutes;
+  if (offset < 0) offset += 24 * 60;
+  const pct = (offset / spanMinutes) * 100;
+  return Math.max(2, Math.min(98, pct));
+}
+
+function formatCountdown(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const mins = Math.floor((totalSeconds % 3600) / 60);
+  const secs = totalSeconds % 60;
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return hours > 0 ? `${pad(hours)}:${pad(mins)}:${pad(secs)}` : `${pad(mins)}:${pad(secs)}`;
 }
 
 export default function HomeScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
+  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
 
   const rawMode = Array.isArray(params.mode) ? params.mode[0] : params.mode;
   const rawEnergy = Array.isArray(params.energy) ? params.energy[0] : params.energy;
@@ -205,13 +266,20 @@ export default function HomeScreen() {
     sunday: "",
   });
 
-  const [completedQuests, setCompletedQuests] = useState<string[]>([]);
+  const [completedQuests, setCompletedQuests] = useState<CompletionEntry[]>([]);
+  const [missedQuests, setMissedQuests] = useState<MissedEntry[]>([]);
+  const [userStats, setUserStats] = useState<{ totalSteps?: number }>({});
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileChecked, setProfileChecked] = useState(false);
-  const [latestIntention, setLatestIntention] = useState<PreSleepIntention | null>(null);
-  const [progression, setProgression] = useState<ProgressionState | null>(null);
 
-  const activeCategory = profile?.dreamCategory?.trim() || "Purpose";
+  const [dayPlanRaw, setDayPlanRaw] = useState<DayPlanRaw | null>(null);
+  const [activeItem, setActiveItem] = useState<ActiveTimedItem | null>(null);
+  const [selectedItem, setSelectedItem] = useState<HomeQuestItem | null>(null);
+  const [lockMessage, setLockMessage] = useState("");
+  const [showQuestHelp, setShowQuestHelp] = useState(false);
+  const [timeNow, setTimeNow] = useState<Date>(() => new Date());
+  const [countdownNow, setCountdownNow] = useState<number>(() => Date.now());
+  const lockMessageTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const latestCheckInDay = latestCheckIn?.createdAt
     ? new Date(latestCheckIn.createdAt).toLocaleDateString("en-CA")
@@ -233,6 +301,15 @@ export default function HomeScreen() {
     isSavedCheckInToday &&
     isSavedCheckInAfterPath;
 
+  const safeViewportWidth = Math.max(0, viewportWidth - 24);
+  const safeViewportHeight = Math.max(0, viewportHeight - 24);
+  const frameWidth = Math.min(
+    MAX_FRAME_WIDTH,
+    safeViewportWidth,
+    safeViewportHeight * APP_FRAME_ASPECT_RATIO
+  );
+  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
+
   const hasEnergyData = hasRouteEnergy || hasSavedEnergyData;
 
   const currentMode: ModeState = hasEnergyData
@@ -251,20 +328,41 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadCompletedQuests();
+      loadProgressState();
       loadLatestCheckIn();
       loadQuickThoughts();
       loadDayPlan();
+      loadActiveItem();
     }, [])
   );
 
   useEffect(() => {
-    loadCompletedQuests();
+    loadProgressState();
     loadProfile();
     loadLatestCheckIn();
-    loadLatestIntention();
     loadQuickThoughts();
     loadDayPlan();
+    loadActiveItem();
+  }, []);
+
+  // Keep the Day / Time Track marker on the real local time (refresh every 30s).
+  useEffect(() => {
+    const id = setInterval(() => setTimeNow(new Date()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Tick the active countdown once per second while a timed item is running.
+  useEffect(() => {
+    if (!activeItem) return;
+    setCountdownNow(Date.now());
+    const id = setInterval(() => setCountdownNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [activeItem]);
+
+  useEffect(() => {
+    return () => {
+      if (lockMessageTimeout.current) clearTimeout(lockMessageTimeout.current);
+    };
   }, []);
 
   useEffect(() => {
@@ -274,20 +372,6 @@ export default function HomeScreen() {
       setHasSavedCheckIn(true);
     }
   }, [hasRouteEnergy, rawMode, routeEnergyNumber]);
-
-  // Roll the day-over-day quest journey forward whenever the active category is
-  // known (covers app open and a new calendar day).
-  useEffect(() => {
-    let cancelled = false;
-
-    getCategoryProgressionState(activeCategory, getTodayKey()).then((state) => {
-      if (!cancelled) setProgression(state);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [activeCategory]);
 
   async function lightHaptic() {
     try {
@@ -360,6 +444,7 @@ export default function HomeScreen() {
     try {
       const parsed = JSON.parse(saved) as Partial<DayPlan> & Record<string, string | undefined>;
 
+      setDayPlanRaw(parsed as DayPlanRaw);
       setDayPlan({
         todayGoal: parsed.todayGoal || "",
         Monday: parsed.Monday || parsed.monday || "",
@@ -382,23 +467,19 @@ export default function HomeScreen() {
     }
   }
 
-  async function loadCompletedQuests() {
-    const today = getTodayKey();
-    const savedDate = await AsyncStorage.getItem(TODAY_PROGRESS_DATE_KEY);
-    const savedQuests = await AsyncStorage.getItem(COMPLETED_QUESTS_KEY);
-
-    if (savedDate !== today) {
-      setCompletedQuests([]);
-      await AsyncStorage.setItem(TODAY_PROGRESS_DATE_KEY, today);
-      await AsyncStorage.setItem(COMPLETED_QUESTS_KEY, JSON.stringify([]));
-      return;
-    }
-
-    if (savedQuests) {
+  async function loadProgressState() {
+    const [completions, missed, stats] = await Promise.all([
+      loadTodayCompletions(),
+      loadTodayMissed(),
+      AsyncStorage.getItem(USER_STATS_KEY),
+    ]);
+    setCompletedQuests(completions);
+    setMissedQuests(missed);
+    if (stats) {
       try {
-        setCompletedQuests(JSON.parse(savedQuests));
+        setUserStats(JSON.parse(stats));
       } catch {
-        setCompletedQuests([]);
+        setUserStats({});
       }
     }
   }
@@ -428,48 +509,138 @@ export default function HomeScreen() {
     }
   }
 
-  async function loadLatestIntention() {
-    const saved = await AsyncStorage.getItem(LATEST_PRE_SLEEP_INTENTION_KEY);
+  async function loadActiveItem() {
+    const saved = await AsyncStorage.getItem(ACTIVE_TIMED_ITEM_KEY);
 
-    if (saved) {
-      setLatestIntention(JSON.parse(saved));
-    }
-  }
-
-  async function saveCompletedQuests(nextCompleted: string[]) {
-    const today = getTodayKey();
-
-    setCompletedQuests(nextCompleted);
-    await AsyncStorage.setItem(TODAY_PROGRESS_DATE_KEY, today);
-    await AsyncStorage.setItem(COMPLETED_QUESTS_KEY, JSON.stringify(nextCompleted));
-  }
-
-  async function toggleQuest(quest: Quest) {
-    const mandatoryQuest = getMandatoryQuest();
-
-    if (mandatoryQuest && !quest.mandatory && !completedQuests.includes(mandatoryQuest.title)) {
-      await mediumHaptic();
+    if (!saved) {
+      setActiveItem(null);
       return;
     }
 
-    const isAlreadyComplete = completedQuests.includes(quest.title);
-
-    const nextCompleted = isAlreadyComplete
-      ? completedQuests.filter((item) => item !== quest.title)
-      : [...completedQuests, quest.title];
-
-    if (isAlreadyComplete) {
-      await lightHaptic();
-    } else {
-      await successHaptic();
+    try {
+      const parsed = JSON.parse(saved) as ActiveTimedItem;
+      if (parsed && typeof parsed.title === "string" && typeof parsed.endsAt === "number") {
+        setActiveItem(parsed);
+      } else {
+        setActiveItem(null);
+      }
+    } catch {
+      setActiveItem(null);
     }
-
-    await saveCompletedQuests(nextCompleted);
   }
 
-  async function resetTodayProgress() {
+  async function saveActiveItem(item: ActiveTimedItem) {
+    setActiveItem(item);
+    await AsyncStorage.setItem(ACTIVE_TIMED_ITEM_KEY, JSON.stringify(item));
+  }
+
+  async function clearActiveItem() {
+    setActiveItem(null);
+    await AsyncStorage.removeItem(ACTIVE_TIMED_ITEM_KEY);
+  }
+
+  function showLockMessage() {
+    mediumHaptic();
+    setLockMessage("Finish the current quest first.");
+    if (lockMessageTimeout.current) clearTimeout(lockMessageTimeout.current);
+    lockMessageTimeout.current = setTimeout(() => setLockMessage(""), 2500);
+  }
+
+  function openQuestItem(item: HomeQuestItem) {
+    if (activeItem) {
+      showLockMessage();
+      return;
+    }
+    lightHaptic();
+    setSelectedItem(item);
+  }
+
+  async function startTimedItem(item: HomeQuestItem) {
+    if (activeItem) {
+      showLockMessage();
+      return;
+    }
+
+    const durationMinutes = item.durationMinutes > 0 ? item.durationMinutes : 30;
+    const startedAt = Date.now();
+    const next: ActiveTimedItem = {
+      id: item.id,
+      title: item.title,
+      source: item.source,
+      kind: item.kind,
+      steps: item.steps,
+      durationMinutes,
+      startedAt,
+      endsAt: startedAt + durationMinutes * 60 * 1000,
+      scheduledTime: item.scheduledTime,
+    };
+
+    setSelectedItem(null);
+    await saveActiveItem(next);
     await mediumHaptic();
-    await saveCompletedQuests([]);
+  }
+
+  // Completion is the ONLY place steps are awarded — never on Start.
+  async function completeQuestItem(item: HomeQuestItem) {
+    if (completedQuests.some((entry) => entry.id === item.id)) return;
+
+    const nextCompleted = await markItemComplete(item, completedQuests);
+    await successHaptic();
+    setCompletedQuests(nextCompleted);
+    setSelectedItem(null);
+    await loadDayPlan();
+    await loadQuickThoughts();
+    if (activeItem?.id === item.id) {
+      await clearActiveItem();
+    }
+  }
+
+  async function completeActiveItem() {
+    if (!activeItem) return;
+    const boardItem: HomeQuestItem = {
+      id: activeItem.id,
+      title: activeItem.title,
+      source: activeItem.source,
+      kind: activeItem.kind,
+      steps: activeItem.steps,
+      durationMinutes: activeItem.durationMinutes,
+      scheduledTime: activeItem.scheduledTime,
+    };
+    await completeQuestItem(boardItem);
+  }
+
+  async function missQuestItem(item: HomeQuestItem) {
+    const nextMissed = await markItemMissed(item, missedQuests, activeItem?.id ?? null);
+    await lightHaptic();
+    setMissedQuests(nextMissed);
+    setSelectedItem(null);
+    if (activeItem?.id === item.id) {
+      await clearActiveItem();
+    }
+    router.push({ pathname: "/reflection", params: { quest: item.title } });
+  }
+
+  async function reflectActiveItem() {
+    if (!activeItem) return;
+    const boardItem: HomeQuestItem = {
+      id: activeItem.id,
+      title: activeItem.title,
+      source: activeItem.source,
+      kind: activeItem.kind,
+      steps: activeItem.steps,
+      durationMinutes: activeItem.durationMinutes,
+      scheduledTime: activeItem.scheduledTime,
+    };
+    await missQuestItem(boardItem);
+  }
+
+  async function toggleQuestItemFromRow(item: HomeQuestItem) {
+    if (activeItem && activeItem.id !== item.id) {
+      showLockMessage();
+      return;
+    }
+    if (completedQuests.some((entry) => entry.id === item.id)) return;
+    await completeQuestItem(item);
   }
 
   // Prefer the new tiered milestone fields; fall back to legacy goalOne/Two/Three
@@ -485,7 +656,7 @@ export default function HomeScreen() {
   const specificGoal = profile?.specificGoal?.trim() || "";
 
   const completedMandatoryTitles = completedQuests.filter(
-    (title) => title === "Eat to restore energy" || title === "Relax for 30 minutes"
+    (entry) => entry.title === "Eat to restore energy" || entry.title === "Relax for 30 minutes"
   );
   const completedNormalQuestCount = completedQuests.length - completedMandatoryTitles.length;
   const questEnergyCost = isProgress ? PROGRESS_QUEST_ENERGY_COST : RECOVERY_QUEST_ENERGY_COST;
@@ -497,7 +668,7 @@ export default function HomeScreen() {
         ) * PASSIVE_DECAY_POINTS
       : 0;
   const mandatoryRecoveryBoost = completedMandatoryTitles.reduce(
-    (sum, title) => sum + (title === "Eat to restore energy" ? 15 : 10),
+    (sum, entry) => sum + (entry.title === "Eat to restore energy" ? 15 : 10),
     0
   );
   const energyYield = hasEnergyData
@@ -520,10 +691,9 @@ export default function HomeScreen() {
     "";
   const todayPlanText = todayGoal || todayRole;
 
-  const flameState = useMemo(() => getFlameState(energyYield), [energyYield]);
+  const flameState = useMemo(() => getFireAssetForEnergy(energyYield), [energyYield]);
   const flameLabel = hasEnergyData ? flameState.label : "Check-in needed";
 
-  const modeTitle = isNeutral ? "Balanced Mode" : isRecovery ? "Recovery Mode" : "Progress Mode";
   const modeInstruction = isNeutral
     ? "A new day awaits. Small steps today, bright tomorrows."
     : isRecovery
@@ -568,10 +738,6 @@ export default function HomeScreen() {
         status: "STEADY",
         mode: "BALANCED MODE",
       };
-
-  function getAccentColor() {
-    return theme.accent;
-  }
 
   function getCategoryQuests(category: string, modeType: "Recovery" | "Progress"): Quest[] {
     const normalized = category || "Purpose";
@@ -655,8 +821,8 @@ export default function HomeScreen() {
     const threshold = isProgress ? 50 : 40;
     if (energyYield >= threshold) return null;
 
-    const eatQuestDone = completedQuests.includes("Eat to restore energy");
-    const relaxQuestDone = completedQuests.includes("Relax for 30 minutes");
+    const eatQuestDone = completedQuests.some((entry) => entry.title === "Eat to restore energy");
+    const relaxQuestDone = completedQuests.some((entry) => entry.title === "Relax for 30 minutes");
     const hasEaten = latestCheckIn?.eatenSinceMorning === true || eatQuestDone;
 
     if (!hasEaten && !eatQuestDone) {
@@ -738,25 +904,10 @@ export default function HomeScreen() {
     let baseQuests: Quest[];
 
     if (isProgress) {
-      // Progress mode: a sustainable, day-over-day journey. The capstone makes
-      // "one step past yesterday" explicit, and the quests below escalate
-      // (rotating + scaling) with the category's current level.
-      const level = progression?.level ?? 1;
-      const stretchQuest = buildStretchQuest({ category, specificGoal }, level);
-      const progressQuests = buildProgressionQuests({ category, specificGoal }, level, 4);
-
-      baseQuests = [
-        { title: stretchQuest.title, type: stretchQuest.type, steps: stretchQuest.steps, description: stretchQuest.description },
-        ...progressQuests.map((quest) => ({
-          title: quest.title,
-          type: quest.type,
-          steps: quest.steps,
-          description: quest.description,
-        })),
-        resourceQuest,
-        movementQuest,
-        transportQuest,
-      ];
+      // Progress mode: goal-anchored daily quests from the offline quest DB,
+      // personalized with the user's specific goal.
+      const progressQuests = generateProgressQuests({ category, specificGoal }, 5);
+      baseQuests = [...progressQuests, resourceQuest, movementQuest, transportQuest];
     } else {
       // Recovery mode (unchanged for now): gentle category quests + goal steps.
       const categoryQuests = getCategoryQuests(category, "Recovery");
@@ -784,56 +935,87 @@ export default function HomeScreen() {
   }
 
   const quests = generateQuests();
-  const visibleQuests = quests.slice(0, 3);
 
-  const completedSteps = visibleQuests
-    .filter((quest) => completedQuests.includes(quest.title))
-    .reduce((sum, quest) => sum + quest.steps, 0);
+  const todayKey = getTodayKey();
+  const todayChecklist: RawChecklistItem[] = getChecklistItemsForDay(dayPlanRaw, todayName);
+  const calendarItems = collectTodayCalendarItems(dayPlanRaw, queueItems, todayKey);
+  const completedIds = new Set(completedQuests.map((entry) => entry.id));
+  const missedIds = new Set(missedQuests.map((entry) => entry.id));
+  const hasUserItems = hasUserCreatedQuestItems({
+    todayQuest: dayPlanRaw?.todayQuest ?? null,
+    checklist: todayChecklist,
+    quickThoughts: queueItems,
+    todayKey,
+  });
+  const boardMode: "Progress" | "Recovery" = isRecovery ? "Recovery" : "Progress";
 
-  const completedVisibleQuests = visibleQuests.filter((quest) =>
-    completedQuests.includes(quest.title)
-  ).length;
+  const allHomeItems: HomeQuestItem[] =
+    hasEnergyData && !isNeutral
+      ? normalizeQuestItems({
+          quests,
+          todayQuest: dayPlanRaw?.todayQuest ?? null,
+          checklist: todayChecklist,
+          quickThoughts: queueItems,
+          calendarItems,
+          todayKey,
+          completedIds,
+          missedIds,
+        })
+      : [];
 
-  const rank = completedSteps >= 5 ? "Consistent" : "Beginner";
+  const availableItems = allHomeItems.filter((item) => item.id !== activeItem?.id);
+  const boardCapacity = applyQuestBoardCapacity(availableItems, boardMode, hasUserItems);
+  const visibleItems = boardCapacity.visibleItems;
+  const extraItemCount = boardCapacity.hiddenCount;
+  const capacityLabel = formatCapacityHeader(boardCapacity.plannedMinutes, boardMode);
 
-  const moveQuestDone = visibleQuests.some(
-    (q) => (q.type === "Body" || q.title.toLowerCase().includes("movement")) && completedQuests.includes(q.title)
-  )
-    ? 1
-    : 0;
+  const remainingMs = activeItem ? Math.max(0, activeItem.endsAt - countdownNow) : 0;
+  const timerFinished = activeItem !== null && remainingMs <= 0;
+  const isBoardLocked = activeItem !== null;
 
-  const focusValue = `${completedVisibleQuests}/${visibleQuests.length || 0}`;
-  const reflectValue = visibleQuests.some((q) => q.title.toLowerCase().includes("reflect")) ? 1 : 0;
+  const nowMinutes = timeNow.getHours() * 60 + timeNow.getMinutes();
+  const timeTrackPosition = getCurrentTimeTrackPosition(timeNow);
+  const nextItem = activeItem ? findNextScheduledItem(availableItems, activeItem.id, nowMinutes) : null;
 
-  const allVisibleQuestsDone =
-    visibleQuests.length > 0 && completedVisibleQuests === visibleQuests.length;
+  const currentBackground = isRecovery
+    ? uiAssets.backgrounds.recovery
+    : isProgress
+    ? uiAssets.backgrounds.progress
+    : uiAssets.backgrounds.neutral;
 
-  // Finishing today's board advances the journey: today is banked, and the
-  // next day's roll-forward steps the level up.
-  useEffect(() => {
-    if (!isProgress || !hasEnergyData || !allVisibleQuestsDone) return;
-    if (progression?.completedToday) return;
-
-    markProgressionDayComplete(activeCategory, getTodayKey()).then(setProgression);
-  }, [
-    isProgress,
-    hasEnergyData,
-    allVisibleQuestsDone,
-    activeCategory,
-    progression?.completedToday,
-  ]);
-
-  const journeyLevel = progression?.level ?? 1;
-  const journeyStreak = displayStreak(progression);
-  const journeyTier = tierLabelForLevel(journeyLevel);
+  const completedHomeItems = [
+    ...completedQuests.map((entry) => ({
+      id: entry.id,
+      title: entry.title,
+      source: entry.source,
+      kind: "progress" as QuestKind,
+      steps: entry.steps,
+      durationMinutes: 30,
+    })),
+  ];
+  const totalEarnedSteps = computeTotalEarnedSteps({
+    dayPlan: dayPlanRaw,
+    quickThoughts: queueItems,
+    todayCompletions: completedQuests,
+    userStats,
+  });
+  const completedCount = completedQuests.length;
+  const totalCount = allHomeItems.length + completedCount;
+  const rank = totalEarnedSteps >= 100 ? "Consistent" : totalEarnedSteps >= 5 ? "Explorer" : "Beginner";
 
   if (!profileChecked) return null;
 
   return (
     <View style={styles.pageRoot}>
-      <View style={styles.phoneFrame}>
-        <ImageBackground source={uiAssets.backgrounds.default} style={styles.phoneBackground} resizeMode="cover">
-          <View style={styles.worldOverlay}>
+      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight }]}>
+        <View pointerEvents="none" style={styles.backgroundLayer}>
+          <Image
+            source={currentBackground}
+            style={styles.backgroundImage}
+            resizeMode="cover"
+          />
+        </View>
+        <View style={styles.worldOverlay}>
             <ScrollView
               style={styles.screenScroller}
               contentContainerStyle={styles.hudContent}
@@ -841,15 +1023,7 @@ export default function HomeScreen() {
               bounces={false}
             >
               <View style={styles.topHud}>
-                <TouchableOpacity style={[styles.cornerButton, { borderColor: theme.accent }]} onPress={() => navigateWithHaptic("/onboarding")}>
-                  <Text style={styles.cornerButtonText}>🌲</Text>
-                </TouchableOpacity>
-
                 <Image source={mylitLogo} style={styles.heroLogo} resizeMode="contain" />
-
-                <TouchableOpacity style={[styles.cornerButton, { borderColor: theme.accent }]} onPress={() => navigateWithHaptic("/onboarding")}>
-                  <Text style={styles.cornerButtonText}>⚙️</Text>
-                </TouchableOpacity>
               </View>
 
               <View style={styles.modeRow}>
@@ -871,14 +1045,11 @@ export default function HomeScreen() {
                   <Text style={styles.timelineIcon}>🌙</Text>
                 </View>
                 <View style={styles.timelineTrack}>
-                  <View style={[styles.timelineFill, { backgroundColor: theme.accent }]} />
+                  <View style={[styles.timelineFill, { backgroundColor: theme.accent, width: `${timeTrackPosition}%` }]} />
                   <View
                     style={[
                       styles.timelineMarker,
-                      { borderColor: theme.accent, backgroundColor: theme.glow },
-                      isNeutral && styles.timelineMarkerNeutral,
-                      isProgress && styles.timelineMarkerProgress,
-                      isRecovery && styles.timelineMarkerRecovery,
+                      { borderColor: theme.accent, backgroundColor: theme.glow, left: `${timeTrackPosition}%` },
                     ]}
                   />
                 </View>
@@ -890,15 +1061,19 @@ export default function HomeScreen() {
                 </View>
               </View>
 
-              <View style={[styles.guideScene, isNeutral && styles.guideSceneNeutral]}>
-                {!isNeutral ? (
+              {!isNeutral ? (
+                <View style={styles.guideScene}>
                   <Image source={guideImage} style={[styles.guideEmblem, { borderColor: theme.accent }]} resizeMode="contain" />
-                ) : null}
-                <View style={[styles.speechBubble, { borderColor: theme.accent }, isNeutral && styles.neutralSpeechBubble]}>
-                  <Text style={styles.speechText}>{isNeutral ? modeInstruction : guideMessage}</Text>
-                  {!isNeutral ? <Text style={[styles.speechName, { color: theme.accent }]}>{guideName} {isRecovery ? "💜" : "💚"}</Text> : null}
+                  <View style={[styles.speechBubble, { borderColor: theme.accent }]}>
+                    <Text style={styles.speechText}>{guideMessage}</Text>
+                    <Text style={[styles.speechName, { color: theme.accent }]}>{guideName} {isRecovery ? "💜" : "💚"}</Text>
+                  </View>
                 </View>
-              </View>
+              ) : (
+                <View style={styles.neutralStatusPanel}>
+                  <Text style={[styles.neutralStatusText, { color: theme.glow }]}>{modeInstruction}</Text>
+                </View>
+              )}
 
               <View style={[styles.energyCard, { borderColor: theme.accent }]}>
                 <View style={styles.energyHeaderRow}>
@@ -907,17 +1082,37 @@ export default function HomeScreen() {
                     <Text style={[styles.energyPillText, { color: theme.accent }]}>{isNeutral ? "STEADY" : isRecovery ? "RECOVERY" : "PROGRESS"}</Text>
                   </View>
                 </View>
-                <Image
-                  source={hasEnergyData ? flameState.image : fireAssets.steadyFlame}
-                  style={[
-                    styles.energyFlame,
-                    {
-                      height: hasEnergyData ? flameState.size + 42 : 92,
-                      width: hasEnergyData ? flameState.size + 42 : 92,
-                    },
-                  ]}
-                  resizeMode="contain"
-                />
+                {hasEnergyData && flameState.image ? (
+                  <Image
+                    source={flameState.image}
+                    style={[
+                      styles.energyFlame,
+                      {
+                        height: flameState.size + 58,
+                        width: flameState.size + 58,
+                      },
+                    ]}
+                    resizeMode="contain"
+                  />
+                ) : !hasEnergyData && fireAssets.steadyFlame ? (
+                  <Image
+                    source={fireAssets.steadyFlame}
+                    style={[
+                      styles.energyFlame,
+                      {
+                        height: 112,
+                        width: 112,
+                      },
+                    ]}
+                    resizeMode="contain"
+                  />
+                ) : (
+                  <View style={styles.energyFlameFallback}>
+                    <Text style={styles.energyFlameFallbackText}>
+                      {hasEnergyData ? flameState.emoji : "🔥"}
+                    </Text>
+                  </View>
+                )}
                 <View style={styles.energyScoreLine}>
                   <Text style={[styles.energyScore, { color: theme.glow }]}>{hasEnergyData ? energyYield : "—"}</Text>
                   <Text style={styles.energyOutOf}> / 100</Text>
@@ -954,19 +1149,20 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               </View>
 
-              <View style={[styles.questBoard, { borderColor: theme.accent }]}>
+              <View style={[styles.questBoard, { borderColor: isBoardLocked && activeItem ? kindAccent(activeItem.kind) : theme.accent }]}>
                 <View style={styles.questHeaderRow}>
-                  <Text style={[styles.questTitle, { color: theme.accent }]}>{isRecovery ? "+ QUEST BOARD +" : "⚔ QUEST BOARD"}</Text>
-                  <Text style={[styles.questCount, { color: theme.accent }]}>{isNeutral ? "LOCKED" : isProgress ? `DAY ${journeyLevel} · 🔥${journeyStreak}` : `${completedVisibleQuests}/${visibleQuests.length || 0}`}</Text>
-                </View>
-
-                {isProgress ? (
-                  <Text style={[styles.questProgressionNote, { color: theme.soft }]} numberOfLines={1}>
-                    {allVisibleQuestsDone
-                      ? `Day ${journeyLevel} banked — tomorrow goes one step further.`
-                      : `${journeyTier} tier · each day builds one step further.`}
+                  <View style={styles.questTitleRow}>
+                    <Text style={[styles.questTitle, { color: theme.accent }]}>{isRecovery ? "+ QUEST BOARD +" : "⚔ QUEST BOARD"}</Text>
+                    {!isNeutral ? (
+                      <TouchableOpacity style={[styles.questHelpBtn, { borderColor: theme.accent }]} onPress={() => setShowQuestHelp(true)}>
+                        <Text style={[styles.questHelpBtnText, { color: theme.accent }]}>?</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                  <Text style={[styles.questCount, { color: theme.accent }]}>
+                    {isNeutral ? "LOCKED" : isBoardLocked ? "LOCKED" : capacityLabel}
                   </Text>
-                ) : null}
+                </View>
 
                 {isNeutral ? (
                   <View style={styles.questLockedCard}>
@@ -976,33 +1172,98 @@ export default function HomeScreen() {
                       <Text style={styles.questLockedButtonText}>START CHECK-IN</Text>
                     </TouchableOpacity>
                   </View>
-                ) : (
-                  visibleQuests.map((quest) => {
-                    const isDone = completedQuests.includes(quest.title);
+                ) : isBoardLocked && activeItem ? (
+                  <View style={[styles.activeCard, { borderColor: kindAccent(activeItem.kind) }]}>
+                    <View style={styles.activeHeaderRow}>
+                      <Text style={[styles.activeLockLabel, { color: timerFinished ? "#22C55E" : theme.glow }]}>
+                        {timerFinished ? "QUEST COMPLETE" : "QUEST BOARD LOCKED"}
+                      </Text>
+                      <View style={[styles.kindPill, { borderColor: kindAccent(activeItem.kind) }]}>
+                        <Text style={[styles.kindPillText, { color: kindAccent(activeItem.kind) }]}>
+                          {activeItem.kind === "recovery" ? "RECOVERY" : "PROGRESS"}
+                        </Text>
+                      </View>
+                    </View>
 
-                    return (
-                      <View key={quest.title} style={[styles.questRow, isDone && styles.questRowDone]}>
-                        <View style={styles.questIconSlot}>
-                          <Text style={styles.questIcon}>{quest.mandatory ? "!" : quest.type === "Body" ? "🏋️" : quest.type === "Focus" ? "📓" : "📜"}</Text>
-                        </View>
-                        <View style={styles.questCopy}>
-                          <Text style={styles.questText} numberOfLines={1}>{quest.title}</Text>
-                          <View style={styles.questMetaRow}>
-                            <Text style={[styles.questMeta, { color: theme.soft }]} numberOfLines={1}>{quest.description || quest.type}</Text>
-                            <Text style={[styles.questSteps, { color: theme.accent }]}>+{quest.steps}</Text>
+                    <Text style={styles.activeTitle} numberOfLines={2}>{activeItem.title}</Text>
+                    <Text style={[styles.countdownText, { color: timerFinished ? "#22C55E" : theme.glow }]}>
+                      {formatCountdown(remainingMs)}
+                    </Text>
+                    <Text style={styles.activeMeta} numberOfLines={1}>
+                      {activeItem.source} · {formatDurationLabel(activeItem.durationMinutes)} · +{activeItem.steps} steps
+                    </Text>
+
+                    {!timerFinished ? (
+                      <>
+                        {nextItem ? (
+                          <View style={styles.nextRow}>
+                            <Text style={[styles.nextLabel, { color: theme.accent }]}>NEXT</Text>
+                            <Text style={styles.nextTitle} numberOfLines={1}>{nextItem.title}</Text>
+                            <Text style={styles.nextMeta} numberOfLines={1}>
+                              {nextItem.source}{nextItem.scheduledTime ? ` · ${nextItem.scheduledTime}` : ""} · {formatDurationLabel(nextItem.durationMinutes)}
+                            </Text>
                           </View>
-                        </View>
-                        <Link href={{ pathname: "/reflection", params: { quest: quest.title } }} asChild>
-                          <TouchableOpacity style={styles.reflectButton}>
-                            <Text style={styles.reflectButtonText}>↺</Text>
-                          </TouchableOpacity>
-                        </Link>
-                        <TouchableOpacity style={[styles.checkBox, isDone && styles.checkBoxDone, { borderColor: isDone ? "#22C55E" : theme.soft }]} onPress={() => toggleQuest(quest)}>
-                          <Text style={styles.checkBoxText}>{isDone ? "✓" : ""}</Text>
+                        ) : (
+                          <Text style={styles.nextEmpty}>Next: No scheduled item yet.</Text>
+                        )}
+                        {lockMessage ? <Text style={styles.lockMessage}>{lockMessage}</Text> : null}
+                      </>
+                    ) : (
+                      <View style={styles.completeRow}>
+                        <TouchableOpacity style={[styles.completeBtn]} onPress={completeActiveItem}>
+                          <Text style={styles.completeBtnText}>COMPLETE</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.reflectBtn, { borderColor: theme.accent }]} onPress={reflectActiveItem}>
+                          <Text style={styles.reflectBtnText}>MISSED?</Text>
                         </TouchableOpacity>
                       </View>
-                    );
-                  })
+                    )}
+                  </View>
+                ) : availableItems.length === 0 ? (
+                  <View style={styles.questLockedCard}>
+                    <Text style={styles.questLockedTitle}>No quests yet</Text>
+                    <Text style={styles.questLockedText} numberOfLines={2}>Add items in Day Plan or Quick Thoughts to fill your board.</Text>
+                  </View>
+                ) : (
+                  <>
+                    {visibleItems.map((item) => {
+                      const isDone = completedQuests.some((entry) => entry.id === item.id);
+                      return (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={[styles.questRow, { borderColor: item.mandatory ? "#F87171" : "#2E3542" }, isDone && styles.questRowDone]}
+                        onPress={() => openQuestItem(item)}
+                        activeOpacity={0.85}
+                      >
+                        <View style={styles.questIconSlot}>
+                          <Text style={styles.questIcon}>{item.mandatory ? "!" : sourceIcon(item.source)}</Text>
+                        </View>
+                        <View style={styles.questCopy}>
+                          <Text style={styles.questText} numberOfLines={1}>{item.title}</Text>
+                          <View style={styles.questMetaRow}>
+                            <Text style={[styles.questMeta, { color: theme.soft }]} numberOfLines={1}>
+                              {item.source} · {formatDurationLabel(item.durationMinutes)}{item.scheduledTime ? ` · ${item.scheduledTime}` : ""}
+                            </Text>
+                            <Text style={[styles.questSteps, { color: kindAccent(item.kind) }]}>+{item.steps}</Text>
+                          </View>
+                        </View>
+                        <TouchableOpacity
+                          style={[styles.checkBox, { borderColor: theme.accent }, isDone && styles.checkBoxDone]}
+                          onPress={(event) => {
+                            event.stopPropagation?.();
+                            void toggleQuestItemFromRow(item);
+                          }}
+                        >
+                          <Text style={styles.checkBoxText}>{isDone ? "✓" : ""}</Text>
+                        </TouchableOpacity>
+                        <Text style={[styles.startChevron, { color: theme.accent }]}>▶</Text>
+                      </TouchableOpacity>
+                    );})}
+                    {lockMessage ? <Text style={styles.lockMessage}>{lockMessage}</Text> : null}
+                    {extraItemCount > 0 ? (
+                      <Text style={styles.moreHint}>+{extraItemCount} more beyond today&apos;s capacity</Text>
+                    ) : null}
+                  </>
                 )}
               </View>
 
@@ -1019,7 +1280,7 @@ export default function HomeScreen() {
                   <Text style={styles.statIcon}>🥾</Text>
                   <View>
                     <Text style={[styles.statLabel, { color: theme.accent }]}>STEPS</Text>
-                    <Text style={styles.statValue}>{completedSteps}</Text>
+                    <Text style={styles.statValue}>{totalEarnedSteps}</Text>
                   </View>
                 </View>
                 <View style={styles.statDivider} />
@@ -1027,11 +1288,88 @@ export default function HomeScreen() {
                   <Text style={styles.statIcon}>🎒</Text>
                   <View>
                     <Text style={[styles.statLabel, { color: theme.accent }]}>INVENTORY</Text>
-                    <Text style={styles.statValue}>{completedVisibleQuests} / {visibleQuests.length || 0}</Text>
+                    <Text style={styles.statValue}>{completedCount} / {totalCount || 0}</Text>
                   </View>
                 </View>
               </View>
             </ScrollView>
+
+            <Modal
+              visible={showQuestHelp}
+              transparent
+              animationType="fade"
+              onRequestClose={() => setShowQuestHelp(false)}
+            >
+              <View style={styles.modalBackdrop}>
+                <View style={[styles.modalPanel, { borderColor: theme.accent }]}>
+                  <Text style={[styles.modalSource, { color: theme.accent }]}>QUEST BOARD HELP</Text>
+                  <Text style={styles.modalTitle}>How the Quest Board works</Text>
+                  <Text style={styles.modalDescription}>
+                    The Quest Board keeps today focused. In Progress mode, MYLIT shows up to 8 planned hours. In Recovery mode, it shows up to 5. Your Day Plan, checklist items, Quick Thoughts, and app quests can all appear here. Start one timed quest at a time; the board locks until it ends. Complete gives steps. Missed? helps you reflect without losing your progress.
+                  </Text>
+                  <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowQuestHelp(false)}>
+                    <Text style={styles.modalCancelText}>CLOSE</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </Modal>
+
+            <Modal
+              visible={selectedItem !== null}
+              transparent
+              animationType="fade"
+              onRequestClose={() => setSelectedItem(null)}
+            >
+              <View style={styles.modalBackdrop}>
+                {selectedItem ? (
+                  <View style={[styles.modalPanel, { borderColor: kindAccent(selectedItem.kind) }]}>
+                    <Text style={[styles.modalSource, { color: kindAccent(selectedItem.kind) }]}>
+                      {selectedItem.source.toUpperCase()}
+                    </Text>
+                    <Text style={styles.modalTitle}>{selectedItem.title}</Text>
+
+                    <View style={styles.modalMetaGrid}>
+                      <Text style={styles.modalMeta}>Type: {selectedItem.kind === "recovery" ? "Recovery" : "Progress"}</Text>
+                      <Text style={styles.modalMeta}>Source: {selectedItem.source}</Text>
+                      <Text style={styles.modalMeta}>Duration: {formatDurationLabel(selectedItem.durationMinutes)}</Text>
+                      <Text style={styles.modalMeta}>Steps possible: +{selectedItem.steps}</Text>
+                      {selectedItem.scheduledTime ? (
+                        <Text style={styles.modalMeta}>Scheduled: {selectedItem.scheduledTime}</Text>
+                      ) : (
+                        <Text style={styles.modalMeta}>Scheduled: Anytime today</Text>
+                      )}
+                    </View>
+
+                    {selectedItem.description ? (
+                      <Text style={styles.modalDescription}>{selectedItem.description}</Text>
+                    ) : null}
+
+                    <View style={styles.modalButtonRow}>
+                      <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setSelectedItem(null)}>
+                        <Text style={styles.modalCancelText}>CLOSE</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.modalCompleteBtn}
+                        onPress={() => void completeQuestItem(selectedItem)}
+                      >
+                        <Text style={styles.modalCompleteText}>COMPLETE</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <View style={styles.modalButtonRow}>
+                      <TouchableOpacity style={styles.modalStartBtn} onPress={() => startTimedItem(selectedItem)}>
+                        <Text style={styles.modalStartText}>START</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.modalMissedBtn}
+                        onPress={() => void missQuestItem(selectedItem)}
+                      >
+                        <Text style={styles.modalMissedText}>MISSED?</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : null}
+              </View>
+            </Modal>
 
             <View style={[styles.bottomNav, { borderColor: theme.accent }]}>
               <TouchableOpacity style={[styles.navButton, styles.navButtonActive, { borderColor: theme.accent }]} onPress={lightHaptic}>
@@ -1059,8 +1397,7 @@ export default function HomeScreen() {
                 <Text style={styles.navLabel}>BAG</Text>
               </TouchableOpacity>
             </View>
-          </View>
-        </ImageBackground>
+        </View>
       </View>
     </View>
   );
@@ -1072,56 +1409,48 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  phoneFrame: {
-    flex: 1,
-    width: "100%",
-    maxWidth: 430,
+  phoneStage: {
     alignSelf: "center",
     backgroundColor: "#050814",
     overflow: "hidden",
+    position: "relative",
+    borderWidth: 2,
+    borderColor: "rgba(251, 191, 36, 0.55)",
+    shadowColor: "#000",
+    shadowOpacity: 0.85,
+    shadowRadius: 0,
+    shadowOffset: { width: 6, height: 6 },
   },
-  phoneBackground: {
-    flex: 1,
+  backgroundLayer: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  backgroundImage: {
+    width: "100%",
+    height: "100%",
   },
   worldOverlay: {
     flex: 1,
-    backgroundColor: "rgba(2, 6, 12, 0.08)",
+    backgroundColor: "rgba(2, 6, 12, 0.02)",
   },
   screenScroller: {
     flex: 1,
   },
   hudContent: {
     minHeight: "100%",
-    paddingTop: 10,
-    paddingHorizontal: 12,
-    paddingBottom: 86,
+    paddingTop: 9,
+    paddingHorizontal: 14,
+    paddingBottom: 82,
     justifyContent: "space-between",
   },
   topHud: {
-    minHeight: 92,
+    minHeight: 64,
     flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-  },
-  cornerButton: {
-    height: 52,
-    width: 52,
-    borderWidth: 3,
-    borderRadius: 8,
-    backgroundColor: "rgba(6, 10, 18, 0.94)",
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.7,
-    shadowRadius: 0,
-    shadowOffset: { width: 3, height: 3 },
-  },
-  cornerButtonText: {
-    fontSize: 24,
   },
   heroLogo: {
-    height: 86,
-    width: 238,
+    height: 82,
+    width: 250,
     marginTop: -2,
   },
   modeRow: {
@@ -1213,6 +1542,7 @@ const styles = StyleSheet.create({
     top: -9,
     height: 22,
     width: 22,
+    marginLeft: -11,
     borderWidth: 3,
     transform: [{ rotate: "45deg" }],
     shadowColor: "#000",
@@ -1220,9 +1550,6 @@ const styles = StyleSheet.create({
     shadowRadius: 0,
     shadowOffset: { width: 2, height: 2 },
   },
-  timelineMarkerNeutral: { left: "23%" },
-  timelineMarkerProgress: { left: "42%" },
-  timelineMarkerRecovery: { left: "10%" },
   timelineLabelsRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -1243,9 +1570,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     marginVertical: 3,
   },
-  guideSceneNeutral: {
-    minHeight: 78,
+  neutralStatusPanel: {
+    alignSelf: "center",
+    width: "76%",
+    minHeight: 44,
+    marginVertical: 6,
+    borderWidth: 2,
+    borderColor: "rgba(248, 200, 74, 0.85)",
+    backgroundColor: "rgba(8, 12, 20, 0.82)",
+    alignItems: "center",
     justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  neutralStatusText: {
+    fontSize: 11,
+    fontWeight: "900",
+    textAlign: "center",
+    textShadowColor: "#000",
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 0,
   },
   guideEmblem: {
     height: 86,
@@ -1263,10 +1606,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 12,
   },
-  neutralSpeechBubble: {
-    flex: 0,
-    width: "72%",
-  },
   speechText: {
     color: "#F8F1D7",
     fontSize: 13,
@@ -1279,13 +1618,13 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
   energyCard: {
-    width: "58%",
-    minHeight: 188,
+    width: "64%",
+    minHeight: 202,
     alignSelf: "center",
     backgroundColor: "rgba(6, 10, 18, 0.96)",
     borderWidth: 4,
     borderRadius: 5,
-    paddingVertical: 9,
+    paddingVertical: 12,
     paddingHorizontal: 10,
     alignItems: "center",
     justifyContent: "center",
@@ -1317,17 +1656,31 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   energyFlame: {
-    marginTop: 2,
-    marginBottom: -4,
+    marginTop: 8,
+    marginBottom: 2,
   },
   energyScoreLine: {
     flexDirection: "row",
     alignItems: "baseline",
   },
+  energyFlameFallback: {
+    height: 112,
+    width: 112,
+    marginTop: 8,
+    marginBottom: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  energyFlameFallbackText: {
+    fontSize: 76,
+    textShadowColor: "#000",
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 0,
+  },
   energyScore: {
-    fontSize: 44,
+    fontSize: 52,
     fontWeight: "900",
-    lineHeight: 48,
+    lineHeight: 56,
     textShadowColor: "#000",
     textShadowOffset: { width: 2, height: 2 },
     textShadowRadius: 0,
@@ -1356,7 +1709,7 @@ const styles = StyleSheet.create({
   },
   checkInCard: {
     flex: 1,
-    minHeight: 82,
+    minHeight: 76,
     backgroundColor: "rgba(6, 10, 18, 0.95)",
     borderWidth: 3,
     borderRadius: 4,
@@ -1398,7 +1751,7 @@ const styles = StyleSheet.create({
     marginLeft: 3,
   },
   questBoard: {
-    minHeight: 150,
+    minHeight: 142,
     backgroundColor: "rgba(5, 9, 17, 0.96)",
     borderWidth: 3,
     borderRadius: 4,
@@ -1411,6 +1764,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 7,
   },
+  questTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexShrink: 1,
+  },
+  questHelpBtn: {
+    width: 22,
+    height: 22,
+    borderWidth: 2,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(15, 23, 42, 0.9)",
+  },
+  questHelpBtnText: {
+    fontSize: 12,
+    fontWeight: "900",
+  },
   questTitle: {
     fontSize: 15,
     fontWeight: "900",
@@ -1420,16 +1792,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "900",
   },
-  questProgressionNote: {
-    fontSize: 9,
-    fontWeight: "800",
-    marginTop: -3,
-    marginBottom: 6,
-    letterSpacing: 0.3,
-  },
   questLockedCard: {
     flex: 1,
-    minHeight: 92,
+    minHeight: 86,
     borderWidth: 2,
     borderColor: "#334155",
     backgroundColor: "rgba(15, 23, 42, 0.9)",
@@ -1509,6 +1874,253 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "900",
   },
+  kindDot: {
+    height: 9,
+    width: 9,
+    borderRadius: 5,
+    marginLeft: 6,
+  },
+  startChevron: {
+    fontSize: 14,
+    fontWeight: "900",
+    marginLeft: 6,
+  },
+  moreHint: {
+    color: "#CBD5E1",
+    fontSize: 9,
+    fontWeight: "800",
+    textAlign: "center",
+    marginTop: 2,
+  },
+  lockMessage: {
+    color: "#FCA5A5",
+    fontSize: 10,
+    fontWeight: "900",
+    textAlign: "center",
+    marginTop: 4,
+  },
+  activeCard: {
+    minHeight: 120,
+    borderWidth: 2,
+    borderRadius: 4,
+    backgroundColor: "rgba(10, 14, 26, 0.96)",
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+  },
+  activeHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  activeLockLabel: {
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  kindPill: {
+    borderWidth: 2,
+    backgroundColor: "rgba(9, 14, 24, 0.95)",
+    paddingVertical: 2,
+    paddingHorizontal: 7,
+  },
+  kindPillText: {
+    fontSize: 8,
+    fontWeight: "900",
+  },
+  activeTitle: {
+    color: "#F8F1D7",
+    fontSize: 13,
+    fontWeight: "900",
+    marginTop: 6,
+  },
+  countdownText: {
+    fontSize: 34,
+    fontWeight: "900",
+    letterSpacing: 1,
+    marginTop: 2,
+    textShadowColor: "#000",
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 0,
+  },
+  activeMeta: {
+    color: "#CBD5E1",
+    fontSize: 10,
+    fontWeight: "800",
+    marginTop: 1,
+  },
+  nextRow: {
+    marginTop: 8,
+    borderWidth: 2,
+    borderColor: "#2E3542",
+    backgroundColor: "rgba(15, 23, 42, 0.9)",
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  nextLabel: {
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
+  nextTitle: {
+    color: "#F8F1D7",
+    fontSize: 12,
+    fontWeight: "900",
+    marginTop: 1,
+  },
+  nextMeta: {
+    color: "#94A3B8",
+    fontSize: 9,
+    fontWeight: "800",
+    marginTop: 1,
+  },
+  nextEmpty: {
+    color: "#94A3B8",
+    fontSize: 11,
+    fontWeight: "800",
+    marginTop: 8,
+  },
+  completeRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 10,
+  },
+  completeBtn: {
+    flex: 1,
+    borderWidth: 2,
+    borderColor: "#22C55E",
+    backgroundColor: "#14532D",
+    paddingVertical: 9,
+    alignItems: "center",
+  },
+  completeBtnText: {
+    color: "#DCFCE7",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
+  reflectBtn: {
+    flex: 1,
+    borderWidth: 2,
+    backgroundColor: "rgba(8, 13, 24, 0.94)",
+    paddingVertical: 9,
+    alignItems: "center",
+  },
+  reflectBtnText: {
+    color: "#F8F1D7",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(2, 4, 10, 0.78)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 22,
+  },
+  modalPanel: {
+    width: "100%",
+    maxWidth: 320,
+    borderWidth: 3,
+    borderRadius: 6,
+    backgroundColor: "rgba(8, 12, 22, 0.98)",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.8,
+    shadowRadius: 0,
+    shadowOffset: { width: 5, height: 5 },
+  },
+  modalSource: {
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1.2,
+  },
+  modalTitle: {
+    color: "#F8F1D7",
+    fontSize: 17,
+    fontWeight: "900",
+    marginTop: 6,
+    lineHeight: 22,
+  },
+  modalMetaGrid: {
+    marginTop: 12,
+    gap: 5,
+  },
+  modalMeta: {
+    color: "#CBD5E1",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  modalDescription: {
+    color: "#94A3B8",
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17,
+    marginTop: 10,
+  },
+  modalButtonRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 18,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    borderWidth: 2,
+    borderColor: "#334155",
+    backgroundColor: "rgba(15, 23, 42, 0.95)",
+    paddingVertical: 11,
+    alignItems: "center",
+  },
+  modalCancelText: {
+    color: "#E2E8F0",
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
+  modalStartBtn: {
+    flex: 1,
+    borderWidth: 3,
+    borderColor: "#FBBF24",
+    backgroundColor: "#3B2F0B",
+    paddingVertical: 11,
+    alignItems: "center",
+  },
+  modalStartText: {
+    color: "#FDE68A",
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
+  modalCompleteBtn: {
+    flex: 1,
+    borderWidth: 2,
+    borderColor: "#22C55E",
+    backgroundColor: "#14532D",
+    paddingVertical: 11,
+    alignItems: "center",
+  },
+  modalCompleteText: {
+    color: "#DCFCE7",
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
+  modalMissedBtn: {
+    flex: 1,
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+    backgroundColor: "rgba(88,28,135,0.45)",
+    paddingVertical: 11,
+    alignItems: "center",
+  },
+  modalMissedText: {
+    color: "#E9D5FF",
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
   reflectButton: {
     height: 25,
     width: 25,
@@ -1542,7 +2154,7 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   statsBar: {
-    minHeight: 62,
+    minHeight: 58,
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "rgba(5, 9, 17, 0.96)",
@@ -1582,7 +2194,7 @@ const styles = StyleSheet.create({
     left: 8,
     right: 8,
     bottom: 8,
-    height: 66,
+    height: 62,
     backgroundColor: "rgba(4, 8, 16, 0.98)",
     borderWidth: 3,
     borderRadius: 5,

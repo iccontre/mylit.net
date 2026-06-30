@@ -1,13 +1,16 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
+  Image,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 
@@ -16,6 +19,7 @@ import {
   type GoalHorizon,
   type GoalMilestoneSet,
 } from "../constants/goalMilestoneTemplates";
+import { uiAssets } from "../constants/uiAssets";
 import { logGoalFeedback } from "../lib/feedbackLog";
 import {
   generateFromDatabase,
@@ -36,6 +40,7 @@ type UserProfile = {
   midTermGoal: string;
   longTermGoal: string;
   goalsGeneratedAt?: string;
+  onboardingComplete?: boolean;
   goalsSource?: GenerationSource;
   // Legacy mirrored fields, kept so older screens continue to read goals
   goalOne: string;
@@ -50,6 +55,9 @@ type UserProfile = {
 };
 
 const PROFILE_KEY = "lit_user_profile";
+const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
+const MAX_FRAME_WIDTH = 520;
+const pathBackground = require("../assets/ui/backgrounds/path-background.png");
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -58,16 +66,34 @@ const pixelFont = Platform.select({
   default: "monospace",
 });
 
+const readableFont = Platform.select({
+  ios: "Arial",
+  android: "sans-serif",
+  web: "Arial",
+  default: undefined,
+});
+
 const CATEGORY_MEANINGS: Record<DreamCategory, string> = {
-  Health: "fitness, better sleep, energy, body, wellness",
+  Health: "fitness, sleep, energy, body, wellness",
   "School / Work": "homework, studying, coding, career, productivity",
-  "Social Life": "friends, confidence with people, meeting new people, connection",
-  Purpose: "direction, identity, meaning, creativity, confidence, general growth",
+  "Social Life": "friends, confidence, meeting new people, connection",
+  Purpose: "direction, identity, creativity, growth, meaning",
+};
+
+const CATEGORY_ICONS: Record<DreamCategory, string> = {
+  Health: "❤",
+  "School / Work": "📘",
+  "Social Life": "👥",
+  Purpose: "✦",
 };
 
 const DREAM_CATEGORIES = Object.keys(CATEGORY_MEANINGS) as DreamCategory[];
 
-const HORIZON_ORDER: GoalHorizon[] = ["shortTerm", "midTerm", "longTerm"];
+const MILESTONE_META: Record<GoalHorizon, { icon: string; title: string; tone: string }> = {
+  shortTerm: { icon: "🪧", title: "SHORT-TERM", tone: "#0F7A3A" },
+  midTerm: { icon: "🚩", title: "MID-TERM", tone: "#155E9F" },
+  longTerm: { icon: "🏆", title: "LONG-TERM", tone: "#7C2D69" },
+};
 
 const EMPTY_MILESTONES: GoalMilestoneSet = {
   shortTerm: "",
@@ -97,9 +123,88 @@ function normalizeDreamCategory(category?: string): DreamCategory | "" {
 function databaseCategoryFor(category: DreamCategory): string {
   return category === "Social Life" ? "Friends / Connection" : category;
 }
+function ToggleButton({
+  label,
+  value,
+  onPress,
+}: {
+  label: string;
+  value: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity style={[styles.toggleButton, value && styles.activeToggleButton]} onPress={onPress}>
+      <Text style={[styles.toggleText, value && styles.activeToggleText]}>
+        {value ? "✓" : "□"} {label}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+function NumberBadge({ value }: { value: string }) {
+  return (
+    <View style={styles.numberBadge}>
+      <Text style={styles.numberBadgeText}>{value}</Text>
+    </View>
+  );
+}
+
+function SectionShell({
+  number,
+  title,
+  children,
+}: {
+  number: string;
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <View style={styles.sectionRow}>
+      <NumberBadge value={number} />
+      <View style={styles.sectionPanel}>
+        <Text style={styles.sectionTitle}>{title}</Text>
+        {children}
+      </View>
+    </View>
+  );
+}
+
+function MilestoneField({
+  horizon,
+  value,
+  onChange,
+}: {
+  horizon: GoalHorizon;
+  value: string;
+  onChange: (next: string) => void;
+}) {
+  const meta = GOAL_HORIZON_LABELS[horizon];
+  const cardMeta = MILESTONE_META[horizon];
+
+  return (
+    <View style={styles.milestoneCard}>
+      <View style={[styles.milestoneBanner, { backgroundColor: cardMeta.tone }]}>
+        <Text style={styles.milestoneBannerText}>{cardMeta.title}</Text>
+      </View>
+      <Text style={styles.milestoneIcon}>{cardMeta.icon}</Text>
+      <Text style={styles.milestoneCaption}>{meta.caption}</Text>
+      <TextInput
+        style={styles.milestoneInput}
+        multiline
+        placeholder={`Your ${meta.label.toLowerCase()}`}
+        placeholderTextColor="#8A5D2B"
+        value={value}
+        onChangeText={onChange}
+      />
+    </View>
+  );
+}
 
 export default function OnboardingScreen() {
   const router = useRouter();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const modalWidth = Math.min(screenWidth - 32, 480);
+  const modalMaxHeight = Math.min(screenHeight * 0.78, 620);
 
   const [name, setName] = useState("");
   const [longTermDream, setLongTermDream] = useState("");
@@ -120,7 +225,7 @@ export default function OnboardingScreen() {
   const [hasQuietSpace, setHasQuietSpace] = useState(false);
   const [hasFoodControl, setHasFoodControl] = useState(false);
   const [validationMessage, setValidationMessage] = useState("");
-  const [hasExistingProfile, setHasExistingProfile] = useState(false);
+  const [showInfo, setShowInfo] = useState(false);
 
   useEffect(() => {
     loadProfile();
@@ -183,8 +288,6 @@ export default function OnboardingScreen() {
 
     try {
       const profile = JSON.parse(saved) as Partial<UserProfile>;
-      setHasExistingProfile(true);
-
       const savedCategory = normalizeDreamCategory(profile.dreamCategory);
 
       setName(profile.name || "");
@@ -236,6 +339,19 @@ export default function OnboardingScreen() {
 
     setValidationMessage("");
 
+    const existingRaw = await AsyncStorage.getItem(PROFILE_KEY);
+    let existingProfile: Partial<UserProfile> | null = null;
+    if (existingRaw) {
+      try {
+        existingProfile = JSON.parse(existingRaw) as Partial<UserProfile>;
+      } catch {
+        existingProfile = null;
+      }
+    }
+
+    const isPathUpdate =
+      Boolean(existingProfile?.onboardingComplete) || Boolean(existingProfile?.goalsGeneratedAt);
+
     const finalMilestones: GoalMilestoneSet = {
       shortTerm: shortTermGoal.trim(),
       midTerm: midTermGoal.trim(),
@@ -251,7 +367,10 @@ export default function OnboardingScreen() {
       shortTermGoal: finalMilestones.shortTerm,
       midTermGoal: finalMilestones.midTerm,
       longTermGoal: finalMilestones.longTerm,
-      goalsGeneratedAt: new Date().toISOString(),
+      goalsGeneratedAt: isPathUpdate
+        ? existingProfile?.goalsGeneratedAt || new Date().toISOString()
+        : new Date().toISOString(),
+      onboardingComplete: true,
       goalsSource: generationSource,
       // Mirror tiered goals back into legacy fields so older screens keep working.
       goalOne: finalMilestones.shortTerm,
@@ -281,521 +400,688 @@ export default function OnboardingScreen() {
     router.push("/");
   }
 
-  function ToggleButton({
-    label,
-    value,
-    onPress,
-  }: {
-    label: string;
-    value: boolean;
-    onPress: () => void;
-  }) {
-    return (
-      <TouchableOpacity style={[styles.toggleButton, value && styles.activeToggleButton]} onPress={onPress}>
-        <Text style={[styles.toggleText, value && styles.activeToggleText]}>
-          {value ? "✓ " : ""}
-          {label}
-        </Text>
-      </TouchableOpacity>
-    );
-  }
-
-  function MilestoneField({
-    horizon,
-    value,
-    onChange,
-  }: {
-    horizon: GoalHorizon;
-    value: string;
-    onChange: (next: string) => void;
-  }) {
-    const meta = GOAL_HORIZON_LABELS[horizon];
-    return (
-      <View style={styles.milestoneField}>
-        <View style={styles.milestoneHeaderRow}>
-          <Text style={styles.label}>{meta.label}</Text>
-          <Text style={styles.milestoneCaption}>{meta.caption}</Text>
-        </View>
-        <TextInput
-          style={styles.input}
-          placeholder={`Your ${meta.label.toLowerCase()}`}
-          placeholderTextColor="#94A3B8"
-          value={value}
-          onChangeText={onChange}
-        />
-      </View>
-    );
-  }
+  const canRegenerate =
+    dreamCategory !== "" && hasGenerated && variantCountFor(databaseCategoryFor(dreamCategory)) > 1;
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
-      <View style={styles.shell}>
-        <View style={styles.hero}>
-          <Text style={styles.heroLabel}>PATH SETUP</Text>
-          <Text style={styles.title}>SET MY PATH</Text>
-          <Text style={styles.subtitle}>Choose the dream your quests should follow.</Text>
-        </View>
-
-        <View style={styles.lunaCard}>
-          <Text style={styles.lunaName}>Luna</Text>
-          <Text style={styles.lunaText}>
-            Pick a category and tell me the specific goal that lives under your dream. I&apos;ll draft three milestones —
-            short-term, mid-term, long-term — that you can keep, edit, or regenerate.
-          </Text>
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.label}>Your name</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Example: Isaac"
-            placeholderTextColor="#94A3B8"
-            value={name}
-            onChangeText={setName}
-          />
-
-          <Text style={styles.label}>Choose the category that fits your dream</Text>
-          <View style={styles.categoryGrid}>
-            {DREAM_CATEGORIES.map((category) => {
-              const selected = dreamCategory === category;
-              return (
-                <TouchableOpacity
-                  key={category}
-                  style={[styles.categoryButton, selected && styles.categoryButtonActive]}
-                  onPress={() => applyCategory(category)}
-                >
-                  <Text style={[styles.categoryText, selected && styles.categoryTextActive]}>
-                    {category}
-                  </Text>
-                  <Text style={[styles.categoryMeaningText, selected && styles.categoryTextActive]}>
-                    {CATEGORY_MEANINGS[category]}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-
-          <Text style={styles.label}>What is your specific goal in this category?</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Example: lose 15 lbs, save $5k, ship a small side project"
-            placeholderTextColor="#94A3B8"
-            value={specificGoal}
-            onChangeText={setSpecificGoal}
-          />
-
-          <TouchableOpacity
-            style={[styles.generateButton, !dreamCategory && styles.generateButtonDisabled]}
-            onPress={() => generateMilestones(false)}
-            disabled={!dreamCategory}
-          >
-            <Text style={styles.generateButtonText}>
-              {hasGenerated ? "↻ Generate again" : "✦ Generate my milestones"}
-            </Text>
-          </TouchableOpacity>
-
-          <View style={styles.previewCard}>
-            <View style={styles.previewHeaderRow}>
-              <Text style={styles.previewTitle}>YOUR PATH MILESTONES</Text>
-              {hasGenerated && variantCountFor(databaseCategoryFor(dreamCategory as DreamCategory)) > 1 ? (
-                <TouchableOpacity
-                  style={styles.regenerateButton}
-                  onPress={() => generateMilestones(true)}
-                >
-                  <Text style={styles.regenerateButtonText}>↻ New draft</Text>
-                </TouchableOpacity>
-              ) : null}
+    <View style={styles.pageRoot}>
+      <Modal
+        visible={showInfo}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowInfo(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { width: modalWidth, maxHeight: modalMaxHeight }]}>
+            <View style={styles.modalHeader}>
+              <Image source={uiAssets.guides.evie} style={styles.modalAvatar} resizeMode="contain" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalGuideName}>Evie</Text>
+                <Text style={styles.modalTitle}>How Set My Path Works</Text>
+              </View>
             </View>
-            <Text style={styles.previewHint}>
-              {milestonesEmpty
-                ? "Pick a category, type your specific goal, then tap Generate to draft three milestones."
-                : "Edit any milestone to make it yours — your edits are saved as higher-weight training signal."}
-            </Text>
+            <View style={styles.modalDivider} />
+            <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent} showsVerticalScrollIndicator={false}>
+              {[
+                "Set My Path creates your starting direction.",
+                "Your category and resources shape future quests and checklist habits.",
+                "Milestones use 2 weeks, 1 month, and 3 months.",
+                "Resources help MYLIT suggest realistic habits.",
+                "Obstacles help MYLIT avoid quests that ignore your real life.",
+              ].map((bullet, i) => (
+                <View key={i} style={styles.modalBulletRow}>
+                  <Text style={styles.modalBullet}>›</Text>
+                  <Text style={styles.modalBulletText}>{bullet}</Text>
+                </View>
+              ))}
+            </ScrollView>
+            <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setShowInfo(false)}>
+              <Text style={styles.modalCloseBtnText}>RETURN</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <View style={styles.phoneStage}>
+        <View pointerEvents="none" style={styles.backgroundLayer}>
+          <Image source={pathBackground} style={styles.backgroundImage} resizeMode="stretch" />
+        </View>
+        <View style={styles.pageContainer}>
+        <ScrollView style={styles.screenScroller} contentContainerStyle={styles.boardContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          <Image source={uiAssets.logo.mylit} style={styles.logo} resizeMode="contain" />
+
+          <View style={styles.bannerPanel}>
+            <Text style={styles.bannerTitle}>✦ SET MY PATH ✦</Text>
+            <Text style={styles.bannerSubtitle}>Map your dream. Turn it into clear milestones.</Text>
           </View>
 
-          {HORIZON_ORDER.map((horizon) => {
-            if (horizon === "shortTerm") {
-              return (
-                <MilestoneField
-                  key={horizon}
-                  horizon={horizon}
-                  value={shortTermGoal}
-                  onChange={setShortTermGoal}
-                />
-              );
-            }
-            if (horizon === "midTerm") {
-              return (
-                <MilestoneField
-                  key={horizon}
-                  horizon={horizon}
-                  value={midTermGoal}
-                  onChange={setMidTermGoal}
-                />
-              );
-            }
-            return (
-              <MilestoneField
-                key={horizon}
-                horizon={horizon}
-                value={longTermGoal}
-                onChange={setLongTermGoal}
+          <View style={styles.eviePanel}>
+            <Image source={uiAssets.guides.evie} style={styles.evieImage} resizeMode="contain" />
+            <Text style={styles.evieText}>
+              <Text style={styles.evieName}>Evie</Text> — Set your path once, then adjust it whenever life changes. I’ll use this to shape quests and checklist habits that fit your real life.
+            </Text>
+            <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
+              <Text style={styles.infoBtnText}>?</Text>
+            </TouchableOpacity>
+          </View>
+
+          <SectionShell number="1" title="ENTER YOUR NAME">
+            <TextInput
+              style={styles.input}
+              placeholder="Example: Isaac"
+              placeholderTextColor="#8A5D2B"
+              value={name}
+              onChangeText={setName}
+            />
+          </SectionShell>
+
+          <SectionShell number="2" title="CHOOSE YOUR CATEGORY">
+            <View style={styles.categoryGrid}>
+              {DREAM_CATEGORIES.map((category) => {
+                const selected = dreamCategory === category;
+                return (
+                  <TouchableOpacity
+                    key={category}
+                    style={[styles.categoryButton, selected && styles.categoryButtonActive]}
+                    onPress={() => applyCategory(category)}
+                  >
+                    <Text style={styles.categoryIcon}>{CATEGORY_ICONS[category]}</Text>
+                    <View style={styles.categoryCopy}>
+                      <Text style={[styles.categoryText, selected && styles.categoryTextActive]}>
+                        {category}
+                      </Text>
+                      <Text style={[styles.categoryMeaningText, selected && styles.categoryMeaningTextActive]}>
+                        {CATEGORY_MEANINGS[category]}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </SectionShell>
+
+          <SectionShell number="3" title="WHAT IS YOUR SPECIFIC GOAL?">
+            <TextInput
+              style={styles.input}
+              placeholder="Example: lose 15 lbs"
+              placeholderTextColor="#8A5D2B"
+              value={specificGoal}
+              onChangeText={setSpecificGoal}
+            />
+            <Text style={styles.helperText}>Be specific.</Text>
+          </SectionShell>
+
+          <SectionShell number="4" title="YOUR PATH MILESTONES">
+            <View style={styles.milestoneHeaderRow}>
+              <Text style={styles.milestoneHint}>
+                {milestonesEmpty
+                  ? "Draft your route, then edit."
+                  : "Edit each step."}
+              </Text>
+              <TouchableOpacity
+                style={[styles.generateButton, !dreamCategory && styles.generateButtonDisabled]}
+                onPress={() => generateMilestones(Boolean(canRegenerate))}
+                disabled={!dreamCategory}
+              >
+                <Text style={styles.generateButtonText}>{hasGenerated ? "NEW DRAFT" : "GENERATE"}</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.milestoneGrid}>
+              <MilestoneField horizon="shortTerm" value={shortTermGoal} onChange={setShortTermGoal} />
+              <MilestoneField horizon="midTerm" value={midTermGoal} onChange={setMidTermGoal} />
+              <MilestoneField horizon="longTerm" value={longTermGoal} onChange={setLongTermGoal} />
+            </View>
+          </SectionShell>
+
+          <SectionShell number="5" title="WHAT DOES PROGRESS MEAN?">
+            <TextInput
+              style={styles.input}
+              placeholder="Example: working on my app at least 1 hour a day"
+              placeholderTextColor="#8A5D2B"
+              value={progressMeaning}
+              onChangeText={setProgressMeaning}
+            />
+            <Text style={styles.helperText}>How will you know you’re moving forward?</Text>
+          </SectionShell>
+
+          <SectionShell number="6" title="YOUR RESOURCES">
+            <View style={styles.resourceList}>
+              <ToggleButton
+                label="I have work or school responsibilities"
+                value={hasWorkOrSchool}
+                onPress={() => setHasWorkOrSchool(!hasWorkOrSchool)}
               />
-            );
-          })}
+              <ToggleButton
+                label="I usually have transportation"
+                value={hasTransportation}
+                onPress={() => setHasTransportation(!hasTransportation)}
+              />
+              <ToggleButton
+                label="I have gym access"
+                value={hasGymAccess}
+                onPress={() => setHasGymAccess(!hasGymAccess)}
+              />
+              <ToggleButton
+                label="I have a quiet study/work space"
+                value={hasQuietSpace}
+                onPress={() => setHasQuietSpace(!hasQuietSpace)}
+              />
+              <ToggleButton
+                label="I have control over food/meals"
+                value={hasFoodControl}
+                onPress={() => setHasFoodControl(!hasFoodControl)}
+              />
+            </View>
+          </SectionShell>
 
-          <Text style={styles.label}>What does progress mean to you right now?</Text>
-          <TextInput
-            style={styles.textArea}
-            multiline
-            placeholder="Example: being consistent, sleeping better, and taking honest action daily."
-            placeholderTextColor="#94A3B8"
-            value={progressMeaning}
-            onChangeText={setProgressMeaning}
-          />
-
-          <Text style={styles.label}>What usually gets in your way?</Text>
-          <TextInput
-            style={styles.textArea}
-            multiline
-            placeholder="Example: phone use, anxiety, low energy, school pressure, transportation..."
-            placeholderTextColor="#94A3B8"
-            value={biggestObstacle}
-            onChangeText={setBiggestObstacle}
-          />
+          <SectionShell number="7" title="WHAT IS GETTING IN YOUR WAY RIGHT NOW?">
+            <TextInput
+              style={[styles.input, styles.obstacleInput]}
+              placeholder="Example: distractions, low energy, time, stress"
+              placeholderTextColor="#8A5D2B"
+              value={biggestObstacle}
+              onChangeText={setBiggestObstacle}
+            />
+            <Text style={styles.helperText}>Name the obstacle so your path can work around it.</Text>
+          </SectionShell>
 
           {validationMessage ? <Text style={styles.validationText}>{validationMessage}</Text> : null}
-        </View>
 
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>YOUR CURRENT RESOURCES</Text>
-          <ToggleButton
-            label="I have work or school responsibilities"
-            value={hasWorkOrSchool}
-            onPress={() => setHasWorkOrSchool(!hasWorkOrSchool)}
-          />
-          <ToggleButton
-            label="I usually have transportation"
-            value={hasTransportation}
-            onPress={() => setHasTransportation(!hasTransportation)}
-          />
-          <ToggleButton
-            label="I have gym access"
-            value={hasGymAccess}
-            onPress={() => setHasGymAccess(!hasGymAccess)}
-          />
-          <ToggleButton
-            label="I have a quiet study/work space"
-            value={hasQuietSpace}
-            onPress={() => setHasQuietSpace(!hasQuietSpace)}
-          />
-          <ToggleButton
-            label="I have control over food/meals"
-            value={hasFoodControl}
-            onPress={() => setHasFoodControl(!hasFoodControl)}
-          />
-        </View>
-
-        <TouchableOpacity style={styles.saveButton} onPress={saveProfile}>
-          <Text style={styles.saveButtonText}>Save My Path</Text>
-        </TouchableOpacity>
-
-        {hasExistingProfile ? (
-          <TouchableOpacity style={styles.skipButton} onPress={() => router.push("/")}>
-            <Text style={styles.skipButtonText}>Back to Today</Text>
+          <TouchableOpacity style={styles.saveButton} onPress={saveProfile}>
+            <Text style={styles.saveButtonText}>SAVE MY PATH</Text>
           </TouchableOpacity>
-        ) : null}
+        </ScrollView>
+
+        </View>
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
+  pageRoot: {
     flex: 1,
-    backgroundColor: "#0B1220",
+    backgroundColor: "#0E0703",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  container: {
-    paddingTop: 28,
-    paddingBottom: 42,
-  },
-  shell: {
+  phoneStage: {
     width: "100%",
-    maxWidth: 520,
+    maxWidth: MAX_FRAME_WIDTH,
+    aspectRatio: APP_FRAME_ASPECT_RATIO,
     alignSelf: "center",
-    paddingHorizontal: 18,
+    backgroundColor: "#2A1608",
+    overflow: "hidden",
+    position: "relative",
   },
-  hero: {
-    backgroundColor: "#0F1E1A",
-    borderColor: "#FBBF24",
+  backgroundLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  backgroundImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: "100%",
+    height: "100%",
+  },
+  screenScroller: {
+    flex: 1,
+    zIndex: 1,
+  },
+  boardContent: {
+    paddingTop: 12,
+    paddingHorizontal: 34,
+    paddingBottom: 28,
+  },
+  logo: {
+    width: "68%",
+    height: 58,
+    alignSelf: "center",
+    marginBottom: -2,
+  },
+  bannerPanel: {
+    backgroundColor: "rgba(245, 205, 125, 0.86)",
+    borderWidth: 2,
+    borderColor: "#4B2A0B",
+    borderRadius: 4,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    marginBottom: 6,
+    alignItems: "center",
+    shadowColor: "#2B1403",
+    shadowOpacity: 0.55,
+    shadowRadius: 0,
+    shadowOffset: { width: 3, height: 3 },
+  },
+  bannerTitle: {
+    color: "#3A210A",
+    fontFamily: pixelFont,
+    fontSize: 24,
+    fontWeight: "900",
+    letterSpacing: 1.5,
+  },
+  bannerSubtitle: {
+    color: "#2A1707",
+    fontFamily: pixelFont,
+    fontSize: 14,
+    fontWeight: "900",
+    marginTop: 2,
+    textAlign: "center",
+  },
+  pageContainer: {
+    flex: 1,
+  },
+  eviePanel: {
+    minHeight: 68,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(24, 80, 34, 0.95)",
     borderWidth: 3,
-    borderRadius: 24,
-    padding: 18,
-    marginBottom: 14,
+    borderColor: "#8B5E16",
+    borderRadius: 7,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    marginBottom: 4,
   },
-  heroLabel: {
-    color: "#86EFAC",
-    fontFamily: pixelFont,
-    fontSize: 11,
-    letterSpacing: 1.2,
-    fontWeight: "800",
-    marginBottom: 8,
+  evieImage: {
+    width: 50,
+    height: 50,
+    marginRight: 10,
   },
-  title: {
-    fontSize: 32,
-    fontWeight: "900",
-    color: "#F9FAFB",
-    marginBottom: 8,
-    letterSpacing: 1,
-    fontFamily: pixelFont,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: "#D1FAE5",
-    lineHeight: 21,
-    fontWeight: "600",
-  },
-  lunaCard: {
-    backgroundColor: "#132A23",
-    borderRadius: 20,
-    padding: 16,
-    marginBottom: 14,
-    borderWidth: 2,
-    borderColor: "#22C55E",
-  },
-  lunaName: {
-    fontSize: 18,
-    fontWeight: "900",
-    color: "#F9FAFB",
-    marginBottom: 8,
-    letterSpacing: 0.8,
-    fontFamily: pixelFont,
-  },
-  lunaText: {
-    fontSize: 14,
-    color: "#DCFCE7",
-    lineHeight: 20,
-  },
-  card: {
-    backgroundColor: "#111827",
-    borderRadius: 22,
-    padding: 16,
-    marginBottom: 14,
-    borderWidth: 2,
-    borderColor: "#334155",
-  },
-  label: {
+  evieText: {
+    flex: 1,
+    color: "#FFF8E6",
+    fontFamily: readableFont,
     fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 15,
+  },
+  evieName: {
+    color: "#9BE331",
     fontWeight: "900",
-    color: "#F8FAFC",
-    marginBottom: 8,
-    marginTop: 10,
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
+    fontSize: 15,
+  },
+  sectionRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: 4,
+  },
+  numberBadge: {
+    width: 34,
+    minHeight: 40,
+    backgroundColor: "#3D2408",
+    borderWidth: 3,
+    borderColor: "#D99A16",
+    borderRadius: 5,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 5,
+    marginTop: 1,
+  },
+  numberBadgeText: {
+    color: "#FFF8E6",
     fontFamily: pixelFont,
+    fontSize: 23,
+    fontWeight: "900",
+    textShadowColor: "#1B0C01",
+    textShadowOffset: { width: 1, height: 2 },
+    textShadowRadius: 0,
+  },
+  sectionPanel: {
+    flex: 1,
+    backgroundColor: "rgba(250, 220, 157, 0.86)",
+    borderWidth: 2,
+    borderColor: "#4B2A0B",
+    borderRadius: 4,
+    paddingVertical: 5,
+    paddingHorizontal: 8,
+  },
+  sectionTitle: {
+    color: "#2A1707",
+    fontFamily: pixelFont,
+    fontSize: 16,
+    fontWeight: "900",
+    letterSpacing: 0.7,
+    marginBottom: 4,
   },
   input: {
-    backgroundColor: "#020617",
-    borderRadius: 14,
-    padding: 12,
-    fontSize: 15,
-    color: "#F9FAFB",
-    marginBottom: 6,
+    minHeight: 38,
+    backgroundColor: "rgba(255, 242, 201, 0.92)",
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#6F4312",
+    borderRadius: 2,
+    color: "#1F1306",
+    fontFamily: readableFont,
+    fontSize: 15,
+    fontWeight: "800",
+    paddingHorizontal: 10,
+    paddingVertical: 8,
   },
-  textArea: {
-    backgroundColor: "#020617",
-    borderRadius: 14,
-    padding: 12,
-    minHeight: 90,
-    fontSize: 15,
-    color: "#F9FAFB",
-    marginBottom: 6,
-    textAlignVertical: "top",
-    borderWidth: 2,
-    borderColor: "#334155",
+  helperText: {
+    color: "#3D2408",
+    fontFamily: readableFont,
+    fontSize: 12,
+    fontWeight: "800",
+    marginTop: 3,
+    lineHeight: 15,
   },
   categoryGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "space-between",
-    marginBottom: 10,
-    marginTop: 2,
+    gap: 5,
   },
   categoryButton: {
-    backgroundColor: "#1F2937",
+    width: "49%",
+    minHeight: 68,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 236, 185, 0.86)",
     borderWidth: 2,
-    borderColor: "#22C55E",
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    marginBottom: 8,
-    width: "48.5%",
-    minHeight: 46,
-    justifyContent: "center",
+    borderColor: "#A46B1C",
+    borderRadius: 4,
+    padding: 6,
   },
   categoryButtonActive: {
-    backgroundColor: "#FBBF24",
-    borderColor: "#F59E0B",
+    backgroundColor: "rgba(255, 214, 114, 0.95)",
+    borderColor: "#166534",
+  },
+  categoryIcon: {
+    width: 31,
+    textAlign: "center",
+    fontSize: 23,
+    marginRight: 5,
+  },
+  categoryCopy: {
+    flex: 1,
   },
   categoryText: {
-    color: "#E5E7EB",
-    fontWeight: "800",
+    color: "#2A1707",
+    fontFamily: pixelFont,
+    fontWeight: "900",
     fontSize: 13,
-    textAlign: "center",
+    lineHeight: 15,
   },
   categoryTextActive: {
-    color: "#111827",
+    color: "#0F3D18",
   },
   categoryMeaningText: {
-    color: "#CBD5E1",
+    color: "#3D2408",
+    fontFamily: readableFont,
     fontSize: 11,
-    fontWeight: "700",
-    marginTop: 5,
-    textAlign: "center",
+    fontWeight: "800",
+    lineHeight: 13,
+    marginTop: 2,
   },
-  previewCard: {
-    backgroundColor: "#1F2937",
-    borderColor: "#FBBF24",
-    borderWidth: 2,
-    borderRadius: 14,
-    padding: 13,
-    marginTop: 6,
-    marginBottom: 8,
-  },
-  previewHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  previewTitle: {
-    fontSize: 13,
-    fontWeight: "900",
-    color: "#FDE68A",
-    letterSpacing: 0.8,
-    fontFamily: pixelFont,
-  },
-  previewHint: {
-    fontSize: 12,
-    color: "#CBD5E1",
-    lineHeight: 17,
-  },
-  generateButton: {
-    backgroundColor: "#166534",
-    borderColor: "#FBBF24",
-    borderWidth: 2,
-    borderRadius: 14,
-    paddingVertical: 13,
-    alignItems: "center",
-    marginTop: 4,
-    marginBottom: 4,
-  },
-  generateButtonDisabled: {
-    opacity: 0.4,
-  },
-  generateButtonText: {
-    color: "#F9FAFB",
-    fontFamily: pixelFont,
-    fontWeight: "900",
-    fontSize: 14,
-    letterSpacing: 0.8,
-  },
-  regenerateButton: {
-    backgroundColor: "#0F172A",
-    borderColor: "#22C55E",
-    borderWidth: 2,
-    borderRadius: 10,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-  },
-  regenerateButtonText: {
-    color: "#86EFAC",
-    fontFamily: pixelFont,
-    fontWeight: "900",
-    fontSize: 11,
-    letterSpacing: 0.6,
-  },
-  milestoneField: {
-    marginTop: 4,
+  categoryMeaningTextActive: {
+    color: "#17260D",
   },
   milestoneHeaderRow: {
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
-    alignItems: "flex-end",
+    gap: 8,
+    marginBottom: 6,
+  },
+  milestoneHint: {
+    flex: 1,
+    color: "#3D2408",
+    fontFamily: readableFont,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 15,
+  },
+  generateButton: {
+    backgroundColor: "#14532D",
+    borderWidth: 3,
+    borderColor: "#D99A16",
+    borderRadius: 5,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    shadowColor: "#2B1403",
+    shadowOpacity: 0.45,
+    shadowRadius: 0,
+    shadowOffset: { width: 2, height: 2 },
+  },
+  generateButtonDisabled: {
+    opacity: 0.45,
+  },
+  generateButtonText: {
+    color: "#FFF8E6",
+    fontFamily: pixelFont,
+    fontWeight: "900",
+    fontSize: 12,
+    letterSpacing: 0.6,
+  },
+  milestoneGrid: {
+    gap: 6,
+  },
+  milestoneCard: {
+    minHeight: 78,
+    backgroundColor: "rgba(255, 239, 197, 0.84)",
+    borderWidth: 2,
+    borderColor: "#A46B1C",
+    borderRadius: 4,
+    padding: 6,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 7,
+  },
+  milestoneBanner: {
+    width: 94,
+    borderWidth: 1,
+    borderColor: "#2A1707",
+    borderRadius: 2,
+    paddingVertical: 5,
+    alignItems: "center",
+  },
+  milestoneBannerText: {
+    color: "#FFF8E6",
+    fontFamily: pixelFont,
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  milestoneIcon: {
+    display: "none",
   },
   milestoneCaption: {
-    color: "#94A3B8",
+    color: "#2A1707",
+    fontFamily: pixelFont,
     fontSize: 11,
-    fontFamily: pixelFont,
-    fontWeight: "700",
-    marginBottom: 8,
-    marginTop: 10,
-    letterSpacing: 0.5,
-  },
-  validationText: {
-    color: "#FCA5A5",
-    fontSize: 13,
-    marginTop: 10,
-    fontWeight: "700",
-  },
-  sectionTitle: {
-    fontSize: 20,
     fontWeight: "900",
-    color: "#F9FAFB",
-    marginBottom: 8,
-    letterSpacing: 0.8,
-    fontFamily: pixelFont,
+    textAlign: "center",
+    marginBottom: 4,
+  },
+  milestoneInput: {
+    flex: 1,
+    alignSelf: "stretch",
+    minHeight: 54,
+    backgroundColor: "rgba(255, 246, 214, 0.9)",
+    borderWidth: 1,
+    borderColor: "#A46B1C",
+    borderRadius: 3,
+    color: "#1F1306",
+    fontFamily: readableFont,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 17,
+    padding: 6,
+    textAlignVertical: "top",
+  },
+  resourceList: {
+    gap: 4,
   },
   toggleButton: {
-    backgroundColor: "#1F2937",
-    borderRadius: 14,
-    padding: 12,
-    marginBottom: 8,
-    borderWidth: 2,
-    borderColor: "#334155",
+    minHeight: 28,
+    backgroundColor: "rgba(255, 242, 201, 0.72)",
+    borderWidth: 1,
+    borderColor: "#A46B1C",
+    borderRadius: 3,
+    paddingVertical: 5,
+    paddingHorizontal: 8,
   },
   activeToggleButton: {
-    backgroundColor: "#0F172A",
-    borderColor: "#FBBF24",
+    backgroundColor: "rgba(218, 247, 166, 0.82)",
+    borderColor: "#166534",
   },
   toggleText: {
-    fontSize: 14,
+    color: "#2A1707",
+    fontFamily: readableFont,
+    fontSize: 12,
     fontWeight: "800",
-    color: "#E5E7EB",
   },
   activeToggleText: {
-    color: "#F9FAFB",
+    color: "#0F3D18",
+  },
+  obstacleInput: {
+    marginTop: 0,
+    minHeight: 58,
+    fontSize: 15,
+  },
+  validationText: {
+    color: "#7F1D1D",
+    backgroundColor: "rgba(254, 226, 226, 0.92)",
+    borderWidth: 2,
+    borderColor: "#B91C1C",
+    borderRadius: 4,
+    fontFamily: pixelFont,
+    fontSize: 12,
+    fontWeight: "900",
+    lineHeight: 17,
+    padding: 8,
+    marginVertical: 6,
   },
   saveButton: {
-    backgroundColor: "#166534",
-    paddingVertical: 15,
-    borderRadius: 16,
+    minHeight: 54,
+    backgroundColor: "#14532D",
+    borderWidth: 4,
+    borderColor: "#F3B32B",
+    borderRadius: 7,
     alignItems: "center",
-    marginBottom: 10,
-    borderWidth: 2,
-    borderColor: "#FBBF24",
+    justifyContent: "center",
+    marginTop: 3,
+    marginHorizontal: 26,
+    shadowColor: "#2B1403",
+    shadowOpacity: 0.65,
+    shadowRadius: 0,
+    shadowOffset: { width: 4, height: 4 },
   },
   saveButtonText: {
-    color: "#F9FAFB",
-    fontSize: 16,
-    fontWeight: "900",
-    letterSpacing: 0.8,
+    color: "#FFF8E6",
     fontFamily: pixelFont,
+    fontSize: 23,
+    fontWeight: "900",
+    letterSpacing: 1.5,
+    textShadowColor: "#1B0C01",
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 0,
   },
-  skipButton: {
-    backgroundColor: "#111827",
-    paddingVertical: 14,
-    borderRadius: 16,
-    alignItems: "center",
+  infoBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 4,
     borderWidth: 2,
-    borderColor: "#64748B",
+    borderColor: "#9BE331",
+    backgroundColor: "rgba(20, 83, 45, 0.72)",
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "flex-start",
+    marginLeft: 6,
   },
-  skipButtonText: {
-    color: "#CBD5E1",
+  infoBtnText: {
+    color: "#9BE331",
+    fontFamily: pixelFont,
+    fontSize: 13,
+    fontWeight: "900",
+    lineHeight: 17,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.82)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 24,
+  },
+  modalCard: {
+    backgroundColor: "#0A1A0C",
+    borderWidth: 2,
+    borderColor: "#22C55E",
+    borderRadius: 12,
+    padding: 16,
+    overflow: "hidden",
+  },
+  modalScroll: {
+    flexGrow: 0,
+  },
+  modalScrollContent: {
+    paddingBottom: 4,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 10,
+  },
+  modalAvatar: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 2,
+    borderColor: "#4ADE80",
+    backgroundColor: "rgba(20, 83, 45, 0.72)",
+  },
+  modalGuideName: {
+    color: "#4ADE80",
+    fontFamily: pixelFont,
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  modalTitle: {
+    color: "#F8F1D7",
+    fontFamily: pixelFont,
+    fontSize: 13,
+    fontWeight: "900",
+    marginTop: 2,
+  },
+  modalDivider: {
+    height: 2,
+    backgroundColor: "rgba(34, 197, 94, 0.28)",
+    marginBottom: 10,
+  },
+  modalBulletRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 8,
+  },
+  modalBullet: {
+    color: "#4ADE80",
+    fontFamily: pixelFont,
     fontSize: 15,
     fontWeight: "900",
+    lineHeight: 19,
+  },
+  modalBulletText: {
+    flex: 1,
+    color: "#F8F1D7",
     fontFamily: pixelFont,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
+  },
+  modalCloseBtn: {
+    marginTop: 12,
+    borderWidth: 2,
+    borderColor: "#22C55E",
+    borderRadius: 5,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  modalCloseBtnText: {
+    color: "#4ADE80",
+    fontFamily: pixelFont,
+    fontSize: 13,
+    fontWeight: "900",
+    letterSpacing: 1,
   },
 });

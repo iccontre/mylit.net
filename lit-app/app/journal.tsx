@@ -1,7 +1,28 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Link } from "expo-router";
+import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import {
+  Image,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
+} from "react-native";
+
+import { GuideInfoModal } from "../components/GuideInfoModal";
+import { uiAssets } from "../constants/uiAssets";
+
+const LUNA_JOURNAL_BULLETS = [
+  "Journal is for writing what happened, what mood or pattern showed up, and what to remember.",
+  "It does not need to be perfect — one honest sentence is enough to start.",
+  "Honest entries help MYLIT reveal patterns in your thinking over time.",
+  "Morning and Evening entries help you track how the day opened and closed.",
+  "The 'What do you want to remember?' field keeps the most useful part of the day.",
+];
 
 type JournalEntry = {
   id: string;
@@ -17,6 +38,8 @@ type JournalEntry = {
 };
 
 const STORAGE_KEY = "lit_journal_entries";
+const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
+const MAX_FRAME_WIDTH = 520;
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -26,17 +49,23 @@ const pixelFont = Platform.select({
 });
 
 export default function JournalScreen() {
+  const router = useRouter();
+  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
   const [entryType, setEntryType] = useState<"Morning" | "Evening">("Morning");
+  const [showInfo, setShowInfo] = useState(false);
   const [mood, setMood] = useState("");
   const [content, setContent] = useState("");
   const [gratitude, setGratitude] = useState("");
-
-  const [thoughtPattern, setThoughtPattern] = useState("");
-  const [thoughtImpact, setThoughtImpact] = useState<"Helpful" | "Harmful" | "Neutral">("Neutral");
-  const [honestReframe, setHonestReframe] = useState("");
-  const [mindLesson, setMindLesson] = useState("");
-
   const [entries, setEntries] = useState<JournalEntry[]>([]);
+
+  const safeViewportWidth = Math.max(0, viewportWidth - 24);
+  const safeViewportHeight = Math.max(0, viewportHeight - 24);
+  const frameWidth = Math.min(
+    MAX_FRAME_WIDTH,
+    safeViewportWidth,
+    safeViewportHeight * APP_FRAME_ASPECT_RATIO
+  );
+  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   useEffect(() => {
     loadEntries();
@@ -55,11 +84,9 @@ export default function JournalScreen() {
   }
 
   async function saveJournalEntry() {
-    const hasMainJournal = content.trim() || gratitude.trim();
-    const hasMetacognition =
-      thoughtPattern.trim() || honestReframe.trim() || mindLesson.trim();
+    const hasEntry = content.trim() || gratitude.trim() || mood.trim();
 
-    if (!hasMainJournal && !hasMetacognition) return;
+    if (!hasEntry) return;
 
     const newEntry: JournalEntry = {
       id: String(Date.now()),
@@ -67,10 +94,10 @@ export default function JournalScreen() {
       mood,
       content: content.trim(),
       gratitude: gratitude.trim(),
-      thoughtPattern: thoughtPattern.trim(),
-      thoughtImpact,
-      honestReframe: honestReframe.trim(),
-      mindLesson: mindLesson.trim(),
+      thoughtPattern: "",
+      thoughtImpact: "Neutral",
+      honestReframe: "",
+      mindLesson: "",
       createdAt: new Date().toLocaleString(),
     };
 
@@ -80,10 +107,6 @@ export default function JournalScreen() {
     setContent("");
     setGratitude("");
     setMood("");
-    setThoughtPattern("");
-    setThoughtImpact("Neutral");
-    setHonestReframe("");
-    setMindLesson("");
   }
 
   async function clearEntries() {
@@ -91,582 +114,547 @@ export default function JournalScreen() {
   }
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.shell}>
-      <View style={styles.hero}>
-        <Text style={styles.heroKicker}>MIND LOG</Text>
-        <Text style={styles.title}>JOURNAL</Text>
-        <Text style={styles.subtitle}>Write what happened. Notice the pattern.</Text>
-      </View>
-
-      <View style={styles.lunaCard}>
-        <Text style={styles.lunaName}>Luna</Text>
-        <Text style={styles.lunaText}>
-          Write what is actually happening. It does not need to sound perfect.
-        </Text>
-      </View>
-
-      <View style={styles.panel}>
-        <Text style={styles.label}>Entry Type</Text>
-        <View style={styles.toggleRow}>
-          <TouchableOpacity
-            style={entryType === "Morning" ? styles.activeToggle : styles.toggleButton}
-            onPress={() => setEntryType("Morning")}
-          >
-            <Text style={entryType === "Morning" ? styles.activeToggleText : styles.toggleText}>
-              Morning
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={entryType === "Evening" ? styles.activeToggle : styles.toggleButton}
-            onPress={() => setEntryType("Evening")}
-          >
-            <Text style={entryType === "Evening" ? styles.activeToggleText : styles.toggleText}>
-              Evening
-            </Text>
-          </TouchableOpacity>
+    <View style={styles.pageRoot}>
+      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight }]}>
+        <View pointerEvents="none" style={styles.backgroundLayer}>
+          <Image source={uiAssets.backgrounds.journal} style={styles.backgroundImage} resizeMode="cover" />
         </View>
-
-        <Text style={styles.label}>Mood (1-10)</Text>
-        <TextInput
-          style={styles.input}
-          keyboardType="numeric"
-          placeholder="Optional"
-          placeholderTextColor="#94A3B8"
-          value={mood}
-          onChangeText={setMood}
-        />
-
-        <Text style={styles.label}>
-          {entryType === "Morning"
-            ? "What feels true about today?"
-            : "What did today teach you?"}
-        </Text>
-        <TextInput
-          style={styles.textArea}
-          multiline
-          placeholder={
-            entryType === "Morning"
-              ? "Example: I feel tired, but I still want to take one small step."
-              : "Example: I learned I need smaller goals on low-energy days."
-          }
-          placeholderTextColor="#94A3B8"
-          value={content}
-          onChangeText={setContent}
-        />
-
-        <Text style={styles.label}>One thing you appreciate</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Example: I kept one promise today."
-          placeholderTextColor="#94A3B8"
-          value={gratitude}
-          onChangeText={setGratitude}
-        />
-      </View>
-
-      <View style={styles.metaPanel}>
-        <Text style={styles.metaTitle}>Metacognitive Check-In</Text>
-        <Text style={styles.metaSubtitle}>
-          Notice how your mind worked today. Use data, not judgment.
-        </Text>
-
-        <Text style={styles.label}>What thought pattern showed up today?</Text>
-        <TextInput
-          style={styles.textArea}
-          multiline
-          placeholder="Example: overthinking, avoidance, comparison, self-doubt..."
-          placeholderTextColor="#94A3B8"
-          value={thoughtPattern}
-          onChangeText={setThoughtPattern}
-        />
-
-        <Text style={styles.label}>Was this thought helpful, neutral, or harmful?</Text>
-        <View style={styles.impactRow}>
-          <TouchableOpacity
-            style={thoughtImpact === "Helpful" ? styles.helpfulImpact : styles.impactButton}
-            onPress={() => setThoughtImpact("Helpful")}
+        <View style={styles.worldOverlay}>
+          <ScrollView
+            style={styles.screenScroller}
+            contentContainerStyle={styles.hudContent}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
           >
-            <Text style={thoughtImpact === "Helpful" ? styles.activeImpactText : styles.impactText}>
-              Helpful
-            </Text>
-          </TouchableOpacity>
+            <View style={styles.hero}>
+              <Text style={styles.heroKicker}>MIND LOG</Text>
+              <Text style={styles.title}>JOURNAL</Text>
+              <Text style={styles.subtitle}>Write what happened. Notice the pattern.</Text>
+            </View>
 
-          <TouchableOpacity
-            style={thoughtImpact === "Neutral" ? styles.neutralImpact : styles.impactButton}
-            onPress={() => setThoughtImpact("Neutral")}
-          >
-            <Text style={thoughtImpact === "Neutral" ? styles.activeImpactText : styles.impactText}>
-              Neutral
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={thoughtImpact === "Harmful" ? styles.harmfulImpact : styles.impactButton}
-            onPress={() => setThoughtImpact("Harmful")}
-          >
-            <Text style={thoughtImpact === "Harmful" ? styles.activeImpactText : styles.impactText}>
-              Harmful
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.label}>What is a more honest reframe?</Text>
-        <TextInput
-          style={styles.textArea}
-          multiline
-          placeholder="Example: I am not lazy. I was tired and needed a smaller first step."
-          placeholderTextColor="#94A3B8"
-          value={honestReframe}
-          onChangeText={setHonestReframe}
-        />
-
-        <Text style={styles.label}>What did you learn about your mind today?</Text>
-        <TextInput
-          style={styles.textArea}
-          multiline
-          placeholder="Example: I avoid big tasks, but I can start small and keep going."
-          placeholderTextColor="#94A3B8"
-          value={mindLesson}
-          onChangeText={setMindLesson}
-        />
-      </View>
-
-      <TouchableOpacity style={styles.saveButton} onPress={saveJournalEntry}>
-        <Text style={styles.saveButtonText}>Save Journal Entry</Text>
-      </TouchableOpacity>
-
-      <Text style={styles.sectionTitle}>RECENT LOGS</Text>
-
-      {entries.length === 0 ? (
-        <View style={styles.emptyCard}>
-          <Text style={styles.emptyText}>
-            No journal logs yet. Start with one honest sentence.
-          </Text>
-        </View>
-      ) : (
-        entries.map((entry) => (
-          <View key={entry.id} style={styles.entryCard}>
-            <Text style={styles.entryType}>{entry.type} Log</Text>
-            <Text style={styles.entryDate}>{entry.createdAt}</Text>
-            <Text style={styles.entryMood}>Mood: {entry.mood.trim() ? `${entry.mood}/10` : "Not entered"}</Text>
-
-            {entry.content ? <Text style={styles.entryText}>{entry.content}</Text> : null}
-
-            {entry.gratitude ? (
-              <Text style={styles.gratitudeText}>Appreciation: {entry.gratitude}</Text>
-            ) : null}
-
-            {(entry.thoughtPattern || entry.honestReframe || entry.mindLesson) ? (
-              <View style={styles.savedMetaBox}>
-                <Text style={styles.savedMetaTitle}>Metacognitive Note</Text>
-                {entry.thoughtPattern ? (
-                  <Text style={styles.savedMetaText}>Pattern: {entry.thoughtPattern}</Text>
-                ) : null}
-                <Text style={styles.savedMetaText}>Impact: {entry.thoughtImpact}</Text>
-                {entry.honestReframe ? (
-                  <Text style={styles.savedMetaText}>Reframe: {entry.honestReframe}</Text>
-                ) : null}
-                {entry.mindLesson ? (
-                  <Text style={styles.savedMetaText}>Lesson: {entry.mindLesson}</Text>
-                ) : null}
+            <View style={styles.lunaCard}>
+              <Image source={uiAssets.guides.luna} style={styles.lunaAvatar} resizeMode="contain" />
+              <View style={styles.lunaCopy}>
+                <Text style={styles.lunaName}>Luna</Text>
+                <Text style={styles.lunaText}>
+                  Write what is actually happening. It does not need to sound perfect.
+                </Text>
               </View>
-            ) : null}
+              <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
+                <Text style={styles.infoBtnText}>?</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.panel}>
+              <Text style={styles.label}>Entry Type</Text>
+              <View style={styles.toggleRow}>
+                <TouchableOpacity
+                  style={[styles.toggleButton, entryType === "Morning" && styles.activeToggle]}
+                  onPress={() => setEntryType("Morning")}
+                >
+                  <Text style={entryType === "Morning" ? styles.activeToggleText : styles.toggleText}>
+                    Morning
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.toggleButton, entryType === "Evening" && styles.activeToggle]}
+                  onPress={() => setEntryType("Evening")}
+                >
+                  <Text style={entryType === "Evening" ? styles.activeToggleText : styles.toggleText}>
+                    Evening
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.label}>Mood (1–10)</Text>
+              <TextInput
+                style={styles.input}
+                keyboardType="numeric"
+                placeholder="Optional"
+                placeholderTextColor="#94A3B8"
+                value={mood}
+                onChangeText={setMood}
+              />
+
+              <Text style={styles.label}>What happened today?</Text>
+              <TextInput
+                style={styles.largeTextArea}
+                multiline
+                textAlignVertical="top"
+                placeholder="Write freely. A moment, a feeling, a win, a mistake, or anything that stayed with you."
+                placeholderTextColor="#94A3B8"
+                value={content}
+                onChangeText={setContent}
+              />
+
+              <Text style={styles.label}>What do you want to remember?</Text>
+              <TextInput
+                style={styles.largeTextArea}
+                multiline
+                textAlignVertical="top"
+                placeholder="One thing you learned, appreciated, or want to carry forward."
+                placeholderTextColor="#94A3B8"
+                value={gratitude}
+                onChangeText={setGratitude}
+              />
+            </View>
+
+            <TouchableOpacity style={styles.saveButton} onPress={saveJournalEntry}>
+              <Text style={styles.saveButtonText}>Save Journal Entry</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.sectionTitle}>RECENT LOGS</Text>
+
+            {entries.length === 0 ? (
+              <View style={styles.emptyCard}>
+                <Text style={styles.emptyText}>No journal logs yet. Start with one honest sentence.</Text>
+              </View>
+            ) : (
+              entries.map((entry) => (
+                <View key={entry.id} style={styles.entryCard}>
+                  <Text style={styles.entryType}>{entry.type} Log</Text>
+                  <Text style={styles.entryDate}>{entry.createdAt}</Text>
+                  <Text style={styles.entryMood}>
+                    Mood: {entry.mood.trim() ? `${entry.mood}/10` : "Not entered"}
+                  </Text>
+
+                  {entry.content ? <Text style={styles.entryText}>{entry.content}</Text> : null}
+
+                  {entry.gratitude ? (
+                    <Text style={styles.gratitudeText}>Remember: {entry.gratitude}</Text>
+                  ) : null}
+                </View>
+              ))
+            )}
+
+            {entries.length > 0 && (
+              <TouchableOpacity style={styles.clearButton} onPress={clearEntries}>
+                <Text style={styles.clearButtonText}>Clear Journal Logs</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity style={styles.backButton} onPress={() => router.push("/mind")}>
+              <Text style={styles.backButtonText}>← Back to Mind Hub</Text>
+            </TouchableOpacity>
+          </ScrollView>
+
+          <GuideInfoModal
+            visible={showInfo}
+            onClose={() => setShowInfo(false)}
+            guideAvatar={uiAssets.guides.luna}
+            guideName="Luna"
+            title="How Journal Works"
+            bullets={LUNA_JOURNAL_BULLETS}
+            accentColor="#C4A7FF"
+          />
+
+          <View style={styles.bottomNav}>
+            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}>
+              <Text style={styles.navText}>🏠</Text>
+              <Text style={styles.navLabel}>HOME</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/sleep")}>
+              <Text style={styles.navText}>🌙</Text>
+              <Text style={styles.navLabel}>SLEEP</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={() => router.push("/mind")}>
+              <Text style={styles.navTextActive}>🧠</Text>
+              <Text style={styles.navLabelActive}>MIND</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/path")}>
+              <Text style={styles.navText}>🌲</Text>
+              <Text style={styles.navLabel}>PATH</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/calendar")}>
+              <Text style={styles.navText}>📅</Text>
+              <Text style={styles.navLabel}>CAL</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/stats")}>
+              <Text style={styles.navText}>🎒</Text>
+              <Text style={styles.navLabel}>BAG</Text>
+            </TouchableOpacity>
           </View>
-        ))
-      )}
-
-      {entries.length > 0 && (
-        <TouchableOpacity style={styles.clearButton} onPress={clearEntries}>
-          <Text style={styles.clearButtonText}>Clear Journal</Text>
-        </TouchableOpacity>
-      )}
-
-      <Link href="/" asChild>
-        <TouchableOpacity style={styles.backButton}>
-          <Text style={styles.backButtonText}>Back to Today</Text>
-        </TouchableOpacity>
-      </Link>
-    </ScrollView>
+        </View>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
+  pageRoot: {
     flex: 1,
-    backgroundColor: "#0B1020",
+    backgroundColor: "#02040A",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  shell: {
-    width: "100%",
-    maxWidth: 520,
+  phoneStage: {
     alignSelf: "center",
-    padding: 18,
-    paddingTop: 56,
-    paddingBottom: 36,
+    backgroundColor: "#050814",
+    overflow: "hidden",
+    position: "relative",
+    borderWidth: 2,
+    borderColor: "rgba(251, 191, 36, 0.64)",
+    shadowColor: "#000",
+    shadowOpacity: 0.85,
+    shadowRadius: 0,
+    shadowOffset: { width: 6, height: 6 },
+  },
+  backgroundLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  backgroundImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: "100%",
+    height: "100%",
+  },
+  worldOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(4, 8, 14, 0.16)",
+  },
+  screenScroller: {
+    flex: 1,
+  },
+  hudContent: {
+    minHeight: "100%",
+    paddingTop: 24,
+    paddingHorizontal: 14,
+    paddingBottom: 82,
   },
   hero: {
-    backgroundColor: "#1E1B4B",
+    backgroundColor: "rgba(31, 27, 75, 0.95)",
+    borderWidth: 4,
     borderColor: "#A78BFA",
-    borderWidth: 3,
-    borderRadius: 24,
-    padding: 16,
-    marginBottom: 12,
+    borderRadius: 8,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    marginBottom: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.7,
+    shadowRadius: 0,
+    shadowOffset: { width: 4, height: 4 },
   },
   heroKicker: {
+    color: "#C4A7FF",
     fontFamily: pixelFont,
-    fontSize: 11,
-    letterSpacing: 1.5,
+    fontSize: 12,
     fontWeight: "900",
-    color: "#C4B5FD",
-    marginBottom: 6,
-    textTransform: "uppercase",
+    letterSpacing: 2,
+    marginBottom: 8,
   },
   title: {
-    fontFamily: pixelFont,
-    fontSize: 28,
-    fontWeight: "900",
     color: "#F9FAFB",
-    marginBottom: 6,
-    lineHeight: 34,
+    fontFamily: pixelFont,
+    fontSize: 32,
+    fontWeight: "900",
+    letterSpacing: 1,
+    lineHeight: 38,
   },
   subtitle: {
+    color: "#F8F1D7",
     fontFamily: pixelFont,
     fontSize: 13,
+    fontWeight: "800",
     lineHeight: 19,
-    color: "#E5E7EB",
-    fontWeight: "700",
+    marginTop: 8,
   },
   lunaCard: {
-    backgroundColor: "#111827",
-    borderRadius: 18,
-    padding: 14,
-    marginBottom: 12,
-    borderWidth: 2,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(8, 13, 24, 0.95)",
+    borderWidth: 3,
     borderColor: "#A78BFA",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+  },
+  lunaAvatar: {
+    height: 58,
+    width: 58,
+    borderRadius: 29,
+    borderWidth: 2,
+    borderColor: "#C4A7FF",
+    backgroundColor: "rgba(49, 46, 129, 0.72)",
+    marginRight: 12,
+  },
+  lunaCopy: {
+    flex: 1,
   },
   lunaName: {
+    color: "#F0ABFC",
     fontFamily: pixelFont,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "900",
-    color: "#E9D5FF",
     marginBottom: 6,
     textTransform: "uppercase",
-    letterSpacing: 1,
   },
   lunaText: {
+    color: "#F8F1D7",
     fontFamily: pixelFont,
-    fontSize: 13,
-    lineHeight: 19,
-    color: "#F3F4F6",
-    fontWeight: "700",
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
   },
   panel: {
-    backgroundColor: "#0F172A",
-    borderRadius: 18,
-    padding: 14,
-    marginBottom: 12,
-    borderWidth: 3,
+    backgroundColor: "rgba(8, 13, 24, 0.96)",
+    borderWidth: 4,
     borderColor: "#FBBF24",
-  },
-  metaPanel: {
-    backgroundColor: "#1E1B4B",
-    borderRadius: 18,
+    borderRadius: 8,
     padding: 14,
-    marginBottom: 12,
-    borderWidth: 3,
-    borderColor: "#A78BFA",
-  },
-  metaTitle: {
-    fontFamily: pixelFont,
-    fontSize: 16,
-    fontWeight: "900",
-    color: "#F9FAFB",
-    marginBottom: 6,
-    textTransform: "uppercase",
-    letterSpacing: 0.8,
-  },
-  metaSubtitle: {
-    fontFamily: pixelFont,
-    fontSize: 12,
-    lineHeight: 18,
-    color: "#CBD5E1",
-    fontWeight: "700",
-    marginBottom: 8,
+    marginBottom: 16,
   },
   label: {
+    color: "#F9FAFB",
     fontFamily: pixelFont,
     fontSize: 12,
     fontWeight: "900",
-    color: "#E5E7EB",
-    marginBottom: 8,
+    letterSpacing: 1,
     marginTop: 12,
+    marginBottom: 8,
     textTransform: "uppercase",
-    letterSpacing: 0.8,
-    lineHeight: 16,
   },
   toggleRow: {
     flexDirection: "row",
+    gap: 10,
     marginBottom: 8,
   },
   toggleButton: {
     flex: 1,
-    backgroundColor: "#111827",
-    padding: 12,
-    borderRadius: 12,
-    alignItems: "center",
+    backgroundColor: "rgba(15, 23, 42, 0.96)",
     borderWidth: 2,
     borderColor: "#334155",
-    marginRight: 8,
+    borderRadius: 6,
+    alignItems: "center",
+    paddingVertical: 12,
   },
   activeToggle: {
-    flex: 1,
-    backgroundColor: "#312E81",
-    padding: 12,
-    borderRadius: 12,
-    alignItems: "center",
-    borderWidth: 2,
+    backgroundColor: "rgba(49, 46, 129, 0.96)",
     borderColor: "#A78BFA",
-    marginRight: 8,
   },
   toggleText: {
+    color: "#CBD5E1",
     fontFamily: pixelFont,
     fontSize: 12,
     fontWeight: "900",
-    color: "#CBD5E1",
     textTransform: "uppercase",
-    letterSpacing: 0.6,
   },
   activeToggleText: {
+    color: "#F9FAFB",
     fontFamily: pixelFont,
     fontSize: 12,
     fontWeight: "900",
-    color: "#F9FAFB",
     textTransform: "uppercase",
-    letterSpacing: 0.6,
   },
   input: {
-    backgroundColor: "#111827",
-    borderRadius: 16,
-    padding: 12,
-    fontSize: 15,
-    color: "#F9FAFB",
-    marginBottom: 8,
+    backgroundColor: "rgba(15, 23, 42, 0.96)",
     borderWidth: 2,
     borderColor: "#475569",
-    fontFamily: pixelFont,
-  },
-  textArea: {
-    backgroundColor: "#111827",
-    borderRadius: 16,
-    padding: 12,
-    minHeight: 94,
-    fontSize: 15,
+    borderRadius: 6,
     color: "#F9FAFB",
-    marginBottom: 8,
-    textAlignVertical: "top",
+    fontFamily: pixelFont,
+    fontSize: 14,
+    fontWeight: "800",
+    padding: 12,
+  },
+  largeTextArea: {
+    minHeight: 132,
+    backgroundColor: "rgba(15, 23, 42, 0.96)",
     borderWidth: 2,
     borderColor: "#475569",
-    fontFamily: pixelFont,
-  },
-  impactRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 8,
-  },
-  impactButton: {
-    width: "31%",
-    backgroundColor: "#111827",
-    padding: 10,
-    borderRadius: 12,
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#334155",
-  },
-  helpfulImpact: {
-    width: "31%",
-    backgroundColor: "#14532D",
-    padding: 10,
-    borderRadius: 12,
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#22C55E",
-  },
-  neutralImpact: {
-    width: "31%",
-    backgroundColor: "#1E293B",
-    padding: 10,
-    borderRadius: 12,
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#38BDF8",
-  },
-  harmfulImpact: {
-    width: "31%",
-    backgroundColor: "#7F1D1D",
-    padding: 10,
-    borderRadius: 12,
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#EF4444",
-  },
-  impactText: {
-    fontFamily: pixelFont,
-    fontSize: 11,
-    fontWeight: "900",
-    color: "#E5E7EB",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  activeImpactText: {
-    fontFamily: pixelFont,
-    fontSize: 11,
-    fontWeight: "900",
+    borderRadius: 6,
     color: "#F9FAFB",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+    fontFamily: pixelFont,
+    fontSize: 14,
+    fontWeight: "800",
+    lineHeight: 20,
+    padding: 12,
   },
   saveButton: {
     backgroundColor: "#A78BFA",
-    padding: 14,
-    borderRadius: 14,
+    borderWidth: 3,
+    borderColor: "#E9D5FF",
+    borderRadius: 6,
+    paddingVertical: 14,
     alignItems: "center",
-    marginBottom: 14,
-    borderWidth: 2,
-    borderColor: "#EDE9FE",
+    marginBottom: 16,
   },
   saveButtonText: {
-    color: "#111827",
-    fontSize: 14,
-    fontWeight: "900",
+    color: "#0F172A",
     fontFamily: pixelFont,
+    fontSize: 13,
+    fontWeight: "900",
+    letterSpacing: 1,
     textTransform: "uppercase",
-    letterSpacing: 0.7,
   },
   sectionTitle: {
+    color: "#FDE68A",
     fontFamily: pixelFont,
-    fontSize: 18,
+    fontSize: 12,
     fontWeight: "900",
-    color: "#F9FAFB",
-    marginBottom: 10,
-    textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 1.2,
+    marginBottom: 8,
   },
   emptyCard: {
-    backgroundColor: "#111827",
-    borderRadius: 14,
-    padding: 12,
+    backgroundColor: "rgba(8, 13, 24, 0.95)",
     borderWidth: 2,
     borderColor: "#334155",
-    marginBottom: 12,
+    borderRadius: 6,
+    padding: 12,
   },
   emptyText: {
+    color: "#CBD5E1",
     fontFamily: pixelFont,
     fontSize: 12,
     lineHeight: 18,
-    color: "#CBD5E1",
-    fontWeight: "700",
+    fontWeight: "800",
   },
   entryCard: {
-    backgroundColor: "#111827",
-    borderRadius: 14,
+    backgroundColor: "rgba(8, 13, 24, 0.95)",
+    borderWidth: 2,
+    borderColor: "#334155",
+    borderRadius: 6,
     padding: 12,
     marginBottom: 10,
-    borderWidth: 2,
-    borderColor: "#A78BFA",
   },
   entryType: {
+    color: "#E9D5FF",
     fontFamily: pixelFont,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "900",
-    color: "#F9FAFB",
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
   },
   entryDate: {
+    color: "#94A3B8",
     fontFamily: pixelFont,
     fontSize: 10,
-    color: "#94A3B8",
+    fontWeight: "800",
     marginTop: 4,
-    marginBottom: 8,
   },
   entryMood: {
-    fontFamily: pixelFont,
-    fontSize: 11,
-    fontWeight: "800",
-    color: "#E5E7EB",
-    marginBottom: 8,
-  },
-  entryText: {
-    fontFamily: pixelFont,
-    fontSize: 12,
-    lineHeight: 18,
-    color: "#F9FAFB",
-    marginBottom: 8,
-  },
-  gratitudeText: {
-    fontFamily: pixelFont,
-    fontSize: 11,
-    lineHeight: 17,
-    color: "#86EFAC",
-    fontWeight: "700",
-  },
-  savedMetaBox: {
-    backgroundColor: "#1E1B4B",
-    borderRadius: 12,
-    padding: 10,
-    marginTop: 10,
-    borderWidth: 2,
-    borderColor: "#A78BFA",
-  },
-  savedMetaTitle: {
+    color: "#FDE68A",
     fontFamily: pixelFont,
     fontSize: 11,
     fontWeight: "900",
-    color: "#E9D5FF",
-    marginBottom: 6,
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
+    marginTop: 7,
   },
-  savedMetaText: {
+  entryText: {
+    color: "#F8F1D7",
     fontFamily: pixelFont,
-    fontSize: 11,
-    lineHeight: 17,
-    color: "#E5E7EB",
+    fontSize: 12,
     fontWeight: "700",
-    marginBottom: 4,
+    lineHeight: 18,
+    marginTop: 8,
+  },
+  gratitudeText: {
+    color: "#DDD6FE",
+    fontFamily: pixelFont,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 18,
+    marginTop: 8,
   },
   clearButton: {
-    backgroundColor: "#7F1D1D",
-    padding: 12,
-    borderRadius: 12,
-    alignItems: "center",
-    marginTop: 4,
-    marginBottom: 12,
+    backgroundColor: "rgba(8, 13, 24, 0.94)",
     borderWidth: 2,
-    borderColor: "#EF4444",
+    borderColor: "#334155",
+    borderRadius: 6,
+    paddingVertical: 12,
+    alignItems: "center",
+    marginTop: 6,
+    marginBottom: 8,
   },
   clearButtonText: {
     color: "#FECACA",
-    fontSize: 13,
-    fontWeight: "900",
     fontFamily: pixelFont,
+    fontSize: 12,
+    fontWeight: "900",
     textTransform: "uppercase",
-    letterSpacing: 0.7,
   },
   backButton: {
-    backgroundColor: "#111827",
-    padding: 13,
-    borderRadius: 14,
-    alignItems: "center",
+    backgroundColor: "rgba(8, 13, 24, 0.94)",
     borderWidth: 2,
-    borderColor: "#FBBF24",
+    borderColor: "#334155",
+    borderRadius: 6,
+    paddingVertical: 13,
+    alignItems: "center",
+    marginTop: 4,
   },
   backButtonText: {
     color: "#F9FAFB",
-    fontSize: 13,
-    fontWeight: "900",
     fontFamily: pixelFont,
+    fontSize: 12,
+    fontWeight: "900",
     textTransform: "uppercase",
-    letterSpacing: 0.7,
+  },
+  infoBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+    backgroundColor: "rgba(49,46,129,0.72)",
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "flex-start",
+  },
+  infoBtnText: {
+    color: "#C4A7FF",
+    fontFamily: pixelFont,
+    fontSize: 14,
+    fontWeight: "900",
+    lineHeight: 18,
+  },
+  bottomNav: {
+    position: "absolute",
+    left: 8,
+    right: 8,
+    bottom: 8,
+    height: 62,
+    backgroundColor: "rgba(4, 8, 16, 0.98)",
+    borderWidth: 3,
+    borderColor: "#A78BFA",
+    borderRadius: 5,
+    padding: 4,
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  navButton: {
+    flex: 1,
+    backgroundColor: "#111827",
+    borderWidth: 2,
+    borderColor: "#3A4558",
+    borderRadius: 3,
+    paddingVertical: 4,
+    marginHorizontal: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  navButtonActive: {
+    backgroundColor: "#162314",
+    borderColor: "#FDE68A",
+  },
+  navText: {
+    color: "#E2E8F0",
+    fontSize: 17,
+    fontWeight: "900",
+  },
+  navTextActive: {
+    color: "#FDE68A",
+    fontSize: 17,
+    fontWeight: "900",
+  },
+  navLabel: {
+    color: "#CBD5E1",
+    fontSize: 8,
+    fontWeight: "900",
+    marginTop: 1,
+    fontFamily: pixelFont,
+  },
+  navLabelActive: {
+    color: "#FDE68A",
+    fontSize: 8,
+    fontWeight: "900",
+    marginTop: 1,
+    fontFamily: pixelFont,
   },
 });

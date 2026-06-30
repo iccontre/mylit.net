@@ -2,7 +2,28 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useState } from "react";
-import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  Image,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
+} from "react-native";
+
+import { GuideInfoModal } from "../components/GuideInfoModal";
+import { uiAssets } from "../constants/uiAssets";
+
+const LUNA_SLEEP_HUB_BULLETS = [
+  "This is your center for nighttime and morning sleep tools.",
+  "Pre-Sleep Intention sets one clear direction for tomorrow before you sleep.",
+  "Morning Reflection returns in the morning to check if the intention carried through.",
+  "Sleep Guide helps plan your sleep/wake window and daily cutoffs like caffeine and screen time.",
+  "Dream Journal captures dream details before they fade — most are gone within 10 minutes.",
+  "These tools work together to improve energy, reflection, and daily direction.",
+];
 
 type DreamEntry = {
   id: string;
@@ -16,7 +37,18 @@ type DreamEntry = {
   createdAt: string;
 };
 
+type MenuCard = {
+  title: string;
+  description: string;
+  icon: string;
+  onPress: () => void;
+  featured?: boolean;
+  unlockable?: boolean;
+};
+
 const DREAM_JOURNAL_KEY = "lit_dream_journal";
+const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
+const MAX_FRAME_WIDTH = 520;
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -27,7 +59,18 @@ const pixelFont = Platform.select({
 
 export default function SleepScreen() {
   const router = useRouter();
+  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
   const [latestDream, setLatestDream] = useState<DreamEntry | null>(null);
+  const [showInfo, setShowInfo] = useState(false);
+
+  const safeViewportWidth = Math.max(0, viewportWidth - 24);
+  const safeViewportHeight = Math.max(0, viewportHeight - 24);
+  const frameWidth = Math.min(
+    MAX_FRAME_WIDTH,
+    safeViewportWidth,
+    safeViewportHeight * APP_FRAME_ASPECT_RATIO
+  );
+  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   useFocusEffect(
     useCallback(() => {
@@ -64,237 +107,440 @@ export default function SleepScreen() {
     }
   }
 
-  return (
-    <ScrollView style={styles.screen} contentContainerStyle={styles.container}>
-      <View style={styles.shell}>
-        <View style={styles.hero}>
-          <Text style={styles.kicker}>SLEEP HUB</Text>
-          <Text style={styles.title}>SLEEP</Text>
-          <Text style={styles.subtitle}>Intentions, timing, dreams, and sleep tools.</Text>
+  const preSleepCard: MenuCard = {
+    title: "Pre-Sleep\nIntention",
+    description: "Set one clear signal for tomorrow before bed.",
+    icon: "☾",
+    featured: true,
+    onPress: () => navigate("/pre-sleep-intention"),
+  };
+
+  const morningCard: MenuCard = {
+    title: "Morning\nReflection",
+    description: "Reflect on sleep and set the morning tone.",
+    icon: "✦",
+    unlockable: true,
+    onPress: () => navigate("/morning-intention-reflection"),
+  };
+
+  const sleepGuideCard: MenuCard = {
+    title: "Sleep\nGuide",
+    description: "Set sleep window and daily cutoffs.",
+    icon: "☽",
+    onPress: () => navigate("/sleep-calendar"),
+  };
+
+  const dreamCard: MenuCard = {
+    title: "Dream\nJournal",
+    description: latestDream
+      ? `Latest: ${latestDream.title || "Untitled dream"}`
+      : "Capture dreams before they fade.",
+    icon: "📖",
+    featured: true,
+    onPress: () => navigate("/dream-journal"),
+  };
+
+  function renderCard(card: MenuCard, variant: "half" | "wide") {
+    return (
+      <TouchableOpacity
+        key={card.title}
+        style={[
+          styles.menuCard,
+          variant === "half" ? styles.halfCard : styles.wideCard,
+          card.featured && styles.featuredCard,
+        ]}
+        onPress={card.onPress}
+      >
+        <View style={[styles.iconBox, variant === "wide" && styles.wideIconBox]}>
+          <Text style={[styles.cardIcon, variant === "wide" && styles.wideCardIcon]}>{card.icon}</Text>
         </View>
+        <View style={styles.cardCopy}>
+          <Text style={[styles.cardTitle, variant === "wide" && styles.wideCardTitle]}>{card.title}</Text>
+          <Text style={styles.cardDescription}>{card.description}</Text>
+          {card.unlockable && <Text style={styles.unlockBadge}>🔓 UNLOCK</Text>}
+        </View>
+        <Text style={styles.cardArrow}>›</Text>
+      </TouchableOpacity>
+    );
+  }
 
-        <TouchableOpacity style={styles.toolCard} onPress={() => navigate("/sleep-checkin")}>
-          <Text style={styles.toolTitle}>Morning Check-In</Text>
-          <Text style={styles.toolSubtitle}>Review sleep, mood, stress, and daily energy mode.</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.toolCard}
-          onPress={() =>
-            router.push({
-              pathname: "/sleep-checkin",
-              params: { checkInType: "afternoon" },
-            })
-          }
-        >
-          <Text style={styles.toolTitle}>Afternoon Check-In</Text>
-          <Text style={styles.toolSubtitle}>Update food, mood, stress, and current flame.</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.toolCard} onPress={() => navigate("/pre-sleep-intention")}>
-          <Text style={styles.toolTitle}>Pre-Sleep Intention</Text>
-          <Text style={styles.toolSubtitle}>Set one clear signal for tomorrow before bed.</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.toolCard} onPress={() => navigate("/morning-intention-reflection")}>
-          <Text style={styles.toolTitle}>Morning Reflection</Text>
-          <Text style={styles.toolSubtitle}>Check what carried from night into today.</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.toolCard} onPress={() => navigate("/calendar")}>
-          <Text style={styles.toolTitle}>Sleep Calendar</Text>
-          <Text style={styles.toolSubtitle}>View sleep planning with day plan and thought context.</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.dreamCard} onPress={() => navigate("/dream-journal")}>
-          <Text style={styles.toolTitle}>Dream Journal</Text>
-          <Text style={styles.toolSubtitle}>Track dreams, lucid moments, symbols, and subconscious intention links.</Text>
-          {latestDream ? (
-            <View style={styles.latestDreamBox}>
-              <Text style={styles.latestLabel}>LATEST DREAM</Text>
-              <Text style={styles.latestTitle}>{latestDream.title || "Untitled dream"}</Text>
-              <Text style={styles.latestText} numberOfLines={2}>{latestDream.summary}</Text>
+  return (
+    <View style={styles.pageRoot}>
+      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight }]}>
+        <View pointerEvents="none" style={styles.backgroundLayer}>
+          <Image source={uiAssets.backgrounds.recovery} style={styles.backgroundImage} resizeMode="cover" />
+        </View>
+        <View style={styles.worldOverlay}>
+          <ScrollView
+            style={styles.screenScroller}
+            contentContainerStyle={styles.hudContent}
+            showsVerticalScrollIndicator={false}
+            bounces={false}
+          >
+            <View style={styles.titlePanel}>
+              <Text style={styles.kicker}>SLEEP HUB</Text>
+              <Text style={[styles.title, { fontSize: 34, letterSpacing: 3 }]}>SLEEP HUB</Text>
+              <Text style={styles.subtitle}>Rest, intention, and dream tools.</Text>
             </View>
-          ) : null}
-        </TouchableOpacity>
 
-        <View style={styles.bottomNav}>
-          <Text style={styles.bottomTitle}>NAVIGATION</Text>
-          <View style={styles.navGrid}>
+            <View style={styles.lunaPanel}>
+              <Image source={uiAssets.guides.luna} style={styles.lunaAvatar} resizeMode="contain" />
+              <View style={styles.lunaCopy}>
+                <Text style={styles.lunaText}>
+                  It’s okay to take it slow, stargazer. Rest is part of becoming your brightest self.
+                </Text>
+                <Text style={styles.lunaName}>Luna ♥</Text>
+              </View>
+              <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
+                <Text style={styles.infoBtnText}>?</Text>
+              </TouchableOpacity>
+            </View>
+
+            {renderCard(preSleepCard, "wide")}
+
+            <View style={styles.cardRow}>
+              {renderCard(morningCard, "half")}
+              {renderCard(sleepGuideCard, "half")}
+            </View>
+
+            {renderCard(dreamCard, "wide")}
+          </ScrollView>
+
+          <GuideInfoModal
+            visible={showInfo}
+            onClose={() => setShowInfo(false)}
+            guideAvatar={uiAssets.guides.luna}
+            guideName="Luna"
+            title="How Sleep Hub Works"
+            bullets={LUNA_SLEEP_HUB_BULLETS}
+            accentColor="#C4A7FF"
+          />
+
+          <View style={styles.bottomNav}>
             <TouchableOpacity style={styles.navButton} onPress={() => navigate("/")}>
-              <Text style={styles.navText}>🏠 Home</Text>
+              <Text style={styles.navText}>🏠</Text>
+              <Text style={styles.navLabel}>HOME</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={lightHaptic}>
-              <Text style={styles.navTextActive}>🌙 Sleep</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => navigate("/calendar")}>
-              <Text style={styles.navText}>📅 Calendar</Text>
+              <Text style={styles.navTextActive}>🌙</Text>
+              <Text style={styles.navLabelActive}>SLEEP</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.navButton} onPress={() => navigate("/mind")}>
-              <Text style={styles.navText}>🧠 Mind</Text>
+              <Text style={styles.navText}>🧠</Text>
+              <Text style={styles.navLabel}>MIND</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.navButton} onPress={() => navigate("/path")}>
-              <Text style={styles.navText}>🧭 Path</Text>
+              <Text style={styles.navText}>🌲</Text>
+              <Text style={styles.navLabel}>PATH</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => navigate("/calendar")}>
+              <Text style={styles.navText}>📅</Text>
+              <Text style={styles.navLabel}>CAL</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.navButton} onPress={() => navigate("/stats")}>
-              <Text style={styles.navText}>🎒 Inventory</Text>
+              <Text style={styles.navText}>🎒</Text>
+              <Text style={styles.navLabel}>BAG</Text>
             </TouchableOpacity>
           </View>
         </View>
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
+  pageRoot: {
     flex: 1,
-    backgroundColor: "#0B1220",
+    backgroundColor: "#02040A",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  container: {
-    paddingTop: 26,
-    paddingBottom: 34,
-  },
-  shell: {
-    width: "100%",
-    maxWidth: 520,
+  phoneStage: {
     alignSelf: "center",
-    paddingHorizontal: 18,
+    backgroundColor: "#050814",
+    overflow: "hidden",
+    position: "relative",
+    borderWidth: 2,
+    borderColor: "rgba(196, 167, 255, 0.72)",
+    shadowColor: "#000",
+    shadowOpacity: 0.85,
+    shadowRadius: 0,
+    shadowOffset: { width: 6, height: 6 },
   },
-  hero: {
-    backgroundColor: "#1B1940",
-    borderWidth: 3,
-    borderColor: "#A78BFA",
-    borderRadius: 24,
-    padding: 18,
-    marginBottom: 14,
+  backgroundLayer: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
+  backgroundImage: {
+    ...StyleSheet.absoluteFillObject,
+    width: "100%",
+    height: "100%",
+  },
+  worldOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(5, 8, 20, 0.04)",
+  },
+  screenScroller: {
+    flex: 1,
+  },
+  hudContent: {
+    minHeight: "100%",
+    paddingTop: 28,
+    paddingHorizontal: 14,
+    paddingBottom: 82,
+  },
+  titlePanel: {
+    width: "78%",
+    alignSelf: "center",
+    backgroundColor: "rgba(7, 11, 27, 0.94)",
+    borderWidth: 4,
+    borderColor: "#8B5CF6",
+    borderRadius: 8,
+    paddingVertical: 15,
+    paddingHorizontal: 14,
+    marginBottom: 72,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.7,
+    shadowRadius: 0,
+    shadowOffset: { width: 4, height: 4 },
   },
   kicker: {
-    color: "#C4B5FD",
+    color: "#C084FC",
     fontSize: 12,
     fontWeight: "900",
-    letterSpacing: 1.5,
-    marginBottom: 12,
+    letterSpacing: 2,
+    marginBottom: 7,
+    textTransform: "uppercase",
     fontFamily: pixelFont,
   },
   title: {
-    color: "#F9FAFB",
-    fontSize: 32,
+    color: "#E9D5FF",
+    fontSize: 40,
     fontWeight: "900",
-    letterSpacing: 2,
+    letterSpacing: 5,
+    lineHeight: 46,
     fontFamily: pixelFont,
+    textShadowColor: "#000",
+    textShadowOffset: { width: 3, height: 3 },
+    textShadowRadius: 0,
   },
   subtitle: {
-    color: "#E2E8F0",
-    fontSize: 14,
-    marginTop: 10,
-    fontFamily: pixelFont,
-  },
-  toolCard: {
-    backgroundColor: "#111827",
-    borderWidth: 2,
-    borderColor: "#334155",
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 12,
-  },
-  dreamCard: {
-    backgroundColor: "#111827",
-    borderWidth: 2,
-    borderColor: "#FBBF24",
-    borderRadius: 18,
-    padding: 16,
-    marginBottom: 12,
-  },
-  toolTitle: {
-    color: "#F9FAFB",
-    fontSize: 15,
-    fontWeight: "900",
-    fontFamily: pixelFont,
-  },
-  toolSubtitle: {
-    color: "#CBD5E1",
+    color: "#FDE68A",
     fontSize: 13,
     lineHeight: 19,
     marginTop: 8,
+    textAlign: "center",
+    fontWeight: "800",
     fontFamily: pixelFont,
   },
-  latestDreamBox: {
-    backgroundColor: "#0F172A",
-    borderWidth: 1,
-    borderColor: "#334155",
-    borderRadius: 12,
-    padding: 10,
-    marginTop: 12,
+  lunaPanel: {
+    minHeight: 88,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(7, 11, 27, 0.94)",
+    borderWidth: 4,
+    borderColor: "#A78BFA",
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 26,
+    shadowColor: "#000",
+    shadowOpacity: 0.7,
+    shadowRadius: 0,
+    shadowOffset: { width: 4, height: 4 },
   },
-  latestLabel: {
+  lunaAvatar: {
+    height: 68,
+    width: 68,
+    borderRadius: 34,
+    borderWidth: 3,
+    borderColor: "#C4A7FF",
+    backgroundColor: "rgba(21, 16, 48, 0.72)",
+    marginRight: 12,
+  },
+  lunaCopy: {
+    flex: 1,
+  },
+  lunaText: {
+    color: "#F8F1D7",
+    fontSize: 13,
+    fontWeight: "800",
+    lineHeight: 19,
+    fontFamily: pixelFont,
+  },
+  lunaName: {
+    color: "#C084FC",
+    fontSize: 15,
+    fontWeight: "900",
+    marginTop: 6,
+    fontFamily: pixelFont,
+  },
+  cardRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 14,
+  },
+  menuCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(7, 11, 27, 0.94)",
+    borderWidth: 3,
+    borderColor: "#8B5CF6",
+    borderRadius: 8,
+    shadowColor: "#000",
+    shadowOpacity: 0.68,
+    shadowRadius: 0,
+    shadowOffset: { width: 4, height: 4 },
+  },
+  halfCard: {
+    flex: 1,
+    minHeight: 112,
+    paddingVertical: 10,
+    paddingHorizontal: 9,
+  },
+  wideCard: {
+    minHeight: 102,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 16,
+  },
+  featuredCard: {
+    borderColor: "#A78BFA",
+  },
+  iconBox: {
+    height: 54,
+    width: 54,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(49, 46, 129, 0.72)",
+    borderWidth: 2,
+    borderColor: "#4C1D95",
+    borderRadius: 5,
+    marginRight: 9,
+  },
+  wideIconBox: {
+    height: 66,
+    width: 74,
+    marginRight: 14,
+  },
+  cardIcon: {
+    fontSize: 31,
+    textShadowColor: "#000",
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 0,
+  },
+  wideCardIcon: {
+    fontSize: 41,
+  },
+  cardCopy: {
+    flex: 1,
+  },
+  cardTitle: {
+    color: "#F5F3FF",
+    fontSize: 18,
+    fontWeight: "900",
+    lineHeight: 24,
+    fontFamily: pixelFont,
+  },
+  wideCardTitle: {
+    fontSize: 20,
+    lineHeight: 25,
+  },
+  cardDescription: {
+    color: "#EDE9FE",
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17,
+    marginTop: 7,
+    fontFamily: pixelFont,
+  },
+  infoBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+    backgroundColor: "rgba(49,46,129,0.72)",
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "flex-start",
+  },
+  infoBtnText: {
+    color: "#C4A7FF",
+    fontFamily: pixelFont,
+    fontSize: 14,
+    fontWeight: "900",
+    lineHeight: 18,
+  },
+  unlockBadge: {
     color: "#FDE68A",
+    fontFamily: pixelFont,
     fontSize: 10,
     fontWeight: "900",
-    marginBottom: 5,
-    fontFamily: pixelFont,
+    marginTop: 5,
+    letterSpacing: 0.5,
   },
-  latestTitle: {
-    color: "#F9FAFB",
-    fontSize: 13,
+  cardArrow: {
+    color: "#C084FC",
+    fontSize: 36,
     fontWeight: "900",
-    fontFamily: pixelFont,
-  },
-  latestText: {
-    color: "#CBD5E1",
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: 4,
-    fontFamily: pixelFont,
+    marginLeft: 5,
+    textShadowColor: "#000",
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 0,
   },
   bottomNav: {
-    backgroundColor: "#0F172A",
+    position: "absolute",
+    left: 8,
+    right: 8,
+    bottom: 8,
+    height: 62,
+    backgroundColor: "rgba(4, 8, 16, 0.98)",
     borderWidth: 3,
-    borderColor: "#334155",
-    borderRadius: 18,
-    padding: 12,
-    marginTop: 6,
-  },
-  bottomTitle: {
-    color: "#E2E8F0",
-    fontSize: 11,
-    fontWeight: "800",
-    letterSpacing: 1.1,
-    marginBottom: 8,
-    fontFamily: pixelFont,
-  },
-  navGrid: {
+    borderColor: "#A78BFA",
+    borderRadius: 5,
+    padding: 4,
     flexDirection: "row",
-    flexWrap: "wrap",
     justifyContent: "space-between",
   },
   navButton: {
-    width: "48.5%",
+    flex: 1,
     backgroundColor: "#111827",
     borderWidth: 2,
-    borderColor: "#334155",
-    borderRadius: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    marginBottom: 8,
+    borderColor: "#3A4558",
+    borderRadius: 3,
+    paddingVertical: 4,
+    marginHorizontal: 2,
     alignItems: "center",
+    justifyContent: "center",
   },
   navButtonActive: {
-    backgroundColor: "#312E81",
-    borderColor: "#FBBF24",
+    backgroundColor: "#4C1D95",
+    borderColor: "#FDE68A",
   },
   navText: {
     color: "#E2E8F0",
-    fontSize: 12,
+    fontSize: 17,
     fontWeight: "900",
-    textAlign: "center",
-    fontFamily: pixelFont,
   },
   navTextActive: {
     color: "#FDE68A",
-    fontSize: 12,
+    fontSize: 17,
     fontWeight: "900",
-    textAlign: "center",
+  },
+  navLabel: {
+    color: "#CBD5E1",
+    fontSize: 8,
+    fontWeight: "900",
+    marginTop: 1,
+    fontFamily: pixelFont,
+  },
+  navLabelActive: {
+    color: "#FDE68A",
+    fontSize: 8,
+    fontWeight: "900",
+    marginTop: 1,
     fontFamily: pixelFont,
   },
 });
