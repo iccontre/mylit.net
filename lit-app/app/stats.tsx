@@ -13,6 +13,7 @@ import {
 } from "react-native";
 
 import { uiAssets } from "../constants/uiAssets";
+import { computeItemStepsFromSources, computeTotalEarnedSteps, loadTodayCompletions } from "../lib/questProgress";
 
 const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
 const MAX_FRAME_WIDTH = 520;
@@ -37,6 +38,7 @@ type CheckIn = {
 
 type UserStats = {
   rankBonusesAwarded?: number[];
+  totalSteps?: number;
 };
 
 type StatsSnapshot = {
@@ -284,8 +286,15 @@ export default function StatsScreen() {
 
     // Compute fresh from completed actions only — ignores any stale stored totals/bonuses.
     // This guarantees: if earnedSteps === 0, displayTotal === 0. No bonus at Level 1.
-    const earnedSteps = computeItemSteps(dayPlan, quickThoughts);
-    const { rankBonusPool, awardedThresholds } = computeFreshRankBonuses(earnedSteps);
+    const earnedSteps = computeItemStepsFromSources(dayPlan, quickThoughts);
+    const todayCompletions = await loadTodayCompletions();
+    const displayEarnedSteps = computeTotalEarnedSteps({
+      dayPlan,
+      quickThoughts,
+      todayCompletions,
+      userStats,
+    });
+    const { rankBonusPool, awardedThresholds } = computeFreshRankBonuses(displayEarnedSteps);
     const prevAwarded = Array.isArray(userStats.rankBonusesAwarded) ? userStats.rankBonusesAwarded : [];
     const hasNewBonuses = awardedThresholds.some(t => !prevAwarded.includes(t));
 
@@ -300,7 +309,7 @@ export default function StatsScreen() {
       completedQuests, quickThoughts, dayPlan, journalEntries, dreamJournalEntries,
       preSleepIntentions, morningReflections, alternateMorningReflections,
       meditations, reflections, sleepCalendar,
-      earnedSteps, rankBonusPool, rankBonusesAwarded: awardedThresholds,
+      earnedSteps: displayEarnedSteps, rankBonusPool, rankBonusesAwarded: awardedThresholds,
     });
   }
 

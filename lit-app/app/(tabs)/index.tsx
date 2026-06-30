@@ -7,12 +7,27 @@ import { Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, useWindow
 import { uiAssets } from "../../constants/uiAssets";
 import { generateProgressQuests } from "../../lib/questGeneration";
 import {
-  formatDurationLabel,
-  getQuickThoughtSteps,
-  inferScheduledClassification,
-  parseDurationMinutes,
-  parseTimeToMinutes,
-} from "../../lib/scheduling";
+  ACTIVE_TIMED_ITEM_KEY,
+  collectTodayCalendarItems,
+  computeTotalEarnedSteps,
+  findNextScheduledItem,
+  getChecklistItemsForDay,
+  getQuestCapacity,
+  getTodayKey,
+  getWeekdayName,
+  kindAccent,
+  loadTodayCompletions,
+  loadTodayMissed,
+  markItemComplete,
+  markItemMissed,
+  normalizeQuestItems,
+  sourceIcon,
+  type CompletionEntry,
+  type HomeQuestItem,
+  type MissedEntry,
+  type QuestKind,
+} from "../../lib/questProgress";
+import { formatDurationLabel, inferScheduledClassification, parseTimeToMinutes } from "../../lib/scheduling";
 
 const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
 const MAX_FRAME_WIDTH = 520;
@@ -36,8 +51,6 @@ type QueueItem = {
   task?: string;
   note?: string;
   type?: string;
-  // Optional scheduling fields written by Tomorrow Queue / Calendar. Beta data may
-  // not include all of these, so every consumer below parses them defensively.
   date?: string;
   dateKey?: string;
   time?: string;
@@ -51,46 +64,16 @@ type QueueItem = {
   kind?: string;
 };
 
-// Quest Board domain types ---------------------------------------------------
-type QuestSource = "Quest" | "Day Plan" | "Checklist" | "Quick Thought";
-type QuestKind = "progress" | "recovery";
-
-type HomeQuestItem = {
-  id: string;
-  title: string;
-  source: QuestSource;
-  kind: QuestKind;
-  steps: number;
-  durationMinutes: number;
-  scheduledTime?: string;
-  description?: string;
-  mandatory?: boolean;
-};
-
 type ActiveTimedItem = {
   id: string;
   title: string;
-  source: QuestSource;
+  source: HomeQuestItem["source"];
   kind: QuestKind;
   steps: number;
   durationMinutes: number;
   startedAt: number;
   endsAt: number;
   scheduledTime?: string;
-};
-
-type RawChecklistItem = {
-  id?: string;
-  text?: string;
-  title?: string;
-  checked?: boolean;
-  steps?: number;
-  startTime?: string;
-  time?: string;
-  duration?: string;
-  durationMinutes?: number;
-  kind?: QuestKind;
-  status?: string;
 };
 
 type RawTodayQuest = {
@@ -108,6 +91,21 @@ type RawTodayQuest = {
 type DayPlanRaw = {
   todayQuest?: RawTodayQuest;
   weekdayChecklists?: Partial<Record<WeekdayName, RawChecklistItem[]>>;
+};
+
+type RawChecklistItem = {
+  id?: string;
+  text?: string;
+  title?: string;
+  checked?: boolean;
+  steps?: number;
+  startTime?: string;
+  time?: string;
+  duration?: string;
+  durationMinutes?: number;
+  kind?: QuestKind;
+  status?: string;
+  weekdays?: WeekdayName[];
 };
 
 type CheckIn = {
@@ -169,36 +167,15 @@ type UserProfile = {
 
 type ModeState = "Recovery" | "Progress" | "Neutral";
 
-const COMPLETED_QUESTS_KEY = "lit_completed_quests";
-const TODAY_PROGRESS_DATE_KEY = "lit_today_progress_date";
 const PROFILE_KEY = "lit_user_profile";
 const CHECKIN_KEY = "lit_latest_checkin";
 const TOMORROW_QUEUE_KEY = "lit_tomorrow_queue";
 const DAY_PLAN_KEY = "lit_day_plan";
-const ACTIVE_TIMED_ITEM_KEY = "mylit_active_timed_item";
-const MAX_VISIBLE_QUEST_ITEMS = 4;
+const USER_STATS_KEY = "lit_user_stats";
 const PROGRESS_QUEST_ENERGY_COST = 8;
 const RECOVERY_QUEST_ENERGY_COST = 6;
 const PASSIVE_DECAY_POINTS = 5;
 const PASSIVE_DECAY_INTERVAL_HOURS = 2;
-
-function getTodayKey() {
-  return new Date().toLocaleDateString("en-CA");
-}
-
-function getWeekdayName(): WeekdayName {
-  const days: WeekdayName[] = [
-    "Sunday",
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-  ];
-
-  return days[new Date().getDay()];
-}
 
 function clampEnergy(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
@@ -247,165 +224,6 @@ function formatCountdown(ms: number): string {
   return hours > 0 ? `${pad(hours)}:${pad(mins)}:${pad(secs)}` : `${pad(mins)}:${pad(secs)}`;
 }
 
-function kindAccent(kind: QuestKind): string {
-  return kind === "recovery" ? "#C4A7FF" : "#84CC16";
-}
-
-function sourceIcon(source: QuestSource): string {
-  if (source === "Day Plan") return "🗺";
-  if (source === "Checklist") return "📋";
-  if (source === "Quick Thought") return "💭";
-  return "📜";
-}
-
-function stepsForChecklistItem(kind: QuestKind, durationMinutes: number): number {
-  if (kind === "recovery") return durationMinutes >= 30 ? 1 : 0;
-  return durationMinutes >= 60 ? 2 : 1;
-}
-
-// Builds the unified, de-duplicated Quest Board list from every today-relevant
-// source. Parsing is intentionally defensive because beta data can be partial.
-function normalizeQuestItems(input: {
-  quests: Quest[];
-  todayQuest?: RawTodayQuest | null;
-  checklist: RawChecklistItem[];
-  quickThoughts: QueueItem[];
-  todayKey: string;
-}): HomeQuestItem[] {
-  const items: HomeQuestItem[] = [];
-  const seenTitles = new Set<string>();
-
-  const pushItem = (item: HomeQuestItem) => {
-    const titleKey = item.title.trim().toLowerCase();
-    if (!titleKey || seenTitles.has(titleKey)) return;
-    seenTitles.add(titleKey);
-    items.push(item);
-  };
-
-  // 1) Today's Day Plan quest (richest single quest).
-  const todayQuest = input.todayQuest;
-  if (todayQuest?.title?.trim() && todayQuest.status !== "completed") {
-    const durationMinutes = parseDurationMinutes(todayQuest.durationMinutes ?? todayQuest.duration, 60);
-    const kind: QuestKind =
-      todayQuest.kind === "recovery"
-        ? "recovery"
-        : inferScheduledClassification(todayQuest.title) === "recovery"
-        ? "recovery"
-        : "progress";
-    pushItem({
-      id: `dayquest-${todayQuest.id ?? todayQuest.title}`,
-      title: todayQuest.title.trim(),
-      source: "Day Plan",
-      kind,
-      steps: typeof todayQuest.steps === "number" ? todayQuest.steps : 2,
-      durationMinutes,
-      scheduledTime: todayQuest.startTime,
-      description: "Your main quest from today's Day Plan.",
-    });
-  }
-
-  // 2) Today's Day Plan checklist items (skip already-checked habits).
-  input.checklist.forEach((raw, index) => {
-    const title = (raw.text || raw.title || "").trim();
-    if (!title) return;
-    if (raw.checked === true || raw.status === "completed") return;
-    const durationMinutes = parseDurationMinutes(raw.durationMinutes ?? raw.duration, 30);
-    const kind: QuestKind =
-      raw.kind === "recovery"
-        ? "recovery"
-        : inferScheduledClassification(title) === "recovery"
-        ? "recovery"
-        : "progress";
-    pushItem({
-      id: `checklist-${raw.id ?? index}-${title}`,
-      title,
-      source: "Checklist",
-      kind,
-      steps: typeof raw.steps === "number" ? raw.steps : stepsForChecklistItem(kind, durationMinutes),
-      durationMinutes,
-      scheduledTime: raw.startTime || raw.time,
-      description: "Recurring habit from your Day Plan checklist.",
-    });
-  });
-
-  // 3) Today's Quick Thoughts / Tomorrow Queue items.
-  input.quickThoughts.forEach((raw, index) => {
-    const itemDate = raw.date ?? raw.dateKey;
-    if (itemDate && itemDate !== input.todayKey) return;
-    if (raw.status === "completed" || raw.completedAt) return;
-    const title = (raw.text || raw.title || raw.task || raw.note || "").trim();
-    if (!title) return;
-    const durationMinutes = parseDurationMinutes(raw.durationMinutes ?? raw.duration, 30);
-    const kind: QuestKind =
-      raw.classification === "recovery"
-        ? "recovery"
-        : inferScheduledClassification(title) === "recovery"
-        ? "recovery"
-        : "progress";
-    pushItem({
-      id: `quick-${raw.id ?? index}-${title}`,
-      title,
-      source: "Quick Thought",
-      kind,
-      steps: typeof raw.steps === "number" ? raw.steps : getQuickThoughtSteps(durationMinutes),
-      durationMinutes,
-      scheduledTime: raw.time || raw.startTime,
-      description: raw.type ? `Saved from Quick Thoughts (${raw.type})` : "Saved from Quick Thoughts.",
-    });
-  });
-
-  // 4) Generated Quest Board quests (the Day Plan + Quick Thought variants are
-  // skipped here because they were added above with richer metadata).
-  input.quests.forEach((quest) => {
-    if (quest.type === "Personal" || quest.type === "Quick Thought") return;
-    const kind: QuestKind = quest.mandatory
-      ? "recovery"
-      : inferScheduledClassification(quest.title) === "recovery"
-      ? "recovery"
-      : "progress";
-    pushItem({
-      id: `quest-${quest.title}`,
-      title: quest.title,
-      source: "Quest",
-      // Generated quests carry no stored duration, so default to 30 min.
-      kind,
-      steps: quest.steps,
-      durationMinutes: 30,
-      description: quest.description || quest.type,
-      mandatory: quest.mandatory,
-    });
-  });
-
-  const rankOf = (item: HomeQuestItem) => (item.mandatory ? 0 : item.scheduledTime ? 1 : 2);
-  items.sort((a, b) => {
-    const ra = rankOf(a);
-    const rb = rankOf(b);
-    if (ra !== rb) return ra - rb;
-    if (ra === 1) {
-      return (parseTimeToMinutes(a.scheduledTime) ?? 0) - (parseTimeToMinutes(b.scheduledTime) ?? 0);
-    }
-    return 0;
-  });
-
-  return items;
-}
-
-function findNextScheduledItem(
-  items: HomeQuestItem[],
-  activeId: string | null,
-  nowMinutes: number
-): HomeQuestItem | null {
-  const candidates = items.filter((item) => item.id !== activeId);
-  if (candidates.length === 0) return null;
-
-  const timed = candidates
-    .filter((item) => item.scheduledTime && parseTimeToMinutes(item.scheduledTime) !== null)
-    .sort((a, b) => (parseTimeToMinutes(a.scheduledTime) ?? 0) - (parseTimeToMinutes(b.scheduledTime) ?? 0));
-
-  const upcoming = timed.find((item) => (parseTimeToMinutes(item.scheduledTime) ?? 0) >= nowMinutes);
-  return upcoming ?? timed[0] ?? candidates[0] ?? null;
-}
-
 export default function HomeScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -446,7 +264,9 @@ export default function HomeScreen() {
     sunday: "",
   });
 
-  const [completedQuests, setCompletedQuests] = useState<string[]>([]);
+  const [completedQuests, setCompletedQuests] = useState<CompletionEntry[]>([]);
+  const [missedQuests, setMissedQuests] = useState<MissedEntry[]>([]);
+  const [userStats, setUserStats] = useState<{ totalSteps?: number }>({});
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileChecked, setProfileChecked] = useState(false);
 
@@ -505,7 +325,7 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadCompletedQuests();
+      loadProgressState();
       loadLatestCheckIn();
       loadQuickThoughts();
       loadDayPlan();
@@ -514,7 +334,7 @@ export default function HomeScreen() {
   );
 
   useEffect(() => {
-    loadCompletedQuests();
+    loadProgressState();
     loadProfile();
     loadLatestCheckIn();
     loadQuickThoughts();
@@ -644,23 +464,19 @@ export default function HomeScreen() {
     }
   }
 
-  async function loadCompletedQuests() {
-    const today = getTodayKey();
-    const savedDate = await AsyncStorage.getItem(TODAY_PROGRESS_DATE_KEY);
-    const savedQuests = await AsyncStorage.getItem(COMPLETED_QUESTS_KEY);
-
-    if (savedDate !== today) {
-      setCompletedQuests([]);
-      await AsyncStorage.setItem(TODAY_PROGRESS_DATE_KEY, today);
-      await AsyncStorage.setItem(COMPLETED_QUESTS_KEY, JSON.stringify([]));
-      return;
-    }
-
-    if (savedQuests) {
+  async function loadProgressState() {
+    const [completions, missed, stats] = await Promise.all([
+      loadTodayCompletions(),
+      loadTodayMissed(),
+      AsyncStorage.getItem(USER_STATS_KEY),
+    ]);
+    setCompletedQuests(completions);
+    setMissedQuests(missed);
+    if (stats) {
       try {
-        setCompletedQuests(JSON.parse(savedQuests));
+        setUserStats(JSON.parse(stats));
       } catch {
-        setCompletedQuests([]);
+        setUserStats({});
       }
     }
   }
@@ -762,35 +578,66 @@ export default function HomeScreen() {
   }
 
   // Completion is the ONLY place steps are awarded — never on Start.
+  async function completeQuestItem(item: HomeQuestItem) {
+    if (completedQuests.some((entry) => entry.id === item.id)) return;
+
+    const nextCompleted = await markItemComplete(item, completedQuests);
+    await successHaptic();
+    setCompletedQuests(nextCompleted);
+    setSelectedItem(null);
+    await loadDayPlan();
+    await loadQuickThoughts();
+    if (activeItem?.id === item.id) {
+      await clearActiveItem();
+    }
+  }
+
   async function completeActiveItem() {
     if (!activeItem) return;
-
-    const title = activeItem.title;
-    const nextCompleted = completedQuests.includes(title)
-      ? completedQuests
-      : [...completedQuests, title];
-
-    await successHaptic();
-    await saveCompletedQuests(nextCompleted);
-    await clearActiveItem();
+    const boardItem: HomeQuestItem = {
+      id: activeItem.id,
+      title: activeItem.title,
+      source: activeItem.source,
+      kind: activeItem.kind,
+      steps: activeItem.steps,
+      durationMinutes: activeItem.durationMinutes,
+      scheduledTime: activeItem.scheduledTime,
+    };
+    await completeQuestItem(boardItem);
   }
 
-  // Missed / Reflect routes to the existing reflection screen and awards no steps.
+  async function missQuestItem(item: HomeQuestItem) {
+    const nextMissed = await markItemMissed(item, missedQuests, activeItem?.id ?? null);
+    await lightHaptic();
+    setMissedQuests(nextMissed);
+    setSelectedItem(null);
+    if (activeItem?.id === item.id) {
+      await clearActiveItem();
+    }
+    router.push({ pathname: "/reflection", params: { quest: item.title } });
+  }
+
   async function reflectActiveItem() {
     if (!activeItem) return;
-
-    const title = activeItem.title;
-    await lightHaptic();
-    await clearActiveItem();
-    router.push({ pathname: "/reflection", params: { quest: title } });
+    const boardItem: HomeQuestItem = {
+      id: activeItem.id,
+      title: activeItem.title,
+      source: activeItem.source,
+      kind: activeItem.kind,
+      steps: activeItem.steps,
+      durationMinutes: activeItem.durationMinutes,
+      scheduledTime: activeItem.scheduledTime,
+    };
+    await missQuestItem(boardItem);
   }
 
-  async function saveCompletedQuests(nextCompleted: string[]) {
-    const today = getTodayKey();
-
-    setCompletedQuests(nextCompleted);
-    await AsyncStorage.setItem(TODAY_PROGRESS_DATE_KEY, today);
-    await AsyncStorage.setItem(COMPLETED_QUESTS_KEY, JSON.stringify(nextCompleted));
+  async function toggleQuestItemFromRow(item: HomeQuestItem) {
+    if (activeItem && activeItem.id !== item.id) {
+      showLockMessage();
+      return;
+    }
+    if (completedQuests.some((entry) => entry.id === item.id)) return;
+    await completeQuestItem(item);
   }
 
   // Prefer the new tiered milestone fields; fall back to legacy goalOne/Two/Three
@@ -806,7 +653,7 @@ export default function HomeScreen() {
   const specificGoal = profile?.specificGoal?.trim() || "";
 
   const completedMandatoryTitles = completedQuests.filter(
-    (title) => title === "Eat to restore energy" || title === "Relax for 30 minutes"
+    (entry) => entry.title === "Eat to restore energy" || entry.title === "Relax for 30 minutes"
   );
   const completedNormalQuestCount = completedQuests.length - completedMandatoryTitles.length;
   const questEnergyCost = isProgress ? PROGRESS_QUEST_ENERGY_COST : RECOVERY_QUEST_ENERGY_COST;
@@ -818,7 +665,7 @@ export default function HomeScreen() {
         ) * PASSIVE_DECAY_POINTS
       : 0;
   const mandatoryRecoveryBoost = completedMandatoryTitles.reduce(
-    (sum, title) => sum + (title === "Eat to restore energy" ? 15 : 10),
+    (sum, entry) => sum + (entry.title === "Eat to restore energy" ? 15 : 10),
     0
   );
   const energyYield = hasEnergyData
@@ -971,8 +818,8 @@ export default function HomeScreen() {
     const threshold = isProgress ? 50 : 40;
     if (energyYield >= threshold) return null;
 
-    const eatQuestDone = completedQuests.includes("Eat to restore energy");
-    const relaxQuestDone = completedQuests.includes("Relax for 30 minutes");
+    const eatQuestDone = completedQuests.some((entry) => entry.title === "Eat to restore energy");
+    const relaxQuestDone = completedQuests.some((entry) => entry.title === "Relax for 30 minutes");
     const hasEaten = latestCheckIn?.eatenSinceMorning === true || eatQuestDone;
 
     if (!hasEaten && !eatQuestDone) {
@@ -1086,12 +933,11 @@ export default function HomeScreen() {
 
   const quests = generateQuests();
 
-  const todayChecklist: RawChecklistItem[] = (() => {
-    const lists = dayPlanRaw?.weekdayChecklists;
-    if (!lists) return [];
-    const todayList = lists[todayName];
-    return Array.isArray(todayList) ? todayList : [];
-  })();
+  const todayChecklist: RawChecklistItem[] = getChecklistItemsForDay(dayPlanRaw, todayName);
+  const calendarItems = collectTodayCalendarItems(dayPlanRaw, queueItems, getTodayKey());
+  const completedIds = new Set(completedQuests.map((entry) => entry.id));
+  const missedIds = new Set(missedQuests.map((entry) => entry.id));
+  const questCapacity = isRecovery ? getQuestCapacity("Recovery") : getQuestCapacity("Progress");
 
   const allHomeItems: HomeQuestItem[] =
     hasEnergyData && !isNeutral
@@ -1100,14 +946,15 @@ export default function HomeScreen() {
           todayQuest: dayPlanRaw?.todayQuest ?? null,
           checklist: todayChecklist,
           quickThoughts: queueItems,
+          calendarItems,
           todayKey: getTodayKey(),
+          completedIds,
+          missedIds,
         })
       : [];
 
-  const availableItems = allHomeItems.filter(
-    (item) => !completedQuests.includes(item.title) && item.id !== activeItem?.id
-  );
-  const visibleItems = availableItems.slice(0, MAX_VISIBLE_QUEST_ITEMS);
+  const availableItems = allHomeItems.filter((item) => item.id !== activeItem?.id);
+  const visibleItems = availableItems.slice(0, questCapacity);
   const extraItemCount = Math.max(0, availableItems.length - visibleItems.length);
 
   const remainingMs = activeItem ? Math.max(0, activeItem.endsAt - countdownNow) : 0;
@@ -1124,11 +971,25 @@ export default function HomeScreen() {
     ? uiAssets.backgrounds.progress
     : uiAssets.backgrounds.neutral;
 
-  const completedHomeItems = allHomeItems.filter((item) => completedQuests.includes(item.title));
-  const completedSteps = completedHomeItems.reduce((sum, item) => sum + item.steps, 0);
-  const completedCount = completedHomeItems.length;
-  const totalCount = allHomeItems.length;
-  const rank = completedSteps >= 5 ? "Consistent" : "Beginner";
+  const completedHomeItems = [
+    ...completedQuests.map((entry) => ({
+      id: entry.id,
+      title: entry.title,
+      source: entry.source,
+      kind: "progress" as QuestKind,
+      steps: entry.steps,
+      durationMinutes: 30,
+    })),
+  ];
+  const totalEarnedSteps = computeTotalEarnedSteps({
+    dayPlan: dayPlanRaw,
+    quickThoughts: queueItems,
+    todayCompletions: completedQuests,
+    userStats,
+  });
+  const completedCount = completedQuests.length;
+  const totalCount = allHomeItems.length + completedCount;
+  const rank = totalEarnedSteps >= 100 ? "Consistent" : totalEarnedSteps >= 5 ? "Explorer" : "Beginner";
 
   if (!profileChecked) return null;
 
@@ -1280,7 +1141,7 @@ export default function HomeScreen() {
                 <View style={styles.questHeaderRow}>
                   <Text style={[styles.questTitle, { color: theme.accent }]}>{isRecovery ? "+ QUEST BOARD +" : "⚔ QUEST BOARD"}</Text>
                   <Text style={[styles.questCount, { color: theme.accent }]}>
-                    {isNeutral ? "LOCKED" : isBoardLocked ? "LOCKED" : `${availableItems.length} ACTIVE`}
+                    {isNeutral ? "LOCKED" : isBoardLocked ? "LOCKED" : `Quests ${availableItems.length} / ${questCapacity}`}
                   </Text>
                 </View>
 
@@ -1316,13 +1177,13 @@ export default function HomeScreen() {
                     {!timerFinished ? (
                       <>
                         {nextItem ? (
-                          <TouchableOpacity style={styles.nextRow} onPress={showLockMessage} activeOpacity={0.85}>
+                          <View style={styles.nextRow}>
                             <Text style={[styles.nextLabel, { color: theme.accent }]}>NEXT</Text>
                             <Text style={styles.nextTitle} numberOfLines={1}>{nextItem.title}</Text>
                             <Text style={styles.nextMeta} numberOfLines={1}>
-                              {nextItem.scheduledTime ? `${nextItem.scheduledTime} · ` : ""}{formatDurationLabel(nextItem.durationMinutes)}
+                              {nextItem.source}{nextItem.scheduledTime ? ` · ${nextItem.scheduledTime}` : ""} · {formatDurationLabel(nextItem.durationMinutes)}
                             </Text>
-                          </TouchableOpacity>
+                          </View>
                         ) : (
                           <Text style={styles.nextEmpty}>Next: No scheduled item yet.</Text>
                         )}
@@ -1334,7 +1195,7 @@ export default function HomeScreen() {
                           <Text style={styles.completeBtnText}>COMPLETE</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={[styles.reflectBtn, { borderColor: theme.accent }]} onPress={reflectActiveItem}>
-                          <Text style={styles.reflectBtnText}>REFLECT / MISSED</Text>
+                          <Text style={styles.reflectBtnText}>MISSED?</Text>
                         </TouchableOpacity>
                       </View>
                     )}
@@ -1346,10 +1207,12 @@ export default function HomeScreen() {
                   </View>
                 ) : (
                   <>
-                    {visibleItems.map((item) => (
+                    {visibleItems.map((item) => {
+                      const isDone = completedQuests.some((entry) => entry.id === item.id);
+                      return (
                       <TouchableOpacity
                         key={item.id}
-                        style={[styles.questRow, { borderColor: item.mandatory ? "#F87171" : "#2E3542" }]}
+                        style={[styles.questRow, { borderColor: item.mandatory ? "#F87171" : "#2E3542" }, isDone && styles.questRowDone]}
                         onPress={() => openQuestItem(item)}
                         activeOpacity={0.85}
                       >
@@ -1365,13 +1228,21 @@ export default function HomeScreen() {
                             <Text style={[styles.questSteps, { color: kindAccent(item.kind) }]}>+{item.steps}</Text>
                           </View>
                         </View>
-                        <View style={[styles.kindDot, { backgroundColor: kindAccent(item.kind) }]} />
+                        <TouchableOpacity
+                          style={[styles.checkBox, { borderColor: theme.accent }, isDone && styles.checkBoxDone]}
+                          onPress={(event) => {
+                            event.stopPropagation?.();
+                            void toggleQuestItemFromRow(item);
+                          }}
+                        >
+                          <Text style={styles.checkBoxText}>{isDone ? "✓" : ""}</Text>
+                        </TouchableOpacity>
                         <Text style={[styles.startChevron, { color: theme.accent }]}>▶</Text>
                       </TouchableOpacity>
-                    ))}
+                    );})}
                     {lockMessage ? <Text style={styles.lockMessage}>{lockMessage}</Text> : null}
                     {extraItemCount > 0 ? (
-                      <Text style={styles.moreHint}>+{extraItemCount} more in Calendar / Day Plan</Text>
+                      <Text style={styles.moreHint}>+{extraItemCount} more scheduled</Text>
                     ) : null}
                   </>
                 )}
@@ -1390,7 +1261,7 @@ export default function HomeScreen() {
                   <Text style={styles.statIcon}>🥾</Text>
                   <View>
                     <Text style={[styles.statLabel, { color: theme.accent }]}>STEPS</Text>
-                    <Text style={styles.statValue}>{completedSteps}</Text>
+                    <Text style={styles.statValue}>{totalEarnedSteps}</Text>
                   </View>
                 </View>
                 <View style={styles.statDivider} />
@@ -1420,6 +1291,7 @@ export default function HomeScreen() {
 
                     <View style={styles.modalMetaGrid}>
                       <Text style={styles.modalMeta}>Type: {selectedItem.kind === "recovery" ? "Recovery" : "Progress"}</Text>
+                      <Text style={styles.modalMeta}>Source: {selectedItem.source}</Text>
                       <Text style={styles.modalMeta}>Duration: {formatDurationLabel(selectedItem.durationMinutes)}</Text>
                       <Text style={styles.modalMeta}>Steps possible: +{selectedItem.steps}</Text>
                       {selectedItem.scheduledTime ? (
@@ -1435,10 +1307,24 @@ export default function HomeScreen() {
 
                     <View style={styles.modalButtonRow}>
                       <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setSelectedItem(null)}>
-                        <Text style={styles.modalCancelText}>CANCEL</Text>
+                        <Text style={styles.modalCancelText}>CLOSE</Text>
                       </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.modalCompleteBtn}
+                        onPress={() => void completeQuestItem(selectedItem)}
+                      >
+                        <Text style={styles.modalCompleteText}>COMPLETE</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <View style={styles.modalButtonRow}>
                       <TouchableOpacity style={styles.modalStartBtn} onPress={() => startTimedItem(selectedItem)}>
                         <Text style={styles.modalStartText}>START</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={styles.modalMissedBtn}
+                        onPress={() => void missQuestItem(selectedItem)}
+                      >
+                        <Text style={styles.modalMissedText}>MISSED?</Text>
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -2145,6 +2031,34 @@ const styles = StyleSheet.create({
   },
   modalStartText: {
     color: "#FDE68A",
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
+  modalCompleteBtn: {
+    flex: 1,
+    borderWidth: 2,
+    borderColor: "#22C55E",
+    backgroundColor: "#14532D",
+    paddingVertical: 11,
+    alignItems: "center",
+  },
+  modalCompleteText: {
+    color: "#DCFCE7",
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
+  modalMissedBtn: {
+    flex: 1,
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+    backgroundColor: "rgba(88,28,135,0.45)",
+    paddingVertical: 11,
+    alignItems: "center",
+  },
+  modalMissedText: {
+    color: "#E9D5FF",
     fontSize: 12,
     fontWeight: "900",
     letterSpacing: 0.5,
