@@ -5,16 +5,16 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Image,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
 
 import { uiAssets } from "../constants/uiAssets";
+import { FormScreen } from "../components/FormScreen";
+import { useMobileFrame } from "../constants/mobileLayout";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { syncDailySnapshot } from "../lib/progressSync";
 
@@ -41,8 +41,6 @@ type CheckIn = {
 
 const CHECKIN_KEY = "lit_latest_checkin";
 const CHECKIN_HISTORY_KEY = "lit_checkin_history";
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -100,7 +98,7 @@ function getFlameState(score: number) {
 export default function SleepCheckInScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const mobile = useMobileFrame();
   const rawType = Array.isArray(params.type) ? params.type[0] : params.type;
   const legacyType = Array.isArray(params.checkInType) ? params.checkInType[0] : params.checkInType;
   const type = rawType || legacyType;
@@ -114,11 +112,6 @@ export default function SleepCheckInScreen() {
   const [eatenSinceMorning, setEatenSinceMorning] = useState<"yes" | "no" | "">("");
   const [foodSinceMorning, setFoodSinceMorning] = useState("");
   const [currentEnergyFeeling, setCurrentEnergyFeeling] = useState("");
-
-  const safeViewportWidth = Math.max(0, viewportWidth - 24);
-  const safeViewportHeight = Math.max(0, viewportHeight - 24);
-  const frameWidth = Math.min(MAX_FRAME_WIDTH, safeViewportWidth, safeViewportHeight * APP_FRAME_ASPECT_RATIO);
-  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   useEffect(() => {
     loadLatestCheckIn();
@@ -235,13 +228,13 @@ export default function SleepCheckInScreen() {
   }
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight, borderColor: theme.accent }]}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.phoneStageStyle, mobile.isFullscreen && styles.phoneStageFullscreen, { borderColor: theme.accent }]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={currentBackground} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
-          <ScrollView style={styles.screenScroller} contentContainerStyle={styles.hudContent} showsVerticalScrollIndicator={false} bounces={false}>
+          <FormScreen contentContainerStyle={[styles.hudContent, { paddingBottom: mobile.scrollPaddingBottom }]}>
             <View style={[styles.hero, { borderColor: theme.accent, backgroundColor: theme.panel }]}>
               <View style={styles.heroTopRow}>
                 <View style={styles.heroCopy}>
@@ -336,7 +329,7 @@ export default function SleepCheckInScreen() {
             <TouchableOpacity style={styles.backButton} onPress={() => router.push("/")}>
               <Text style={styles.backButtonText}>Back to Today</Text>
             </TouchableOpacity>
-          </ScrollView>
+          </FormScreen>
         </View>
       </View>
     </View>
@@ -347,8 +340,6 @@ const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
     backgroundColor: "#02040A",
-    alignItems: "center",
-    justifyContent: "center",
   },
   phoneStage: {
     alignSelf: "center",
@@ -360,6 +351,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.85,
     shadowRadius: 0,
     shadowOffset: { width: 6, height: 6 },
+  },
+  phoneStageFullscreen: {
+    borderWidth: 0,
+    shadowOpacity: 0,
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -483,7 +478,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(15, 23, 42, 0.96)",
     borderRadius: 4,
     padding: 12,
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "800",
     color: "#F9FAFB",
     borderWidth: 2,

@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { getSupabaseClient, isSupabaseConfigured } from "./supabase";
+import { getSupabaseClient, isSupabaseConfigured, mapSupabaseAuthError } from "./supabase";
 
 export const WELCOME_SEEN_KEY = "lit_welcome_seen";
 export const BETA_PROFILE_KEY = "lit_beta_profile";
@@ -37,7 +37,7 @@ export async function signUpWithEmail(email: string, password: string): Promise<
   }
 
   const { error } = await supabase.auth.signUp({ email: clean(email), password });
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false, error: mapSupabaseAuthError(error.message) };
   return { ok: true };
 }
 
@@ -48,7 +48,7 @@ export async function signInWithEmail(email: string, password: string): Promise<
   }
 
   const { error } = await supabase.auth.signInWithPassword({ email: clean(email), password });
-  if (error) return { ok: false, error: error.message };
+  if (error) return { ok: false, error: mapSupabaseAuthError(error.message) };
   return { ok: true };
 }
 

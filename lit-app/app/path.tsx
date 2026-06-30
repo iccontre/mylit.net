@@ -8,12 +8,12 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
 
 import { GuideInfoModal } from "../components/GuideInfoModal";
 import { GOAL_HORIZON_LABELS } from "../constants/goalMilestoneTemplates";
+import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 
 const EVIE_PATH_BULLETS = [
@@ -61,8 +61,6 @@ type MilestoneCard = {
 };
 
 const PROFILE_KEY = "lit_user_profile";
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -73,18 +71,9 @@ const pixelFont = Platform.select({
 
 export default function PathScreen() {
   const router = useRouter();
-  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const mobile = useMobileFrame();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [showInfo, setShowInfo] = useState(false);
-
-  const safeViewportWidth = Math.max(0, viewportWidth - 24);
-  const safeViewportHeight = Math.max(0, viewportHeight - 24);
-  const frameWidth = Math.min(
-    MAX_FRAME_WIDTH,
-    safeViewportWidth,
-    safeViewportHeight * APP_FRAME_ASPECT_RATIO
-  );
-  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   useEffect(() => {
     loadProfile();
@@ -141,15 +130,15 @@ export default function PathScreen() {
   ];
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight }]}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.phoneStageStyle, mobile.isFullscreen && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={uiAssets.backgrounds.default} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
           <ScrollView
             style={styles.screenScroller}
-            contentContainerStyle={styles.hudContent}
+            contentContainerStyle={[styles.hudContent, { paddingBottom: mobile.scrollPaddingBottom }]}
             showsVerticalScrollIndicator={false}
             bounces={false}
           >
@@ -267,7 +256,10 @@ export default function PathScreen() {
               </View>
             )}
 
-            <TouchableOpacity style={styles.primaryActionButton} onPress={() => router.push("/onboarding")}>
+            <TouchableOpacity
+              style={styles.primaryActionButton}
+              onPress={() => router.push({ pathname: "/onboarding", params: { mode: "editPath" } })}
+            >
               <Text style={styles.actionIcon}>🗡️</Text>
               <Text style={styles.primaryActionText}>Set My Path</Text>
               <Text style={styles.actionArrow}>›</Text>
@@ -290,7 +282,7 @@ export default function PathScreen() {
             accentColor="#22C55E"
           />
 
-          <View style={styles.bottomNav}>
+          <View style={[styles.bottomNav, { bottom: mobile.bottomNavOffset }]}>
             <TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}>
               <Text style={styles.navText}>🏠</Text>
               <Text style={styles.navLabel}>HOME</Text>
@@ -326,8 +318,6 @@ const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
     backgroundColor: "#02040A",
-    alignItems: "center",
-    justifyContent: "center",
   },
   phoneStage: {
     alignSelf: "center",
@@ -340,6 +330,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.85,
     shadowRadius: 0,
     shadowOffset: { width: 6, height: 6 },
+  },
+  phoneStageFullscreen: {
+    borderWidth: 0,
+    shadowOpacity: 0,
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,

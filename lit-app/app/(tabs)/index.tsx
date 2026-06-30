@@ -2,9 +2,10 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
+import { Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { uiAssets } from "../../constants/uiAssets";
+import { useMobileFrame } from "../../constants/mobileLayout";
 import { generateProgressQuests } from "../../lib/questGeneration";
 import { ANALYTICS_EVENTS, trackEvent } from "../../lib/analytics";
 import { syncQuestCompleted, syncQuestMissed, syncQuestStarted } from "../../lib/progressSync";
@@ -32,9 +33,6 @@ import {
   type QuestKind,
 } from "../../lib/questProgress";
 import { formatDurationLabel, inferScheduledClassification, parseTimeToMinutes } from "../../lib/scheduling";
-
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
 
 const mylitLogo = uiAssets.logo.mylit;
 const fireAssets = uiAssets.fires;
@@ -231,7 +229,7 @@ function formatCountdown(ms: number): string {
 export default function HomeScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const mobile = useMobileFrame();
 
   const rawMode = Array.isArray(params.mode) ? params.mode[0] : params.mode;
   const rawEnergy = Array.isArray(params.energy) ? params.energy[0] : params.energy;
@@ -302,15 +300,6 @@ export default function HomeScreen() {
     latestCheckIn !== null &&
     isSavedCheckInToday &&
     isSavedCheckInAfterPath;
-
-  const safeViewportWidth = Math.max(0, viewportWidth - 24);
-  const safeViewportHeight = Math.max(0, viewportHeight - 24);
-  const frameWidth = Math.min(
-    MAX_FRAME_WIDTH,
-    safeViewportWidth,
-    safeViewportHeight * APP_FRAME_ASPECT_RATIO
-  );
-  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   const hasEnergyData = hasRouteEnergy || hasSavedEnergyData;
 
@@ -1014,8 +1003,8 @@ export default function HomeScreen() {
   if (!profileChecked) return null;
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight }]}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.phoneStageStyle, mobile.isFullscreen && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image
             source={currentBackground}
@@ -1026,7 +1015,7 @@ export default function HomeScreen() {
         <View style={styles.worldOverlay}>
             <ScrollView
               style={styles.screenScroller}
-              contentContainerStyle={styles.hudContent}
+              contentContainerStyle={[styles.hudContent, { paddingBottom: mobile.scrollPaddingBottom }]}
               showsVerticalScrollIndicator={false}
               bounces={false}
             >
@@ -1379,7 +1368,7 @@ export default function HomeScreen() {
               </View>
             </Modal>
 
-            <View style={[styles.bottomNav, { borderColor: theme.accent }]}>
+            <View style={[styles.bottomNav, { borderColor: theme.accent, bottom: mobile.bottomNavOffset }]}>
               <TouchableOpacity style={[styles.navButton, styles.navButtonActive, { borderColor: theme.accent }]} onPress={lightHaptic}>
                 <Text style={styles.navTextActive}>🏠</Text>
                 <Text style={[styles.navLabelActive, { color: theme.glow }]}>HOME</Text>
@@ -1414,8 +1403,6 @@ const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
     backgroundColor: "#02040A",
-    alignItems: "center",
-    justifyContent: "center",
   },
   phoneStage: {
     alignSelf: "center",
@@ -1428,6 +1415,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.85,
     shadowRadius: 0,
     shadowOffset: { width: 6, height: 6 },
+  },
+  phoneStageFullscreen: {
+    borderWidth: 0,
+    shadowOpacity: 0,
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -1448,7 +1439,7 @@ const styles = StyleSheet.create({
     paddingTop: 9,
     paddingHorizontal: 14,
     paddingBottom: 82,
-    justifyContent: "space-between",
+    justifyContent: "flex-start",
   },
   topHud: {
     minHeight: 64,

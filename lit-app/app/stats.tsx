@@ -13,12 +13,10 @@ import {
 } from "react-native";
 
 import { uiAssets } from "../constants/uiAssets";
+import { useMobileFrame } from "../constants/mobileLayout";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { signOut } from "../lib/auth";
 import { computeItemStepsFromSources, computeTotalEarnedSteps, loadTodayCompletions } from "../lib/questProgress";
-
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
 
 type ActivePanel = "weekly" | "rank" | "behavior" | null;
 type ActiveInfo = "stats" | "evie" | "weekly" | "rank" | "behavior" | "weeklyPopup" | "rankPopup" | "behaviorPopup" | null;
@@ -252,13 +250,10 @@ function getWeeklySteps(quickThoughts: unknown, dayPlan: unknown): number {
 
 export default function StatsScreen() {
   const router = useRouter();
+  const mobile = useMobileFrame();
   const { width, height } = useWindowDimensions();
   const modalWidth = Math.min(width - 24, 520);
   const modalMaxHeight = Math.min(height * 0.88, 720);
-  const safeVW = Math.max(0, width - 24);
-  const safeVH = Math.max(0, height - 24);
-  const frameWidth = Math.min(MAX_FRAME_WIDTH, safeVW, safeVH * APP_FRAME_ASPECT_RATIO);
-  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   const [stats, setStats] = useState<StatsSnapshot>(emptyStats);
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
@@ -359,13 +354,13 @@ export default function StatsScreen() {
     : "Starting with one honest check-in is enough.";
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight }]}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.phoneStageStyle, mobile.isFullscreen && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={uiAssets.backgrounds.default} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
-            <ScrollView style={styles.screenScroller} contentContainerStyle={styles.hudContent} showsVerticalScrollIndicator={false} bounces={false}>
+            <ScrollView style={styles.screenScroller} contentContainerStyle={[styles.hudContent, { paddingBottom: mobile.scrollPaddingBottom }]} showsVerticalScrollIndicator={false} bounces={false}>
 
               <View style={styles.heroPanel}>
                 <View style={styles.heroCopyRow}>
@@ -435,9 +430,17 @@ export default function StatsScreen() {
                 <Text style={styles.logoutButtonText}>SIGN OUT</Text>
               </TouchableOpacity>
 
+              <View style={styles.installCard}>
+                <Text style={styles.installTitle}>INSTALL MYLIT</Text>
+                <Text style={styles.installText}>1. Open mylit.net in Safari</Text>
+                <Text style={styles.installText}>2. Tap Share</Text>
+                <Text style={styles.installText}>3. Tap Add to Home Screen</Text>
+                <Text style={styles.installText}>4. Open MYLIT from your Home Screen</Text>
+              </View>
+
             </ScrollView>
 
-            <BottomNav router={router} />
+            <BottomNav router={router} bottomOffset={mobile.bottomNavOffset} />
 
             {activePanel !== null ? (
               <View style={styles.modalOverlay}>
@@ -643,9 +646,9 @@ function LunaNote({ text }: { text: string }) {
   );
 }
 
-function BottomNav({ router }: { router: ReturnType<typeof useRouter> }) {
+function BottomNav({ router, bottomOffset }: { router: ReturnType<typeof useRouter>; bottomOffset: number }) {
   return (
-    <View style={styles.bottomNav}>
+    <View style={[styles.bottomNav, { bottom: bottomOffset }]}>
       <TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}><Text style={styles.navIcon}>🏠</Text><Text style={styles.navLabel}>HOME</Text></TouchableOpacity>
       <TouchableOpacity style={styles.navButton} onPress={() => router.push("/sleep")}><Text style={styles.navIcon}>🌙</Text><Text style={styles.navLabel}>SLEEP</Text></TouchableOpacity>
       <TouchableOpacity style={styles.navButton} onPress={() => router.push("/mind")}><Text style={styles.navIcon}>🧠</Text><Text style={styles.navLabel}>MIND</Text></TouchableOpacity>
@@ -657,8 +660,9 @@ function BottomNav({ router }: { router: ReturnType<typeof useRouter> }) {
 }
 
 const styles = StyleSheet.create({
-  pageRoot: { flex: 1, backgroundColor: "#02040A", alignItems: "center", justifyContent: "center" },
+  pageRoot: { flex: 1, backgroundColor: "#02040A" },
   phoneStage: { alignSelf: "center", backgroundColor: "#050814", overflow: "hidden", position: "relative", borderWidth: 2, borderColor: "rgba(251,191,36,0.55)", shadowColor: "#000", shadowOpacity: 0.85, shadowRadius: 0, shadowOffset: { width: 6, height: 6 } },
+  phoneStageFullscreen: { borderWidth: 0, shadowOpacity: 0 },
   backgroundLayer: { ...StyleSheet.absoluteFillObject },
   backgroundImage: { width: "100%", height: "100%" },
   worldOverlay: { flex: 1, backgroundColor: "rgba(2, 6, 12, 0.65)" },
@@ -786,5 +790,29 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "900",
     letterSpacing: 1,
+  },
+  installCard: {
+    marginTop: 4,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: "#334155",
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: "rgba(7,19,38,0.85)",
+  },
+  installTitle: {
+    color: "#86EFAC",
+    fontFamily: pixelFont,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  installText: {
+    color: "#CBD5E1",
+    fontFamily: pixelFont,
+    fontSize: 10,
+    fontWeight: "800",
+    lineHeight: 16,
   },
 });

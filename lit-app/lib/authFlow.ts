@@ -58,14 +58,20 @@ export async function resolveInitialRoute(): Promise<Href> {
 }
 
 export async function resolveRequiredRouteForPath(pathname: string): Promise<Href | null> {
-  const required = await resolveInitialRoute();
   const segment = pathname.replace(/^\//, "").split("/")[0] ?? "";
+
+  // First-time onboarding and "Set My Path" edits both use this screen.
+  if (segment === "onboarding") return null;
+
+  const required = await resolveInitialRoute();
 
   if (required === "/welcome" && segment !== "welcome") return "/welcome";
   if (required === "/auth" && segment !== "auth" && segment !== "welcome") return "/auth";
   if (required === "/profile-setup" && segment !== "profile-setup") return "/profile-setup";
   if (required === "/onboarding" && shouldEnforceFlow(pathname)) return "/onboarding";
-  if (required === "/(tabs)" && FLOW_ROUTES.has(segment)) return "/(tabs)";
+  if (required === "/(tabs)" && (segment === "welcome" || segment === "auth" || segment === "profile-setup")) {
+    return "/(tabs)";
+  }
 
   return null;
 }

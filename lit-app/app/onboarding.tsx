@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Image,
@@ -14,11 +14,13 @@ import {
   View,
 } from "react-native";
 
+import { FormScreen } from "../components/FormScreen";
 import {
   GOAL_HORIZON_LABELS,
   type GoalHorizon,
   type GoalMilestoneSet,
 } from "../constants/goalMilestoneTemplates";
+import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { updateProfile } from "../lib/auth";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
@@ -58,8 +60,6 @@ type UserProfile = {
 };
 
 const PROFILE_KEY = "lit_user_profile";
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
 const pathBackground = require("../assets/ui/backgrounds/path-background.png");
 
 const pixelFont = Platform.select({
@@ -205,6 +205,9 @@ function MilestoneField({
 
 export default function OnboardingScreen() {
   const router = useRouter();
+  const { mode } = useLocalSearchParams<{ mode?: string }>();
+  const isEditPath = mode === "editPath";
+  const mobile = useMobileFrame();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const modalWidth = Math.min(screenWidth - 32, 480);
   const modalMaxHeight = Math.min(screenHeight * 0.78, 620);
@@ -409,14 +412,14 @@ export default function OnboardingScreen() {
       final: finalMilestones,
     });
 
-    router.push("/");
+    router.replace(isEditPath ? "/path" : "/(tabs)");
   }
 
   const canRegenerate =
     dreamCategory !== "" && hasGenerated && variantCountFor(databaseCategoryFor(dreamCategory)) > 1;
 
   return (
-    <View style={styles.pageRoot}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
       <Modal
         visible={showInfo}
         transparent
@@ -454,12 +457,12 @@ export default function OnboardingScreen() {
         </View>
       </Modal>
 
-      <View style={styles.phoneStage}>
+      <View style={[styles.phoneStage, mobile.phoneStageStyle, mobile.isFullscreen && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={pathBackground} style={styles.backgroundImage} resizeMode="stretch" />
         </View>
         <View style={styles.pageContainer}>
-        <ScrollView style={styles.screenScroller} contentContainerStyle={styles.boardContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <FormScreen contentContainerStyle={[styles.boardContent, { paddingBottom: mobile.scrollPaddingBottom }]}>
           <Image source={uiAssets.logo.mylit} style={styles.logo} resizeMode="contain" />
 
           <View style={styles.bannerPanel}>
@@ -601,9 +604,9 @@ export default function OnboardingScreen() {
           {validationMessage ? <Text style={styles.validationText}>{validationMessage}</Text> : null}
 
           <TouchableOpacity style={styles.saveButton} onPress={saveProfile}>
-            <Text style={styles.saveButtonText}>SAVE MY PATH</Text>
+            <Text style={styles.saveButtonText}>{isEditPath ? "UPDATE MY PATH" : "SAVE MY PATH"}</Text>
           </TouchableOpacity>
-        </ScrollView>
+        </FormScreen>
 
         </View>
       </View>
@@ -615,17 +618,17 @@ const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
     backgroundColor: "#0E0703",
-    alignItems: "center",
-    justifyContent: "center",
   },
   phoneStage: {
-    width: "100%",
-    maxWidth: MAX_FRAME_WIDTH,
-    aspectRatio: APP_FRAME_ASPECT_RATIO,
     alignSelf: "center",
     backgroundColor: "#2A1608",
     overflow: "hidden",
     position: "relative",
+  },
+  phoneStageFullscreen: {
+    borderWidth: 0,
+    maxWidth: undefined,
+    aspectRatio: undefined,
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -764,7 +767,7 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     color: "#1F1306",
     fontFamily: readableFont,
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "800",
     paddingHorizontal: 10,
     paddingVertical: 8,

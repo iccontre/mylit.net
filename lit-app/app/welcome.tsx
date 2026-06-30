@@ -6,16 +6,12 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
 
 import { uiAssets } from "../constants/uiAssets";
-import { isLocalOnboardingComplete, isSupabaseConfigured } from "../lib/auth";
+import { useMobileFrame } from "../constants/mobileLayout";
 import { markWelcomeSeen } from "../lib/authFlow";
-
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -33,30 +29,16 @@ const readableFont = Platform.select({
 
 export default function WelcomeScreen() {
   const router = useRouter();
-  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
-
-  const safeViewportWidth = Math.max(0, viewportWidth - 24);
-  const safeViewportHeight = Math.max(0, viewportHeight - 24);
-  const frameWidth = Math.min(
-    MAX_FRAME_WIDTH,
-    safeViewportWidth,
-    safeViewportHeight * APP_FRAME_ASPECT_RATIO
-  );
-  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
+  const mobile = useMobileFrame();
 
   async function handleBegin() {
     await markWelcomeSeen();
-    if (isSupabaseConfigured()) {
-      router.replace("/auth");
-      return;
-    }
-    const onboardingDone = await isLocalOnboardingComplete();
-    router.replace(onboardingDone ? "/(tabs)" : "/onboarding");
+    router.replace("/auth");
   }
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight }]}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.phoneStageStyle, mobile.isFullscreen && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image
             source={uiAssets.backgrounds.default}
@@ -98,14 +80,16 @@ const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
     backgroundColor: "#0E0703",
-    alignItems: "center",
-    justifyContent: "center",
   },
   phoneStage: {
     alignSelf: "center",
     backgroundColor: "#0A1A0C",
     overflow: "hidden",
     position: "relative",
+  },
+  phoneStageFullscreen: {
+    borderWidth: 0,
+    shadowOpacity: 0,
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,

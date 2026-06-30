@@ -23,7 +23,14 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./public/favicon.png",
+      "name": "MYLIT",
+      "shortName": "MYLIT",
+      "description": "A sleep, energy, and quest-based productivity app for honest daily progress.",
+      "themeColor": "#7CFF3A",
+      "backgroundColor": "#07111f",
+      "display": "standalone",
+      "orientation": "portrait"
     },
     "plugins": [
       "expo-router",

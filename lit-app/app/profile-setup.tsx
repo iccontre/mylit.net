@@ -4,20 +4,17 @@ import {
   ActivityIndicator,
   Image,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
 
+import { FormScreen } from "../components/FormScreen";
+import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { getOrCreateProfile, isOnboardingComplete, updateProfile } from "../lib/auth";
-
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
 
 const AGE_RANGES = ["13-15", "16-17", "18-20", "21-24", "25+"] as const;
 
@@ -37,7 +34,7 @@ const readableFont = Platform.select({
 
 export default function ProfileSetupScreen() {
   const router = useRouter();
-  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const mobile = useMobileFrame();
 
   const [displayName, setDisplayName] = useState("");
   const [ageRange, setAgeRange] = useState<string>("");
@@ -45,15 +42,6 @@ export default function ProfileSetupScreen() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
-
-  const safeViewportWidth = Math.max(0, viewportWidth - 24);
-  const safeViewportHeight = Math.max(0, viewportHeight - 24);
-  const frameWidth = Math.min(
-    MAX_FRAME_WIDTH,
-    safeViewportWidth,
-    safeViewportHeight * APP_FRAME_ASPECT_RATIO
-  );
-  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   useEffect(() => {
     async function loadExisting() {
@@ -94,15 +82,15 @@ export default function ProfileSetupScreen() {
 
   if (loading) {
     return (
-      <View style={styles.pageRoot}>
+      <View style={[styles.pageRoot, mobile.pageRootStyle]}>
         <ActivityIndicator color="#9BE331" size="large" />
       </View>
     );
   }
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight }]}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.phoneStageStyle, mobile.isFullscreen && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image
             source={uiAssets.backgrounds.progress}
@@ -111,12 +99,7 @@ export default function ProfileSetupScreen() {
           />
         </View>
 
-        <ScrollView
-          style={styles.screenScroller}
-          contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
+        <FormScreen contentContainerStyle={styles.content}>
           <Image source={uiAssets.logo.mylit} style={styles.logo} resizeMode="contain" />
 
           <View style={styles.heroPanel}>
@@ -176,7 +159,7 @@ export default function ProfileSetupScreen() {
               )}
             </TouchableOpacity>
           </View>
-        </ScrollView>
+        </FormScreen>
       </View>
     </View>
   );
@@ -186,14 +169,16 @@ const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
     backgroundColor: "#0E0703",
-    alignItems: "center",
-    justifyContent: "center",
   },
   phoneStage: {
     alignSelf: "center",
     backgroundColor: "#0A1A0C",
     overflow: "hidden",
     position: "relative",
+  },
+  phoneStageFullscreen: {
+    borderWidth: 0,
+    shadowOpacity: 0,
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -269,7 +254,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     color: "#F8FAFC",
     fontFamily: readableFont,
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "700",
     paddingHorizontal: 12,
     paddingVertical: 10,

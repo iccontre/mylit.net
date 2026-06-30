@@ -4,15 +4,15 @@ import {
   ActivityIndicator,
   Image,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
 
+import { FormScreen } from "../components/FormScreen";
+import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import {
@@ -24,10 +24,8 @@ import {
   signInWithEmail,
   signUpWithEmail,
 } from "../lib/auth";
+import { getSupabaseConfigHelp, getSupabaseConfigIssue } from "../lib/supabase";
 import { markWelcomeSeen, resolvePostAuthRoute } from "../lib/authFlow";
-
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -45,8 +43,10 @@ const readableFont = Platform.select({
 
 export default function AuthScreen() {
   const router = useRouter();
-  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const mobile = useMobileFrame();
   const supabaseReady = isSupabaseConfigured();
+  const configIssue = getSupabaseConfigIssue();
+  const configHelp = getSupabaseConfigHelp(configIssue);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -54,15 +54,6 @@ export default function AuthScreen() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-
-  const safeViewportWidth = Math.max(0, viewportWidth - 24);
-  const safeViewportHeight = Math.max(0, viewportHeight - 24);
-  const frameWidth = Math.min(
-    MAX_FRAME_WIDTH,
-    safeViewportWidth,
-    safeViewportHeight * APP_FRAME_ASPECT_RATIO
-  );
-  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   async function routeAfterAuth() {
     const profile = await getOrCreateProfile();
@@ -115,8 +106,8 @@ export default function AuthScreen() {
   }
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight }]}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.phoneStageStyle, mobile.isFullscreen && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image
             source={uiAssets.backgrounds.neutral}
@@ -125,12 +116,7 @@ export default function AuthScreen() {
           />
         </View>
 
-        <ScrollView
-          style={styles.screenScroller}
-          contentContainerStyle={styles.content}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
+        <FormScreen contentContainerStyle={styles.content}>
           <Image source={uiAssets.logo.mylit} style={styles.logo} resizeMode="contain" />
 
           <View style={styles.heroPanel}>
@@ -142,14 +128,16 @@ export default function AuthScreen() {
 
           {!supabaseReady ? (
             <View style={styles.fallbackPanel}>
-              <Text style={styles.fallbackTitle}>Local beta mode</Text>
+              <Text style={styles.fallbackTitle}>Supabase not ready</Text>
               <Text style={styles.fallbackText}>
-                Supabase env vars are not set, so account sign-in is unavailable in this build.
-                You can still use MYLIT offline with your existing local progress.
+                {configHelp ??
+                  "Supabase env vars are not set, so account sign-in is unavailable in this build. You can still use MYLIT offline with your existing local progress."}
               </Text>
-              <TouchableOpacity style={styles.offlineButton} onPress={handleContinueOffline}>
-                <Text style={styles.offlineButtonText}>CONTINUE OFFLINE</Text>
-              </TouchableOpacity>
+              {!configIssue ? (
+                <TouchableOpacity style={styles.offlineButton} onPress={handleContinueOffline}>
+                  <Text style={styles.offlineButtonText}>CONTINUE OFFLINE</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
           ) : (
             <>
@@ -213,7 +201,7 @@ export default function AuthScreen() {
               </View>
             </>
           )}
-        </ScrollView>
+        </FormScreen>
       </View>
     </View>
   );
@@ -223,14 +211,16 @@ const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
     backgroundColor: "#0E0703",
-    alignItems: "center",
-    justifyContent: "center",
   },
   phoneStage: {
     alignSelf: "center",
     backgroundColor: "#0A1A0C",
     overflow: "hidden",
     position: "relative",
+  },
+  phoneStageFullscreen: {
+    borderWidth: 0,
+    shadowOpacity: 0,
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -249,6 +239,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22,
     paddingTop: 24,
     paddingBottom: 28,
+    zIndex: 1,
   },
   logo: {
     width: "68%",
@@ -314,7 +305,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     color: "#F8FAFC",
     fontFamily: readableFont,
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "700",
     paddingHorizontal: 12,
     paddingVertical: 10,

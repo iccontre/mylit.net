@@ -3,6 +3,8 @@ import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
+import { FormScreen } from "../components/FormScreen";
+import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { syncDayPlanScheduledItems } from "../lib/progressSync";
@@ -49,8 +51,6 @@ type CheckIn = { mode?: string; energy?: number };
 
 const DAY_PLAN_KEY = "lit_day_plan";
 const CHECKIN_KEY = "lit_latest_checkin";
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
 const TIME_SLOTS = generateTimeSlots(7, 22, 30);
 const PROGRESS_DURATIONS = ["30 min", "45 min", "1 hr"];
 const RECOVERY_DURATIONS = ["10 min", "20 min", "30 min"];
@@ -243,6 +243,7 @@ function normalizePlan(raw: Partial<DayPlan>): DayPlan {
 
 export default function DayPlanScreen() {
   const router = useRouter();
+  const mobile = useMobileFrame();
   const [dayPlan, setDayPlan] = useState<DayPlan>(() => createDefaultPlan());
   const [selectedDay, setSelectedDay] = useState<WeekdayName>(todayWeekday());
   const [isLowEnergy, setIsLowEnergy] = useState(false);
@@ -381,13 +382,13 @@ export default function DayPlanScreen() {
   const questInInterval = timeInInterval(dayPlan.todayQuest.startTime, currentInterval);
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={styles.phoneStage}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.phoneStageStyle, mobile.isFullscreen && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={uiAssets.backgrounds.neutral} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
-          <ScrollView style={styles.screenScroller} contentContainerStyle={styles.hudContent} showsVerticalScrollIndicator={false} bounces={false}>
+          <FormScreen contentContainerStyle={[styles.hudContent, { paddingBottom: mobile.scrollPaddingBottom }]}>
             <View style={styles.heroPanel}>
               <View style={styles.bannerIcon}><Text style={styles.bannerIconText}>📜</Text></View>
               <View style={styles.heroCopy}>
@@ -510,7 +511,7 @@ export default function DayPlanScreen() {
             {savedMessage ? <Text style={styles.savedMessage}>{savedMessage}</Text> : null}
             <TouchableOpacity style={styles.saveButton} onPress={() => savePlan(dayPlan)}><Text style={styles.saveButtonText}>SAVE DAY PLAN</Text></TouchableOpacity>
             <TouchableOpacity style={styles.backButton} onPress={() => router.push("/calendar")}><Text style={styles.backButtonText}>BACK TO CALENDAR</Text></TouchableOpacity>
-          </ScrollView>
+          </FormScreen>
           <BottomNav router={router} />
           {showInfo ? <InfoOverlay onClose={() => setShowInfo(false)} /> : null}
         </View>
@@ -579,8 +580,9 @@ function BottomNav({ router }: { router: ReturnType<typeof useRouter> }) {
 }
 
 const styles = StyleSheet.create({
-  pageRoot: { flex: 1, backgroundColor: "#02040A", alignItems: "center", justifyContent: "center" },
-  phoneStage: { width: "100%", maxWidth: MAX_FRAME_WIDTH, aspectRatio: APP_FRAME_ASPECT_RATIO, alignSelf: "center", backgroundColor: "#050814", overflow: "hidden", position: "relative", borderWidth: 2, borderColor: "#FBBF24" },
+  pageRoot: { flex: 1, backgroundColor: "#02040A" },
+  phoneStage: { alignSelf: "center", backgroundColor: "#050814", overflow: "hidden", position: "relative", borderWidth: 2, borderColor: "#FBBF24" },
+  phoneStageFullscreen: { borderWidth: 0, maxWidth: undefined, aspectRatio: undefined },
   backgroundLayer: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, zIndex: 0 },
   backgroundImage: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, width: "100%", height: "100%" },
   worldOverlay: { flex: 1, backgroundColor: "rgba(2, 6, 12, 0.62)" },
