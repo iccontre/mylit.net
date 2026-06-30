@@ -1,9 +1,23 @@
 {
-  "buildCommand": "expo export -p web",
+  "buildCommand": "node scripts/write-pwa-version.mjs && expo export -p web",
   "outputDirectory": "dist",
   "devCommand": "expo",
   "cleanUrls": true,
   "framework": null,
+  "headers": [
+    {
+      "source": "/version.json",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/sw.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+      ]
+    }
+  ],
   "rewrites": [
     {
       "source": "/:path*",

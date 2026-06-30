@@ -5,6 +5,7 @@ import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthBootstrap } from '@/components/AuthBootstrap';
+import { PwaUpdateBootstrap } from '@/components/PwaUpdateBootstrap';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function RootLayout() {
@@ -12,6 +13,7 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
+    <PwaUpdateBootstrap>
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AuthBootstrap>
         <Stack screenOptions={{ headerShown: false }}>
@@ -26,6 +28,7 @@ export default function RootLayout() {
       </AuthBootstrap>
       <StatusBar style="auto" />
     </ThemeProvider>
+    </PwaUpdateBootstrap>
     </SafeAreaProvider>
   );
 }

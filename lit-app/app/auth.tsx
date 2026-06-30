@@ -1,5 +1,5 @@
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -19,13 +19,14 @@ import {
   getOrCreateProfile,
   getSession,
   isLocalOnboardingComplete,
+  isOnboardingComplete,
   isProfileComplete,
   isSupabaseConfigured,
   signInWithEmail,
   signUpWithEmail,
 } from "../lib/auth";
 import { getSupabaseConfigHelp, getSupabaseConfigIssue } from "../lib/supabase";
-import { markWelcomeSeen, resolvePostAuthRoute } from "../lib/authFlow";
+import { markWelcomeSeen, markAuthAwaitingContinue, clearAuthAwaitingContinue, isAuthAwaitingContinue } from "../lib/authFlow";
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -54,14 +55,28 @@ export default function AuthScreen() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [authComplete, setAuthComplete] = useState(false);
 
-  async function routeAfterAuth() {
+  useEffect(() => {
+    void (async () => {
+      const awaiting = await isAuthAwaitingContinue();
+      if (awaiting && (await getSession())) {
+        setAuthComplete(true);
+        setMessage("You're signed in. Continue when you're ready.");
+      }
+    })();
+  }, []);
+
+  async function handleContinueToMylit() {
+    await clearAuthAwaitingContinue();
     const profile = await getOrCreateProfile();
     if (!isProfileComplete(profile)) {
       router.replace("/profile-setup");
       return;
     }
-    router.replace(await resolvePostAuthRoute());
+
+    const onboardingDone = await isOnboardingComplete(profile);
+    router.replace(onboardingDone ? "/(tabs)" : "/onboarding");
   }
 
   async function handleAuth(mode: "signUp" | "signIn") {
@@ -92,11 +107,12 @@ export default function AuthScreen() {
       return;
     }
 
-    setMessage(mode === "signUp" ? "Account created. Setting up your profile..." : "Welcome back.");
+    setMessage(mode === "signUp" ? "Account created. You're ready to continue." : "Welcome back. You're signed in.");
     if (mode === "signUp") {
       void trackEvent(ANALYTICS_EVENTS.signup_completed);
     }
-    await routeAfterAuth();
+    await markAuthAwaitingContinue();
+    setAuthComplete(true);
   }
 
   async function handleContinueOffline() {
@@ -138,6 +154,17 @@ export default function AuthScreen() {
                   <Text style={styles.offlineButtonText}>CONTINUE OFFLINE</Text>
                 </TouchableOpacity>
               ) : null}
+            </View>
+          ) : authComplete ? (
+            <View style={styles.successPanel}>
+              <Text style={styles.successTitle}>You're in.</Text>
+              <Text style={styles.successText}>
+                Your account is connected. Your local progress stays on this device until you continue.
+              </Text>
+              {message ? <Text style={styles.messageText}>{message}</Text> : null}
+              <TouchableOpacity style={styles.primaryButton} onPress={handleContinueToMylit}>
+                <Text style={styles.primaryButtonText}>CONTINUE TO MYLIT</Text>
+              </TouchableOpacity>
             </View>
           ) : (
             <>
@@ -357,6 +384,32 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     marginTop: 8,
     lineHeight: 16,
+  },
+  successPanel: {
+    backgroundColor: "rgba(15, 23, 42, 0.9)",
+    borderWidth: 2,
+    borderColor: "#22C55E",
+    borderRadius: 8,
+    padding: 16,
+    alignItems: "center",
+  },
+  successTitle: {
+    color: "#9BE331",
+    fontFamily: pixelFont,
+    fontSize: 20,
+    fontWeight: "900",
+    letterSpacing: 1,
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  successText: {
+    color: "#CBD5E1",
+    fontFamily: readableFont,
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 19,
+    textAlign: "center",
+    marginBottom: 12,
   },
   fallbackPanel: {
     backgroundColor: "rgba(15, 23, 42, 0.9)",

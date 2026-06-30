@@ -12,6 +12,19 @@ import {
 } from "./auth";
 
 export const FLOW_ROUTES = new Set(["welcome", "auth", "profile-setup", "onboarding"]);
+export const AUTH_AWAITING_CONTINUE_KEY = "lit_auth_awaiting_continue";
+
+export async function markAuthAwaitingContinue(): Promise<void> {
+  await AsyncStorage.setItem(AUTH_AWAITING_CONTINUE_KEY, "true");
+}
+
+export async function clearAuthAwaitingContinue(): Promise<void> {
+  await AsyncStorage.removeItem(AUTH_AWAITING_CONTINUE_KEY);
+}
+
+export async function isAuthAwaitingContinue(): Promise<boolean> {
+  return (await AsyncStorage.getItem(AUTH_AWAITING_CONTINUE_KEY)) === "true";
+}
 
 export function shouldEnforceFlow(pathname: string): boolean {
   const segment = pathname.replace(/^\//, "").split("/")[0] ?? "";
@@ -62,6 +75,8 @@ export async function resolveRequiredRouteForPath(pathname: string): Promise<Hre
 
   // First-time onboarding and "Set My Path" edits both use this screen.
   if (segment === "onboarding") return null;
+
+  if (segment === "auth" && (await isAuthAwaitingContinue())) return null;
 
   const required = await resolveInitialRoute();
 
