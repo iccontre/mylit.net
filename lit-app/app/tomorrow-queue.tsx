@@ -8,7 +8,13 @@ import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { syncQuickThoughtItems } from "../lib/progressSync";
-import { formatDurationLabel, generateTimeSlots, getDateKey, getQuickThoughtSteps, inferScheduledClassification, parseDurationMinutes, shiftTimeSlot, type ScheduledClassification, type ScheduledStatus } from "../lib/scheduling";
+import {
+  checkUserScheduledQuestCapacity,
+  computeUserScheduledMinutesForDay,
+  formatPlannedDurationLabel,
+  getQuestCapacityMinutes,
+} from "../lib/questProgress";
+import { formatDurationLabel, generateTimeSlots, getDateKey, getQuickThoughtSteps, inferScheduledClassification, parseDurationMinutes, shiftTimeSlot, type ScheduledClassification, type ScheduledStatus, type WeekdayName } from "../lib/scheduling";
 
 type QuestKind = "progress" | "recovery";
 
@@ -68,7 +74,7 @@ function parseTimeInput(raw: string): string {
 type QuestDay = { date: Date; dateKey: string; weekday: string; label: string; dayNumber: number };
 
 const STORAGE_KEY = "lit_tomorrow_queue";
-const DAILY_QUEST_LIMIT = 3;
+const DAY_PLAN_KEY = "lit_day_plan";
 const TIME_SLOTS = generateTimeSlots(7, 22, 30);
 const DURATIONS = ["30 min", "45 min", "1 hr"];
 const WEEKDAY_LABELS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
@@ -142,6 +148,7 @@ export default function TomorrowQueueScreen() {
   const todayInWeek = weekDays.find((day: QuestDay) => day.dateKey === getDateKey()) || weekDays[0];
   const [request, setRequest] = useState("");
   const [items, setItems] = useState<QueueItem[]>([]);
+  const [dayPlan, setDayPlan] = useState<Record<string, unknown> | null>(null);
   const [selectedDateKey, setSelectedDateKey] = useState(todayInWeek.dateKey);
   const [selectedTime, setSelectedTime] = useState("9:00 AM");
   const [selectedDuration, setSelectedDuration] = useState("30 min");
@@ -153,16 +160,29 @@ export default function TomorrowQueueScreen() {
 
   const selectedDay = weekDays.find((day: QuestDay) => day.dateKey === selectedDateKey) || todayInWeek;
   const selectedDayIsPast = isPastDateKey(selectedDay.dateKey);
-  const selectedDayQuestCount = items.filter((item: QueueItem) => item.date === selectedDateKey).length;
   const selectedSteps = getQuickThoughtSteps(selectedDuration);
+  const capacityMode = selectedKind === "recovery" ? "Recovery" : "Progress";
+  const selectedDayPlannedMinutes = computeUserScheduledMinutesForDay({
+    dateKey: selectedDay.dateKey,
+    weekday: selectedDay.weekday as WeekdayName,
+    quickThoughts: items,
+    dayPlan,
+    kind: selectedKind,
+  });
+  const selectedDayCapacityMinutes = getQuestCapacityMinutes(capacityMode);
+  const selectedDayAtCapacity = selectedDayPlannedMinutes >= selectedDayCapacityMinutes;
 
   useEffect(() => {
     loadQueue();
   }, []);
 
   async function loadQueue() {
-    const saved = await readJson<Partial<QueueItem>[]>(STORAGE_KEY, []);
+    const [saved, plan] = await Promise.all([
+      readJson<Partial<QueueItem>[]>(STORAGE_KEY, []),
+      readJson<Record<string, unknown> | null>(DAY_PLAN_KEY, null),
+    ]);
     setItems(Array.isArray(saved) ? saved.map(normalizeQueueItem) : []);
+    setDayPlan(plan);
   }
 
   async function saveQueue(nextItems: QueueItem[]) {
@@ -180,12 +200,26 @@ export default function TomorrowQueueScreen() {
       setMessage("Past days can’t be edited.");
       return;
     }
-    if (selectedDayQuestCount >= DAILY_QUEST_LIMIT) {
-      setMessage("You can only save 3 Quick Thought quests for this day.");
+
+    const durationMinutes = parseDurationMinutes(selectedDuration, 30);
+    const capacity = checkUserScheduledQuestCapacity({
+      dateKey: selectedDay.dateKey,
+      weekday: selectedDay.weekday as WeekdayName,
+      quickThoughts: items,
+      dayPlan,
+      additionalMinutes: durationMinutes,
+      kind: selectedKind,
+    });
+
+    if (!capacity.allowed) {
+      const capLabel = formatPlannedDurationLabel(capacity.capacityMinutes);
+      const plannedLabel = formatPlannedDurationLabel(capacity.plannedMinutes);
+      setMessage(
+        `Quest Board limit reached for this day — ${capacity.modeLabel} allows up to ${capLabel} of planned quests (${plannedLabel} already scheduled).`
+      );
       return;
     }
 
-    const durationMinutes = parseDurationMinutes(selectedDuration, 30);
     const nextItem: QueueItem = {
       id: `quick-${Date.now()}`,
       source: "quickThought",
@@ -195,7 +229,7 @@ export default function TomorrowQueueScreen() {
       classification: selectedKind,
       kind: "quickThought",
       date: selectedDay.dateKey,
-      weekday: selectedDay.weekday,
+      weekday: selectedDay.weekday as WeekdayName,
       time: selectedTime,
       startTime: selectedTime,
       duration: selectedDuration,
@@ -258,7 +292,7 @@ export default function TomorrowQueueScreen() {
               <Image source={uiAssets.guides.evie} style={styles.evieAvatar} resizeMode="contain" />
               <View style={styles.evieCopy}>
                 <Text style={styles.evieName}>EVIE</Text>
-                <Text style={styles.evieText}>Quick Thoughts schedule future quests. They appear on Calendar and earn steps only when you check them off.</Text>
+                <Text style={styles.evieText}>Quick Thoughts schedule quests for your board. The Quest Board caps planned time at 8h (Progress) or 5h (Recovery) per day — saving stops when that limit is reached.</Text>
               </View>
               <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
                 <Text style={styles.infoBtnText}>?</Text>
@@ -318,14 +352,16 @@ export default function TomorrowQueueScreen() {
               </View>
 
               {message ? <Text style={message.includes("deleted") || message.includes("Saved") ? styles.statusMessage : styles.errorMessage}>{message}</Text> : null}
-              <TouchableOpacity style={[styles.saveButton, (selectedDayQuestCount >= DAILY_QUEST_LIMIT || selectedDayIsPast) && styles.saveButtonDisabled]} onPress={addToQueue}>
+              <TouchableOpacity style={[styles.saveButton, (selectedDayIsPast || selectedDayAtCapacity) && styles.saveButtonDisabled]} onPress={addToQueue}>
                 <Text style={styles.saveButtonText}>SAVE +{selectedSteps} STEP{selectedSteps === 1 ? "" : "S"} QUEST</Text>
               </TouchableOpacity>
             </View>
 
             <View style={styles.savedHeaderRow}>
               <Text style={styles.savedTitle}>🎒 SAVED QUESTS</Text>
-              <Text style={styles.savedCount}>{selectedDayQuestCount}/{DAILY_QUEST_LIMIT} selected day</Text>
+              <Text style={styles.savedCount}>
+                {formatPlannedDurationLabel(selectedDayPlannedMinutes)} / {capacityMode === "Recovery" ? "5h" : "8h"} ({capacityMode})
+              </Text>
             </View>
 
             {items.length === 0 ? (
@@ -373,6 +409,7 @@ function InfoOverlay({ onClose }: { onClose: () => void }) {
         <ScrollView style={styles.infoScroll} showsVerticalScrollIndicator={false} bounces={false}>
           <Text style={styles.infoBullet}>{"• Quick Thoughts are for tasks and ideas that should become future quests."}</Text>
           <Text style={styles.infoBullet}>{"• Scheduled Quick Thoughts can appear on Home and Calendar when their day arrives."}</Text>
+          <Text style={styles.infoBullet}>{"• Quest Board time limits apply: up to 8h planned Progress quests or 5h Recovery quests per day (including Day Plan items)."}</Text>
           <Text style={styles.infoBullet}>{"• Duration affects possible steps: 30 or 45 min = +1 step. 1 hr = +2 steps."}</Text>
           <Text style={styles.infoBullet}>{"• Completing the item later earns steps."}</Text>
           <Text style={styles.infoBullet}>{"• Saving the thought alone does not award steps."}</Text>
