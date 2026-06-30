@@ -14,7 +14,17 @@ import {
   View,
 } from "react-native";
 
+import { GuideInfoModal } from "../components/GuideInfoModal";
 import { uiAssets } from "../constants/uiAssets";
+
+const EVIE_MORNING_BULLETS = [
+  "This page helps you compare last night's intention with how you feel this morning.",
+  "Write honestly in the reflection box — there is no wrong answer.",
+  "More than 8.5 hours of sleep earns +2 steps. At least 7 hours earns +1 step.",
+  "Morning Support helps you pick one concrete first action to start the day.",
+  "This page should feel encouraging, not like a report card.",
+  "Even if last night's intention did not carry through, noting that is still useful.",
+];
 
 type PreSleepIntention = {
   id: string;
@@ -68,6 +78,7 @@ export default function MorningIntentionReflectionScreen() {
   const [reflectionText, setReflectionText] = useState("");
   const [sleepHours, setSleepHours] = useState<"none" | "7hrs" | "8.5hrs">("none");
   const [morningSupport, setMorningSupport] = useState<string[]>([]);
+  const [showInfo, setShowInfo] = useState(false);
 
   const safeViewportWidth = Math.max(0, viewportWidth - 24);
   const safeViewportHeight = Math.max(0, viewportHeight - 24);
@@ -143,6 +154,16 @@ export default function MorningIntentionReflectionScreen() {
               </View>
             </View>
 
+            <View style={[styles.evieCard, { borderColor: theme.accent }]}>
+              <View style={styles.evieCardHeader}>
+                <Text style={[styles.evieName, { color: theme.glow }]}>⭐ Evie</Text>
+                <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
+                  <Text style={styles.infoBtnText}>?</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.evieText}>Be honest and kind to yourself this morning. Whatever you remember is enough.</Text>
+            </View>
+
             {latestIntention && (
               <View style={[styles.signalCard, { borderColor: theme.accent }]}>
                 <Text style={[styles.sectionTitle, { color: theme.glow }]}>LAST NIGHT’S INTENTION</Text>
@@ -213,6 +234,16 @@ export default function MorningIntentionReflectionScreen() {
               <Text style={styles.backButtonText}>Back to Sleep Hub</Text>
             </TouchableOpacity>
           </ScrollView>
+
+          <GuideInfoModal
+            visible={showInfo}
+            onClose={() => setShowInfo(false)}
+            guideAvatar={uiAssets.guides.evie}
+            guideName="Evie"
+            title="How Morning Reflection Works"
+            bullets={EVIE_MORNING_BULLETS}
+            accentColor="#FBBF24"
+          />
         </View>
       </View>
     </View>
@@ -306,6 +337,50 @@ const styles = StyleSheet.create({
     borderRadius: 33,
     borderWidth: 3,
     backgroundColor: "rgba(8, 13, 24, 0.65)",
+  },
+  evieCard: {
+    backgroundColor: "rgba(8,13,24,0.94)",
+    borderRadius: 6,
+    borderWidth: 3,
+    padding: 13,
+    marginBottom: 10,
+  },
+  evieCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  evieName: {
+    fontFamily: pixelFont,
+    fontSize: 15,
+    fontWeight: "900",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  evieText: {
+    color: "#F3F4F6",
+    fontFamily: pixelFont,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: "700",
+  },
+  infoBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: "#FBBF24",
+    backgroundColor: "rgba(58,42,10,0.72)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  infoBtnText: {
+    color: "#FDE68A",
+    fontFamily: pixelFont,
+    fontSize: 13,
+    fontWeight: "900",
+    lineHeight: 17,
   },
   emptyCard: {
     backgroundColor: "rgba(8, 13, 24, 0.96)",

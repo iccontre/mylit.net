@@ -13,7 +13,17 @@ import {
   View,
 } from "react-native";
 
+import { GuideInfoModal } from "../components/GuideInfoModal";
 import { uiAssets } from "../constants/uiAssets";
+
+const LUNA_SLEEP_HUB_BULLETS = [
+  "This is your center for nighttime and morning sleep tools.",
+  "Pre-Sleep Intention sets one clear direction for tomorrow before you sleep.",
+  "Morning Reflection returns in the morning to check if the intention carried through.",
+  "Sleep Guide helps plan your sleep/wake window and daily cutoffs like caffeine and screen time.",
+  "Dream Journal captures dream details before they fade — most are gone within 10 minutes.",
+  "These tools work together to improve energy, reflection, and daily direction.",
+];
 
 type DreamEntry = {
   id: string;
@@ -51,6 +61,7 @@ export default function SleepScreen() {
   const router = useRouter();
   const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
   const [latestDream, setLatestDream] = useState<DreamEntry | null>(null);
+  const [showInfo, setShowInfo] = useState(false);
 
   const safeViewportWidth = Math.max(0, viewportWidth - 24);
   const safeViewportHeight = Math.max(0, viewportHeight - 24);
@@ -180,6 +191,9 @@ export default function SleepScreen() {
                 </Text>
                 <Text style={styles.lunaName}>Luna ♥</Text>
               </View>
+              <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
+                <Text style={styles.infoBtnText}>?</Text>
+              </TouchableOpacity>
             </View>
 
             {renderCard(preSleepCard, "wide")}
@@ -191,6 +205,16 @@ export default function SleepScreen() {
 
             {renderCard(dreamCard, "wide")}
           </ScrollView>
+
+          <GuideInfoModal
+            visible={showInfo}
+            onClose={() => setShowInfo(false)}
+            guideAvatar={uiAssets.guides.luna}
+            guideName="Luna"
+            title="How Sleep Hub Works"
+            bullets={LUNA_SLEEP_HUB_BULLETS}
+            accentColor="#C4A7FF"
+          />
 
           <View style={styles.bottomNav}>
             <TouchableOpacity style={styles.navButton} onPress={() => navigate("/")}>
@@ -430,6 +454,24 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     marginTop: 7,
     fontFamily: pixelFont,
+  },
+  infoBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+    backgroundColor: "rgba(49,46,129,0.72)",
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "flex-start",
+  },
+  infoBtnText: {
+    color: "#C4A7FF",
+    fontFamily: pixelFont,
+    fontSize: 14,
+    fontWeight: "900",
+    lineHeight: 18,
   },
   unlockBadge: {
     color: "#FDE68A",

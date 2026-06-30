@@ -159,6 +159,7 @@ export default function CalendarScreen() {
   const [latestCheckIn, setLatestCheckIn] = useState<CheckIn | null>(null);
   const [weekOffset, setWeekOffset] = useState(0);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  const [showInfo, setShowInfo] = useState(false);
 
   useEffect(() => {
     loadCalendarData();
@@ -304,13 +305,24 @@ export default function CalendarScreen() {
   return (
     <View style={styles.pageRoot}>
       <View style={styles.phoneStage}>
-        <View pointerEvents="none" style={styles.backgroundLayer}><Image source={uiAssets.backgrounds.default} style={styles.backgroundImage} resizeMode="cover" /></View>
+        <View pointerEvents="none" style={styles.backgroundLayer}><Image source={uiAssets.backgrounds.neutral} style={styles.backgroundImage} resizeMode="cover" /></View>
         <View style={styles.worldOverlay}>
           <ScrollView style={styles.screenScroller} contentContainerStyle={styles.hudContent} showsVerticalScrollIndicator={false} bounces={false}>
             <View style={styles.heroPanel}>
               <View style={styles.bannerIcon}><Text style={styles.bannerIconText}>📖</Text></View>
               <View style={styles.heroCopy}><Text style={styles.heroLabel}>SCHEDULE BOARD</Text><Text style={styles.heroTitle}>CALENDAR</Text><Text style={styles.heroSubtitle}>Sleep guides, quests, roles, and checklist habits.</Text></View>
               <Text style={styles.heroLantern}>🏰</Text>
+            </View>
+
+            <View style={styles.eviePanel}>
+              <Image source={uiAssets.guides.evie} style={styles.evieAvatar} resizeMode="contain" />
+              <View style={styles.evieCopy}>
+                <Text style={styles.evieName}>EVIE</Text>
+                <Text style={styles.evieText}>Calendar shows quests, habits, sleep guides, and recovery blocks. Tap any item to inspect it.</Text>
+              </View>
+              <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
+                <Text style={styles.infoBtnText}>?</Text>
+              </TouchableOpacity>
             </View>
 
             <View style={styles.summaryGrid}>
@@ -323,7 +335,6 @@ export default function CalendarScreen() {
             <View style={styles.actionGrid}>
               <ActionButton icon="💭" title="Quick Thoughts" subtitle="Schedule a future quest" onPress={() => router.push("/tomorrow-queue")} />
               <ActionButton icon="📜" title="Day Plan" subtitle="Set today and weekly roles" onPress={() => router.push("/day-plan")} />
-              <ActionButton icon="🌙" title="Sleep Calendar" subtitle="Plan sleep timing" onPress={() => router.push("/sleep-calendar")} />
             </View>
 
             <View style={styles.weekNavPanel}>
@@ -371,7 +382,8 @@ export default function CalendarScreen() {
           </ScrollView>
           <BottomNav router={router} />
 
-          {selectedEvent ? <EventPopup event={selectedEvent} onClose={() => setSelectedEvent(null)} /> : null}
+          {selectedEvent ? <EventPopup event={selectedEvent} onClose={() => setSelectedEvent(null)} router={router} /> : null}
+          {showInfo ? <InfoOverlay onClose={() => setShowInfo(false)} /> : null}
         </View>
       </View>
     </View>
@@ -399,8 +411,30 @@ function getEventToneStyle(tone: EventTone) {
   }
 }
 
-function EventPopup({ event, onClose }: { event: CalendarEvent; onClose: () => void }) {
-  return <View style={styles.popupOverlay}><View style={[styles.popupCard, getPopupBorder(event.tone)]}><Text style={styles.popupTitle}>{event.title}</Text><Text style={styles.popupSource}>{event.source}</Text><PopupRow label="Day" value={event.dayLabel} /><PopupRow label="Time" value={event.startTime || "Not set"} />{event.duration ? <PopupRow label="Duration" value={event.duration} /> : null}{event.steps !== undefined ? <PopupRow label="Steps" value={`+${event.steps}`} /> : null}<PopupRow label="Type" value={event.classification === "sleepGuide" ? "Sleep guide — no steps" : event.classification === "focus" ? "Day focus — theme only" : event.classification} />{event.status ? <PopupRow label="Status" value={event.status} /> : null}{event.note ? <Text style={styles.popupNote}>{event.note}</Text> : null}<TouchableOpacity style={styles.popupButton} onPress={onClose}><Text style={styles.popupButtonText}>RETURN</Text></TouchableOpacity></View></View>;
+function EventPopup({ event, onClose, router }: { event: CalendarEvent; onClose: () => void; router: ReturnType<typeof useRouter> }) {
+  const todayKey = getDateKey(new Date());
+  const isMissed = event.date < todayKey && event.status !== "completed" && event.classification !== "focus" && event.classification !== "sleepGuide";
+  return (
+    <View style={styles.popupOverlay}>
+      <View style={[styles.popupCard, getPopupBorder(event.tone)]}>
+        <Text style={styles.popupTitle}>{event.title}</Text>
+        <Text style={styles.popupSource}>{event.source}</Text>
+        <PopupRow label="Day" value={event.dayLabel} />
+        <PopupRow label="Time" value={event.startTime || "Not set"} />
+        {event.duration ? <PopupRow label="Duration" value={event.duration} /> : null}
+        {event.steps !== undefined ? <PopupRow label="Steps" value={`+${event.steps}`} /> : null}
+        <PopupRow label="Type" value={event.classification === "sleepGuide" ? "Sleep guide — no steps" : event.classification === "focus" ? "Day focus — theme only" : event.classification} />
+        {event.status ? <PopupRow label="Status" value={event.status} /> : null}
+        {event.note ? <Text style={styles.popupNote}>{event.note}</Text> : null}
+        {isMissed ? (
+          <TouchableOpacity style={styles.reflectButton} onPress={() => { onClose(); router.push("/reflection"); }}>
+            <Text style={styles.reflectButtonText}>REFLECT ON THIS</Text>
+          </TouchableOpacity>
+        ) : null}
+        <TouchableOpacity style={styles.popupButton} onPress={onClose}><Text style={styles.popupButtonText}>RETURN</Text></TouchableOpacity>
+      </View>
+    </View>
+  );
 }
 
 function PopupRow({ label, value }: { label: string; value: string }) {
@@ -412,6 +446,23 @@ function getPopupBorder(tone: EventTone) {
   if (tone === "purple") return styles.popupPurple;
   if (tone === "green") return styles.popupGreen;
   return styles.popupGold;
+}
+
+function InfoOverlay({ onClose }: { onClose: () => void }) {
+  return (
+    <View style={styles.infoOverlay}>
+      <View style={styles.infoCard}>
+        <Text style={styles.infoTitle}>CALENDAR</Text>
+        <Text style={styles.infoBullet}>{"• Shows quests, checklist habits, quick thoughts, sleep guide times, and recovery blocks in one weekly view."}</Text>
+        <Text style={styles.infoBullet}>{"• Tap any event to inspect it. Missed events show a Reflect option."}</Text>
+        <Text style={styles.infoBullet}>{"• Blue = sleep guide timing. Gold = progress. Purple = recovery. Green = day focus (no steps)."}</Text>
+        <Text style={styles.infoBullet}>{"• Day Plan and Quick Thought quests earn steps only when marked complete."}</Text>
+        <TouchableOpacity style={styles.infoClose} onPress={onClose}>
+          <Text style={styles.infoCloseText}>RETURN</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
 }
 
 function BottomNav({ router }: { router: ReturnType<typeof useRouter> }) {
@@ -445,5 +496,25 @@ const styles = StyleSheet.create({
   hourCell: { minHeight: 54, borderTopWidth: 1, borderTopColor: "rgba(51,65,85,0.55)", paddingTop: 2, gap: 2 }, focusTab: { minHeight: 28, borderWidth: 1, borderRadius: 4, padding: 3, marginBottom: 3 }, focusTabText: { color: "#F8FAFC", fontSize: 8, lineHeight: 10, fontWeight: "900" }, eventBlock: { borderWidth: 1, borderRadius: 4, padding: 3, minHeight: 36 }, eventTime: { color: "#F8FAFC", fontSize: 8, fontWeight: "900" }, eventText: { color: "#F8FAFC", fontSize: 8, lineHeight: 10, fontWeight: "800" }, moreText: { color: "#94A3B8", fontSize: 9, textAlign: "center", marginTop: 2 },
   eventGold: { backgroundColor: "rgba(113,63,18,0.85)", borderColor: "#FBBF24" }, eventPurple: { backgroundColor: "rgba(88,28,135,0.85)", borderColor: "#A78BFA" }, eventBlue: { backgroundColor: "rgba(14,116,144,0.85)", borderColor: "#67E8F9" }, eventGreen: { backgroundColor: "rgba(20,83,45,0.65)", borderColor: "#86EFAC" },
   popupOverlay: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "center", padding: 18, zIndex: 10 }, popupCard: { backgroundColor: "rgba(8,13,24,0.98)", borderWidth: 3, borderRadius: 12, padding: 16 }, popupGold: { borderColor: "#FBBF24" }, popupPurple: { borderColor: "#A78BFA" }, popupBlue: { borderColor: "#67E8F9" }, popupGreen: { borderColor: "#86EFAC" }, popupTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 20, fontWeight: "900", marginBottom: 4 }, popupSource: { color: "#FDE047", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", marginBottom: 12 }, popupRow: { flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: "#1F2937", paddingVertical: 6 }, popupLabel: { color: "#94A3B8", fontSize: 12, fontWeight: "800" }, popupValue: { color: "#F8FAFC", fontSize: 12, fontWeight: "900", maxWidth: "60%", textAlign: "right" }, popupNote: { color: "#CBD5E1", fontSize: 13, lineHeight: 19, marginTop: 12 }, popupButton: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", paddingVertical: 12, alignItems: "center", marginTop: 14 }, popupButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900" },
-  bottomNav: { position: "absolute", bottom: 8, left: 10, right: 10, flexDirection: "row", justifyContent: "space-between", backgroundColor: "rgba(8,17,34,0.96)", borderWidth: 2, borderColor: "#334155", borderRadius: 16, padding: 6 }, navButton: { flex: 1, alignItems: "center", borderRadius: 12, paddingVertical: 6, borderWidth: 1, borderColor: "transparent" }, navButtonActive: { backgroundColor: "rgba(120, 53, 15, 0.55)", borderColor: "#FBBF24" }, navIcon: { fontSize: 20 }, navLabel: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 10, fontWeight: "900", marginTop: 2 }, navLabelActive: { color: "#FBBF24" },
+  eviePanel: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(8,13,24,0.95)", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, padding: 10, marginBottom: 10 },
+  evieAvatar: { width: 44, height: 52, marginRight: 10 },
+  evieCopy: { flex: 1 },
+  evieName: { color: "#FDE047", fontFamily: pixelFont, fontSize: 10, fontWeight: "900" },
+  evieText: { color: "#CBD5E1", fontSize: 12, lineHeight: 16, fontWeight: "700", marginTop: 2 },
+  infoBtn: { width: 28, height: 28, borderWidth: 2, borderColor: "#FBBF24", borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(113,63,18,0.7)", marginLeft: 8 },
+  infoBtnText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 14, fontWeight: "900" },
+  infoOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.82)", justifyContent: "center", alignItems: "center", padding: 20, zIndex: 25 },
+  infoCard: { backgroundColor: "rgba(8,13,24,0.99)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 12, padding: 16, width: "100%" },
+  infoTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", marginBottom: 10 },
+  infoBullet: { color: "#CBD5E1", fontSize: 13, lineHeight: 20, fontWeight: "700", marginBottom: 6 },
+  infoClose: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", paddingVertical: 11, alignItems: "center", marginTop: 12 },
+  infoCloseText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900" },
+  reflectButton: { backgroundColor: "rgba(88,28,135,0.7)", borderWidth: 2, borderColor: "#A78BFA", paddingVertical: 10, alignItems: "center", marginTop: 10 },
+  reflectButtonText: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
+  bottomNav: { position: "absolute", bottom: 8, left: 8, right: 8, height: 62, flexDirection: "row", justifyContent: "space-between", backgroundColor: "rgba(4,8,16,0.98)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 5, padding: 4 },
+  navButton: { flex: 1, backgroundColor: "#111827", borderWidth: 2, borderColor: "#3A4558", borderRadius: 3, paddingVertical: 4, marginHorizontal: 2, alignItems: "center", justifyContent: "center" },
+  navButtonActive: { backgroundColor: "#162314", borderColor: "#FBBF24" },
+  navIcon: { fontSize: 18 },
+  navLabel: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", marginTop: 1 },
+  navLabelActive: { color: "#FDE68A" },
 });

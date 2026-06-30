@@ -3,7 +3,18 @@ import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
+import { GuideInfoModal } from "../components/GuideInfoModal";
 import { uiAssets } from "../constants/uiAssets";
+
+const LUNA_SLEEP_GUIDE_BULLETS = [
+  "The Sleep Guide suggests timing — not strict rules.",
+  "Set your desired sleep time and wake time to generate your personal cutoffs.",
+  "Caffeine cut-off: 11–12 hours before sleep.",
+  "Last meal: 3–4 hours before sleep.",
+  "Blue screen: at least 1 hour before sleep.",
+  "Last exercise: avoid intense activity within 3 hours of sleep.",
+  "Imperfect sleep is okay. The guide is here to support, not to judge.",
+];
 
 type CheckIn = {
   wakeTime?: string;
@@ -119,6 +130,7 @@ export default function SleepCalendarScreen() {
   const [desiredSleepTime, setDesiredSleepTime] = useState("11:00 PM");
   const [desiredWakeTime, setDesiredWakeTime] = useState("8:00 AM");
   const [savedMessage, setSavedMessage] = useState("");
+  const [showInfo, setShowInfo] = useState(false);
 
   useEffect(() => {
     loadSleepGuide();
@@ -218,6 +230,9 @@ export default function SleepCalendarScreen() {
                 <Text style={styles.lunaTitle}>LUNA, YOUR GUIDE</Text>
                 <Text style={styles.lunaText}>These are suggestions, not rules. Sleep can vary — especially with anxiety or sleep problems. Be kind to yourself.</Text>
               </View>
+              <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
+                <Text style={styles.infoBtnText}>?</Text>
+              </TouchableOpacity>
             </View>
 
             <View style={styles.panel}>
@@ -262,6 +277,16 @@ export default function SleepCalendarScreen() {
               <Text style={styles.backButtonText}>Back to Today</Text>
             </TouchableOpacity>
           </ScrollView>
+
+          <GuideInfoModal
+            visible={showInfo}
+            onClose={() => setShowInfo(false)}
+            guideAvatar={uiAssets.guides.luna}
+            guideName="Luna"
+            title="How Sleep Guide Works"
+            bullets={LUNA_SLEEP_GUIDE_BULLETS}
+            accentColor="#A78BFA"
+          />
 
           <View style={styles.bottomNav}>
             <TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}>
@@ -631,6 +656,24 @@ const styles = StyleSheet.create({
     fontFamily: pixelFont,
     fontSize: 13,
     fontWeight: "900",
+  },
+  infoBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+    backgroundColor: "rgba(49,46,129,0.72)",
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "flex-start",
+  },
+  infoBtnText: {
+    color: "#C4B5FD",
+    fontFamily: pixelFont,
+    fontSize: 13,
+    fontWeight: "900",
+    lineHeight: 17,
   },
   bottomNav: {
     position: "absolute",

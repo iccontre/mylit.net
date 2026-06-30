@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   Image,
@@ -12,7 +13,16 @@ import {
   View,
 } from "react-native";
 
+import { GuideInfoModal } from "../components/GuideInfoModal";
 import { uiAssets } from "../constants/uiAssets";
+
+const LUNA_JOURNAL_BULLETS = [
+  "Journal is for writing what happened, what mood or pattern showed up, and what to remember.",
+  "It does not need to be perfect — one honest sentence is enough to start.",
+  "Honest entries help MYLIT reveal patterns in your thinking over time.",
+  "Morning and Evening entries help you track how the day opened and closed.",
+  "The 'What do you want to remember?' field keeps the most useful part of the day.",
+];
 
 type JournalEntry = {
   id: string;
@@ -39,8 +49,10 @@ const pixelFont = Platform.select({
 });
 
 export default function JournalScreen() {
+  const router = useRouter();
   const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
   const [entryType, setEntryType] = useState<"Morning" | "Evening">("Morning");
+  const [showInfo, setShowInfo] = useState(false);
   const [mood, setMood] = useState("");
   const [content, setContent] = useState("");
   const [gratitude, setGratitude] = useState("");
@@ -105,7 +117,7 @@ export default function JournalScreen() {
     <View style={styles.pageRoot}>
       <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight }]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
-          <Image source={uiAssets.backgrounds.neutral} style={styles.backgroundImage} resizeMode="cover" />
+          <Image source={uiAssets.backgrounds.journal} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
           <ScrollView
@@ -128,6 +140,9 @@ export default function JournalScreen() {
                   Write what is actually happening. It does not need to sound perfect.
                 </Text>
               </View>
+              <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
+                <Text style={styles.infoBtnText}>?</Text>
+              </TouchableOpacity>
             </View>
 
             <View style={styles.panel}>
@@ -218,7 +233,48 @@ export default function JournalScreen() {
                 <Text style={styles.clearButtonText}>Clear Journal Logs</Text>
               </TouchableOpacity>
             )}
+
+            <TouchableOpacity style={styles.backButton} onPress={() => router.push("/mind")}>
+              <Text style={styles.backButtonText}>← Back to Mind Hub</Text>
+            </TouchableOpacity>
           </ScrollView>
+
+          <GuideInfoModal
+            visible={showInfo}
+            onClose={() => setShowInfo(false)}
+            guideAvatar={uiAssets.guides.luna}
+            guideName="Luna"
+            title="How Journal Works"
+            bullets={LUNA_JOURNAL_BULLETS}
+            accentColor="#C4A7FF"
+          />
+
+          <View style={styles.bottomNav}>
+            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}>
+              <Text style={styles.navText}>🏠</Text>
+              <Text style={styles.navLabel}>HOME</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/sleep")}>
+              <Text style={styles.navText}>🌙</Text>
+              <Text style={styles.navLabel}>SLEEP</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={() => router.push("/mind")}>
+              <Text style={styles.navTextActive}>🧠</Text>
+              <Text style={styles.navLabelActive}>MIND</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/path")}>
+              <Text style={styles.navText}>🌲</Text>
+              <Text style={styles.navLabel}>PATH</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/calendar")}>
+              <Text style={styles.navText}>📅</Text>
+              <Text style={styles.navLabel}>CAL</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/stats")}>
+              <Text style={styles.navText}>🎒</Text>
+              <Text style={styles.navLabel}>BAG</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </View>
@@ -264,7 +320,7 @@ const styles = StyleSheet.create({
     minHeight: "100%",
     paddingTop: 24,
     paddingHorizontal: 14,
-    paddingBottom: 24,
+    paddingBottom: 82,
   },
   hero: {
     backgroundColor: "rgba(31, 27, 75, 0.95)",
@@ -505,6 +561,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     alignItems: "center",
     marginTop: 6,
+    marginBottom: 8,
   },
   clearButtonText: {
     color: "#FECACA",
@@ -512,5 +569,92 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "900",
     textTransform: "uppercase",
+  },
+  backButton: {
+    backgroundColor: "rgba(8, 13, 24, 0.94)",
+    borderWidth: 2,
+    borderColor: "#334155",
+    borderRadius: 6,
+    paddingVertical: 13,
+    alignItems: "center",
+    marginTop: 4,
+  },
+  backButtonText: {
+    color: "#F9FAFB",
+    fontFamily: pixelFont,
+    fontSize: 12,
+    fontWeight: "900",
+    textTransform: "uppercase",
+  },
+  infoBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+    backgroundColor: "rgba(49,46,129,0.72)",
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "flex-start",
+  },
+  infoBtnText: {
+    color: "#C4A7FF",
+    fontFamily: pixelFont,
+    fontSize: 14,
+    fontWeight: "900",
+    lineHeight: 18,
+  },
+  bottomNav: {
+    position: "absolute",
+    left: 8,
+    right: 8,
+    bottom: 8,
+    height: 62,
+    backgroundColor: "rgba(4, 8, 16, 0.98)",
+    borderWidth: 3,
+    borderColor: "#A78BFA",
+    borderRadius: 5,
+    padding: 4,
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  navButton: {
+    flex: 1,
+    backgroundColor: "#111827",
+    borderWidth: 2,
+    borderColor: "#3A4558",
+    borderRadius: 3,
+    paddingVertical: 4,
+    marginHorizontal: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  navButtonActive: {
+    backgroundColor: "#162314",
+    borderColor: "#FDE68A",
+  },
+  navText: {
+    color: "#E2E8F0",
+    fontSize: 17,
+    fontWeight: "900",
+  },
+  navTextActive: {
+    color: "#FDE68A",
+    fontSize: 17,
+    fontWeight: "900",
+  },
+  navLabel: {
+    color: "#CBD5E1",
+    fontSize: 8,
+    fontWeight: "900",
+    marginTop: 1,
+    fontFamily: pixelFont,
+  },
+  navLabelActive: {
+    color: "#FDE68A",
+    fontSize: 8,
+    fontWeight: "900",
+    marginTop: 1,
+    fontFamily: pixelFont,
   },
 });

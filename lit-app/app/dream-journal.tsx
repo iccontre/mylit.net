@@ -14,7 +14,17 @@ import {
   View,
 } from "react-native";
 
+import { GuideInfoModal } from "../components/GuideInfoModal";
 import { uiAssets } from "../constants/uiAssets";
+
+const LUNA_DREAM_BULLETS = [
+  "Most dreams fade within 10 minutes of waking — write yours down quickly.",
+  "Add a title, describe the dream, and choose how it felt.",
+  "Any saved dream earns +1 step.",
+  "Even a single image, fragment, or feeling is worth recording.",
+  "Over time, entries may help you notice patterns in your dream life.",
+  "There is no pressure to write perfectly — just capture what you remember.",
+];
 
 type DreamEntry = {
   id: string;
@@ -76,6 +86,7 @@ export default function DreamJournalScreen() {
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [feeling, setFeeling] = useState("");
+  const [showInfo, setShowInfo] = useState(false);
 
   const safeViewportWidth = Math.max(0, viewportWidth - 24);
   const safeViewportHeight = Math.max(0, viewportHeight - 24);
@@ -173,7 +184,12 @@ export default function DreamJournalScreen() {
             </View>
 
             <View style={[styles.lunaCard, { borderColor: theme.accent }]}>
-              <Text style={[styles.lunaName, { color: theme.glow }]}>🌙 Luna</Text>
+              <View style={styles.lunaCardHeader}>
+                <Text style={[styles.lunaName, { color: theme.glow }]}>🌙 Luna</Text>
+                <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
+                  <Text style={styles.infoBtnText}>?</Text>
+                </TouchableOpacity>
+              </View>
               <Text style={styles.lunaText}>Most dreams fade within about 10 minutes. Write it down now, even just fragments — images, feelings, a single scene.</Text>
             </View>
 
@@ -241,6 +257,16 @@ export default function DreamJournalScreen() {
               <Text style={styles.backButtonText}>Back to Today</Text>
             </TouchableOpacity>
           </ScrollView>
+
+          <GuideInfoModal
+            visible={showInfo}
+            onClose={() => setShowInfo(false)}
+            guideAvatar={uiAssets.guides.luna}
+            guideName="Luna"
+            title="How Dream Journal Works"
+            bullets={LUNA_DREAM_BULLETS}
+            accentColor="#C4A7FF"
+          />
         </View>
       </View>
     </View>
@@ -341,6 +367,29 @@ const styles = StyleSheet.create({
     padding: 13,
     marginBottom: 10,
     borderWidth: 3,
+  },
+  lunaCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  infoBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+    backgroundColor: "rgba(49,46,129,0.72)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  infoBtnText: {
+    color: "#C4A7FF",
+    fontFamily: pixelFont,
+    fontSize: 13,
+    fontWeight: "900",
+    lineHeight: 17,
   },
   lunaName: {
     fontFamily: pixelFont,

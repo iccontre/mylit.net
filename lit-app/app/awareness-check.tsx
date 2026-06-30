@@ -14,7 +14,16 @@ import {
   View,
 } from "react-native";
 
+import { GuideInfoModal } from "../components/GuideInfoModal";
 import { uiAssets } from "../constants/uiAssets";
+
+const LUNA_MEDITATIONS_BULLETS = [
+  "Meditations are short attention check-ins — not traditional seated meditation.",
+  "The goal is to name where focus went, what pulled it away, and what helped you return.",
+  "You do not need to have meditated well. Honest answers are more useful than perfect ones.",
+  "Over time, patterns in what pulls you away reveal important data about your environment.",
+  "Use this after a work session, before bed, or any time you want to understand where your mind went.",
+];
 
 type AwarenessCheck = {
   id: string;
@@ -47,6 +56,7 @@ export default function AwarenessCheckScreen() {
   const [pulledAway, setPulledAway] = useState("");
   const [broughtBack, setBroughtBack] = useState("");
   const [checks, setChecks] = useState<AwarenessCheck[]>([]);
+  const [showInfo, setShowInfo] = useState(false);
 
   const safeViewportWidth = Math.max(0, viewportWidth - 24);
   const safeViewportHeight = Math.max(0, viewportHeight - 24);
@@ -130,8 +140,8 @@ export default function AwarenessCheckScreen() {
             bounces={false}
           >
             <View style={styles.hero}>
-              <Text style={styles.heroLabel}>ATTENTION PRACTICE</Text>
-              <Text style={styles.title}>AWARENESS</Text>
+              <Text style={styles.heroLabel}>MIND HUB</Text>
+              <Text style={[styles.title, { fontSize: 34, letterSpacing: 3 }]}>MEDITATIONS</Text>
               <Text style={styles.subtitle}>Notice attention. Come back gently.</Text>
             </View>
 
@@ -143,6 +153,9 @@ export default function AwarenessCheckScreen() {
                   Name what had your focus, what pulled you away, and what helped you return.
                 </Text>
               </View>
+              <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
+                <Text style={styles.infoBtnText}>?</Text>
+              </TouchableOpacity>
             </View>
 
             <View style={styles.card}>
@@ -198,15 +211,15 @@ export default function AwarenessCheckScreen() {
               />
 
               <TouchableOpacity style={styles.saveButton} onPress={saveAwarenessCheck}>
-                <Text style={styles.saveButtonText}>Save Awareness Check</Text>
+                <Text style={styles.saveButtonText}>Save Meditation</Text>
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.sectionTitle}>RECENT CHECKS</Text>
+            <Text style={styles.sectionTitle}>RECENT MEDITATIONS</Text>
 
             {checks.length === 0 ? (
               <View style={styles.emptyCard}>
-                <Text style={styles.emptyText}>No awareness checks yet. Start with one honest observation.</Text>
+                <Text style={styles.emptyText}>No meditations yet. Start with one honest observation.</Text>
               </View>
             ) : (
               checks.map((check) => (
@@ -231,14 +244,51 @@ export default function AwarenessCheckScreen() {
 
             {checks.length > 0 && (
               <TouchableOpacity style={styles.clearButton} onPress={clearChecks}>
-                <Text style={styles.clearButtonText}>Clear Awareness Checks</Text>
+                <Text style={styles.clearButtonText}>Clear Meditations</Text>
               </TouchableOpacity>
             )}
 
-            <TouchableOpacity style={styles.homeButton} onPress={() => router.push("/")}>
-              <Text style={styles.homeButtonText}>Back to Today</Text>
+            <TouchableOpacity style={styles.homeButton} onPress={() => router.push("/mind")}>
+              <Text style={styles.homeButtonText}>← Back to Mind Hub</Text>
             </TouchableOpacity>
           </ScrollView>
+
+          <GuideInfoModal
+            visible={showInfo}
+            onClose={() => setShowInfo(false)}
+            guideAvatar={uiAssets.guides.luna}
+            guideName="Luna"
+            title="How Meditations Work"
+            bullets={LUNA_MEDITATIONS_BULLETS}
+            accentColor="#C4A7FF"
+          />
+
+          <View style={styles.bottomNav}>
+            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}>
+              <Text style={styles.navText}>🏠</Text>
+              <Text style={styles.navLabel}>HOME</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/sleep")}>
+              <Text style={styles.navText}>🌙</Text>
+              <Text style={styles.navLabel}>SLEEP</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={() => router.push("/mind")}>
+              <Text style={styles.navTextActive}>🧠</Text>
+              <Text style={styles.navLabelActive}>MIND</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/path")}>
+              <Text style={styles.navText}>🌲</Text>
+              <Text style={styles.navLabel}>PATH</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/calendar")}>
+              <Text style={styles.navText}>📅</Text>
+              <Text style={styles.navLabel}>CAL</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/stats")}>
+              <Text style={styles.navText}>🎒</Text>
+              <Text style={styles.navLabel}>BAG</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
     </View>
@@ -284,7 +334,7 @@ const styles = StyleSheet.create({
     minHeight: "100%",
     paddingTop: 24,
     paddingHorizontal: 14,
-    paddingBottom: 24,
+    paddingBottom: 82,
   },
   hero: {
     backgroundColor: "rgba(31, 27, 75, 0.95)",
@@ -516,5 +566,76 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "900",
     textTransform: "uppercase",
+  },
+  infoBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+    backgroundColor: "rgba(49,46,129,0.72)",
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "flex-start",
+  },
+  infoBtnText: {
+    color: "#C4A7FF",
+    fontFamily: pixelFont,
+    fontSize: 14,
+    fontWeight: "900",
+    lineHeight: 18,
+  },
+  bottomNav: {
+    position: "absolute",
+    left: 8,
+    right: 8,
+    bottom: 8,
+    height: 62,
+    backgroundColor: "rgba(4, 8, 16, 0.98)",
+    borderWidth: 3,
+    borderColor: "#A78BFA",
+    borderRadius: 5,
+    padding: 4,
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  navButton: {
+    flex: 1,
+    backgroundColor: "#111827",
+    borderWidth: 2,
+    borderColor: "#3A4558",
+    borderRadius: 3,
+    paddingVertical: 4,
+    marginHorizontal: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  navButtonActive: {
+    backgroundColor: "#162314",
+    borderColor: "#FDE68A",
+  },
+  navText: {
+    color: "#E2E8F0",
+    fontSize: 17,
+    fontWeight: "900",
+  },
+  navTextActive: {
+    color: "#FDE68A",
+    fontSize: 17,
+    fontWeight: "900",
+  },
+  navLabel: {
+    color: "#CBD5E1",
+    fontSize: 8,
+    fontWeight: "900",
+    marginTop: 1,
+    fontFamily: pixelFont,
+  },
+  navLabelActive: {
+    color: "#FDE68A",
+    fontSize: 8,
+    fontWeight: "900",
+    marginTop: 1,
+    fontFamily: pixelFont,
   },
 });

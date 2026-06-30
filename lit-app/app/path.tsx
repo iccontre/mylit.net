@@ -12,8 +12,17 @@ import {
   View,
 } from "react-native";
 
+import { GuideInfoModal } from "../components/GuideInfoModal";
 import { GOAL_HORIZON_LABELS } from "../constants/goalMilestoneTemplates";
 import { uiAssets } from "../constants/uiAssets";
+
+const EVIE_PATH_BULLETS = [
+  "Path Board shows your current direction — keep it visible and update it when life changes.",
+  "Your category and resources help MYLIT choose better quests and checklist habits over time.",
+  "Milestones give you three concrete checkpoints: 2 weeks, 1 month, and 3 months out.",
+  "Progress Meaning is your personal definition of moving forward — use it as your gut check.",
+  "Tap 'Set My Path' to edit any of these fields. Tap 'Start Next Chapter' when you are ready to change direction.",
+];
 
 type UserProfile = {
   name: string;
@@ -66,6 +75,7 @@ export default function PathScreen() {
   const router = useRouter();
   const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
   const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [showInfo, setShowInfo] = useState(false);
 
   const safeViewportWidth = Math.max(0, viewportWidth - 24);
   const safeViewportHeight = Math.max(0, viewportHeight - 24);
@@ -156,6 +166,19 @@ export default function PathScreen() {
               </View>
             </View>
 
+            <View style={styles.evieCard}>
+              <Image source={uiAssets.guides.evie} style={styles.evieAvatar} resizeMode="contain" />
+              <View style={styles.evieCopy}>
+                <Text style={styles.evieName}>Evie</Text>
+                <Text style={styles.evieText}>
+                  This is your current path. Keep it visible, update it when life changes, and let it shape your quests.
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
+                <Text style={styles.infoBtnText}>?</Text>
+              </TouchableOpacity>
+            </View>
+
             <View style={styles.summaryStack}>
               {summaryCards.map((card) => (
                 <View key={card.label} style={styles.summaryCard}>
@@ -221,6 +244,29 @@ export default function PathScreen() {
               </View>
             </View>
 
+            {profile && (
+              <View style={styles.resourcesPanel}>
+                <Text style={styles.resourcesTitle}>ACTIVE RESOURCES</Text>
+                <View style={styles.resourceRow}>
+                  {[
+                    { key: "hasWorkOrSchool", label: "Work/School", icon: "📘" },
+                    { key: "hasTransportation", label: "Transport", icon: "🚌" },
+                    { key: "hasGymAccess", label: "Gym", icon: "🏋️" },
+                    { key: "hasQuietSpace", label: "Quiet Space", icon: "🔇" },
+                    { key: "hasFoodControl", label: "Food Control", icon: "🍽️" },
+                  ].map((r) => {
+                    const active = !!profile[r.key as keyof UserProfile];
+                    return (
+                      <View key={r.key} style={[styles.resourceChip, !active && styles.resourceChipOff]}>
+                        <Text style={styles.resourceChipIcon}>{r.icon}</Text>
+                        <Text style={[styles.resourceChipLabel, !active && styles.resourceChipLabelOff]}>{r.label}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            )}
+
             <TouchableOpacity style={styles.primaryActionButton} onPress={() => router.push("/onboarding")}>
               <Text style={styles.actionIcon}>🗡️</Text>
               <Text style={styles.primaryActionText}>Set My Path</Text>
@@ -229,10 +275,20 @@ export default function PathScreen() {
 
             <TouchableOpacity style={styles.secondaryActionButton} onPress={() => router.push("/next-chapter")}>
               <Text style={styles.actionIcon}>🚩</Text>
-              <Text style={styles.secondaryActionText}>Set Your Next Long-Term Goal</Text>
+              <Text style={styles.secondaryActionText}>Start Next Chapter</Text>
               <Text style={styles.secondaryActionArrow}>›</Text>
             </TouchableOpacity>
           </ScrollView>
+
+          <GuideInfoModal
+            visible={showInfo}
+            onClose={() => setShowInfo(false)}
+            guideAvatar={uiAssets.guides.evie}
+            guideName="Evie"
+            title="How Path Board Works"
+            bullets={EVIE_PATH_BULLETS}
+            accentColor="#22C55E"
+          />
 
           <View style={styles.bottomNav}>
             <TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}>
@@ -368,6 +424,114 @@ const styles = StyleSheet.create({
     textShadowColor: "#000",
     textShadowOffset: { width: 2, height: 2 },
     textShadowRadius: 0,
+  },
+  evieCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(20, 83, 45, 0.94)",
+    borderWidth: 3,
+    borderColor: "#22C55E",
+    borderRadius: 8,
+    paddingVertical: 9,
+    paddingHorizontal: 11,
+    marginBottom: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.6,
+    shadowRadius: 0,
+    shadowOffset: { width: 3, height: 3 },
+  },
+  evieAvatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    borderWidth: 2,
+    borderColor: "#4ADE80",
+    backgroundColor: "rgba(15, 61, 24, 0.72)",
+    marginRight: 10,
+  },
+  evieCopy: {
+    flex: 1,
+  },
+  evieName: {
+    color: "#86EFAC",
+    fontFamily: pixelFont,
+    fontSize: 13,
+    fontWeight: "900",
+    marginBottom: 4,
+  },
+  evieText: {
+    color: "#F8F1D7",
+    fontFamily: pixelFont,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 17,
+  },
+  infoBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: "#4ADE80",
+    backgroundColor: "rgba(20, 83, 45, 0.72)",
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "flex-start",
+  },
+  infoBtnText: {
+    color: "#86EFAC",
+    fontFamily: pixelFont,
+    fontSize: 13,
+    fontWeight: "900",
+    lineHeight: 17,
+  },
+  resourcesPanel: {
+    backgroundColor: "rgba(8, 13, 18, 0.86)",
+    borderWidth: 2,
+    borderColor: "rgba(74, 222, 128, 0.38)",
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 12,
+  },
+  resourcesTitle: {
+    color: "#4ADE80",
+    fontFamily: pixelFont,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  resourceRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  resourceChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(20, 83, 45, 0.82)",
+    borderWidth: 1,
+    borderColor: "#22C55E",
+    borderRadius: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 7,
+    gap: 4,
+  },
+  resourceChipOff: {
+    backgroundColor: "rgba(15, 23, 42, 0.60)",
+    borderColor: "#3A4558",
+    opacity: 0.5,
+  },
+  resourceChipIcon: {
+    fontSize: 13,
+  },
+  resourceChipLabel: {
+    color: "#86EFAC",
+    fontFamily: pixelFont,
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  resourceChipLabelOff: {
+    color: "#64748B",
   },
   summaryStack: {
     width: "62%",

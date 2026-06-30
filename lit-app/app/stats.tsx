@@ -3,18 +3,22 @@ import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   Image,
-  ImageBackground,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from "react-native";
 
 import { uiAssets } from "../constants/uiAssets";
 
+const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
+const MAX_FRAME_WIDTH = 520;
+
 type ActivePanel = "weekly" | "rank" | "behavior" | null;
+type ActiveInfo = "stats" | "evie" | "weekly" | "rank" | "behavior" | "weeklyPopup" | "rankPopup" | "behaviorPopup" | null;
 type Mode = "Recovery" | "Progress";
 
 type CheckIn = {
@@ -31,11 +35,16 @@ type CheckIn = {
   sleepTime?: string;
 };
 
+type UserStats = {
+  rankBonusesAwarded?: number[];
+};
+
 type StatsSnapshot = {
   latestCheckIn: CheckIn | null;
   checkIns: CheckIn[];
   completedQuests: unknown;
   quickThoughts: unknown;
+  dayPlan: unknown;
   journalEntries: unknown;
   dreamJournalEntries: unknown;
   preSleepIntentions: unknown;
@@ -44,14 +53,16 @@ type StatsSnapshot = {
   meditations: unknown;
   reflections: unknown;
   sleepCalendar: unknown;
-  totalSteps: number;
-  completedSteps: number;
+  earnedSteps: number;
+  rankBonusPool: number;
+  rankBonusesAwarded: number[];
 };
 
 const CHECKIN_KEY = "lit_latest_checkin";
 const CHECKIN_HISTORY_KEY = "lit_checkin_history";
 const COMPLETED_QUESTS_KEY = "lit_completed_quests";
 const QUICK_THOUGHTS_KEY = "lit_tomorrow_queue";
+const DAY_PLAN_KEY = "lit_day_plan";
 const JOURNAL_KEY = "lit_journal_entries";
 const DREAM_JOURNAL_KEY = "lit_dream_journal";
 const PRE_SLEEP_INTENTIONS_KEY = "lit_pre_sleep_intentions";
@@ -61,38 +72,36 @@ const MEDITATIONS_KEY = "lit_awareness_checks";
 const REFLECTIONS_KEY = "lit_reflections";
 const SLEEP_CALENDAR_KEY = "lit_sleep_calendar";
 const USER_STATS_KEY = "lit_user_stats";
+const RANK_SIZE = 100;
 
-const pixelFont = Platform.select({
-  ios: "Menlo",
-  android: "monospace",
-  web: "monospace",
-  default: "monospace",
-});
+const pixelFont = Platform.select({ ios: "Menlo", android: "monospace", web: "monospace", default: "monospace" });
+
+const INFO_COPY: Record<NonNullable<ActiveInfo>, { title: string; body: string }> = {
+  stats: { title: "STATS BOARD", body: "Your Stats Board tracks growth, behavior patterns, and rank progress over time. Everything here comes from what you actually did — check-ins, quests, reflections, and habits." },
+  evie: { title: "EVIE'S NOTE", body: "Stats are for learning, not judging. Look for patterns that help you adjust your next step honestly. One good data point is enough to move forward." },
+  weekly: { title: "WEEKLY SUMMARY", body: "Weekly Summary shows what happened this week: energy, steps, completed quests, saved thoughts, sleep and mind entries, and your progress vs recovery balance." },
+  rank: { title: "RANK PROGRESS", body: "Rank Progress turns completed actions into visible growth. Every 100 steps unlocks the next rank, and each new rank grants a one-time +10 step bonus." },
+  behavior: { title: "BEHAVIOR", body: "Behavior shows patterns across energy, sleep, recovery, progress, and cognitive habits so you can adjust without judging yourself." },
+  weeklyPopup: { title: "WEEKLY SUMMARY", body: "Weekly Summary shows what happened this week: energy, steps, completed quests, saved thoughts, sleep and mind entries, and your progress vs recovery balance." },
+  rankPopup: { title: "RANK PROGRESS", body: "Rank Progress turns completed actions into visible growth. Every 100 steps unlocks the next rank, and each new rank grants a one-time +10 step bonus." },
+  behaviorPopup: { title: "BEHAVIOR", body: "Behavior shows patterns across energy, sleep, recovery, progress, and cognitive habits so you can adjust without judging yourself." },
+};
 
 const emptyStats: StatsSnapshot = {
-  latestCheckIn: null,
-  checkIns: [],
-  completedQuests: [],
-  quickThoughts: [],
-  journalEntries: [],
-  dreamJournalEntries: [],
-  preSleepIntentions: [],
-  morningReflections: [],
-  alternateMorningReflections: [],
-  meditations: [],
-  reflections: [],
-  sleepCalendar: [],
-  totalSteps: 0,
-  completedSteps: 0,
+  latestCheckIn: null, checkIns: [], completedQuests: [], quickThoughts: [], dayPlan: null,
+  journalEntries: [], dreamJournalEntries: [], preSleepIntentions: [], morningReflections: [],
+  alternateMorningReflections: [], meditations: [], reflections: [], sleepCalendar: [],
+  earnedSteps: 0, rankBonusPool: 0, rankBonusesAwarded: [],
 };
 
 async function readJson<T>(key: string, fallback: T): Promise<T> {
-  try {
-    const raw = await AsyncStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
+  try { const raw = await AsyncStorage.getItem(key); return raw ? (JSON.parse(raw) as T) : fallback; }
+  catch { return fallback; }
+}
+
+function safeNumber(value: unknown, fallback = 0): number {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
 
 function countAny(value: unknown): number {
@@ -110,8 +119,8 @@ function toArray(value: unknown): unknown[] {
 }
 
 function getNumber(value: unknown): number | null {
-  const numberValue = Number(value);
-  return Number.isFinite(numberValue) ? numberValue : null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
 }
 
 function formatValue(value: unknown, fallback = "—"): string {
@@ -121,67 +130,147 @@ function formatValue(value: unknown, fallback = "—"): string {
 
 function average(numbers: number[]): number | null {
   if (numbers.length === 0) return null;
-  return Math.round(numbers.reduce((total, item) => total + item, 0) / numbers.length);
-}
-
-function rankName(level: number): string {
-  if (level === 1) return "Beginner";
-  if (level === 2) return "Explorer";
-  if (level === 3) return "Pathfinder";
-  if (level === 4) return "Dreamsmith";
-  return "Luminary";
-}
-
-function weekRange(): string {
-  const today = new Date();
-  const day = today.getDay();
-  const mondayOffset = day === 0 ? -6 : 1 - day;
-  const monday = new Date(today);
-  monday.setDate(today.getDate() + mondayOffset);
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-  const format = (date: Date) => date.toLocaleDateString(undefined, { month: "short", day: "numeric" }).toUpperCase();
-  return `${format(monday)} - ${format(sunday)}`;
+  return Math.round(numbers.reduce((t, n) => t + n, 0) / numbers.length);
 }
 
 function averageTime(values: string[]): string | null {
-  const minutes = values
-    .map((value) => {
-      const match = value.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
-      if (!match) return null;
-      let hour = Number(match[1]);
-      const minute = Number(match[2]);
-      const meridiem = match[3]?.toUpperCase();
-      if (meridiem === "PM" && hour < 12) hour += 12;
-      if (meridiem === "AM" && hour === 12) hour = 0;
-      return hour * 60 + minute;
-    })
-    .filter((value): value is number => value !== null);
-
+  const minutes = values.map((v) => {
+    const m = v.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+    if (!m) return null;
+    let h = Number(m[1]); const min = Number(m[2]); const mer = m[3]?.toUpperCase();
+    if (mer === "PM" && h < 12) h += 12;
+    if (mer === "AM" && h === 12) h = 0;
+    return h * 60 + min;
+  }).filter((v): v is number => v !== null);
   if (minutes.length === 0) return null;
-  const avg = Math.round(minutes.reduce((total, item) => total + item, 0) / minutes.length);
-  const hour24 = Math.floor(avg / 60) % 24;
-  const minute = avg % 60;
-  const suffix = hour24 >= 12 ? "PM" : "AM";
-  const hour12 = hour24 % 12 || 12;
-  return `${hour12}:${String(minute).padStart(2, "0")} ${suffix}`;
+  const avg = Math.round(minutes.reduce((t, n) => t + n, 0) / minutes.length);
+  const h24 = Math.floor(avg / 60) % 24; const min = avg % 60;
+  const suf = h24 >= 12 ? "PM" : "AM"; const h12 = h24 % 12 || 12;
+  return `${h12}:${String(min).padStart(2, "0")} ${suf}`;
+}
+
+function weekRange(): string {
+  const today = new Date(); const day = today.getDay();
+  const monday = new Date(today); monday.setDate(today.getDate() + (day === 0 ? -6 : 1 - day));
+  const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6);
+  const fmt = (d: Date) => d.toLocaleDateString(undefined, { month: "short", day: "numeric" }).toUpperCase();
+  return `${fmt(monday)} – ${fmt(sunday)}`;
+}
+
+function rankName(level: number): string {
+  const names: Record<number, string> = {
+    1: "Beginner", 2: "Explorer", 3: "Trailblazer", 4: "Dreamsmith",
+    5: "Luminary", 6: "Waykeeper", 7: "Mythwalker", 8: "Starbound",
+  };
+  return names[level] ?? `Legend ${level - 8}`;
+}
+
+function getRankInfo(totalSteps: number) {
+  const currentLevel = Math.floor(totalSteps / RANK_SIZE) + 1;
+  const stepsIntoRank = totalSteps % RANK_SIZE;
+  const percentToNext = Math.min(100, Math.round((stepsIntoRank / RANK_SIZE) * 100));
+  const nextRankAt = currentLevel * RANK_SIZE;
+  const stepsRemaining = nextRankAt - totalSteps;
+  return { currentLevel, stepsIntoRank, percentToNext, nextRankAt, stepsRemaining };
+}
+
+// Always compute rank bonuses fresh from earnedSteps — never trust stale storage values.
+// At 0 earned steps, display must be 0. Bonuses are only awarded after crossing a real threshold.
+function computeFreshRankBonuses(earnedSteps: number): { rankBonusPool: number; awardedThresholds: number[] } {
+  let display = earnedSteps;
+  const awardedThresholds: number[] = [];
+  for (let i = 1; i <= 50; i++) {
+    if (display >= i * RANK_SIZE) {
+      awardedThresholds.push(i);
+      display += 10; // one-time +10 per rank unlock
+    } else {
+      break;
+    }
+  }
+  return { rankBonusPool: awardedThresholds.length * 10, awardedThresholds };
+}
+
+function computeItemSteps(dayPlan: unknown, quickThoughts: unknown): number {
+  let total = 0;
+  const seenIds = new Set<string>();
+  const plan = dayPlan as Record<string, unknown> | null;
+  if (plan?.todayQuest) {
+    const quest = plan.todayQuest as Record<string, unknown>;
+    const id = quest.id ? String(quest.id) : null;
+    if (quest.status === "completed" && id && !seenIds.has(id)) {
+      seenIds.add(id); total += safeNumber(quest.steps, 2);
+    }
+  }
+  if (plan?.weekdayChecklists && typeof plan.weekdayChecklists === "object") {
+    for (const dayItems of Object.values(plan.weekdayChecklists as Record<string, unknown>)) {
+      if (!Array.isArray(dayItems)) continue;
+      for (const raw of dayItems) {
+        const item = raw as Record<string, unknown>;
+        const id = item.id ? String(item.id) : null;
+        if (item.checked && id && !seenIds.has(id)) {
+          seenIds.add(id); total += safeNumber(item.steps, 1);
+        }
+      }
+    }
+  }
+  if (Array.isArray(quickThoughts)) {
+    for (const raw of quickThoughts) {
+      const item = raw as Record<string, unknown>;
+      const id = item.id ? String(item.id) : null;
+      if (item.completedAt && id && !seenIds.has(id)) {
+        seenIds.add(id); total += safeNumber(item.steps, 1);
+      }
+    }
+  }
+  return total;
+}
+
+function getWeeklySteps(quickThoughts: unknown, dayPlan: unknown): number {
+  const today = new Date(); const day = today.getDay();
+  const monday = new Date(today); monday.setDate(today.getDate() + (day === 0 ? -6 : 1 - day)); monday.setHours(0, 0, 0, 0);
+  let total = 0;
+  if (Array.isArray(quickThoughts)) {
+    for (const raw of quickThoughts) {
+      const item = raw as Record<string, unknown>;
+      if (item.completedAt) {
+        const d = new Date(String(item.completedAt));
+        if (d >= monday) total += safeNumber(item.steps, 1);
+      }
+    }
+  }
+  const plan = dayPlan as Record<string, unknown> | null;
+  if (plan?.todayQuest) {
+    const quest = plan.todayQuest as Record<string, unknown>;
+    if (quest.status === "completed") total += safeNumber(quest.steps, 2);
+  }
+  return total;
 }
 
 export default function StatsScreen() {
   const router = useRouter();
+  const { width, height } = useWindowDimensions();
+  const modalWidth = Math.min(width - 24, 520);
+  const modalMaxHeight = Math.min(height * 0.88, 720);
+  const safeVW = Math.max(0, width - 24);
+  const safeVH = Math.max(0, height - 24);
+  const frameWidth = Math.min(MAX_FRAME_WIDTH, safeVW, safeVH * APP_FRAME_ASPECT_RATIO);
+  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
+
   const [stats, setStats] = useState<StatsSnapshot>(emptyStats);
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
+  const [activeInfo, setActiveInfo] = useState<ActiveInfo>(null);
 
-  useEffect(() => {
-    loadStats();
-  }, []);
+  useEffect(() => { loadStats(); }, []);
 
   async function loadStats() {
-    const [latestCheckIn, checkIns, completedQuests, quickThoughts, journalEntries, dreamJournalEntries, preSleepIntentions, morningReflections, alternateMorningReflections, meditations, reflections, sleepCalendar, userStats] = await Promise.all([
+    const [latestCheckIn, checkIns, completedQuests, quickThoughts, dayPlan, journalEntries,
+      dreamJournalEntries, preSleepIntentions, morningReflections, alternateMorningReflections,
+      meditations, reflections, sleepCalendar, userStats] = await Promise.all([
       readJson<CheckIn | null>(CHECKIN_KEY, null),
       readJson<CheckIn[]>(CHECKIN_HISTORY_KEY, []),
       readJson<unknown>(COMPLETED_QUESTS_KEY, []),
       readJson<unknown>(QUICK_THOUGHTS_KEY, []),
+      readJson<unknown>(DAY_PLAN_KEY, null),
       readJson<unknown>(JOURNAL_KEY, []),
       readJson<unknown>(DREAM_JOURNAL_KEY, []),
       readJson<unknown>(PRE_SLEEP_INTENTIONS_KEY, []),
@@ -190,115 +279,155 @@ export default function StatsScreen() {
       readJson<unknown>(MEDITATIONS_KEY, []),
       readJson<unknown>(REFLECTIONS_KEY, []),
       readJson<unknown>(SLEEP_CALENDAR_KEY, []),
-      readJson<Record<string, unknown>>(USER_STATS_KEY, {}),
+      readJson<UserStats>(USER_STATS_KEY, {}),
     ]);
 
+    // Compute fresh from completed actions only — ignores any stale stored totals/bonuses.
+    // This guarantees: if earnedSteps === 0, displayTotal === 0. No bonus at Level 1.
+    const earnedSteps = computeItemSteps(dayPlan, quickThoughts);
+    const { rankBonusPool, awardedThresholds } = computeFreshRankBonuses(earnedSteps);
+    const prevAwarded = Array.isArray(userStats.rankBonusesAwarded) ? userStats.rankBonusesAwarded : [];
+    const hasNewBonuses = awardedThresholds.some(t => !prevAwarded.includes(t));
+
+    if (hasNewBonuses) {
+      await AsyncStorage.setItem(USER_STATS_KEY, JSON.stringify({
+        ...userStats, rankBonusesAwarded: awardedThresholds,
+      }));
+    }
+
     setStats({
-      latestCheckIn,
-      checkIns: Array.isArray(checkIns) ? checkIns : [],
-      completedQuests,
-      quickThoughts,
-      journalEntries,
-      dreamJournalEntries,
-      preSleepIntentions,
-      morningReflections,
-      alternateMorningReflections,
-      meditations,
-      reflections,
-      sleepCalendar,
-      totalSteps: Number(userStats.totalSteps ?? userStats.completedSteps ?? 0),
-      completedSteps: Number(userStats.completedSteps ?? 0),
+      latestCheckIn, checkIns: Array.isArray(checkIns) ? checkIns : [],
+      completedQuests, quickThoughts, dayPlan, journalEntries, dreamJournalEntries,
+      preSleepIntentions, morningReflections, alternateMorningReflections,
+      meditations, reflections, sleepCalendar,
+      earnedSteps, rankBonusPool, rankBonusesAwarded: awardedThresholds,
     });
   }
 
   const computed = useMemo(() => {
     const checkIns = stats.checkIns;
     const latest = stats.latestCheckIn ?? checkIns[checkIns.length - 1] ?? null;
-    const energies = checkIns.map((checkIn: CheckIn) => getNumber(checkIn.energy)).filter((value: number | null): value is number => value !== null);
-    const progressDays = checkIns.filter((checkIn: CheckIn) => checkIn.mode === "Progress").length;
-    const recoveryDays = checkIns.filter((checkIn: CheckIn) => checkIn.mode === "Recovery").length;
-    const wakeTimes = [...checkIns.map((checkIn: CheckIn) => checkIn.wakeTime), ...toArray(stats.sleepCalendar).map((entry) => (entry as Record<string, unknown>)?.wakeTime)].filter((value): value is string => typeof value === "string");
-    const sleepTimes = [...checkIns.map((checkIn: CheckIn) => checkIn.sleepTime), ...toArray(stats.sleepCalendar).map((entry) => (entry as Record<string, unknown>)?.sleepTime)].filter((value): value is string => typeof value === "string");
+    const energies = checkIns.map((c: CheckIn) => getNumber(c.energy)).filter((v): v is number => v !== null);
+    const progressDays = checkIns.filter((c: CheckIn) => c.mode === "Progress").length;
+    const recoveryDays = checkIns.filter((c: CheckIn) => c.mode === "Recovery").length;
+    const wakeTimes = [...checkIns.map((c: CheckIn) => c.wakeTime), ...toArray(stats.sleepCalendar).map((e) => (e as Record<string, unknown>)?.wakeTime)].filter((v): v is string => typeof v === "string");
+    const sleepTimes = [...checkIns.map((c: CheckIn) => c.sleepTime), ...toArray(stats.sleepCalendar).map((e) => (e as Record<string, unknown>)?.sleepTime)].filter((v): v is string => typeof v === "string");
     const morningCount = countAny(stats.morningReflections) + countAny(stats.alternateMorningReflections);
     const quickThoughtCount = countAny(stats.quickThoughts);
+    const completedQuickThoughts = Array.isArray(stats.quickThoughts) ? stats.quickThoughts.filter((i: unknown) => Boolean((i as Record<string, unknown>).completedAt)).length : 0;
     const checkInCount = checkIns.length + (stats.latestCheckIn && checkIns.length === 0 ? 1 : 0);
-    const rankSize = 50;
-    const totalSteps = Math.max(0, Number(stats.totalSteps ?? stats.completedSteps ?? 0));
-    const currentLevel = Math.floor(totalSteps / rankSize) + 1;
-    const stepsIntoRank = totalSteps % rankSize;
-    const percentToNextRank = Math.round((stepsIntoRank / rankSize) * 100);
-    const nextRankAt = currentLevel * rankSize;
-
+    const totalSteps = stats.earnedSteps + stats.rankBonusPool;
+    const weeklySteps = getWeeklySteps(stats.quickThoughts, stats.dayPlan);
+    const rankInfo = getRankInfo(totalSteps);
     return {
-      latest,
-      latestEnergy: getNumber(latest?.energy),
-      latestMode: latest?.mode ?? "Not logged yet",
-      latestSleep: latest?.sleep ?? latest?.hours,
-      latestMood: latest?.mood,
-      latestStress: latest?.stress,
-      questsCompleted: countAny(stats.completedQuests),
-      quickThoughtCount,
-      journalCount: countAny(stats.journalEntries),
-      dreamJournalCount: countAny(stats.dreamJournalEntries),
-      preSleepCount: countAny(stats.preSleepIntentions),
-      morningCount,
-      meditationCount: countAny(stats.meditations),
-      reflectionCount: countAny(stats.reflections),
-      averageEnergy: average(energies),
-      progressDays,
-      recoveryDays,
-      checkInCount,
-      averageWakeTime: averageTime(wakeTimes),
-      averageSleepTime: averageTime(sleepTimes),
-      rankSize,
-      totalSteps,
-      currentLevel,
-      stepsIntoRank,
-      percentToNextRank,
-      nextRankAt,
+      latest, latestEnergy: getNumber(latest?.energy), latestMode: latest?.mode ?? "Not logged yet",
+      latestSleep: latest?.sleep ?? latest?.hours, latestMood: latest?.mood, latestStress: latest?.stress,
+      questsCompleted: countAny(stats.completedQuests), quickThoughtCount, completedQuickThoughts,
+      journalCount: countAny(stats.journalEntries), dreamJournalCount: countAny(stats.dreamJournalEntries),
+      preSleepCount: countAny(stats.preSleepIntentions), morningCount,
+      meditationCount: countAny(stats.meditations), reflectionCount: countAny(stats.reflections),
+      averageEnergy: average(energies), progressDays, recoveryDays, checkInCount,
+      averageWakeTime: averageTime(wakeTimes), averageSleepTime: averageTime(sleepTimes),
+      totalSteps, weeklySteps, rankBonusesAwarded: stats.rankBonusesAwarded,
+      ...rankInfo,
     };
   }, [stats]);
 
-  const smallWin = computed.quickThoughtCount > 0
-    ? "You saved quick thoughts instead of letting them disappear."
-    : computed.checkInCount > 0
-    ? "You checked in this week. That gives you real data to work with."
+  const smallWin = computed.completedQuickThoughts > 0
+    ? "You completed a quick thought quest this week."
+    : computed.questsCompleted > 0 ? "You finished at least one quest. That's a real step forward."
+    : computed.checkInCount > 0 ? "You checked in this week. That gives you real data to work with."
     : "Starting with one honest check-in is enough.";
 
   return (
     <View style={styles.pageRoot}>
-      <View style={styles.phoneStage}>
-        <ImageBackground source={uiAssets.backgrounds.default} style={styles.backgroundLayer} imageStyle={styles.backgroundImage}>
-          <View style={styles.worldOverlay}>
-            <ScrollView style={styles.screenScroller} contentContainerStyle={styles.hudContent}>
-              <View style={styles.heroPanel}>
-                <Text style={styles.heroLabel}>STATS BOARD</Text>
-                <Text style={styles.heroTitle}>STATS</Text>
-                <Text style={styles.heroSubtitle}>Know your journey. Level up with insight.</Text>
-              </View>
+      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight }]}>
+        <View pointerEvents="none" style={styles.backgroundLayer}>
+          <Image source={uiAssets.backgrounds.default} style={styles.backgroundImage} resizeMode="cover" />
+        </View>
+        <View style={styles.worldOverlay}>
+            <ScrollView style={styles.screenScroller} contentContainerStyle={styles.hudContent} showsVerticalScrollIndicator={false} bounces={false}>
 
-              <View style={styles.guideCard}>
-                <Image source={uiAssets.guides.evie} style={styles.guideImage} resizeMode="contain" />
-                <View style={styles.guideCopy}>
-                  <Text style={styles.guideName}>Evie</Text>
-                  <Text style={styles.guideText}>Stats help you spot patterns, track growth, and adjust your habits with intention.</Text>
+              <View style={styles.heroPanel}>
+                <View style={styles.heroCopyRow}>
+                  <View style={styles.bannerIconWrap}><Text style={styles.bannerIconText}>🎒</Text></View>
+                  <View style={styles.heroCopy}>
+                    <Text style={styles.heroLabel}>STATS BOARD</Text>
+                    <Text style={styles.heroTitle}>STATS</Text>
+                    <Text style={styles.heroSubtitle}>Know your journey. Level up with insight.</Text>
+                  </View>
+                  <TouchableOpacity style={styles.infoBtn} onPress={() => setActiveInfo("stats")}>
+                    <Text style={styles.infoBtnText}>?</Text>
+                  </TouchableOpacity>
                 </View>
               </View>
 
-              <ChestCard accent="gold" icon="🧰" title="WEEKLY SUMMARY" subtitle="See your most important weekly trends." onPress={() => setActivePanel("weekly")} />
-              <ChestCard accent="green" icon="🎒" title="RANK PROGRESS" subtitle="Track steps, level, and next rank." onPress={() => setActivePanel("rank")} />
-              <ChestCard accent="purple" icon="📦" title="BEHAVIOR" subtitle="Review routines, sleep, and cognitive habits." onPress={() => setActivePanel("behavior")} />
+              <View style={styles.eviePanel}>
+                <Image source={uiAssets.guides.evie} style={styles.evieAvatar} resizeMode="contain" />
+                <View style={styles.evieCopy}>
+                  <Text style={styles.evieName}>EVIE</Text>
+                  <Text style={styles.evieText}>Stats help you spot patterns, track growth, and adjust your habits with intention.</Text>
+                </View>
+                <TouchableOpacity style={styles.infoBtn} onPress={() => setActiveInfo("evie")}>
+                  <Text style={styles.infoBtnText}>?</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Current Status Snapshot */}
+              <View style={styles.snapshotCard}>
+                <Text style={styles.snapshotTitle}>CURRENT STATUS</Text>
+                <View style={styles.snapshotGrid}>
+                  <View style={styles.snapStat}>
+                    <Text style={styles.snapValue}>{computed.totalSteps}</Text>
+                    <Text style={styles.snapLabel}>TOTAL STEPS</Text>
+                  </View>
+                  <View style={[styles.snapStat, styles.snapDividerLeft]}>
+                    <Text style={styles.snapValue}>{rankName(computed.currentLevel)}</Text>
+                    <Text style={styles.snapLabel}>LV {computed.currentLevel} RANK</Text>
+                  </View>
+                  <View style={[styles.snapStat, styles.snapDividerTop]}>
+                    <Text style={styles.snapValue}>{computed.latestEnergy !== null ? `${computed.latestEnergy}` : "—"}</Text>
+                    <Text style={styles.snapLabel}>ENERGY /100</Text>
+                  </View>
+                  <View style={[styles.snapStat, styles.snapDividerTop, styles.snapDividerLeft]}>
+                    <Text style={styles.snapValue}>{computed.weeklySteps}</Text>
+                    <Text style={styles.snapLabel}>THIS WEEK</Text>
+                  </View>
+                </View>
+                <View style={styles.miniProgressTrack}>
+                  <View style={[styles.miniProgressFill, { width: `${computed.percentToNext}%` }]} />
+                </View>
+                <Text style={styles.rankCaption}>
+                  {computed.percentToNext}% to {rankName(computed.currentLevel + 1)} · {computed.stepsRemaining} steps remain
+                </Text>
+              </View>
+
+              <ChestCard accent="gold" icon="📅" title="WEEKLY SUMMARY" subtitle="Energy, steps & activity this week." meta={`${weekRange()} · ${computed.weeklySteps} steps`} onPress={() => setActivePanel("weekly")} onInfo={() => setActiveInfo("weekly")} />
+              <ChestCard accent="green" icon="🛡️" title="RANK PROGRESS" subtitle="Steps, level, and next rank unlock." meta={`${computed.totalSteps} / ${computed.nextRankAt} · ${computed.percentToNext}%`} onPress={() => setActivePanel("rank")} onInfo={() => setActiveInfo("rank")} />
+              <ChestCard accent="purple" icon="📊" title="BEHAVIOR" subtitle="Routines, sleep & cognitive habits." meta={`${computed.progressDays} progress · ${computed.recoveryDays} recovery`} onPress={() => setActivePanel("behavior")} onInfo={() => setActiveInfo("behavior")} />
+
+              <View style={styles.pageFooter}>
+                <View style={styles.pageFooterLine} />
+                <Text style={styles.pageFooterText}>MYLIT · YOUR JOURNEY</Text>
+                <View style={styles.pageFooterLine} />
+              </View>
+
             </ScrollView>
 
             <BottomNav router={router} />
 
-            {activePanel ? (
+            {activePanel !== null ? (
               <View style={styles.modalOverlay}>
-                <View style={styles.modalPanel}>
-                  <TouchableOpacity style={styles.closeButton} onPress={() => setActivePanel(null)}>
-                    <Text style={styles.closeButtonText}>×</Text>
-                  </TouchableOpacity>
-                  <ScrollView contentContainerStyle={styles.modalContent}>
+                <View style={[styles.modalPanel, { width: modalWidth, maxHeight: modalMaxHeight }]}>
+                  <View style={styles.modalTopBar}>
+                    <TouchableOpacity style={styles.infoBtn} onPress={() => setActiveInfo(activePanel === "weekly" ? "weeklyPopup" : activePanel === "rank" ? "rankPopup" : "behaviorPopup")}>
+                      <Text style={styles.infoBtnText}>?</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.closeButton} onPress={() => setActivePanel(null)}>
+                      <Text style={styles.closeButtonText}>×</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
                     {activePanel === "weekly" ? <WeeklyPanel computed={computed} smallWin={smallWin} /> : null}
                     {activePanel === "rank" ? <RankPanel computed={computed} /> : null}
                     {activePanel === "behavior" ? <BehaviorPanel computed={computed} /> : null}
@@ -309,29 +438,71 @@ export default function StatsScreen() {
                 </View>
               </View>
             ) : null}
+
+            {activeInfo !== null ? (
+              <View style={styles.infoOverlay}>
+                <View style={[styles.infoCard, { width: Math.min(width - 32, 480) }]}>
+                  <Text style={styles.infoTitle}>{INFO_COPY[activeInfo].title}</Text>
+                  <Text style={styles.infoBody}>{INFO_COPY[activeInfo].body}</Text>
+                  <View style={styles.lunaInfoRow}>
+                    <Image source={uiAssets.guides.luna} style={styles.lunaInfoImage} resizeMode="contain" />
+                    <Text style={styles.lunaInfoText}>Luna · MYLIT Guide</Text>
+                  </View>
+                  <TouchableOpacity style={styles.returnButton} onPress={() => setActiveInfo(null)}>
+                    <Text style={styles.returnButtonText}>RETURN</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : null}
           </View>
-        </ImageBackground>
+        </View>
       </View>
-    </View>
   );
 }
 
-function ChestCard({ accent, icon, title, subtitle, onPress }: { accent: "gold" | "green" | "purple"; icon: string; title: string; subtitle: string; onPress: () => void }) {
+function ChestCard({ accent, icon, title, subtitle, meta, onPress, onInfo }: { accent: "gold" | "green" | "purple"; icon: string; title: string; subtitle: string; meta: string; onPress: () => void; onInfo: () => void }) {
+  const borderStyle = accent === "gold" ? styles.goldChest : accent === "green" ? styles.greenChest : styles.purpleChest;
+  const glowStyle = accent === "gold" ? styles.goldGlow : accent === "green" ? styles.greenGlow : styles.purpleGlow;
+  const textStyle = accent === "gold" ? styles.goldText : accent === "green" ? styles.greenText : styles.purpleText;
+  const metaBgStyle = accent === "gold" ? styles.goldMetaBg : accent === "green" ? styles.greenMetaBg : styles.purpleMetaBg;
   return (
-    <TouchableOpacity style={[styles.chestCard, styles[`${accent}Chest`]]} onPress={onPress} activeOpacity={0.82}>
-      <View style={[styles.chestIconWrap, styles[`${accent}Glow`]]}><Text style={styles.chestIcon}>{icon}</Text></View>
+    <TouchableOpacity style={[styles.chestCard, borderStyle]} onPress={onPress} activeOpacity={0.82}>
+      <View style={[styles.chestIconWrap, glowStyle]}><Text style={styles.chestIcon}>{icon}</Text></View>
       <View style={styles.chestCopy}>
         <Text style={styles.chestTitle}>{title}</Text>
-        <Text style={[styles.chestSubtitle, styles[`${accent}Text`]]}>{subtitle}</Text>
+        <Text style={styles.chestSubtitleText}>{subtitle}</Text>
+        <View style={[styles.chestMeta, metaBgStyle]}>
+          <Text style={[styles.chestMetaText, textStyle]}>{meta}</Text>
+        </View>
       </View>
-      <Text style={[styles.openCue, styles[`${accent}Text`]]}>›</Text>
+      <View style={styles.chestRight}>
+        <TouchableOpacity style={styles.infoBtn} onPress={onInfo}>
+          <Text style={styles.infoBtnText}>?</Text>
+        </TouchableOpacity>
+        <Text style={[styles.openCue, textStyle]}>›</Text>
+      </View>
     </TouchableOpacity>
   );
 }
 
+
 function StatCard({ label, value, accent = "#FBBF24" }: { label: string; value: string | number; accent?: string }) {
-  return <View style={styles.statCard}><Text style={[styles.statValue, { color: accent }]}>{value}</Text><Text style={styles.statLabel}>{label}</Text></View>;
+  return (
+    <View style={styles.statCard}>
+      <Text style={[styles.statValue, { color: accent }]}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+    </View>
+  );
 }
+
+type ComputedStats = {
+  latest: CheckIn | null; latestEnergy: number | null; latestMode: string; latestSleep: unknown; latestMood: unknown; latestStress: unknown;
+  questsCompleted: number; quickThoughtCount: number; completedQuickThoughts: number; journalCount: number; dreamJournalCount: number;
+  preSleepCount: number; morningCount: number; meditationCount: number; reflectionCount: number; averageEnergy: number | null;
+  progressDays: number; recoveryDays: number; checkInCount: number; averageWakeTime: string | null; averageSleepTime: string | null;
+  totalSteps: number; weeklySteps: number; rankBonusesAwarded: number[];
+  currentLevel: number; stepsIntoRank: number; percentToNext: number; nextRankAt: number; stepsRemaining: number;
+};
 
 function WeeklyPanel({ computed, smallWin }: { computed: ComputedStats; smallWin: string }) {
   return (
@@ -339,23 +510,31 @@ function WeeklyPanel({ computed, smallWin }: { computed: ComputedStats; smallWin
       <Text style={styles.modalTitle}>WEEKLY SUMMARY</Text>
       <Text style={styles.modalSubtitle}>{weekRange()}</Text>
       <View style={styles.featureCard}>
-        <View><Text style={styles.cardKicker}>LATEST CHECK-IN</Text><Text style={styles.bigNumber}>{computed.latestEnergy !== null ? `${computed.latestEnergy}/100` : "—/100"}</Text></View>
+        <View style={styles.featureHalf}>
+          <Text style={styles.cardKicker}>ENERGY</Text>
+          <Text style={styles.bigNumber}>{computed.latestEnergy !== null ? `${computed.latestEnergy}` : "—"}</Text>
+          <Text style={styles.bigUnit}>/100</Text>
+        </View>
         <View style={styles.featureDivider} />
-        <View><Text style={styles.cardKicker}>MODE</Text><Text style={computed.latestMode === "Recovery" ? styles.recoveryMode : styles.progressMode}>{formatValue(computed.latestMode)}</Text><Text style={styles.detailText}>Sleep: {formatValue(computed.latestSleep)} • Mood: {formatValue(computed.latestMood)} • Stress: {formatValue(computed.latestStress)}</Text></View>
+        <View style={styles.featureHalf}>
+          <Text style={styles.cardKicker}>MODE</Text>
+          <Text style={computed.latestMode === "Recovery" ? styles.recoveryMode : styles.progressMode}>{formatValue(computed.latestMode)}</Text>
+          <Text style={styles.detailText}>Sleep: {formatValue(computed.latestSleep)} • Mood: {formatValue(computed.latestMood)}</Text>
+        </View>
       </View>
       <View style={styles.statsGrid}>
+        <StatCard label="Total Steps" value={computed.totalSteps} accent="#FBBF24" />
+        <StatCard label="Steps This Week" value={computed.weeklySteps} accent="#FDE68A" />
         <StatCard label="Quests Completed" value={computed.questsCompleted} />
-        <StatCard label="Saved Thoughts" value={computed.quickThoughtCount} accent="#C084FC" />
-        <StatCard label="Avg Energy" value={computed.averageEnergy ?? "—"} accent="#67E8F9" />
+        <StatCard label="Quick Thoughts Done" value={computed.completedQuickThoughts} accent="#C084FC" />
         <StatCard label="Progress Days" value={computed.progressDays} accent="#6EE7B7" />
         <StatCard label="Recovery Days" value={computed.recoveryDays} accent="#C084FC" />
-        <StatCard label="Check-ins Logged" value={computed.checkInCount} />
+        <StatCard label="Avg Energy" value={computed.averageEnergy ?? "—"} accent="#67E8F9" />
+        <StatCard label="Check-ins" value={computed.checkInCount} />
         <StatCard label="Pre-sleep Intentions" value={computed.preSleepCount} accent="#A78BFA" />
         <StatCard label="Morning Reflections" value={computed.morningCount} accent="#FDE68A" />
         <StatCard label="Journal Entries" value={computed.journalCount} />
         <StatCard label="Dream Journal" value={computed.dreamJournalCount} accent="#93C5FD" />
-        <StatCard label="Meditations" value={computed.meditationCount} accent="#C084FC" />
-        <StatCard label="Reflections" value={computed.reflectionCount} accent="#86EFAC" />
       </View>
       <View style={styles.smallWinCard}><Text style={styles.smallWinTitle}>SMALL WIN</Text><Text style={styles.smallWinText}>{smallWin}</Text></View>
       <LunaNote text="You do not need a perfect week to learn something useful." />
@@ -364,6 +543,7 @@ function WeeklyPanel({ computed, smallWin }: { computed: ComputedStats; smallWin
 }
 
 function RankPanel({ computed }: { computed: ComputedStats }) {
+  const bonusStepsTotal = computed.rankBonusesAwarded.length * 10;
   return (
     <>
       <Text style={styles.modalTitle}>RANK PROGRESS</Text>
@@ -372,95 +552,199 @@ function RankPanel({ computed }: { computed: ComputedStats }) {
         <Text style={styles.rankArrow}>»</Text>
         <View style={styles.rankBlock}><Text style={styles.cardKicker}>NEXT RANK</Text><Text style={styles.rankBadge}>💎</Text><Text style={styles.rankName}>{rankName(computed.currentLevel + 1)}</Text><Text style={styles.levelText}>Level {computed.currentLevel + 1}</Text></View>
       </View>
-      <View style={styles.progressCard}><Text style={styles.cardKicker}>TOTAL STEPS</Text><Text style={styles.progressTotal}>{computed.totalSteps} / {computed.nextRankAt}</Text><View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${computed.percentToNextRank}%` }]} /></View><Text style={styles.progressCaption}>{computed.percentToNextRank}% to next rank • {computed.rankSize - computed.stepsIntoRank} steps remain</Text></View>
-      <View style={styles.statsGrid}><StatCard label="Steps Gained This Week" value={computed.totalSteps} accent="#67E8F9" /><StatCard label="Quests This Week" value={computed.questsCompleted} accent="#C084FC" /><StatCard label="Consistency" value={`${computed.checkInCount} logs`} accent="#FBBF24" /><StatCard label="Next Unlock" value={rankName(computed.currentLevel + 1)} accent="#86EFAC" /></View>
-      <View style={styles.smallWinCard}><Text style={styles.smallWinTitle}>NEXT UNLOCK PREVIEW</Text><Text style={styles.smallWinText}>Reach {computed.nextRankAt} total steps to open the {rankName(computed.currentLevel + 1)} tier.</Text></View>
-      <LunaNote text="Progress builds quietly. Every step still counts." />
+      <View style={styles.progressCard}>
+        <Text style={styles.cardKicker}>TOTAL STEPS → NEXT RANK AT {computed.nextRankAt}</Text>
+        <Text style={styles.progressTotal}>{computed.totalSteps} <Text style={styles.progressUnit}>/ {computed.nextRankAt}</Text></Text>
+        <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${computed.percentToNext}%` }]} /></View>
+        <Text style={styles.progressCaption}>{computed.percentToNext}% to next rank • {computed.stepsRemaining} steps remain</Text>
+      </View>
+      <View style={styles.statsGrid}>
+        <StatCard label="Total Steps" value={computed.totalSteps} accent="#FBBF24" />
+        <StatCard label="Steps This Week" value={computed.weeklySteps} accent="#67E8F9" />
+        <StatCard label="Rank Bonuses Earned" value={`+${bonusStepsTotal} pts`} accent="#86EFAC" />
+        <StatCard label="Next Unlock" value={rankName(computed.currentLevel + 1)} accent="#C084FC" />
+      </View>
+      <View style={styles.smallWinCard}>
+        <Text style={styles.smallWinTitle}>NEXT UNLOCK PREVIEW</Text>
+        <Text style={styles.smallWinText}>Reach {computed.nextRankAt} steps to unlock {rankName(computed.currentLevel + 1)}. Each rank unlock grants +10 bonus steps — once only.</Text>
+      </View>
+      <LunaNote text="Progress builds quietly. Every honest step still counts." />
     </>
   );
 }
 
 function BehaviorPanel({ computed }: { computed: ComputedStats }) {
-  const totalModeDays = computed.progressDays + computed.recoveryDays;
-  const progressPercent = totalModeDays > 0 ? Math.round((computed.progressDays / totalModeDays) * 100) : 0;
-  const recoveryPercent = totalModeDays > 0 ? 100 - progressPercent : 0;
+  const total = computed.progressDays + computed.recoveryDays;
+  const pct = total > 0 ? Math.round((computed.progressDays / total) * 100) : 0;
+  const rct = total > 0 ? 100 - pct : 0;
   return (
     <>
       <Text style={styles.modalTitle}>BEHAVIOR</Text>
       <Text style={styles.modalSubtitle}>Patterns are information, not judgment.</Text>
-      <View style={styles.balanceCard}><Text style={styles.cardKicker}>PROGRESS VS RECOVERY BALANCE</Text><View style={styles.balanceRow}><Text style={styles.progressMode}>{progressPercent}% Progress</Text><Text style={styles.recoveryMode}>{recoveryPercent}% Recovery</Text></View><View style={styles.progressTrack}><View style={[styles.progressFillGreen, { width: `${progressPercent}%` }]} /><View style={[styles.progressFillPurple, { width: `${recoveryPercent}%` }]} /></View></View>
-      <View style={styles.statsGrid}><StatCard label="Progress Days" value={computed.progressDays} accent="#86EFAC" /><StatCard label="Recovery Days" value={computed.recoveryDays} accent="#C084FC" /><StatCard label="Average Wake Time" value={computed.averageWakeTime ?? "Not enough data yet"} accent="#FDE68A" /><StatCard label="Average Sleep Time" value={computed.averageSleepTime ?? "No sleep pattern yet"} accent="#93C5FD" /></View>
+      <View style={styles.balanceCard}>
+        <Text style={styles.cardKicker}>PROGRESS VS RECOVERY</Text>
+        <View style={styles.balanceRow}><Text style={styles.progressMode}>{pct}% Progress</Text><Text style={styles.recoveryMode}>{rct}% Recovery</Text></View>
+        <View style={styles.progressTrack}><View style={[styles.progressFillGreen, { width: `${pct}%` }]} /><View style={[styles.progressFillPurple, { width: `${rct}%` }]} /></View>
+      </View>
+      <View style={styles.statsGrid}>
+        <StatCard label="Progress Days" value={computed.progressDays} accent="#86EFAC" />
+        <StatCard label="Recovery Days" value={computed.recoveryDays} accent="#C084FC" />
+        <StatCard label="Avg Energy" value={computed.averageEnergy ?? "—"} accent="#67E8F9" />
+        <StatCard label="Check-ins" value={computed.checkInCount} accent="#FDE68A" />
+        <StatCard label="Avg Wake Time" value={computed.averageWakeTime ?? "—"} accent="#FDE68A" />
+        <StatCard label="Avg Sleep Time" value={computed.averageSleepTime ?? "—"} accent="#93C5FD" />
+      </View>
       <Text style={styles.sectionTitle}>COGNITIVE MARKERS</Text>
-      <View style={styles.statsGrid}><StatCard label="Dream Journal Entries" value={computed.dreamJournalCount} accent="#93C5FD" /><StatCard label="Meditations" value={computed.meditationCount} accent="#C084FC" /><StatCard label="Reflections" value={computed.reflectionCount} accent="#86EFAC" /><StatCard label="Morning Reflections" value={computed.morningCount} accent="#FDE68A" /><StatCard label="Quick Thoughts" value={computed.quickThoughtCount} accent="#F472B6" /><StatCard label="Pre-sleep Intentions" value={computed.preSleepCount} accent="#A78BFA" /></View>
+      <View style={styles.statsGrid}>
+        <StatCard label="Dream Journal" value={computed.dreamJournalCount} accent="#93C5FD" />
+        <StatCard label="Meditations" value={computed.meditationCount} accent="#C084FC" />
+        <StatCard label="Reflections" value={computed.reflectionCount} accent="#86EFAC" />
+        <StatCard label="Morning Reflections" value={computed.morningCount} accent="#FDE68A" />
+        <StatCard label="Pre-sleep Intentions" value={computed.preSleepCount} accent="#A78BFA" />
+        <StatCard label="Journal Entries" value={computed.journalCount} />
+      </View>
       <LunaNote text="Patterns are information, not judgment. Use them to choose your next honest step." />
     </>
   );
 }
 
-type ComputedStats = { latest: CheckIn | null; latestEnergy: number | null; latestMode: string; latestSleep: unknown; latestMood: unknown; latestStress: unknown; questsCompleted: number; quickThoughtCount: number; journalCount: number; dreamJournalCount: number; preSleepCount: number; morningCount: number; meditationCount: number; reflectionCount: number; averageEnergy: number | null; progressDays: number; recoveryDays: number; checkInCount: number; averageWakeTime: string | null; averageSleepTime: string | null; rankSize: number; totalSteps: number; currentLevel: number; stepsIntoRank: number; percentToNextRank: number; nextRankAt: number; };
-
 function LunaNote({ text }: { text: string }) {
-  return <View style={styles.lunaNote}><Image source={uiAssets.guides.luna} style={styles.lunaImage} resizeMode="contain" /><View style={styles.lunaCopy}><Text style={styles.lunaName}>Luna</Text><Text style={styles.lunaText}>{text}</Text></View></View>;
+  return (
+    <View style={styles.lunaNote}>
+      <Image source={uiAssets.guides.luna} style={styles.lunaNoteImage} resizeMode="contain" />
+      <View style={styles.lunaNoteCopy}>
+        <Text style={styles.lunaNoteName}>LUNA</Text>
+        <Text style={styles.lunaNoteText}>{text}</Text>
+      </View>
+    </View>
+  );
 }
 
 function BottomNav({ router }: { router: ReturnType<typeof useRouter> }) {
-  return <View style={styles.bottomNav}><TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}><Text style={styles.navIcon}>🏠</Text><Text style={styles.navLabel}>HOME</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/sleep")}><Text style={styles.navIcon}>🌙</Text><Text style={styles.navLabel}>SLEEP</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/mind")}><Text style={styles.navIcon}>🧠</Text><Text style={styles.navLabel}>MIND</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/path")}><Text style={styles.navIcon}>🌲</Text><Text style={styles.navLabel}>PATH</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/calendar")}><Text style={styles.navIcon}>📅</Text><Text style={styles.navLabel}>CAL</Text></TouchableOpacity><TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={() => router.push("/stats")}><Text style={styles.navIcon}>🎒</Text><Text style={[styles.navLabel, styles.navLabelActive]}>BAG</Text></TouchableOpacity></View>;
+  return (
+    <View style={styles.bottomNav}>
+      <TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}><Text style={styles.navIcon}>🏠</Text><Text style={styles.navLabel}>HOME</Text></TouchableOpacity>
+      <TouchableOpacity style={styles.navButton} onPress={() => router.push("/sleep")}><Text style={styles.navIcon}>🌙</Text><Text style={styles.navLabel}>SLEEP</Text></TouchableOpacity>
+      <TouchableOpacity style={styles.navButton} onPress={() => router.push("/mind")}><Text style={styles.navIcon}>🧠</Text><Text style={styles.navLabel}>MIND</Text></TouchableOpacity>
+      <TouchableOpacity style={styles.navButton} onPress={() => router.push("/path")}><Text style={styles.navIcon}>🌲</Text><Text style={styles.navLabel}>PATH</Text></TouchableOpacity>
+      <TouchableOpacity style={styles.navButton} onPress={() => router.push("/calendar")}><Text style={styles.navIcon}>📅</Text><Text style={styles.navLabel}>CAL</Text></TouchableOpacity>
+      <TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={() => router.push("/stats")}><Text style={styles.navIcon}>🎒</Text><Text style={[styles.navLabel, styles.navLabelActive]}>BAG</Text></TouchableOpacity>
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
   pageRoot: { flex: 1, backgroundColor: "#02040A", alignItems: "center", justifyContent: "center" },
-  phoneStage: { width: "100%", maxWidth: 520, flex: 1, alignSelf: "center", backgroundColor: "#050814", overflow: "hidden" },
-  backgroundLayer: { flex: 1 },
+  phoneStage: { alignSelf: "center", backgroundColor: "#050814", overflow: "hidden", position: "relative", borderWidth: 2, borderColor: "rgba(251,191,36,0.55)", shadowColor: "#000", shadowOpacity: 0.85, shadowRadius: 0, shadowOffset: { width: 6, height: 6 } },
+  backgroundLayer: { ...StyleSheet.absoluteFillObject },
   backgroundImage: { width: "100%", height: "100%" },
-  worldOverlay: { flex: 1, backgroundColor: "rgba(2, 6, 12, 0.72)" },
+  worldOverlay: { flex: 1, backgroundColor: "rgba(2, 6, 12, 0.65)" },
   screenScroller: { flex: 1 },
-  hudContent: { paddingTop: 20, paddingHorizontal: 16, paddingBottom: 100 },
-  heroPanel: { backgroundColor: "rgba(8, 17, 34, 0.9)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 20, padding: 16, marginBottom: 12 },
-  heroLabel: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", letterSpacing: 1.5 },
-  heroTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 38, fontWeight: "900", letterSpacing: 3, marginTop: 4 },
-  heroSubtitle: { color: "#CBD5E1", fontSize: 14, lineHeight: 20, fontWeight: "700" },
-  guideCard: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(8, 17, 34, 0.88)", borderWidth: 2, borderColor: "#38506F", borderRadius: 18, padding: 12, marginBottom: 14 },
-  guideImage: { width: 82, height: 82, marginRight: 12 },
-  guideCopy: { flex: 1 },
-  guideName: { color: "#FBBF24", fontFamily: pixelFont, fontSize: 18, fontWeight: "900", marginBottom: 4 },
-  guideText: { color: "#F8FAFC", fontSize: 14, lineHeight: 20, fontWeight: "700" },
-  chestCard: { minHeight: 112, flexDirection: "row", alignItems: "center", backgroundColor: "rgba(6, 15, 30, 0.94)", borderWidth: 3, borderRadius: 18, padding: 12, marginBottom: 12 },
-  goldChest: { borderColor: "#FBBF24" }, greenChest: { borderColor: "#65A30D" }, purpleChest: { borderColor: "#A855F7" },
-  chestIconWrap: { width: 80, height: 80, borderRadius: 16, alignItems: "center", justifyContent: "center", marginRight: 14 },
-  goldGlow: { backgroundColor: "rgba(251,191,36,0.16)" }, greenGlow: { backgroundColor: "rgba(34,197,94,0.16)" }, purpleGlow: { backgroundColor: "rgba(168,85,247,0.16)" },
-  chestIcon: { fontSize: 42 }, chestCopy: { flex: 1 },
-  chestTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 23, fontWeight: "900", letterSpacing: 1 },
-  chestSubtitle: { fontFamily: pixelFont, fontSize: 13, fontWeight: "900", lineHeight: 19, marginTop: 6 },
+  hudContent: { minHeight: "100%", paddingTop: 14, paddingHorizontal: 14, paddingBottom: 82 },
+  heroPanel: { backgroundColor: "rgba(5,12,24,0.94)", borderWidth: 3, borderColor: "#D99B2B", borderRadius: 8, padding: 10, marginBottom: 8 },
+  heroCopyRow: { flexDirection: "row", alignItems: "center" },
+  bannerIconWrap: { width: 44, height: 54, backgroundColor: "rgba(70,28,112,0.86)", borderWidth: 2, borderColor: "#FDE047", alignItems: "center", justifyContent: "center", marginRight: 10 },
+  bannerIconText: { fontSize: 24 },
+  heroCopy: { flex: 1 },
+  heroLabel: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 10, fontWeight: "900", letterSpacing: 1.2 },
+  heroTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 28, fontWeight: "900", letterSpacing: 2 },
+  heroSubtitle: { color: "#F8E7A1", fontSize: 11, fontWeight: "800", lineHeight: 16 },
+  eviePanel: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(8,13,24,0.95)", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, padding: 8, marginBottom: 8 },
+  evieAvatar: { width: 44, height: 50, marginRight: 8 },
+  evieCopy: { flex: 1 },
+  evieName: { color: "#FDE047", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
+  evieText: { color: "#CBD5E1", fontSize: 12, lineHeight: 16, fontWeight: "700", marginTop: 2 },
+  infoBtn: { width: 26, height: 26, borderWidth: 2, borderColor: "#FBBF24", borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(113,63,18,0.7)", marginLeft: 8 },
+  infoBtnText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
+  chestCard: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(6,15,30,0.96)", borderWidth: 3, borderRadius: 8, padding: 10, marginBottom: 8, minHeight: 80 },
+  goldChest: { borderColor: "#FBBF24" }, greenChest: { borderColor: "#22C55E" }, purpleChest: { borderColor: "#A855F7" },
+  chestIconWrap: { width: 52, height: 52, borderRadius: 6, alignItems: "center", justifyContent: "center", marginRight: 10 },
+  goldGlow: { backgroundColor: "rgba(251,191,36,0.18)" }, greenGlow: { backgroundColor: "rgba(34,197,94,0.18)" }, purpleGlow: { backgroundColor: "rgba(168,85,247,0.18)" },
+  chestIcon: { fontSize: 30 },
+  chestCopy: { flex: 1 },
+  chestTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900", letterSpacing: 1 },
+  chestSubtitleText: { color: "#94A3B8", fontSize: 11, lineHeight: 15, marginTop: 2, fontWeight: "700" },
+  chestMeta: { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 4, marginTop: 6, alignSelf: "flex-start" },
+  chestMetaText: { fontFamily: pixelFont, fontSize: 9, fontWeight: "900" },
+  goldMetaBg: { backgroundColor: "rgba(251,191,36,0.14)" },
+  greenMetaBg: { backgroundColor: "rgba(34,197,94,0.14)" },
+  purpleMetaBg: { backgroundColor: "rgba(168,85,247,0.14)" },
   goldText: { color: "#FBBF24" }, greenText: { color: "#86EFAC" }, purpleText: { color: "#C084FC" },
-  openCue: { fontSize: 42, fontWeight: "900", marginLeft: 8 },
-  bottomNav: { position: "absolute", bottom: 8, left: 10, right: 10, flexDirection: "row", justifyContent: "space-between", backgroundColor: "rgba(8,17,34,0.96)", borderWidth: 2, borderColor: "#334155", borderRadius: 16, padding: 6 },
-  navButton: { flex: 1, alignItems: "center", borderRadius: 12, paddingVertical: 6, borderWidth: 1, borderColor: "transparent" },
-  navButtonActive: { backgroundColor: "rgba(120, 53, 15, 0.55)", borderColor: "#FBBF24" },
-  navIcon: { fontSize: 20 }, navLabel: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 10, fontWeight: "900", marginTop: 2 }, navLabelActive: { color: "#FBBF24" },
-  modalOverlay: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(0,0,0,0.72)", paddingHorizontal: 14, paddingVertical: 42, justifyContent: "center" },
-  modalPanel: { maxHeight: "92%", backgroundColor: "rgba(8,17,34,0.98)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 22, overflow: "hidden" },
-  modalContent: { padding: 16, paddingTop: 28 },
-  closeButton: { position: "absolute", top: 8, right: 10, zIndex: 2, width: 34, height: 34, borderRadius: 8, borderWidth: 2, borderColor: "#FBBF24", alignItems: "center", justifyContent: "center" },
-  closeButtonText: { color: "#FBBF24", fontSize: 28, lineHeight: 30, fontWeight: "900" },
-  modalTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 30, fontWeight: "900", textAlign: "center", letterSpacing: 2 },
-  modalSubtitle: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 13, textAlign: "center", marginTop: 4, marginBottom: 14, fontWeight: "800" },
-  featureCard: { flexDirection: "row", backgroundColor: "#071326", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 14, padding: 14, marginVertical: 14 },
-  featureDivider: { width: 1, backgroundColor: "#475569", marginHorizontal: 14 },
-  cardKicker: { color: "#E5E7EB", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", letterSpacing: 1, marginBottom: 6 },
-  bigNumber: { color: "#FBBF24", fontFamily: pixelFont, fontSize: 34, fontWeight: "900" },
-  progressMode: { color: "#86EFAC", fontFamily: pixelFont, fontSize: 18, fontWeight: "900" }, recoveryMode: { color: "#C084FC", fontFamily: pixelFont, fontSize: 18, fontWeight: "900" },
-  detailText: { color: "#CBD5E1", fontSize: 12, lineHeight: 18, marginTop: 6 },
-  statsGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
-  statCard: { width: "48%", backgroundColor: "rgba(15, 23, 42, 0.95)", borderWidth: 2, borderColor: "#334155", borderRadius: 14, padding: 12, marginBottom: 10, minHeight: 86, justifyContent: "center" },
-  statValue: { fontFamily: pixelFont, fontSize: 24, fontWeight: "900", textAlign: "center" }, statLabel: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 10, fontWeight: "900", textAlign: "center", marginTop: 6, lineHeight: 14 },
-  smallWinCard: { borderWidth: 2, borderColor: "#FBBF24", backgroundColor: "rgba(69, 43, 8, 0.35)", borderRadius: 14, padding: 12, marginTop: 4, marginBottom: 12 },
-  smallWinTitle: { color: "#FBBF24", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", marginBottom: 6 }, smallWinText: { color: "#F8FAFC", fontSize: 14, lineHeight: 20, fontWeight: "700" },
-  lunaNote: { flexDirection: "row", alignItems: "center", borderWidth: 2, borderColor: "#A78BFA", backgroundColor: "rgba(49, 46, 129, 0.38)", borderRadius: 14, padding: 10, marginBottom: 12 },
-  lunaImage: { width: 58, height: 58, marginRight: 10 }, lunaCopy: { flex: 1 }, lunaName: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 14, fontWeight: "900" }, lunaText: { color: "#F8FAFC", fontSize: 13, lineHeight: 18, fontWeight: "700" },
-  returnButton: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", borderRadius: 12, paddingVertical: 13, alignItems: "center", marginTop: 2 }, returnButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 16, fontWeight: "900", letterSpacing: 1 },
-  rankDuelCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 2, borderColor: "#334155", backgroundColor: "#071326", borderRadius: 14, padding: 12, marginVertical: 14 },
-  rankBlock: { flex: 1, alignItems: "center" }, rankBadge: { fontSize: 34 }, rankName: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 18, fontWeight: "900", textAlign: "center" }, levelText: { color: "#67E8F9", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", marginTop: 4 }, rankArrow: { color: "#FBBF24", fontSize: 30, fontWeight: "900", marginHorizontal: 8 },
-  progressCard: { borderWidth: 2, borderColor: "#334155", backgroundColor: "#071326", borderRadius: 14, padding: 14, marginBottom: 12 }, progressTotal: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 28, fontWeight: "900", textAlign: "center" },
-  progressTrack: { height: 16, borderRadius: 8, borderWidth: 1, borderColor: "#FBBF24", backgroundColor: "#0F172A", flexDirection: "row", overflow: "hidden", marginTop: 12 }, progressFill: { height: "100%", backgroundColor: "#FBBF24" }, progressFillGreen: { height: "100%", backgroundColor: "#22C55E" }, progressFillPurple: { height: "100%", backgroundColor: "#A855F7" }, progressCaption: { color: "#67E8F9", textAlign: "center", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", marginTop: 8 },
-  balanceCard: { borderWidth: 2, borderColor: "#334155", backgroundColor: "#071326", borderRadius: 14, padding: 14, marginVertical: 14 }, balanceRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 4 }, sectionTitle: { color: "#FBBF24", fontFamily: pixelFont, fontSize: 14, fontWeight: "900", marginTop: 6, marginBottom: 10, letterSpacing: 1 },
+  chestRight: { flexDirection: "column", alignItems: "center", gap: 4, marginLeft: 4 },
+  openCue: { fontSize: 26, fontWeight: "900" },
+  snapshotCard: { backgroundColor: "rgba(5,12,24,0.96)", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, padding: 10, marginBottom: 8 },
+  snapshotTitle: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", letterSpacing: 1.2, marginBottom: 6 },
+  snapshotGrid: { flexDirection: "row", flexWrap: "wrap" },
+  snapStat: { width: "50%", paddingVertical: 5, paddingHorizontal: 6, alignItems: "center" },
+  snapValue: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 17, fontWeight: "900" },
+  snapLabel: { color: "#64748B", fontFamily: pixelFont, fontSize: 8, fontWeight: "900", marginTop: 2, letterSpacing: 0.5 },
+  snapDividerLeft: { borderLeftWidth: 1, borderLeftColor: "#1E293B" },
+  snapDividerTop: { borderTopWidth: 1, borderTopColor: "#1E293B" },
+  miniProgressTrack: { height: 8, borderRadius: 4, backgroundColor: "#0F172A", borderWidth: 1, borderColor: "#FBBF24", overflow: "hidden", marginTop: 8, marginBottom: 4 },
+  miniProgressFill: { height: "100%", backgroundColor: "#FBBF24" },
+  rankCaption: { color: "#64748B", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", textAlign: "center" },
+  pageFooter: { flexDirection: "row", alignItems: "center", paddingVertical: 10, marginBottom: 2 },
+  pageFooterLine: { flex: 1, height: 1, backgroundColor: "#1E293B" },
+  pageFooterText: { color: "#334155", fontFamily: pixelFont, fontSize: 8, fontWeight: "900", letterSpacing: 1.5, marginHorizontal: 10 },
+  bottomNav: { position: "absolute", bottom: 8, left: 8, right: 8, height: 62, flexDirection: "row", justifyContent: "space-between", backgroundColor: "rgba(4,8,16,0.98)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 5, padding: 4 },
+  navButton: { flex: 1, backgroundColor: "#111827", borderWidth: 2, borderColor: "#3A4558", borderRadius: 3, paddingVertical: 4, marginHorizontal: 2, alignItems: "center", justifyContent: "center" },
+  navButtonActive: { backgroundColor: "#162314", borderColor: "#FBBF24" },
+  navIcon: { fontSize: 18 },
+  navLabel: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", marginTop: 1 },
+  navLabelActive: { color: "#FDE68A" },
+  modalOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.78)", justifyContent: "center", alignItems: "center", paddingVertical: 20, zIndex: 10 },
+  modalPanel: { backgroundColor: "rgba(8,17,34,0.99)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 12, overflow: "hidden" },
+  modalTopBar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 12, paddingTop: 10, paddingBottom: 2 },
+  modalContent: { paddingHorizontal: 14, paddingBottom: 14 },
+  closeButton: { width: 30, height: 30, borderRadius: 6, borderWidth: 2, borderColor: "#FBBF24", alignItems: "center", justifyContent: "center" },
+  closeButtonText: { color: "#FBBF24", fontSize: 24, lineHeight: 26, fontWeight: "900" },
+  modalTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 22, fontWeight: "900", textAlign: "center", letterSpacing: 2, marginBottom: 2 },
+  modalSubtitle: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 11, textAlign: "center", marginBottom: 10, fontWeight: "800" },
+  featureCard: { flexDirection: "row", backgroundColor: "rgba(7,19,38,0.98)", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, padding: 12, marginBottom: 10 },
+  featureHalf: { flex: 1 },
+  featureDivider: { width: 1, backgroundColor: "#475569", marginHorizontal: 10 },
+  cardKicker: { color: "#E5E7EB", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", letterSpacing: 0.8, marginBottom: 4 },
+  bigNumber: { color: "#FBBF24", fontFamily: pixelFont, fontSize: 28, fontWeight: "900" },
+  bigUnit: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
+  progressMode: { color: "#86EFAC", fontFamily: pixelFont, fontSize: 15, fontWeight: "900" },
+  recoveryMode: { color: "#C084FC", fontFamily: pixelFont, fontSize: 15, fontWeight: "900" },
+  detailText: { color: "#CBD5E1", fontSize: 11, lineHeight: 15, marginTop: 4 },
+  statsGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", marginBottom: 4 },
+  statCard: { width: "48%", backgroundColor: "rgba(15,23,42,0.96)", borderWidth: 2, borderColor: "#334155", borderRadius: 8, padding: 10, marginBottom: 8, minHeight: 68, justifyContent: "center" },
+  statValue: { fontFamily: pixelFont, fontSize: 20, fontWeight: "900", textAlign: "center" },
+  statLabel: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", textAlign: "center", marginTop: 4, lineHeight: 12 },
+  smallWinCard: { borderWidth: 2, borderColor: "#FBBF24", backgroundColor: "rgba(69,43,8,0.35)", borderRadius: 8, padding: 10, marginTop: 4, marginBottom: 10 },
+  smallWinTitle: { color: "#FBBF24", fontFamily: pixelFont, fontSize: 10, fontWeight: "900", marginBottom: 4 },
+  smallWinText: { color: "#F8FAFC", fontSize: 13, lineHeight: 18, fontWeight: "700" },
+  lunaNote: { flexDirection: "row", alignItems: "center", borderWidth: 2, borderColor: "#A78BFA", backgroundColor: "rgba(49,46,129,0.25)", borderRadius: 8, padding: 10, marginBottom: 10 },
+  lunaNoteImage: { width: 42, height: 50, marginRight: 10 },
+  lunaNoteCopy: { flex: 1 },
+  lunaNoteName: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 10, fontWeight: "900" },
+  lunaNoteText: { color: "#F8FAFC", fontSize: 12, lineHeight: 16, fontWeight: "700", marginTop: 2 },
+  lunaInfoRow: { flexDirection: "row", alignItems: "center", marginTop: 10, marginBottom: 4 },
+  lunaInfoImage: { width: 28, height: 34, marginRight: 8 },
+  lunaInfoText: { color: "#A78BFA", fontFamily: pixelFont, fontSize: 9, fontWeight: "900" },
+  rankDuelCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 2, borderColor: "#334155", backgroundColor: "rgba(7,19,38,0.98)", borderRadius: 8, padding: 12, marginBottom: 10 },
+  rankBlock: { flex: 1, alignItems: "center" },
+  rankBadge: { fontSize: 26, marginTop: 4 },
+  rankName: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900", textAlign: "center", marginTop: 4 },
+  levelText: { color: "#67E8F9", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", marginTop: 2 },
+  rankArrow: { color: "#FBBF24", fontSize: 22, fontWeight: "900", marginHorizontal: 6 },
+  progressCard: { borderWidth: 2, borderColor: "#334155", backgroundColor: "rgba(7,19,38,0.98)", borderRadius: 8, padding: 12, marginBottom: 10 },
+  progressTotal: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 24, fontWeight: "900", textAlign: "center", marginTop: 4 },
+  progressUnit: { color: "#94A3B8", fontSize: 15, fontWeight: "900" },
+  progressTrack: { height: 14, borderRadius: 7, borderWidth: 1, borderColor: "#FBBF24", backgroundColor: "#0F172A", flexDirection: "row", overflow: "hidden", marginTop: 10 },
+  progressFill: { height: "100%", backgroundColor: "#FBBF24" },
+  progressFillGreen: { height: "100%", backgroundColor: "#22C55E" },
+  progressFillPurple: { height: "100%", backgroundColor: "#A855F7" },
+  progressCaption: { color: "#67E8F9", textAlign: "center", fontFamily: pixelFont, fontSize: 10, fontWeight: "900", marginTop: 6 },
+  balanceCard: { borderWidth: 2, borderColor: "#334155", backgroundColor: "rgba(7,19,38,0.98)", borderRadius: 8, padding: 12, marginBottom: 10 },
+  balanceRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 6, marginBottom: 8 },
+  sectionTitle: { color: "#FBBF24", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", marginTop: 4, marginBottom: 8, letterSpacing: 1 },
+  infoOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.86)", justifyContent: "center", alignItems: "center", padding: 20, zIndex: 25 },
+  infoCard: { backgroundColor: "rgba(8,13,24,0.99)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 12, padding: 16 },
+  infoTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 14, fontWeight: "900", marginBottom: 10 },
+  infoBody: { color: "#CBD5E1", fontSize: 13, lineHeight: 20, fontWeight: "700", marginBottom: 14 },
+  returnButton: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", borderRadius: 6, paddingVertical: 11, alignItems: "center", marginTop: 6 },
+  returnButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", letterSpacing: 1 },
 });

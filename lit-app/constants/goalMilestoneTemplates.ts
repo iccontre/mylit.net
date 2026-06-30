@@ -19,9 +19,9 @@ export type GoalMilestoneSet = {
 };
 
 export const GOAL_HORIZON_LABELS: Record<GoalHorizon, { label: string; caption: string }> = {
-  shortTerm: { label: "Short-Term Goal", caption: "Next 1–2 weeks" },
-  midTerm: { label: "Mid-Term Goal", caption: "Next 1–3 months" },
-  longTerm: { label: "Long-Term Goal", caption: "Next 6–12 months" },
+  shortTerm: { label: "Short-Term Goal", caption: "Short-term • 2 weeks" },
+  midTerm: { label: "Mid-Term Goal", caption: "Mid-term • 1 month" },
+  longTerm: { label: "Long-Term Goal", caption: "Long-term • 3 months" },
 };
 
 export const GOAL_MILESTONE_TEMPLATES: Record<string, GoalMilestoneSet> = {

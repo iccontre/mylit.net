@@ -1,4 +1,5 @@
 import { useRouter } from "expo-router";
+import { useState } from "react";
 import {
   Image,
   Platform,
@@ -10,7 +11,16 @@ import {
   View,
 } from "react-native";
 
+import { GuideInfoModal } from "../components/GuideInfoModal";
 import { uiAssets } from "../constants/uiAssets";
+
+const LUNA_MIND_BULLETS = [
+  "Mind Hub is where you process what happened, where attention went, and what you missed.",
+  "Journal captures what happened, what you noticed, and what to remember.",
+  "Meditations are short attention checks — notice where focus went and return gently.",
+  "Reflection turns missed quests into useful data without self-judgment.",
+  "All three tools together help MYLIT reveal patterns in your thinking over time.",
+];
 
 const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
 const MAX_FRAME_WIDTH = 520;
@@ -57,6 +67,7 @@ const MIND_CARDS: MindCard[] = [
 export default function MindScreen() {
   const router = useRouter();
   const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const [showInfo, setShowInfo] = useState(false);
 
   const safeViewportWidth = Math.max(0, viewportWidth - 24);
   const safeViewportHeight = Math.max(0, viewportHeight - 24);
@@ -102,23 +113,36 @@ export default function MindScreen() {
             bounces={false}
           >
             <View style={styles.hero}>
-              <Text style={styles.heroLabel}>+ MIND HUB +</Text>
-              <Text style={styles.title}>MIND</Text>
-              <Text style={styles.subtitle}>Write what happened. Notice what pulled you away.</Text>
+              <Text style={styles.heroLabel}>MIND HUB</Text>
+              <Text style={[styles.title, { fontSize: 34, letterSpacing: 3 }]}>MIND HUB</Text>
+              <Text style={styles.subtitle}>Write, notice, and reflect — without judgment.</Text>
             </View>
 
-            <View style={styles.mindBriefCard}>
-              <View style={styles.briefHeaderRow}>
-                <Text style={styles.briefTitle}>MIND BRIEF</Text>
-                <Text style={styles.briefMark}>✦</Text>
+            <View style={styles.lunaPanel}>
+              <Image source={uiAssets.guides.luna} style={styles.lunaAvatar} resizeMode="contain" />
+              <View style={styles.lunaCopy}>
+                <Text style={styles.lunaText}>
+                  One honest note can change how the day feels. Start with what is actually true.
+                </Text>
+                <Text style={styles.lunaName}>Luna ♥</Text>
               </View>
-              <Text style={styles.briefText}>
-                Keep it simple. One honest note can change how the day feels.
-              </Text>
+              <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
+                <Text style={styles.infoBtnText}>?</Text>
+              </TouchableOpacity>
             </View>
 
             <View style={styles.cardStack}>{MIND_CARDS.map(renderMindCard)}</View>
           </ScrollView>
+
+          <GuideInfoModal
+            visible={showInfo}
+            onClose={() => setShowInfo(false)}
+            guideAvatar={uiAssets.guides.luna}
+            guideName="Luna"
+            title="How Mind Hub Works"
+            bullets={LUNA_MIND_BULLETS}
+            accentColor="#C4A7FF"
+          />
 
           <View style={styles.bottomNav}>
             <TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}>
@@ -238,46 +262,65 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontWeight: "800",
   },
-  mindBriefCard: {
+  lunaPanel: {
+    minHeight: 88,
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: "rgba(7, 11, 27, 0.94)",
     borderWidth: 4,
     borderColor: "#A78BFA",
     borderRadius: 8,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     marginBottom: 22,
     shadowColor: "#000",
-    shadowOpacity: 0.68,
+    shadowOpacity: 0.7,
     shadowRadius: 0,
     shadowOffset: { width: 4, height: 4 },
   },
-  briefHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    borderBottomWidth: 2,
-    borderBottomColor: "rgba(251, 191, 36, 0.32)",
-    paddingBottom: 8,
-    marginBottom: 9,
+  lunaAvatar: {
+    height: 68,
+    width: 68,
+    borderRadius: 34,
+    borderWidth: 3,
+    borderColor: "#C4A7FF",
+    backgroundColor: "rgba(21, 16, 48, 0.72)",
+    marginRight: 12,
   },
-  briefTitle: {
-    color: "#FDE68A",
-    fontFamily: pixelFont,
-    fontSize: 13,
-    fontWeight: "900",
-    letterSpacing: 1.4,
+  lunaCopy: {
+    flex: 1,
   },
-  briefMark: {
-    color: "#C084FC",
-    fontSize: 18,
-    fontWeight: "900",
-  },
-  briefText: {
+  lunaText: {
     color: "#F8F1D7",
-    fontFamily: pixelFont,
     fontSize: 13,
-    lineHeight: 20,
     fontWeight: "800",
+    lineHeight: 19,
+    fontFamily: pixelFont,
+  },
+  lunaName: {
+    color: "#C084FC",
+    fontSize: 15,
+    fontWeight: "900",
+    marginTop: 6,
+    fontFamily: pixelFont,
+  },
+  infoBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+    backgroundColor: "rgba(49,46,129,0.72)",
+    alignItems: "center",
+    justifyContent: "center",
+    alignSelf: "flex-start",
+  },
+  infoBtnText: {
+    color: "#C4A7FF",
+    fontFamily: pixelFont,
+    fontSize: 14,
+    fontWeight: "900",
+    lineHeight: 18,
   },
   cardStack: {
     gap: 16,
@@ -371,7 +414,7 @@ const styles = StyleSheet.create({
     height: 62,
     backgroundColor: "rgba(4, 8, 16, 0.98)",
     borderWidth: 3,
-    borderColor: "#FBBF24",
+    borderColor: "#A78BFA",
     borderRadius: 5,
     padding: 4,
     flexDirection: "row",
@@ -390,7 +433,7 @@ const styles = StyleSheet.create({
   },
   navButtonActive: {
     backgroundColor: "#162314",
-    borderColor: "#FBBF24",
+    borderColor: "#FDE68A",
   },
   navText: {
     color: "#E2E8F0",

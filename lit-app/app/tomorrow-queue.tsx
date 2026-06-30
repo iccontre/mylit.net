@@ -25,7 +25,41 @@ type QueueItem = {
   steps: number;
   status: ScheduledStatus;
   createdAt: string;
+  completedAt?: string;
 };
+
+function parseTimeInput(raw: string): string {
+  const s = raw.trim().toUpperCase();
+  const m24 = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (m24) {
+    const h = Number(m24[1]);
+    const min = Number(m24[2]);
+    const p = h >= 12 ? "PM" : "AM";
+    const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    return `${h12}:${String(min).padStart(2, "0")} ${p}`;
+  }
+  const m12 = s.match(/^(\d{1,2})(?::(\d{2}))?\s*(AM|PM)$/);
+  if (m12) {
+    let h = Number(m12[1]);
+    const min = Number(m12[2] ?? "0");
+    const p = m12[3];
+    if (p === "PM" && h !== 12) h += 12;
+    if (p === "AM" && h === 12) h = 0;
+    const fp = h >= 12 ? "PM" : "AM";
+    const fh = h === 0 ? 12 : h > 12 ? h - 12 : h;
+    return `${fh}:${String(min).padStart(2, "0")} ${fp}`;
+  }
+  const mBare = s.match(/^(\d{1,2})$/);
+  if (mBare) {
+    const h = Number(mBare[1]);
+    if (h >= 0 && h <= 23) {
+      const p = h >= 12 ? "PM" : "AM";
+      const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
+      return `${h12}:00 ${p}`;
+    }
+  }
+  return "";
+}
 
 type QuestDay = { date: Date; dateKey: string; weekday: string; label: string; dayNumber: number };
 
@@ -88,8 +122,9 @@ function normalizeQueueItem(raw: Partial<QueueItem>, index: number): QueueItem {
     duration: raw.duration || formatDurationLabel(durationMinutes),
     durationMinutes,
     steps: raw.steps ?? getQuickThoughtSteps(durationMinutes),
-    status: raw.status || "scheduled",
+    status: raw.status || (raw.completedAt ? "completed" : "scheduled"),
     createdAt: raw.createdAt || new Date().toISOString(),
+    completedAt: raw.completedAt,
   };
 }
 
@@ -109,6 +144,9 @@ export default function TomorrowQueueScreen() {
   const [selectedDuration, setSelectedDuration] = useState("30 min");
   const [selectedKind, setSelectedKind] = useState<QuestKind>("progress");
   const [message, setMessage] = useState("");
+  const [showInfo, setShowInfo] = useState(false);
+  const [timeInputDraft, setTimeInputDraft] = useState("9:00 AM");
+  const [timeInputError, setTimeInputError] = useState("");
 
   const selectedDay = weekDays.find((day: QuestDay) => day.dateKey === selectedDateKey) || todayInWeek;
   const selectedDayIsPast = isPastDateKey(selectedDay.dateKey);
@@ -174,11 +212,31 @@ export default function TomorrowQueueScreen() {
     setMessage("Quest deleted.");
   }
 
+  async function toggleItemCompleted(id: string) {
+    const nextItems = items.map((item: QueueItem) => {
+      if (item.id !== id) return item;
+      const wasCompleted = Boolean(item.completedAt);
+      return { ...item, completedAt: wasCompleted ? undefined : new Date().toISOString(), status: (wasCompleted ? "scheduled" : "completed") as ScheduledStatus };
+    });
+    await saveQueue(nextItems);
+  }
+
+  function commitTimeInput() {
+    const parsed = parseTimeInput(timeInputDraft);
+    if (parsed) {
+      setSelectedTime(parsed);
+      setTimeInputDraft(parsed);
+      setTimeInputError("");
+    } else {
+      setTimeInputError("Try: 9 AM, 2:30 PM, or 14:00");
+    }
+  }
+
   return (
     <View style={styles.pageRoot}>
       <View style={styles.phoneStage}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
-          <Image source={uiAssets.backgrounds.default} style={styles.backgroundImage} resizeMode="cover" />
+          <Image source={uiAssets.backgrounds.neutral} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
           <ScrollView style={styles.screenScroller} contentContainerStyle={styles.hudContent} showsVerticalScrollIndicator={false} bounces={false}>
@@ -189,6 +247,17 @@ export default function TomorrowQueueScreen() {
                 <Text style={styles.title}>QUICK THOUGHTS</Text>
                 <Text style={styles.summary}>Schedule a future quest. 30–45 min earns +1 step, 1 hr earns +2 steps.</Text>
               </View>
+            </View>
+
+            <View style={styles.eviePanel}>
+              <Image source={uiAssets.guides.evie} style={styles.evieAvatar} resizeMode="contain" />
+              <View style={styles.evieCopy}>
+                <Text style={styles.evieName}>EVIE</Text>
+                <Text style={styles.evieText}>Quick Thoughts schedule future quests. They appear on Calendar and earn steps only when you check them off.</Text>
+              </View>
+              <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
+                <Text style={styles.infoBtnText}>?</Text>
+              </TouchableOpacity>
             </View>
 
             <View style={styles.creationPanel}>
@@ -218,10 +287,20 @@ export default function TomorrowQueueScreen() {
 
               <Text style={styles.sectionTitle}>4. START TIME</Text>
               <View style={styles.timeStepperRow}>
-                <TouchableOpacity style={styles.timeStepButton} onPress={() => setSelectedTime((current: string) => shiftTimeSlot(current, -1, TIME_SLOTS))}><Text style={styles.timeStepText}>←</Text></TouchableOpacity>
-                <Text style={styles.timeValue}>{selectedTime}</Text>
-                <TouchableOpacity style={styles.timeStepButton} onPress={() => setSelectedTime((current: string) => shiftTimeSlot(current, 1, TIME_SLOTS))}><Text style={styles.timeStepText}>→</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.timeStepButton} onPress={() => { const next = shiftTimeSlot(selectedTime, -1, TIME_SLOTS); setSelectedTime(next); setTimeInputDraft(next); }}><Text style={styles.timeStepText}>←</Text></TouchableOpacity>
+                <TextInput
+                  style={styles.timeInputEditable}
+                  value={timeInputDraft}
+                  onChangeText={(t) => { setTimeInputDraft(t); setTimeInputError(""); }}
+                  onBlur={commitTimeInput}
+                  onSubmitEditing={commitTimeInput}
+                  returnKeyType="done"
+                  placeholder="9:00 AM"
+                  placeholderTextColor="#64748B"
+                />
+                <TouchableOpacity style={styles.timeStepButton} onPress={() => { const next = shiftTimeSlot(selectedTime, 1, TIME_SLOTS); setSelectedTime(next); setTimeInputDraft(next); }}><Text style={styles.timeStepText}>→</Text></TouchableOpacity>
               </View>
+              {timeInputError ? <Text style={styles.timeInputError}>{timeInputError}</Text> : null}
 
               <Text style={styles.sectionTitle}>5. DURATION</Text>
               <View style={styles.durationRow}>
@@ -247,22 +326,52 @@ export default function TomorrowQueueScreen() {
             {items.length === 0 ? (
               <View style={styles.emptyCard}><Text style={styles.emptyIcon}>🪶</Text><Text style={styles.emptyText}>No quick thought quests saved yet. Add one and it will appear on your calendar.</Text></View>
             ) : (
-              items.map((item: QueueItem) => (
-                <View key={item.id} style={[styles.queueCard, item.classification === "recovery" ? styles.queueRecovery : styles.queueProgress]}>
-                  <View style={styles.queueTopRow}>
-                    <Text style={styles.questLabel}>+{item.steps} STEP{item.steps === 1 ? "" : "S"}</Text>
-                    <TouchableOpacity style={styles.deleteButton} onPress={() => deleteItem(item.id)}><Text style={styles.deleteButtonText}>🗑</Text></TouchableOpacity>
+              items.map((item: QueueItem) => {
+                const isCompleted = Boolean(item.completedAt);
+                const isMissed = isPastDateKey(item.date) && !isCompleted;
+                return (
+                  <View key={item.id} style={[styles.queueCard, item.classification === "recovery" ? styles.queueRecovery : styles.queueProgress, isCompleted && styles.queueCompleted]}>
+                    <View style={styles.queueTopRow}>
+                      <TouchableOpacity style={styles.checkboxBtn} onPress={() => toggleItemCompleted(item.id)}>
+                        <Text style={styles.checkboxText}>{isCompleted ? "☑" : "☐"}</Text>
+                      </TouchableOpacity>
+                      <Text style={styles.questLabel}>{isCompleted ? "✓ DONE" : `+${item.steps} STEP${item.steps === 1 ? "" : "S"}`}</Text>
+                      <TouchableOpacity style={styles.deleteButton} onPress={() => deleteItem(item.id)}><Text style={styles.deleteButtonText}>🗑</Text></TouchableOpacity>
+                    </View>
+                    <Text style={[styles.queueTitle, isCompleted && styles.queueTitleDone]}>{item.title}</Text>
+                    <Text style={styles.queueDetail}>{formatSavedDate(item)} • {item.startTime} • {item.duration} • {item.classification}</Text>
+                    {isMissed ? (
+                      <TouchableOpacity style={styles.reflectButton} onPress={() => router.push("/reflection")}>
+                        <Text style={styles.reflectButtonText}>REFLECT ON THIS</Text>
+                      </TouchableOpacity>
+                    ) : null}
                   </View>
-                  <Text style={styles.queueTitle}>{item.title}</Text>
-                  <Text style={styles.queueDetail}>{formatSavedDate(item)} • {item.startTime} • {item.duration} • {item.classification}</Text>
-                </View>
-              ))
+                );
+              })
             )}
 
             <TouchableOpacity style={styles.homeButton} onPress={() => router.push("/calendar")}><Text style={styles.homeButtonText}>← Back to Calendar</Text></TouchableOpacity>
           </ScrollView>
           <BottomNav router={router} />
+          {showInfo ? <InfoOverlay onClose={() => setShowInfo(false)} /> : null}
         </View>
+      </View>
+    </View>
+  );
+}
+
+function InfoOverlay({ onClose }: { onClose: () => void }) {
+  return (
+    <View style={styles.infoOverlay}>
+      <View style={styles.infoCard}>
+        <Text style={styles.infoTitle}>QUICK THOUGHTS</Text>
+        <Text style={styles.infoBullet}>{"• Quick Thoughts schedule future quests. They appear on Calendar for the day and time you choose."}</Text>
+        <Text style={styles.infoBullet}>{"• Steps are awarded only when you check the quest as completed — never when you save it."}</Text>
+        <Text style={styles.infoBullet}>{"• 30 or 45 min = +1 step. 1 hr = +2 steps."}</Text>
+        <Text style={styles.infoBullet}>{"• Missed quests show a Reflect button so you can log what happened."}</Text>
+        <TouchableOpacity style={styles.infoClose} onPress={onClose}>
+          <Text style={styles.infoCloseText}>RETURN</Text>
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -309,6 +418,8 @@ const styles = StyleSheet.create({
   timeStepperRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginBottom: 8 },
   timeStepButton: { width: 44, height: 38, borderWidth: 2, borderColor: "#FBBF24", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(69,43,8,0.6)" },
   timeStepText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 18, fontWeight: "900" },
+  timeInputEditable: { flex: 1, color: "#F8FAFC", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", textAlign: "center", borderBottomWidth: 1, borderBottomColor: "#475569", paddingVertical: 4 },
+  timeInputError: { color: "#FCA5A5", fontFamily: pixelFont, fontSize: 10, textAlign: "center", marginTop: 4 },
   timeValue: { minWidth: 140, color: "#F8FAFC", fontFamily: pixelFont, fontSize: 16, fontWeight: "900", textAlign: "center" },
   durationRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 },
   durationButton: { borderWidth: 2, borderColor: "#334155", paddingVertical: 8, paddingHorizontal: 10, backgroundColor: "rgba(2,6,23,0.8)" },
@@ -338,10 +449,29 @@ const styles = StyleSheet.create({
   queueDetail: { color: "#CBD5E1", fontSize: 12, lineHeight: 17, fontWeight: "700" },
   homeButton: { borderWidth: 2, borderColor: "#FBBF24", backgroundColor: "rgba(69,43,8,0.6)", paddingVertical: 13, alignItems: "center", marginTop: 4 },
   homeButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900" },
-  bottomNav: { position: "absolute", bottom: 8, left: 10, right: 10, flexDirection: "row", justifyContent: "space-between", backgroundColor: "rgba(8,17,34,0.96)", borderWidth: 2, borderColor: "#334155", borderRadius: 16, padding: 6 },
-  navButton: { flex: 1, alignItems: "center", borderRadius: 12, paddingVertical: 6, borderWidth: 1, borderColor: "transparent" },
-  navButtonActive: { backgroundColor: "rgba(120, 53, 15, 0.55)", borderColor: "#FBBF24" },
-  navIcon: { fontSize: 20 },
-  navLabel: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 10, fontWeight: "900", marginTop: 2 },
-  navLabelActive: { color: "#FBBF24" },
+  eviePanel: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(8,13,24,0.95)", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, padding: 10, marginBottom: 12 },
+  evieAvatar: { width: 44, height: 52, marginRight: 10 },
+  evieCopy: { flex: 1 },
+  evieName: { color: "#FDE047", fontFamily: pixelFont, fontSize: 10, fontWeight: "900" },
+  evieText: { color: "#CBD5E1", fontSize: 12, lineHeight: 16, fontWeight: "700", marginTop: 2 },
+  infoBtn: { width: 28, height: 28, borderWidth: 2, borderColor: "#FBBF24", borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(113,63,18,0.7)", marginLeft: 8 },
+  infoBtnText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 14, fontWeight: "900" },
+  checkboxBtn: { marginRight: 8 },
+  checkboxText: { color: "#F8FAFC", fontSize: 22 },
+  queueCompleted: { opacity: 0.65 },
+  queueTitleDone: { textDecorationLine: "line-through", color: "#86EFAC" },
+  reflectButton: { borderWidth: 1, borderColor: "#A78BFA", paddingVertical: 7, paddingHorizontal: 12, backgroundColor: "rgba(88,28,135,0.45)", marginTop: 8, alignSelf: "flex-start" },
+  reflectButtonText: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 10, fontWeight: "900" },
+  infoOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.82)", justifyContent: "center", alignItems: "center", padding: 20, zIndex: 25 },
+  infoCard: { backgroundColor: "rgba(8,13,24,0.99)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 12, padding: 16, width: "100%" },
+  infoTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", marginBottom: 10 },
+  infoBullet: { color: "#CBD5E1", fontSize: 13, lineHeight: 20, fontWeight: "700", marginBottom: 6 },
+  infoClose: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", paddingVertical: 11, alignItems: "center", marginTop: 12 },
+  infoCloseText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900" },
+  bottomNav: { position: "absolute", bottom: 8, left: 8, right: 8, height: 62, flexDirection: "row", justifyContent: "space-between", backgroundColor: "rgba(4,8,16,0.98)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 5, padding: 4 },
+  navButton: { flex: 1, backgroundColor: "#111827", borderWidth: 2, borderColor: "#3A4558", borderRadius: 3, paddingVertical: 4, marginHorizontal: 2, alignItems: "center", justifyContent: "center" },
+  navButtonActive: { backgroundColor: "#162314", borderColor: "#FBBF24" },
+  navIcon: { fontSize: 18 },
+  navLabel: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", marginTop: 1 },
+  navLabelActive: { color: "#FDE68A" },
 });

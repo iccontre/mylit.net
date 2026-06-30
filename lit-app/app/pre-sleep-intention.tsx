@@ -14,7 +14,17 @@ import {
   View,
 } from "react-native";
 
+import { GuideInfoModal } from "../components/GuideInfoModal";
 import { uiAssets } from "../constants/uiAssets";
+
+const LUNA_PRE_SLEEP_BULLETS = [
+  "Write one intention before sleep to prime tomorrow's mindset.",
+  "Pick a Feeling to clarify what state you want to wake up in.",
+  "Pick a Support option to give yourself a simple wind-down anchor for tonight.",
+  "Saving a complete intention earns +1 step.",
+  "Your intention appears in Morning Reflection the next day.",
+  "You do not need to force anything — one clear direction is enough.",
+];
 
 type PreSleepIntention = {
   id: string;
@@ -54,6 +64,7 @@ export default function PreSleepIntentionScreen() {
   const [intention, setIntention] = useState("");
   const [feeling, setFeeling] = useState("");
   const [support, setSupport] = useState<string[]>([]);
+  const [showInfo, setShowInfo] = useState(false);
 
   const safeViewportWidth = Math.max(0, viewportWidth - 24);
   const safeViewportHeight = Math.max(0, viewportHeight - 24);
@@ -121,7 +132,12 @@ export default function PreSleepIntentionScreen() {
             </View>
 
             <View style={[styles.lunaCard, { borderColor: theme.accent }]}>
-              <Text style={[styles.lunaName, { color: theme.glow }]}>🌙 Luna</Text>
+              <View style={styles.lunaCardHeader}>
+                <Text style={[styles.lunaName, { color: theme.glow }]}>🌙 Luna</Text>
+                <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
+                  <Text style={styles.infoBtnText}>?</Text>
+                </TouchableOpacity>
+              </View>
               <Text style={styles.lunaText}>Setting an intention before sleep helps program tomorrow's mindset. One clear direction is enough — the mind works on it while you rest.</Text>
             </View>
 
@@ -177,6 +193,16 @@ export default function PreSleepIntentionScreen() {
               <Text style={styles.backButtonText}>Back to Sleep Hub</Text>
             </TouchableOpacity>
           </ScrollView>
+
+          <GuideInfoModal
+            visible={showInfo}
+            onClose={() => setShowInfo(false)}
+            guideAvatar={uiAssets.guides.luna}
+            guideName="Luna"
+            title="How Pre-Sleep Intention Works"
+            bullets={LUNA_PRE_SLEEP_BULLETS}
+            accentColor="#C4A7FF"
+          />
         </View>
       </View>
     </View>
@@ -277,6 +303,29 @@ const styles = StyleSheet.create({
     padding: 13,
     marginBottom: 10,
     borderWidth: 3,
+  },
+  lunaCardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 6,
+  },
+  infoBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+    backgroundColor: "rgba(49,46,129,0.72)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  infoBtnText: {
+    color: "#C4A7FF",
+    fontFamily: pixelFont,
+    fontSize: 13,
+    fontWeight: "900",
+    lineHeight: 17,
   },
   lunaName: {
     fontFamily: pixelFont,
