@@ -205,9 +205,9 @@ export default function SleepCalendarScreen() {
           <ScrollView style={styles.screenScroller} contentContainerStyle={styles.hudContent} showsVerticalScrollIndicator={false} bounces={false}>
             <View style={styles.headerCard}>
               <View style={styles.headerCopy}>
-                <Text style={styles.kicker}>SLEEP PLANNER</Text>
-                <Text style={styles.title}>SLEEP CALENDAR</Text>
-                <Text style={styles.subtitle}>Plan sleep, wake time, and energy cutoffs.</Text>
+                <Text style={styles.kicker}>SLEEP HUB</Text>
+                <Text style={styles.title}>SLEEP GUIDE</Text>
+                <Text style={styles.subtitle}>Set your sleep window and daily cutoffs.</Text>
               </View>
               <Text style={styles.headerMoon}>☾</Text>
             </View>
@@ -256,6 +256,10 @@ export default function SleepCalendarScreen() {
 
             <TouchableOpacity style={[styles.saveButton, !hasEnoughSleepWindow && styles.saveButtonDisabled]} onPress={saveSleepGuide}>
               <Text style={styles.saveButtonText}>☾ SAVE SLEEP GUIDE ☽</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.backButton} onPress={() => router.push("/")}>
+              <Text style={styles.backButtonText}>Back to Today</Text>
             </TouchableOpacity>
           </ScrollView>
 
@@ -612,6 +616,21 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "900",
     letterSpacing: 0.8,
+  },
+  backButton: {
+    backgroundColor: "rgba(8, 13, 24, 0.94)",
+    padding: 12,
+    borderRadius: 4,
+    alignItems: "center",
+    borderWidth: 2,
+    borderColor: "#334155",
+    marginBottom: 10,
+  },
+  backButtonText: {
+    color: "#E2E8F0",
+    fontFamily: pixelFont,
+    fontSize: 13,
+    fontWeight: "900",
   },
   bottomNav: {
     position: "absolute",

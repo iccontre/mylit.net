@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
-import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useRouter } from "expo-router";
+import { useState } from "react";
 import {
   Image,
   Platform,
@@ -20,23 +20,17 @@ type PreSleepIntention = {
   id: string;
   date: string;
   intention: string;
-  whyItMatters: string;
-  firstSmallAction: string;
-  dreamSymbol: string;
+  feeling: string;
+  support: string[];
   createdAt: string;
 };
 
-type CheckIn = {
-  energy: number;
-  mode: "Recovery" | "Progress";
-  createdAt?: string;
-};
-
-type ModeState = "Recovery" | "Progress" | "Neutral";
-
 const PRE_SLEEP_INTENTIONS_KEY = "lit_pre_sleep_intentions";
 const LATEST_PRE_SLEEP_INTENTION_KEY = "lit_latest_pre_sleep_intention";
-const CHECKIN_KEY = "lit_latest_checkin";
+const USER_STATS_KEY = "lit_user_stats";
+
+const FEELING_OPTIONS = ["Focused", "Energized", "Calm", "Grounded", "Rested", "Brave", "Gentle", "Steady"];
+const SUPPORT_OPTIONS = ["No screens", "Gratitude", "Breathe", "Let go", "Sleep early"];
 const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
 const MAX_FRAME_WIDTH = 520;
 
@@ -51,59 +45,20 @@ function getTodayKey() {
   return new Date().toLocaleDateString("en-CA");
 }
 
+const theme = { accent: "#C4A7FF", glow: "#E9D5FF", panel: "rgba(18, 16, 34, 0.94)", soft: "#DDD6FE" };
+
 export default function PreSleepIntentionScreen() {
   const router = useRouter();
   const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
 
   const [intention, setIntention] = useState("");
-  const [whyItMatters, setWhyItMatters] = useState("");
-  const [firstSmallAction, setFirstSmallAction] = useState("");
-  const [dreamSymbol, setDreamSymbol] = useState("");
-  const [currentMode, setCurrentMode] = useState<ModeState>("Neutral");
+  const [feeling, setFeeling] = useState("");
+  const [support, setSupport] = useState<string[]>([]);
 
   const safeViewportWidth = Math.max(0, viewportWidth - 24);
   const safeViewportHeight = Math.max(0, viewportHeight - 24);
   const frameWidth = Math.min(MAX_FRAME_WIDTH, safeViewportWidth, safeViewportHeight * APP_FRAME_ASPECT_RATIO);
   const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
-
-  const isProgress = currentMode === "Progress";
-  const currentBackground = currentMode === "Recovery"
-    ? uiAssets.backgrounds.recovery
-    : isProgress
-      ? uiAssets.backgrounds.progress
-      : uiAssets.backgrounds.neutral;
-
-  const theme = isProgress
-    ? { accent: "#FBBF24", glow: "#FEF3C7", panel: "rgba(18, 16, 12, 0.94)", soft: "#FDE68A" }
-    : { accent: "#C4A7FF", glow: "#E9D5FF", panel: "rgba(18, 16, 34, 0.94)", soft: "#DDD6FE" };
-
-  useFocusEffect(
-    useCallback(() => {
-      loadLatestMode();
-    }, [])
-  );
-
-  async function loadLatestMode() {
-    const saved = await AsyncStorage.getItem(CHECKIN_KEY);
-
-    if (!saved) {
-      setCurrentMode("Neutral");
-      return;
-    }
-
-    try {
-      const parsed = JSON.parse(saved) as CheckIn;
-      const checkInDay = parsed.createdAt ? new Date(parsed.createdAt).toLocaleDateString("en-CA") : null;
-
-      if ((parsed.mode === "Recovery" || parsed.mode === "Progress") && checkInDay === getTodayKey()) {
-        setCurrentMode(parsed.mode);
-      } else {
-        setCurrentMode("Neutral");
-      }
-    } catch {
-      setCurrentMode("Neutral");
-    }
-  }
 
   async function successHaptic() {
     try {
@@ -113,6 +68,12 @@ export default function PreSleepIntentionScreen() {
     }
   }
 
+  async function earnSteps(count: number) {
+    const saved = await AsyncStorage.getItem(USER_STATS_KEY);
+    const current: Record<string, unknown> = saved ? JSON.parse(saved) : {};
+    await AsyncStorage.setItem(USER_STATS_KEY, JSON.stringify({ ...current, totalSteps: Number(current.totalSteps ?? 0) + count }));
+  }
+
   async function saveIntention() {
     if (!intention.trim()) return;
 
@@ -120,37 +81,38 @@ export default function PreSleepIntentionScreen() {
       id: String(Date.now()),
       date: getTodayKey(),
       intention: intention.trim(),
-      whyItMatters: whyItMatters.trim(),
-      firstSmallAction: firstSmallAction.trim(),
-      dreamSymbol: dreamSymbol.trim(),
+      feeling,
+      support,
       createdAt: new Date().toISOString(),
     };
 
     const saved = await AsyncStorage.getItem(PRE_SLEEP_INTENTIONS_KEY);
     const history: PreSleepIntention[] = saved ? JSON.parse(saved) : [];
 
-    const nextHistory = [entry, ...history];
-
-    await AsyncStorage.setItem(PRE_SLEEP_INTENTIONS_KEY, JSON.stringify(nextHistory));
+    await AsyncStorage.setItem(PRE_SLEEP_INTENTIONS_KEY, JSON.stringify([entry, ...history]));
     await AsyncStorage.setItem(LATEST_PRE_SLEEP_INTENTION_KEY, JSON.stringify(entry));
-
+    await earnSteps(1);
     await successHaptic();
 
     router.push("/");
+  }
+
+  function toggleSupport(option: string) {
+    setSupport((prev) => prev.includes(option) ? prev.filter((s) => s !== option) : [...prev, option]);
   }
 
   return (
     <View style={styles.pageRoot}>
       <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight, borderColor: theme.accent }]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
-          <Image source={currentBackground} style={styles.backgroundImage} resizeMode="cover" />
+          <Image source={uiAssets.backgrounds.recovery} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
           <ScrollView style={styles.screenScroller} contentContainerStyle={styles.hudContent} showsVerticalScrollIndicator={false} bounces={false}>
             <View style={[styles.hero, { borderColor: theme.accent, backgroundColor: theme.panel }]}>
               <View style={styles.heroTopRow}>
                 <View style={styles.heroCopy}>
-                  <Text style={[styles.heroKicker, { color: theme.glow }]}>NIGHT HUD</Text>
+                  <Text style={[styles.heroKicker, { color: theme.glow }]}>SLEEP HUB</Text>
                   <Text style={styles.title}>PRE-SLEEP INTENTION</Text>
                   <Text style={[styles.subtitle, { color: theme.soft }]}>Set one signal for tomorrow.</Text>
                 </View>
@@ -160,57 +122,59 @@ export default function PreSleepIntentionScreen() {
 
             <View style={[styles.lunaCard, { borderColor: theme.accent }]}>
               <Text style={[styles.lunaName, { color: theme.glow }]}>🌙 Luna</Text>
-              <Text style={styles.lunaText}>This is not about forcing a dream. Set one clear direction and notice what carries into morning.</Text>
+              <Text style={styles.lunaText}>Setting an intention before sleep helps program tomorrow's mindset. One clear direction is enough — the mind works on it while you rest.</Text>
             </View>
 
             <View style={[styles.formCard, { borderColor: theme.accent }]}>
-              <Text style={styles.label}>What is one thing you want to prioritize tomorrow?</Text>
+              <Text style={styles.label}>What do you want to carry into tomorrow?</Text>
               <TextInput
                 style={styles.textArea}
                 multiline
-                placeholder="Example: I want to focus on finishing my assignment."
+                placeholder="Example: I want to feel calm and make progress on my work."
                 placeholderTextColor="#94A3B8"
                 value={intention}
                 onChangeText={setIntention}
               />
 
-              <Text style={styles.label}>Why does this matter to you?</Text>
-              <TextInput
-                style={styles.textArea}
-                multiline
-                placeholder="Example: It helps me feel less behind and more confident."
-                placeholderTextColor="#94A3B8"
-                value={whyItMatters}
-                onChangeText={setWhyItMatters}
-              />
+              <Text style={styles.label}>How do you want to feel?</Text>
+              <View style={styles.chipRow}>
+                {FEELING_OPTIONS.map((opt) => {
+                  const selected = feeling === opt;
+                  return (
+                    <TouchableOpacity
+                      key={opt}
+                      style={[styles.chip, selected && { backgroundColor: "rgba(49, 46, 129, 0.94)", borderColor: theme.accent }]}
+                      onPress={() => setFeeling(selected ? "" : opt)}
+                    >
+                      <Text style={selected ? [styles.chipText, { color: theme.glow }] : styles.chipText}>{opt}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
 
-              <Text style={styles.label}>What is the first small action you can take tomorrow?</Text>
-              <TextInput
-                style={styles.textArea}
-                multiline
-                placeholder="Example: Open the document and write for 10 minutes."
-                placeholderTextColor="#94A3B8"
-                value={firstSmallAction}
-                onChangeText={setFirstSmallAction}
-              />
-
-              <Text style={styles.label}>If this showed up in a dream, what image, symbol, or scene might represent it?</Text>
-              <TextInput
-                style={styles.textArea}
-                multiline
-                placeholder="Example: A sunrise, a locked door opening, a desk, a path, a mountain."
-                placeholderTextColor="#94A3B8"
-                value={dreamSymbol}
-                onChangeText={setDreamSymbol}
-              />
+              <Text style={styles.label}>What will support your sleep tonight?</Text>
+              <View style={styles.chipRow}>
+                {SUPPORT_OPTIONS.map((opt) => {
+                  const selected = support.includes(opt);
+                  return (
+                    <TouchableOpacity
+                      key={opt}
+                      style={[styles.chip, selected && { backgroundColor: "rgba(49, 46, 129, 0.94)", borderColor: theme.accent }]}
+                      onPress={() => toggleSupport(opt)}
+                    >
+                      <Text style={selected ? [styles.chipText, { color: theme.glow }] : styles.chipText}>{opt}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
 
               <TouchableOpacity style={[styles.saveButton, { borderColor: theme.accent }]} onPress={saveIntention}>
-                <Text style={styles.saveButtonText}>Save Intention</Text>
+                <Text style={styles.saveButtonText}>Save Intention · +1 Step</Text>
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity style={styles.backButton} onPress={() => router.push("/")}>
-              <Text style={styles.backButtonText}>Back to Today</Text>
+            <TouchableOpacity style={styles.backButton} onPress={() => router.push("/sleep")}>
+              <Text style={styles.backButtonText}>Back to Sleep Hub</Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
@@ -359,6 +323,26 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#475569",
     fontFamily: pixelFont,
+  },
+  chipRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 12,
+  },
+  chip: {
+    backgroundColor: "rgba(15, 23, 42, 0.96)",
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: "#334155",
+    paddingVertical: 7,
+    paddingHorizontal: 11,
+  },
+  chipText: {
+    color: "#CBD5E1",
+    fontFamily: pixelFont,
+    fontSize: 12,
+    fontWeight: "800",
   },
   saveButton: {
     backgroundColor: "#312E81",

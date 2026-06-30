@@ -33,6 +33,7 @@ type MenuCard = {
   icon: string;
   onPress: () => void;
   featured?: boolean;
+  unlockable?: boolean;
 };
 
 const DREAM_JOURNAL_KEY = "lit_dream_journal";
@@ -95,53 +96,34 @@ export default function SleepScreen() {
     }
   }
 
-  const topCards: MenuCard[] = [
-    {
-      title: "Morning\nCheck-In",
-      description: "Start your day with intention.",
-      icon: "🌅",
-      onPress: () => navigate("/sleep-checkin"),
-    },
-    {
-      title: "Afternoon\nCheck-In",
-      description: "Recalibrate. Keep going.",
-      icon: "🌇",
-      onPress: () =>
-        router.push({
-          pathname: "/sleep-checkin",
-          params: { checkInType: "afternoon" },
-        }),
-    },
-  ];
-
-  const middleCards: MenuCard[] = [
-    {
-      title: "Morning\nReflection",
-      description: "Reflect on your night and growth.",
-      icon: "✦",
-      onPress: () => navigate("/morning-intention-reflection"),
-    },
-    {
-      title: "Sleep\nCalendar",
-      description: "View sleep patterns and plan ahead.",
-      icon: "📅",
-      onPress: () => navigate("/sleep-calendar"),
-    },
-  ];
-
   const preSleepCard: MenuCard = {
-    title: "Pre-Sleep Intention",
+    title: "Pre-Sleep\nIntention",
     description: "Set one clear signal for tomorrow before bed.",
     icon: "☾",
     featured: true,
     onPress: () => navigate("/pre-sleep-intention"),
   };
 
+  const morningCard: MenuCard = {
+    title: "Morning\nReflection",
+    description: "Reflect on sleep and set the morning tone.",
+    icon: "✦",
+    unlockable: true,
+    onPress: () => navigate("/morning-intention-reflection"),
+  };
+
+  const sleepGuideCard: MenuCard = {
+    title: "Sleep\nGuide",
+    description: "Set sleep window and daily cutoffs.",
+    icon: "☽",
+    onPress: () => navigate("/sleep-calendar"),
+  };
+
   const dreamCard: MenuCard = {
-    title: "Dream Journal",
+    title: "Dream\nJournal",
     description: latestDream
       ? `Latest: ${latestDream.title || "Untitled dream"}`
-      : "Track dreams, insights, and subconscious clues.",
+      : "Capture dreams before they fade.",
     icon: "📖",
     featured: true,
     onPress: () => navigate("/dream-journal"),
@@ -164,6 +146,7 @@ export default function SleepScreen() {
         <View style={styles.cardCopy}>
           <Text style={[styles.cardTitle, variant === "wide" && styles.wideCardTitle]}>{card.title}</Text>
           <Text style={styles.cardDescription}>{card.description}</Text>
+          {card.unlockable && <Text style={styles.unlockBadge}>🔓 UNLOCK</Text>}
         </View>
         <Text style={styles.cardArrow}>›</Text>
       </TouchableOpacity>
@@ -184,9 +167,9 @@ export default function SleepScreen() {
             bounces={false}
           >
             <View style={styles.titlePanel}>
-              <Text style={styles.kicker}>+ SLEEP HUB +</Text>
-              <Text style={styles.title}>SLEEP</Text>
-              <Text style={styles.subtitle}>Intentions, timing, dreams, and sleep tools.</Text>
+              <Text style={styles.kicker}>SLEEP HUB</Text>
+              <Text style={[styles.title, { fontSize: 34, letterSpacing: 3 }]}>SLEEP HUB</Text>
+              <Text style={styles.subtitle}>Rest, intention, and dream tools.</Text>
             </View>
 
             <View style={styles.lunaPanel}>
@@ -199,11 +182,12 @@ export default function SleepScreen() {
               </View>
             </View>
 
-            <View style={styles.cardRow}>{topCards.map((card) => renderCard(card, "half"))}</View>
-
             {renderCard(preSleepCard, "wide")}
 
-            <View style={styles.cardRow}>{middleCards.map((card) => renderCard(card, "half"))}</View>
+            <View style={styles.cardRow}>
+              {renderCard(morningCard, "half")}
+              {renderCard(sleepGuideCard, "half")}
+            </View>
 
             {renderCard(dreamCard, "wide")}
           </ScrollView>
@@ -446,6 +430,14 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     marginTop: 7,
     fontFamily: pixelFont,
+  },
+  unlockBadge: {
+    color: "#FDE68A",
+    fontFamily: pixelFont,
+    fontSize: 10,
+    fontWeight: "900",
+    marginTop: 5,
+    letterSpacing: 0.5,
   },
   cardArrow: {
     color: "#C084FC",

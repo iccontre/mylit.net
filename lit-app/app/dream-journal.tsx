@@ -20,24 +20,12 @@ type DreamEntry = {
   id: string;
   title: string;
   summary: string;
-  emotions: string;
-  symbols: string;
-  lucid: "yes" | "no";
-  pattern: string;
-  tomorrowIntention?: string;
+  feeling: string;
   createdAt: string;
 };
 
-type CheckIn = {
-  energy: number;
-  mode: "Recovery" | "Progress";
-  createdAt?: string;
-};
-
-type ModeState = "Recovery" | "Progress" | "Neutral";
-
 const DREAM_JOURNAL_KEY = "lit_dream_journal";
-const CHECKIN_KEY = "lit_latest_checkin";
+const USER_STATS_KEY = "lit_user_stats";
 const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
 const MAX_FRAME_WIDTH = 520;
 
@@ -67,40 +55,36 @@ function formatDreamDate(value: string) {
   });
 }
 
+const FEELING_OPTIONS = [
+  { emoji: "😊", label: "Happy" },
+  { emoji: "😌", label: "Peaceful" },
+  { emoji: "😃", label: "Excited" },
+  { emoji: "😕", label: "Confused" },
+  { emoji: "😨", label: "Scared" },
+  { emoji: "😢", label: "Sad" },
+  { emoji: "🌀", label: "Surreal" },
+  { emoji: "🤔", label: "Unsettled" },
+];
+
+const theme = { accent: "#C4A7FF", glow: "#E9D5FF", panel: "rgba(18, 16, 34, 0.94)", soft: "#DDD6FE", active: "rgba(49, 46, 129, 0.94)" };
+
 export default function DreamJournalScreen() {
   const router = useRouter();
   const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
 
   const [entries, setEntries] = useState<DreamEntry[]>([]);
-  const [currentMode, setCurrentMode] = useState<ModeState>("Neutral");
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
-  const [emotions, setEmotions] = useState("");
-  const [symbols, setSymbols] = useState("");
-  const [lucid, setLucid] = useState<"yes" | "no">("no");
-  const [pattern, setPattern] = useState("");
-  const [tomorrowIntention, setTomorrowIntention] = useState("");
+  const [feeling, setFeeling] = useState("");
 
   const safeViewportWidth = Math.max(0, viewportWidth - 24);
   const safeViewportHeight = Math.max(0, viewportHeight - 24);
   const frameWidth = Math.min(MAX_FRAME_WIDTH, safeViewportWidth, safeViewportHeight * APP_FRAME_ASPECT_RATIO);
   const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
-  const isProgress = currentMode === "Progress";
-  const isRecovery = currentMode === "Recovery";
-  const currentBackground = isRecovery
-    ? uiAssets.backgrounds.recovery
-    : isProgress
-      ? uiAssets.backgrounds.progress
-      : uiAssets.backgrounds.neutral;
-  const theme = isProgress
-    ? { accent: "#FBBF24", glow: "#FEF3C7", panel: "rgba(18, 16, 12, 0.94)", soft: "#FDE68A", active: "rgba(58, 42, 10, 0.94)" }
-    : { accent: "#C4A7FF", glow: "#E9D5FF", panel: "rgba(18, 16, 34, 0.94)", soft: "#DDD6FE", active: "rgba(49, 46, 129, 0.94)" };
-
   useFocusEffect(
     useCallback(() => {
       loadEntries();
-      loadLatestMode();
     }, [])
   );
 
@@ -120,26 +104,10 @@ export default function DreamJournalScreen() {
     }
   }
 
-  async function loadLatestMode() {
-    const saved = await AsyncStorage.getItem(CHECKIN_KEY);
-
-    if (!saved) {
-      setCurrentMode("Neutral");
-      return;
-    }
-
-    try {
-      const parsed = JSON.parse(saved) as CheckIn;
-      const checkInDay = parsed.createdAt ? new Date(parsed.createdAt).toLocaleDateString("en-CA") : null;
-
-      if ((parsed.mode === "Recovery" || parsed.mode === "Progress") && checkInDay === getTodayKey()) {
-        setCurrentMode(parsed.mode);
-      } else {
-        setCurrentMode("Neutral");
-      }
-    } catch {
-      setCurrentMode("Neutral");
-    }
+  async function earnSteps(count: number) {
+    const saved = await AsyncStorage.getItem(USER_STATS_KEY);
+    const current: Record<string, unknown> = saved ? JSON.parse(saved) : {};
+    await AsyncStorage.setItem(USER_STATS_KEY, JSON.stringify({ ...current, totalSteps: Number(current.totalSteps ?? 0) + count }));
   }
 
   async function loadEntries() {
@@ -161,32 +129,23 @@ export default function DreamJournalScreen() {
   }
 
   async function saveDream() {
-    const hasDreamData = title.trim() || summary.trim() || emotions.trim() || symbols.trim() || pattern.trim() || tomorrowIntention.trim();
-
-    if (!hasDreamData) return;
+    if (!title.trim() && !summary.trim()) return;
 
     const entry: DreamEntry = {
       id: String(Date.now()),
       title: title.trim(),
       summary: summary.trim(),
-      emotions: emotions.trim(),
-      symbols: symbols.trim(),
-      lucid,
-      pattern: pattern.trim(),
-      tomorrowIntention: tomorrowIntention.trim(),
+      feeling,
       createdAt: new Date().toISOString(),
     };
 
     await saveEntries([entry, ...entries]);
+    await earnSteps(1);
     await successHaptic();
 
     setTitle("");
     setSummary("");
-    setEmotions("");
-    setSymbols("");
-    setLucid("no");
-    setPattern("");
-    setTomorrowIntention("");
+    setFeeling("");
   }
 
   async function clearDreams() {
@@ -198,16 +157,16 @@ export default function DreamJournalScreen() {
     <View style={styles.pageRoot}>
       <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight, borderColor: theme.accent }]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
-          <Image source={currentBackground} style={styles.backgroundImage} resizeMode="cover" />
+          <Image source={uiAssets.backgrounds.recovery} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
           <ScrollView style={styles.screenScroller} contentContainerStyle={styles.hudContent} showsVerticalScrollIndicator={false} bounces={false}>
             <View style={[styles.hero, { borderColor: theme.accent, backgroundColor: theme.panel }]}>
               <View style={styles.heroTopRow}>
                 <View style={styles.heroCopy}>
-                  <Text style={[styles.heroKicker, { color: theme.glow }]}>SLEEP LOG</Text>
+                  <Text style={[styles.heroKicker, { color: theme.glow }]}>DREAM LOG</Text>
                   <Text style={styles.title}>DREAM JOURNAL</Text>
-                  <Text style={[styles.subtitle, { color: theme.soft }]}>Capture symbols, emotion, lucidity, and tomorrow’s signal.</Text>
+                  <Text style={[styles.subtitle, { color: theme.soft }]}>Capture before the dream fades.</Text>
                 </View>
                 <Image source={uiAssets.guides.luna} style={[styles.guideAvatar, { borderColor: theme.accent }]} resizeMode="contain" />
               </View>
@@ -215,40 +174,34 @@ export default function DreamJournalScreen() {
 
             <View style={[styles.lunaCard, { borderColor: theme.accent }]}>
               <Text style={[styles.lunaName, { color: theme.glow }]}>🌙 Luna</Text>
-              <Text style={styles.lunaText}>Write it down before the dream fades. Fragments count. Images count. A single feeling can be useful data.</Text>
+              <Text style={styles.lunaText}>Most dreams fade within about 10 minutes. Write it down now, even just fragments — images, feelings, a single scene.</Text>
             </View>
 
             <View style={[styles.formCard, { borderColor: theme.accent }]}>
               <Text style={styles.label}>Dream title</Text>
               <TextInput style={styles.input} placeholder="Example: The train under the ocean" placeholderTextColor="#94A3B8" value={title} onChangeText={setTitle} />
 
-              <Text style={styles.label}>What happened in the dream?</Text>
-              <TextInput style={styles.textArea} multiline placeholder="Capture the scenes, people, places, and weird details you remember." placeholderTextColor="#94A3B8" value={summary} onChangeText={setSummary} />
+              <Text style={styles.label}>Write your dream</Text>
+              <TextInput style={[styles.textArea, { minHeight: 120 }]} multiline placeholder="Describe scenes, people, places, and details you remember." placeholderTextColor="#94A3B8" value={summary} onChangeText={setSummary} />
 
-              <Text style={styles.label}>Emotions</Text>
-              <TextInput style={styles.input} placeholder="Example: calm, chased, curious, relieved" placeholderTextColor="#94A3B8" value={emotions} onChangeText={setEmotions} />
-
-              <Text style={styles.label}>Symbols / repeated images</Text>
-              <TextInput style={styles.input} placeholder="Example: water, locked doors, blue light, school" placeholderTextColor="#94A3B8" value={symbols} onChangeText={setSymbols} />
-
-              <Text style={styles.label}>Was it lucid?</Text>
-              <View style={styles.toggleRow}>
-                <TouchableOpacity style={[styles.toggleButton, lucid === "no" && { backgroundColor: theme.active, borderColor: theme.accent }]} onPress={() => setLucid("no")}>
-                  <Text style={lucid === "no" ? [styles.activeToggleText, { color: theme.glow }] : styles.toggleText}>No</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.toggleButton, lucid === "yes" && { backgroundColor: theme.active, borderColor: theme.accent }]} onPress={() => setLucid("yes")}>
-                  <Text style={lucid === "yes" ? [styles.activeToggleText, { color: theme.glow }] : styles.toggleText}>Yes</Text>
-                </TouchableOpacity>
+              <Text style={styles.label}>How did it feel?</Text>
+              <View style={styles.chipRow}>
+                {FEELING_OPTIONS.map((opt) => {
+                  const selected = feeling === `${opt.emoji} ${opt.label}`;
+                  return (
+                    <TouchableOpacity
+                      key={opt.label}
+                      style={[styles.chip, selected && { backgroundColor: theme.active, borderColor: theme.accent }]}
+                      onPress={() => setFeeling(selected ? "" : `${opt.emoji} ${opt.label}`)}
+                    >
+                      <Text style={selected ? [styles.chipText, { color: theme.glow }] : styles.chipText}>{opt.emoji} {opt.label}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
 
-              <Text style={styles.label}>Pattern or possible meaning</Text>
-              <TextInput style={styles.textArea} multiline placeholder="Example: I keep dreaming about being unprepared when I avoid decisions." placeholderTextColor="#94A3B8" value={pattern} onChangeText={setPattern} />
-
-              <Text style={styles.label}>Tomorrow intention from this dream</Text>
-              <TextInput style={styles.textArea} multiline placeholder="Example: Ask for help early instead of trying to solve everything alone." placeholderTextColor="#94A3B8" value={tomorrowIntention} onChangeText={setTomorrowIntention} />
-
               <TouchableOpacity style={[styles.saveButton, { borderColor: theme.accent }]} onPress={saveDream}>
-                <Text style={styles.saveButtonText}>Save Dream</Text>
+                <Text style={styles.saveButtonText}>Save Dream · +1 Step</Text>
               </TouchableOpacity>
             </View>
 
@@ -274,14 +227,11 @@ export default function DreamJournalScreen() {
 
                     {entry.summary ? <Text style={styles.entryText}>{entry.summary}</Text> : null}
 
-                    <View style={styles.tagRow}>
-                      <Text style={styles.tag}>Lucid: {entry.lucid === "yes" ? "Yes" : "No"}</Text>
-                      {entry.emotions ? <Text style={styles.tag}>Mood: {entry.emotions}</Text> : null}
-                    </View>
-
-                    {entry.symbols ? <Text style={styles.entryDetail}><Text style={styles.detailLabel}>Symbols: </Text>{entry.symbols}</Text> : null}
-                    {entry.pattern ? <Text style={styles.entryDetail}><Text style={styles.detailLabel}>Pattern: </Text>{entry.pattern}</Text> : null}
-                    {entry.tomorrowIntention ? <Text style={styles.entryDetail}><Text style={styles.detailLabel}>Tomorrow: </Text>{entry.tomorrowIntention}</Text> : null}
+                    {entry.feeling ? (
+                      <View style={styles.tagRow}>
+                        <Text style={styles.tag}>{entry.feeling}</Text>
+                      </View>
+                    ) : null}
                   </View>
                 ))
               )}
@@ -447,30 +397,25 @@ const styles = StyleSheet.create({
     borderColor: "#475569",
     fontFamily: pixelFont,
   },
-  toggleRow: {
+  chipRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 4,
+    flexWrap: "wrap",
+    gap: 8,
+    marginBottom: 12,
   },
-  toggleButton: {
-    width: "48%",
+  chip: {
     backgroundColor: "rgba(15, 23, 42, 0.96)",
     borderRadius: 4,
     borderWidth: 2,
     borderColor: "#334155",
-    paddingVertical: 11,
-    alignItems: "center",
+    paddingVertical: 7,
+    paddingHorizontal: 10,
   },
-  toggleText: {
+  chipText: {
     color: "#CBD5E1",
     fontFamily: pixelFont,
-    fontSize: 13,
-    fontWeight: "900",
-  },
-  activeToggleText: {
-    fontFamily: pixelFont,
-    fontSize: 13,
-    fontWeight: "900",
+    fontSize: 12,
+    fontWeight: "800",
   },
   saveButton: {
     backgroundColor: "#312E81",
