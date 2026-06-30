@@ -20,6 +20,8 @@ import {
   type GoalMilestoneSet,
 } from "../constants/goalMilestoneTemplates";
 import { uiAssets } from "../constants/uiAssets";
+import { updateProfile } from "../lib/auth";
+import { isSupabaseConfigured } from "../lib/supabase";
 import { logGoalFeedback } from "../lib/feedbackLog";
 import {
   generateFromDatabase,
@@ -385,6 +387,13 @@ export default function OnboardingScreen() {
     };
 
     await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+
+    if (isSupabaseConfigured()) {
+      void updateProfile({
+        display_name: trimmedName,
+        onboarding_complete: true,
+      });
+    }
 
     // Record the (generated, final) pair so we can learn from user edits.
     // Failures here are intentionally swallowed inside logGoalFeedback.

@@ -406,8 +406,8 @@ export default function HomeScreen() {
     const saved = await AsyncStorage.getItem(PROFILE_KEY);
 
     if (!saved) {
+      setProfile(null);
       setProfileChecked(true);
-      router.replace("/onboarding");
       return;
     }
 
