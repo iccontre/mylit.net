@@ -18,6 +18,7 @@ type ChecklistItem = {
   durationMinutes: number;
   status: ScheduledStatus;
   kind: "progress" | "recovery";
+  weekdays: WeekdayName[];
 };
 
 type TodayQuest = {
@@ -153,11 +154,16 @@ function timeInInterval(time: string, interval: Interval) {
   return total >= interval.start && total < interval.end;
 }
 
-function createChecklist(day: WeekdayName, saved: Partial<ChecklistItem>[] = []): ChecklistItem[] {
+function createChecklist(day: WeekdayName, saved: Partial<ChecklistItem>[] = [], useDefaults = false): ChecklistItem[] {
+  if (saved.length === 0 && !useDefaults) return [];
   const source: Partial<ChecklistItem>[] = saved.length > 0 ? saved : DEFAULT_CHECKLIST.map((text) => ({ text }));
   return source.map((item, index) => {
     const text = item.text?.trim() || DEFAULT_CHECKLIST[index] || "Habit action";
     const durationMinutes = parseDurationMinutes(item.durationMinutes ?? item.duration, 30);
+    const weekdays =
+      Array.isArray(item.weekdays) && item.weekdays.length > 0
+        ? item.weekdays
+        : [day];
     return {
       id: item.id || `${day}-${index}-${text}`,
       text,
@@ -168,13 +174,14 @@ function createChecklist(day: WeekdayName, saved: Partial<ChecklistItem>[] = [])
       durationMinutes,
       status: item.status || (item.checked ? "completed" : "scheduled"),
       kind: item.kind || normalizeKind(inferScheduledClassification(text)),
+      weekdays,
     };
   });
 }
 
 function createDefaultPlan(): DayPlan {
   const weekdayChecklists = WEEKDAYS.reduce((acc, day) => {
-    acc[day] = createChecklist(day);
+    acc[day] = day === todayWeekday() ? createChecklist(day, [], true) : [];
     return acc;
   }, {} as Record<WeekdayName, ChecklistItem[]>);
   const day = todayWeekday();
@@ -312,6 +319,22 @@ export default function DayPlanScreen() {
     }));
   }
 
+  function toggleChecklistWeekday(itemId: string, weekday: WeekdayName) {
+    setSavedMessage("");
+    setDayPlan((current: DayPlan) => ({
+      ...current,
+      weekdayChecklists: {
+        ...current.weekdayChecklists,
+        [selectedDay]: current.weekdayChecklists[selectedDay as WeekdayName].map((item: ChecklistItem) => {
+          if (item.id !== itemId) return item;
+          const hasDay = item.weekdays.includes(weekday);
+          const weekdays = hasDay ? item.weekdays.filter((d) => d !== weekday) : [...item.weekdays, weekday];
+          return { ...item, weekdays: weekdays.length > 0 ? weekdays : [selectedDay] };
+        }),
+      },
+    }));
+  }
+
   function addChecklistItem(kind: "progress" | "recovery") {
     const text = kind === "progress" ? "New progress quest" : "New recovery action";
     const nextItem: ChecklistItem = {
@@ -324,6 +347,7 @@ export default function DayPlanScreen() {
       durationMinutes: kind === "recovery" ? 10 : 30,
       status: "scheduled",
       kind,
+      weekdays: [selectedDay],
     };
     setDayPlan((current: DayPlan) => ({
       ...current,
@@ -445,6 +469,17 @@ export default function DayPlanScreen() {
                     ))}
                     <Text style={styles.stepsText}>+{item.steps} step</Text>
                   </View>
+                  <Text style={styles.weekdayLabel}>SHOW ON</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.weekdayToggleRow}>
+                    {WEEKDAYS.map((day) => {
+                      const active = item.weekdays.includes(day);
+                      return (
+                        <TouchableOpacity key={`${item.id}-${day}`} style={[styles.weekdayToggle, active && styles.weekdayToggleActive]} onPress={() => toggleChecklistWeekday(item.id, day)}>
+                          <Text style={[styles.weekdayToggleText, active && styles.weekdayToggleTextActive]}>{day.slice(0, 3)}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
                   {!item.checked && selectedDay === todayWeekday() ? (
                     <TouchableOpacity style={styles.reflectButton} onPress={() => router.push("/reflection")}>
                       <Text style={styles.reflectButtonText}>REFLECT</Text>
@@ -596,6 +631,12 @@ const styles = StyleSheet.create({
   durationText: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
   optionTextActive: { color: "#FDE68A" },
   stepsText: { color: "#86EFAC", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
+  weekdayLabel: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 10, fontWeight: "900", marginTop: 8, marginBottom: 4 },
+  weekdayToggleRow: { gap: 6, paddingBottom: 4 },
+  weekdayToggle: { borderWidth: 1, borderColor: "#475569", paddingVertical: 5, paddingHorizontal: 8, backgroundColor: "rgba(2,6,23,0.7)" },
+  weekdayToggleActive: { borderColor: "#FBBF24", backgroundColor: "rgba(113,63,18,0.8)" },
+  weekdayToggleText: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 10, fontWeight: "900" },
+  weekdayToggleTextActive: { color: "#FDE68A" },
   addRow: { flexDirection: "row", gap: 10 },
   addProgressButton: { flex: 1, borderWidth: 2, borderColor: "#FBBF24", padding: 11, alignItems: "center", backgroundColor: "rgba(69,43,8,0.65)" },
   addRecoveryButton: { flex: 1, borderWidth: 2, borderColor: "#A78BFA", padding: 11, alignItems: "center", backgroundColor: "rgba(88,28,135,0.65)" },

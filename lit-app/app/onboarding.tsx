@@ -40,6 +40,7 @@ type UserProfile = {
   midTermGoal: string;
   longTermGoal: string;
   goalsGeneratedAt?: string;
+  onboardingComplete?: boolean;
   goalsSource?: GenerationSource;
   // Legacy mirrored fields, kept so older screens continue to read goals
   goalOne: string;
@@ -338,6 +339,19 @@ export default function OnboardingScreen() {
 
     setValidationMessage("");
 
+    const existingRaw = await AsyncStorage.getItem(PROFILE_KEY);
+    let existingProfile: Partial<UserProfile> | null = null;
+    if (existingRaw) {
+      try {
+        existingProfile = JSON.parse(existingRaw) as Partial<UserProfile>;
+      } catch {
+        existingProfile = null;
+      }
+    }
+
+    const isPathUpdate =
+      Boolean(existingProfile?.onboardingComplete) || Boolean(existingProfile?.goalsGeneratedAt);
+
     const finalMilestones: GoalMilestoneSet = {
       shortTerm: shortTermGoal.trim(),
       midTerm: midTermGoal.trim(),
@@ -353,7 +367,10 @@ export default function OnboardingScreen() {
       shortTermGoal: finalMilestones.shortTerm,
       midTermGoal: finalMilestones.midTerm,
       longTermGoal: finalMilestones.longTerm,
-      goalsGeneratedAt: new Date().toISOString(),
+      goalsGeneratedAt: isPathUpdate
+        ? existingProfile?.goalsGeneratedAt || new Date().toISOString()
+        : new Date().toISOString(),
+      onboardingComplete: true,
       goalsSource: generationSource,
       // Mirror tiered goals back into legacy fields so older screens keep working.
       goalOne: finalMilestones.shortTerm,
