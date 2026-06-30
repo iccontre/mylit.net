@@ -8,11 +8,11 @@ export const LOCAL_PROFILE_KEY = "lit_user_profile";
 
 export type BetaProfile = {
   id?: string;
-  user_id?: string;
   display_name: string | null;
   age_range: string | null;
   beta_invite_code: string | null;
   onboarding_complete: boolean;
+  path_focus?: string | null;
 };
 
 export type LocalBetaProfile = {
@@ -113,8 +113,8 @@ export async function getOrCreateProfile(): Promise<BetaProfile | null> {
 
   const { data: existing, error: fetchError } = await supabase
     .from("profiles")
-    .select("id, user_id, display_name, age_range, beta_invite_code, onboarding_complete")
-    .eq("user_id", userId)
+    .select("id, display_name, age_range, beta_invite_code, onboarding_complete, path_focus")
+    .eq("id", userId)
     .maybeSingle();
 
   if (fetchError) {
@@ -131,13 +131,13 @@ export async function getOrCreateProfile(): Promise<BetaProfile | null> {
   const { data: created, error: insertError } = await supabase
     .from("profiles")
     .insert({
-      user_id: userId,
+      id: userId,
       display_name: localBeta?.display_name ?? null,
       age_range: localBeta?.age_range ?? null,
       beta_invite_code: localBeta?.beta_invite_code ?? null,
       onboarding_complete: localOnboardingComplete,
     })
-    .select("id, user_id, display_name, age_range, beta_invite_code, onboarding_complete")
+    .select("id, display_name, age_range, beta_invite_code, onboarding_complete, path_focus")
     .single();
 
   if (insertError) {
@@ -179,7 +179,7 @@ export async function updateProfile(updates: ProfileUpdateInput): Promise<AuthRe
   if (updates.beta_invite_code !== undefined) payload.beta_invite_code = clean(updates.beta_invite_code) || null;
   if (updates.onboarding_complete !== undefined) payload.onboarding_complete = updates.onboarding_complete;
 
-  const { error } = await supabase.from("profiles").update(payload).eq("user_id", userId);
+  const { error } = await supabase.from("profiles").update(payload).eq("id", userId);
   if (error) return { ok: false, error: error.message };
   return { ok: true };
 }

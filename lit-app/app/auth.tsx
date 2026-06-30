@@ -14,6 +14,7 @@ import {
 } from "react-native";
 
 import { uiAssets } from "../constants/uiAssets";
+import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import {
   getOrCreateProfile,
   getSession,
@@ -101,6 +102,9 @@ export default function AuthScreen() {
     }
 
     setMessage(mode === "signUp" ? "Account created. Setting up your profile..." : "Welcome back.");
+    if (mode === "signUp") {
+      void trackEvent(ANALYTICS_EVENTS.signup_completed);
+    }
     await routeAfterAuth();
   }
 

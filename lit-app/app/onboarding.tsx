@@ -21,6 +21,7 @@ import {
 } from "../constants/goalMilestoneTemplates";
 import { uiAssets } from "../constants/uiAssets";
 import { updateProfile } from "../lib/auth";
+import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { isSupabaseConfigured } from "../lib/supabase";
 import { logGoalFeedback } from "../lib/feedbackLog";
 import {
@@ -394,6 +395,8 @@ export default function OnboardingScreen() {
         onboarding_complete: true,
       });
     }
+
+    void trackEvent(ANALYTICS_EVENTS.onboarding_completed, { category: dreamCategory });
 
     // Record the (generated, final) pair so we can learn from user edits.
     // Failures here are intentionally swallowed inside logGoalFeedback.

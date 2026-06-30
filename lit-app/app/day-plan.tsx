@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 import { uiAssets } from "../constants/uiAssets";
+import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
+import { syncDayPlanScheduledItems } from "../lib/progressSync";
 import { formatDurationLabel, generateTimeSlots, getDateKey, inferScheduledClassification, parseDurationMinutes, shiftTimeSlot, type ScheduledClassification, type ScheduledStatus } from "../lib/scheduling";
 
 type WeekdayName = "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "Saturday" | "Sunday";
@@ -266,6 +268,8 @@ export default function DayPlanScreen() {
     setDayPlan(nextPlan);
     await AsyncStorage.setItem(DAY_PLAN_KEY, JSON.stringify(nextPlan));
     setSavedMessage("Day Plan saved to Calendar.");
+    void trackEvent(ANALYTICS_EVENTS.day_plan_saved);
+    void syncDayPlanScheduledItems();
   }
 
   function updateFocus(value: string) {

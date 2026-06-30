@@ -13,6 +13,8 @@ import {
 } from "react-native";
 
 import { uiAssets } from "../constants/uiAssets";
+import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
+import { signOut } from "../lib/auth";
 import { computeItemStepsFromSources, computeTotalEarnedSteps, loadTodayCompletions } from "../lib/questProgress";
 
 const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
@@ -262,7 +264,15 @@ export default function StatsScreen() {
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const [activeInfo, setActiveInfo] = useState<ActiveInfo>(null);
 
-  useEffect(() => { loadStats(); }, []);
+  useEffect(() => {
+    loadStats();
+    void trackEvent(ANALYTICS_EVENTS.stats_opened);
+  }, []);
+
+  async function handleLogout() {
+    await signOut();
+    router.replace("/auth");
+  }
 
   async function loadStats() {
     const [latestCheckIn, checkIns, completedQuests, quickThoughts, dayPlan, journalEntries,
@@ -420,6 +430,10 @@ export default function StatsScreen() {
                 <Text style={styles.pageFooterText}>MYLIT · YOUR JOURNEY</Text>
                 <View style={styles.pageFooterLine} />
               </View>
+
+              <TouchableOpacity style={styles.logoutButton} onPress={() => void handleLogout()}>
+                <Text style={styles.logoutButtonText}>SIGN OUT</Text>
+              </TouchableOpacity>
 
             </ScrollView>
 
@@ -756,4 +770,21 @@ const styles = StyleSheet.create({
   infoBody: { color: "#CBD5E1", fontSize: 13, lineHeight: 20, fontWeight: "700", marginBottom: 14 },
   returnButton: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", borderRadius: 6, paddingVertical: 11, alignItems: "center", marginTop: 6 },
   returnButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", letterSpacing: 1 },
+  logoutButton: {
+    marginTop: 8,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: "#334155",
+    borderRadius: 6,
+    paddingVertical: 10,
+    alignItems: "center",
+    backgroundColor: "rgba(15,23,42,0.75)",
+  },
+  logoutButtonText: {
+    color: "#94A3B8",
+    fontFamily: pixelFont,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
 });

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { uiAssets } from "../constants/uiAssets";
+import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { collectDayPlanScheduledItems, collectQuickThoughtScheduledItems, formatDurationLabel, getDateKey, getQuickThoughtSteps, inferScheduledClassification, parseDurationMinutes, parseTimeToMinutes, type ScheduledClassification, type ScheduledQuestLike } from "../lib/scheduling";
 
 type WeekdayName = "Sunday" | "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "Saturday";
@@ -184,6 +185,7 @@ export default function CalendarScreen() {
   const [showInfo, setShowInfo] = useState(false);
 
   useEffect(() => {
+    void trackEvent(ANALYTICS_EVENTS.calendar_opened);
     loadCalendarData();
   }, []);
 

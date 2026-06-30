@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 import { uiAssets } from "../constants/uiAssets";
+import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
+import { syncQuickThoughtItems } from "../lib/progressSync";
 import { formatDurationLabel, generateTimeSlots, getDateKey, getQuickThoughtSteps, inferScheduledClassification, parseDurationMinutes, shiftTimeSlot, type ScheduledClassification, type ScheduledStatus } from "../lib/scheduling";
 
 type QuestKind = "progress" | "recovery";
@@ -205,6 +207,8 @@ export default function TomorrowQueueScreen() {
     await saveQueue([nextItem, ...items]);
     setRequest("");
     setMessage(`Saved ${selectedKind} quest to Calendar.`);
+    void trackEvent(ANALYTICS_EVENTS.quick_thought_saved, { id: nextItem.id, kind: selectedKind });
+    void syncQuickThoughtItems();
   }
 
   async function deleteItem(id: string) {

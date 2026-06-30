@@ -5,6 +5,7 @@ import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View }
 
 import { GuideInfoModal } from "../components/GuideInfoModal";
 import { uiAssets } from "../constants/uiAssets";
+import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 
 const LUNA_SLEEP_GUIDE_BULLETS = [
   "The Sleep Guide suggests timing — not strict rules.",
@@ -185,6 +186,7 @@ export default function SleepCalendarScreen() {
 
     await AsyncStorage.setItem(CHECKIN_KEY, JSON.stringify(next));
     setSavedMessage("Sleep guide saved.");
+    void trackEvent(ANALYTICS_EVENTS.sleep_guide_saved);
   }
 
   function TimeStepper({ label, icon, value, onChange }: { label: string; icon: string; value: string; onChange: (next: string) => void }) {

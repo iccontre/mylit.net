@@ -6,6 +6,8 @@ import { Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, useWindow
 
 import { uiAssets } from "../../constants/uiAssets";
 import { generateProgressQuests } from "../../lib/questGeneration";
+import { ANALYTICS_EVENTS, trackEvent } from "../../lib/analytics";
+import { syncQuestCompleted, syncQuestMissed, syncQuestStarted } from "../../lib/progressSync";
 import {
   ACTIVE_TIMED_ITEM_KEY,
   applyQuestBoardCapacity,
@@ -578,6 +580,8 @@ export default function HomeScreen() {
     setSelectedItem(null);
     await saveActiveItem(next);
     await mediumHaptic();
+    void trackEvent(ANALYTICS_EVENTS.quest_started, { id: item.id, title: item.title, source: item.source });
+    void syncQuestStarted(item);
   }
 
   // Completion is the ONLY place steps are awarded — never on Start.
@@ -593,6 +597,8 @@ export default function HomeScreen() {
     if (activeItem?.id === item.id) {
       await clearActiveItem();
     }
+    void trackEvent(ANALYTICS_EVENTS.quest_completed, { id: item.id, title: item.title, steps: item.steps });
+    void syncQuestCompleted(item);
   }
 
   async function completeActiveItem() {
@@ -617,6 +623,8 @@ export default function HomeScreen() {
     if (activeItem?.id === item.id) {
       await clearActiveItem();
     }
+    void trackEvent(ANALYTICS_EVENTS.quest_missed, { id: item.id, title: item.title });
+    void syncQuestMissed(item);
     router.push({ pathname: "/reflection", params: { quest: item.title } });
   }
 

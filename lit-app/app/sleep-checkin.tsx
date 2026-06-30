@@ -15,6 +15,8 @@ import {
 } from "react-native";
 
 import { uiAssets } from "../constants/uiAssets";
+import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
+import { syncDailySnapshot } from "../lib/progressSync";
 
 type CheckInMode = "Recovery" | "Progress";
 type CheckInType = "morning" | "afternoon";
@@ -210,6 +212,18 @@ export default function SleepCheckInScreen() {
     await AsyncStorage.setItem(CHECKIN_HISTORY_KEY, JSON.stringify(nextHistory));
 
     await successHaptic();
+
+    void trackEvent(
+      isAfternoon ? ANALYTICS_EVENTS.afternoon_checkin_completed : ANALYTICS_EVENTS.morning_checkin_completed,
+      { energy, mode }
+    );
+    void syncDailySnapshot({
+      energy_score: energy,
+      mode,
+      mood_score: Number(mood) || null,
+      stress_score: Number(stress) || null,
+      sleep_hours: isAfternoon ? Number(latestCheckIn?.hours) || null : Number(hours) || null,
+    });
 
     router.push({
       pathname: "/",
