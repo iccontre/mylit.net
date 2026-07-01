@@ -229,11 +229,40 @@ export async function updateProfile(updates: ProfileUpdateInput): Promise<AuthRe
 
 export async function isOnboardingComplete(profile?: BetaProfile | null): Promise<boolean> {
   const localDone = await isLocalOnboardingComplete();
-  if (!localDone) return false;
-  if (isSupabaseConfigured() && profile) {
-    return Boolean(profile.onboarding_complete);
+  if (isSupabaseConfigured()) {
+    const cloudDone = Boolean(profile?.onboarding_complete);
+    return localDone || cloudDone;
   }
-  return true;
+  return localDone;
+}
+
+/** After cloud merge, mirror profile.onboarding_complete into local storage when wiped (e.g. PWA reinstall). */
+export async function syncLocalOnboardingFromCloudProfile(profile: BetaProfile | null): Promise<void> {
+  if (!profile?.onboarding_complete) return;
+
+  const raw = await AsyncStorage.getItem(LOCAL_PROFILE_KEY);
+  let localProfile: Record<string, unknown> = {};
+  if (raw) {
+    try {
+      localProfile = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      localProfile = {};
+    }
+  }
+
+  if (localProfile.onboardingComplete) return;
+
+  localProfile.onboardingComplete = true;
+  if (!localProfile.name && profile.display_name) {
+    localProfile.name = profile.display_name;
+  }
+  await AsyncStorage.setItem(LOCAL_PROFILE_KEY, JSON.stringify(localProfile));
+}
+
+export async function prepareReturningUserAfterSync(): Promise<BetaProfile | null> {
+  const profile = await getOrCreateProfile();
+  await syncLocalOnboardingFromCloudProfile(profile);
+  return profile;
 }
 
 export { isSupabaseConfigured };

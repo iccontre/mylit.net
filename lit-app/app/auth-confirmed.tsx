@@ -6,7 +6,7 @@ import { FormScreen } from "../components/FormScreen";
 import { formPageContent } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
-import { getOrCreateProfile, getSession, isOnboardingComplete } from "../lib/auth";
+import { getSession, isOnboardingComplete, prepareReturningUserAfterSync } from "../lib/auth";
 import { consumeAuthCallbackFromUrl } from "../lib/authEmailConfirm";
 import { mergeCloudIntoLocalSafely } from "../lib/progressStore";
 import {
@@ -73,7 +73,8 @@ export default function AuthConfirmedScreen() {
     try {
       await mergeCloudIntoLocalSafely();
       await clearAuthAwaitingContinue();
-      const profile = await getOrCreateProfile();
+      const profile = await prepareReturningUserAfterSync();
+      await markWelcomeSeen();
       const onboardingDone = await isOnboardingComplete(profile);
       router.replace(onboardingDone ? "/(tabs)" : "/onboarding");
     } finally {

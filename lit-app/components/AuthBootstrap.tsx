@@ -2,7 +2,7 @@ import { usePathname, useRouter } from "expo-router";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
-import { getSession } from "../lib/auth";
+import { getSession, prepareReturningUserAfterSync } from "../lib/auth";
 import { resolveRequiredRouteForPath } from "../lib/authFlow";
 import { mergeCloudIntoLocalSafely } from "../lib/progressStore";
 import { isSupabaseConfigured } from "../lib/supabase";
@@ -28,6 +28,7 @@ export function AuthBootstrap({ children }: AuthBootstrapProps) {
       if (!session || cancelled) return;
       hasSyncedProgressRef.current = true;
       await mergeCloudIntoLocalSafely();
+      await prepareReturningUserAfterSync();
     }
 
     async function enforceRoute() {

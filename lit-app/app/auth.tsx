@@ -17,11 +17,11 @@ import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import {
-  getOrCreateProfile,
   getSession,
   isLocalOnboardingComplete,
   isOnboardingComplete,
   isSupabaseConfigured,
+  prepareReturningUserAfterSync,
   signInWithEmail,
   signUpWithEmail,
 } from "../lib/auth";
@@ -121,7 +121,8 @@ export default function AuthScreen() {
         setMessage("Signed in. Local progress kept — cloud sync will retry later.");
       }
       await clearAuthAwaitingContinue();
-      const profile = await getOrCreateProfile();
+      const profile = await prepareReturningUserAfterSync();
+      await markWelcomeSeen();
       const onboardingDone = await isOnboardingComplete(profile);
       router.replace(onboardingDone ? "/(tabs)" : "/onboarding");
     } finally {

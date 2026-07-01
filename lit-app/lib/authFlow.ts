@@ -2,11 +2,11 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Href } from "expo-router";
 
 import {
-  getOrCreateProfile,
   getSession,
   isLocalOnboardingComplete,
   isOnboardingComplete,
   isSupabaseConfigured,
+  prepareReturningUserAfterSync,
   WELCOME_SEEN_KEY,
 } from "./auth";
 
@@ -72,8 +72,11 @@ export async function markWelcomeSeen(): Promise<void> {
 }
 
 export async function resolvePostAuthRoute(): Promise<Href> {
-  const profile = await getOrCreateProfile();
+  const profile = await prepareReturningUserAfterSync();
   const onboardingDone = await isOnboardingComplete(profile);
+  if (onboardingDone) {
+    await markWelcomeSeen();
+  }
   return onboardingDone ? "/(tabs)" : "/onboarding";
 }
 
@@ -96,9 +99,13 @@ export async function resolveInitialRoute(): Promise<Href> {
     return "/auth";
   }
 
-  const profile = await getOrCreateProfile();
+  const profile = await prepareReturningUserAfterSync();
   const onboardingDone = await isOnboardingComplete(profile);
-  return onboardingDone ? "/(tabs)" : "/onboarding";
+  if (onboardingDone) {
+    await markWelcomeSeen();
+    return "/(tabs)";
+  }
+  return "/onboarding";
 }
 
 export async function resolveRequiredRouteForPath(pathname: string): Promise<Href | null> {

@@ -260,7 +260,7 @@ export default function OnboardingScreen() {
    */
   function generateMilestones(cycle = false) {
     if (!dreamCategory) {
-      setValidationMessage("Pick a category first so we can draft your milestones.");
+      setValidationMessage("Pick a category first if you want goal suggestions.");
       return;
     }
     setValidationMessage("");
@@ -346,7 +346,7 @@ export default function OnboardingScreen() {
     }
 
     if (milestonesEmpty) {
-      setValidationMessage("Tap Generate to draft your milestones (and edit them if you like).");
+      setValidationMessage("Write at least one milestone goal in the fields below.");
       return;
     }
 
@@ -536,26 +536,28 @@ export default function OnboardingScreen() {
           </SectionShell>
 
           <SectionShell number="4" title="YOUR PATH MILESTONES">
-            <View style={styles.milestoneHeaderRow}>
-              <Text style={styles.milestoneHint}>
-                {milestonesEmpty
-                  ? "Draft your route, then edit."
-                  : "Edit each step."}
-              </Text>
-              <TouchableOpacity
-                style={[styles.generateButton, !dreamCategory && styles.generateButtonDisabled]}
-                onPress={() => generateMilestones(Boolean(canRegenerate))}
-                disabled={!dreamCategory}
-              >
-                <Text style={styles.generateButtonText}>{hasGenerated ? "NEW DRAFT" : "GENERATE"}</Text>
-              </TouchableOpacity>
-            </View>
+            <Text style={styles.milestoneHint}>
+              Write your own short-, mid-, and long-term goals below. In beta, your words matter most.
+            </Text>
+            <Text style={styles.betaNoteText}>
+              Optional: tap Suggest goals for a starting draft you can edit.
+            </Text>
 
             <View style={styles.milestoneGrid}>
               <MilestoneField horizon="shortTerm" value={shortTermGoal} onChange={setShortTermGoal} />
               <MilestoneField horizon="midTerm" value={midTermGoal} onChange={setMidTermGoal} />
               <MilestoneField horizon="longTerm" value={longTermGoal} onChange={setLongTermGoal} />
             </View>
+
+            <TouchableOpacity
+              style={[styles.generateButtonSecondary, !dreamCategory && styles.generateButtonDisabled]}
+              onPress={() => generateMilestones(Boolean(canRegenerate))}
+              disabled={!dreamCategory}
+            >
+              <Text style={styles.generateButtonSecondaryText}>
+                {hasGenerated ? "NEW SUGGESTION" : "SUGGEST GOALS (BETA)"}
+              </Text>
+            </TouchableOpacity>
           </SectionShell>
 
           <SectionShell number="5" title="WHAT DOES PROGRESS MEAN?">
@@ -840,42 +842,41 @@ const styles = StyleSheet.create({
   categoryMeaningTextActive: {
     color: "#17260D",
   },
-  milestoneHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 8,
-    marginBottom: 6,
-  },
   milestoneHint: {
-    flex: 1,
     color: "#3D2408",
     fontFamily: readableFont,
     fontSize: 12,
     fontWeight: "800",
-    lineHeight: 15,
+    lineHeight: 17,
+    marginBottom: 6,
   },
-  generateButton: {
-    backgroundColor: "#14532D",
-    borderWidth: 3,
-    borderColor: "#D99A16",
+  betaNoteText: {
+    color: "#6B4A1A",
+    fontFamily: readableFont,
+    fontSize: 11,
+    fontWeight: "700",
+    lineHeight: 15,
+    marginBottom: 10,
+  },
+  generateButtonSecondary: {
+    alignSelf: "center",
+    marginTop: 10,
+    backgroundColor: "rgba(255, 239, 197, 0.5)",
+    borderWidth: 2,
+    borderColor: "#A46B1C",
     borderRadius: 5,
-    paddingVertical: 7,
-    paddingHorizontal: 10,
-    shadowColor: "#2B1403",
-    shadowOpacity: 0.45,
-    shadowRadius: 0,
-    shadowOffset: { width: 2, height: 2 },
+    paddingVertical: 8,
+    paddingHorizontal: 12,
   },
   generateButtonDisabled: {
     opacity: 0.45,
   },
-  generateButtonText: {
-    color: "#FFF8E6",
+  generateButtonSecondaryText: {
+    color: "#4B2A0B",
     fontFamily: pixelFont,
     fontWeight: "900",
-    fontSize: 12,
-    letterSpacing: 0.6,
+    fontSize: 11,
+    letterSpacing: 0.5,
   },
   milestoneGrid: {
     gap: 12,
