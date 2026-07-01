@@ -470,7 +470,7 @@ export default function OnboardingScreen() {
           <Image source={pathBackground} style={styles.backgroundImage} resizeMode="stretch" />
         </View>
         <View style={styles.pageContainer}>
-        <FormScreen contentContainerStyle={[styles.boardContent, { paddingBottom: mobile.scrollPaddingBottom }]}>
+        <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={styles.boardContent}>
           <Image source={uiAssets.logo.mylit} style={styles.logo} resizeMode="contain" />
 
           <View style={styles.bannerPanel}>

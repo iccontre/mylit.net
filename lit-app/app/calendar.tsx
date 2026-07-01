@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
+import { BottomNav } from "../components/BottomNav";
 import { uiAssets } from "../constants/uiAssets";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
@@ -358,7 +359,7 @@ export default function CalendarScreen() {
               <SummaryCard icon="⭐" label="TODAY QUEST" value={todayQuestTitle} hint="Quest Board • +2 steps" />
               <SummaryCard icon="💭" label="NEXT QUICK THOUGHT" value={nextQuickThought} hint="Future scheduled quest" />
               <SummaryCard icon="🌙" label="SLEEP GUIDE" value={expectedSleep} hint="Blue timing guidance" />
-              <SummaryCard icon="📜" label="DAY FOCUS" value={dayPlan?.todayFocus || dayPlan?.todayGoal || "Not set"} hint="Theme only, no steps" />
+              <SummaryCard icon="📜" label="WEEKLY HABIT" value={getDayRole(dayPlan, WEEKDAY_NAMES[today.getDay()] as WeekdayName) || "Not set"} hint="Theme only, no steps" />
             </View>
 
             <View style={styles.actionGrid}>
@@ -373,7 +374,7 @@ export default function CalendarScreen() {
             </View>
 
             <View style={styles.legendRow}>
-              <Legend tone="blue" label="Sleep guide" /><Legend tone="gold" label="Progress" /><Legend tone="purple" label="Recovery" /><Legend tone="green" label="Focus" />
+              <Legend tone="blue" label="Sleep guide" /><Legend tone="gold" label="Progress" /><Legend tone="purple" label="Recovery" /><Legend tone="green" label="Weekly Habit" />
             </View>
 
             <View style={styles.calendarGrid}>
@@ -388,7 +389,7 @@ export default function CalendarScreen() {
                     <Text style={[styles.dayNumber, isToday && styles.dayHeaderToday]}>{date.getDate()}</Text>
                     {focusEvent ? (
                       <TouchableOpacity style={[styles.focusTab, getEventToneStyle("green")]} onPress={() => setSelectedEvent(focusEvent)}>
-                        <Text style={styles.focusTabText} numberOfLines={1}>Focus: {focusEvent.title}</Text>
+                        <Text style={styles.focusTabText} numberOfLines={1}>Habit: {focusEvent.title}</Text>
                       </TouchableOpacity>
                     ) : null}
                     {TIME_ROWS.map((row) => {
@@ -420,7 +421,7 @@ export default function CalendarScreen() {
               })}
             </View>
           </ScrollView>
-          <BottomNav router={router} bottomOffset={mobile.bottomNavOffset} />
+          <BottomNav activeRoute="calendar" bottomOffset={mobile.bottomNavOffset} />
 
           {selectedEvent ? <EventPopup event={selectedEvent} onClose={() => setSelectedEvent(null)} router={router} /> : null}
           {showInfo ? <InfoOverlay onClose={() => setShowInfo(false)} /> : null}
@@ -507,10 +508,6 @@ function InfoOverlay({ onClose }: { onClose: () => void }) {
       </View>
     </View>
   );
-}
-
-function BottomNav({ router, bottomOffset }: { router: ReturnType<typeof useRouter>; bottomOffset: number }) {
-  return <View style={[styles.bottomNav, { bottom: bottomOffset }]}><TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}><Text style={styles.navIcon}>🏠</Text><Text style={styles.navLabel}>HOME</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/sleep")}><Text style={styles.navIcon}>🌙</Text><Text style={styles.navLabel}>SLEEP</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/mind")}><Text style={styles.navIcon}>🧠</Text><Text style={styles.navLabel}>MIND</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/path")}><Text style={styles.navIcon}>🌲</Text><Text style={styles.navLabel}>PATH</Text></TouchableOpacity><TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={() => router.push("/calendar")}><Text style={styles.navIcon}>📅</Text><Text style={[styles.navLabel, styles.navLabelActive]}>CAL</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/stats")}><Text style={styles.navIcon}>🎒</Text><Text style={styles.navLabel}>BAG</Text></TouchableOpacity></View>;
 }
 
 const styles = StyleSheet.create({

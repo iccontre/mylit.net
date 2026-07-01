@@ -12,6 +12,7 @@ import {
   View,
 } from "react-native";
 
+import { BottomNav } from "../components/BottomNav";
 import { GuideInfoModal } from "../components/GuideInfoModal";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
@@ -204,32 +205,7 @@ export default function SleepScreen() {
             accentColor="#C4A7FF"
           />
 
-          <View style={[styles.bottomNav, { bottom: mobile.bottomNavOffset }]}>
-            <TouchableOpacity style={styles.navButton} onPress={() => navigate("/")}>
-              <Text style={styles.navText}>🏠</Text>
-              <Text style={styles.navLabel}>HOME</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={lightHaptic}>
-              <Text style={styles.navTextActive}>🌙</Text>
-              <Text style={styles.navLabelActive}>SLEEP</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => navigate("/mind")}>
-              <Text style={styles.navText}>🧠</Text>
-              <Text style={styles.navLabel}>MIND</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => navigate("/path")}>
-              <Text style={styles.navText}>🌲</Text>
-              <Text style={styles.navLabel}>PATH</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => navigate("/calendar")}>
-              <Text style={styles.navText}>📅</Text>
-              <Text style={styles.navLabel}>CAL</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => navigate("/stats")}>
-              <Text style={styles.navText}>🎒</Text>
-              <Text style={styles.navLabel}>BAG</Text>
-            </TouchableOpacity>
-          </View>
+          <BottomNav activeRoute="sleep" theme="purple" bottomOffset={mobile.bottomNavOffset} />
         </View>
       </View>
     </View>

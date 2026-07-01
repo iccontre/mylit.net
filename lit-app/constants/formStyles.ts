@@ -10,6 +10,15 @@ const pixelFont = Platform.select({
   default: "monospace",
 });
 
+/** Page content wrapper for form screens — full width, no fixed height. */
+export const formPageContent = {
+  flexGrow: 1,
+  width: "100%" as const,
+  alignSelf: "stretch" as const,
+  paddingTop: 18,
+  paddingHorizontal: 14,
+};
+
 export const formStyles = StyleSheet.create({
   input: {
     backgroundColor: "rgba(15, 23, 42, 0.96)",

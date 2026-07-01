@@ -10,6 +10,7 @@ import {
   View,
 } from "react-native";
 
+import { BottomNav } from "../components/BottomNav";
 import { GuideInfoModal } from "../components/GuideInfoModal";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
@@ -132,32 +133,7 @@ export default function MindScreen() {
             accentColor="#C4A7FF"
           />
 
-          <View style={[styles.bottomNav, { bottom: mobile.bottomNavOffset }]}>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}>
-              <Text style={styles.navText}>🏠</Text>
-              <Text style={styles.navLabel}>HOME</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/sleep")}>
-              <Text style={styles.navText}>🌙</Text>
-              <Text style={styles.navLabel}>SLEEP</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={() => router.push("/mind")}>
-              <Text style={styles.navTextActive}>🧠</Text>
-              <Text style={styles.navLabelActive}>MIND</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/path")}>
-              <Text style={styles.navText}>🌲</Text>
-              <Text style={styles.navLabel}>PATH</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/calendar")}>
-              <Text style={styles.navText}>📅</Text>
-              <Text style={styles.navLabel}>CAL</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/stats")}>
-              <Text style={styles.navText}>🎒</Text>
-              <Text style={styles.navLabel}>BAG</Text>
-            </TouchableOpacity>
-          </View>
+          <BottomNav activeRoute="mind" theme="purple" bottomOffset={mobile.bottomNavOffset} />
         </View>
       </View>
     </View>

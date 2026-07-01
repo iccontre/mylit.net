@@ -18,6 +18,14 @@ type FormScreenProps = {
   scrollPaddingBottom?: number;
 };
 
+function resolvePaddingBottom(style: StyleProp<ViewStyle>, fallback: number): number {
+  const flat = StyleSheet.flatten(style);
+  if (typeof flat?.paddingBottom === "number") {
+    return flat.paddingBottom;
+  }
+  return fallback;
+}
+
 export function FormScreen({
   children,
   contentContainerStyle,
@@ -26,23 +34,29 @@ export function FormScreen({
 }: FormScreenProps) {
   const keyboardInset = useKeyboardInset();
   const scrollRef = useRef<ScrollView>(null);
-  const bottomPadding = scrollPaddingBottom + keyboardInset;
+  const basePadding = resolvePaddingBottom(contentContainerStyle, scrollPaddingBottom);
+  const bottomPadding = basePadding + keyboardInset;
 
   const contentStyle = [
     styles.content,
-    { paddingBottom: bottomPadding },
     contentContainerStyle,
+    { paddingBottom: bottomPadding },
   ];
+
+  const scrollProps = {
+    ref: scrollRef,
+    keyboardShouldPersistTaps: "handled" as const,
+    keyboardDismissMode: Platform.OS === "ios" ? ("interactive" as const) : ("on-drag" as const),
+    showsVerticalScrollIndicator: false,
+    nestedScrollEnabled: true,
+  };
 
   if (Platform.OS === "web") {
     return (
       <ScrollView
-        ref={scrollRef}
+        {...scrollProps}
         style={[styles.flex, style]}
         contentContainerStyle={contentStyle}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        nestedScrollEnabled
       >
         {children}
       </ScrollView>
@@ -55,14 +69,7 @@ export function FormScreen({
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
     >
-      <ScrollView
-        ref={scrollRef}
-        style={styles.flex}
-        contentContainerStyle={contentStyle}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
-        nestedScrollEnabled
-      >
+      <ScrollView {...scrollProps} style={styles.flex} contentContainerStyle={contentStyle}>
         {children}
       </ScrollView>
     </KeyboardAvoidingView>
@@ -71,5 +78,5 @@ export function FormScreen({
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  content: { flexGrow: 1 },
+  content: { flexGrow: 1, width: "100%", alignSelf: "stretch" },
 });

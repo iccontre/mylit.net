@@ -11,9 +11,10 @@ import {
   View,
 } from "react-native";
 
+import { BottomNav } from "../components/BottomNav";
 import { FormScreen } from "../components/FormScreen";
 import { GuideInfoModal } from "../components/GuideInfoModal";
-import { formStyles } from "../constants/formStyles";
+import { formPageContent, formStyles } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { persistProgressKeys } from "../lib/progressStore";
@@ -83,7 +84,7 @@ export default function ReflectionScreen() {
           <Image source={uiAssets.backgrounds.neutral} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
-          <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={styles.hudContent}>
+          <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.hudContent]}>
             <View style={styles.hero}>
               <Text style={styles.heroLabel}>MIND HUB</Text>
               <Text style={[styles.heroTitle, { fontSize: 34, letterSpacing: 3 }]}>REFLECTION</Text>
@@ -165,32 +166,7 @@ export default function ReflectionScreen() {
             accentColor="#C4A7FF"
           />
 
-          <View style={[styles.bottomNav, { bottom: mobile.bottomNavOffset }]}>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}>
-              <Text style={styles.navText}>🏠</Text>
-              <Text style={styles.navLabel}>HOME</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/sleep")}>
-              <Text style={styles.navText}>🌙</Text>
-              <Text style={styles.navLabel}>SLEEP</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={() => router.push("/mind")}>
-              <Text style={styles.navTextActive}>🧠</Text>
-              <Text style={styles.navLabelActive}>MIND</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/path")}>
-              <Text style={styles.navText}>🌲</Text>
-              <Text style={styles.navLabel}>PATH</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/calendar")}>
-              <Text style={styles.navText}>📅</Text>
-              <Text style={styles.navLabel}>CAL</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/stats")}>
-              <Text style={styles.navText}>🎒</Text>
-              <Text style={styles.navLabel}>BAG</Text>
-            </TouchableOpacity>
-          </View>
+          <BottomNav activeRoute="mind" theme="purple" bottomOffset={mobile.bottomNavOffset} />
         </View>
       </View>
     </View>

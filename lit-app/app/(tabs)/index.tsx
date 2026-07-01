@@ -4,6 +4,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
+import { BottomNav } from "../../components/BottomNav";
 import { uiAssets } from "../../constants/uiAssets";
 import { useMobileFrame } from "../../constants/mobileLayout";
 import {
@@ -1127,7 +1128,7 @@ export default function HomeScreen() {
                   <Text style={styles.modalTitle}>How the Quest Board works</Text>
                   <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false} bounces={false}>
                     <Text style={styles.modalDescription}>
-                      The Quest Board keeps today focused. MYLIT offers one optional suggested quest at a time — after you complete or skip it, the next small step appears to guide you toward your short-term Path benchmark. Your Day Plan, checklist habits, and Quick Thoughts always show alongside the current suggestion. Tap a quest to view it, then START to begin the timer. Start one timed quest at a time; while it runs, the board locks. Complete gives steps after the timer. Missed? helps you reflect, not punish. MYLIT limits continuous progress work to 2 hours, then adds a 1-hour recovery period. Recovery counts.
+                      Quest Board shows what to focus on now. It can include MYLIT quests, Day Plan items, checklist items, and Quick Thoughts. Start one timed item at a time; the board locks until it ends. Complete gives steps. Missed? helps you reflect without punishment. To protect energy, MYLIT limits long progress streaks — after about 2 hours, recovery comes before more work.
                     </Text>
                   </ScrollView>
                   <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowQuestHelp(false)}>
@@ -1188,32 +1189,7 @@ export default function HomeScreen() {
               </View>
             </Modal>
 
-            <View style={[styles.bottomNav, { borderColor: theme.accent, bottom: mobile.bottomNavOffset }]}>
-              <TouchableOpacity style={[styles.navButton, styles.navButtonActive, { borderColor: theme.accent }]} onPress={lightHaptic}>
-                <Text style={styles.navTextActive}>🏠</Text>
-                <Text style={[styles.navLabelActive, { color: theme.glow }]}>HOME</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.navButton} onPress={() => navigateWithHaptic("/sleep")}>
-                <Text style={styles.navText}>🌙</Text>
-                <Text style={styles.navLabel}>SLEEP</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.navButton} onPress={() => navigateWithHaptic("/mind")}>
-                <Text style={styles.navText}>🧠</Text>
-                <Text style={styles.navLabel}>MIND</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.navButton} onPress={() => navigateWithHaptic("/path")}>
-                <Text style={styles.navText}>🌲</Text>
-                <Text style={styles.navLabel}>PATH</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.navButton} onPress={() => navigateWithHaptic("/calendar")}>
-                <Text style={styles.navText}>📅</Text>
-                <Text style={styles.navLabel}>CAL</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.navButton} onPress={() => navigateWithHaptic("/stats")}>
-                <Text style={styles.navText}>🎒</Text>
-                <Text style={styles.navLabel}>BAG</Text>
-              </TouchableOpacity>
-            </View>
+            <BottomNav activeRoute="home" bottomOffset={mobile.bottomNavOffset} />
         </View>
       </View>
     </View>

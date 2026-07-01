@@ -114,7 +114,7 @@ export default function ProfileSetupScreen() {
           />
         </View>
 
-        <FormScreen contentContainerStyle={styles.content}>
+        <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={styles.content}>
           <Image source={uiAssets.logo.mylit} style={styles.logo} resizeMode="contain" />
 
           <View style={styles.heroPanel}>

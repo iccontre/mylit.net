@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 import { FormScreen } from "../components/FormScreen";
+import { BottomNav } from "../components/BottomNav";
+import { formStyles } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
@@ -288,7 +290,7 @@ export default function TomorrowQueueScreen() {
           <Image source={uiAssets.backgrounds.neutral} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
-          <FormScreen contentContainerStyle={[styles.hudContent, { paddingBottom: mobile.scrollPaddingBottom }]}>
+          <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={styles.hudContent}>
             <View style={styles.heroPanel}>
               <View style={styles.bannerIcon}><Text style={styles.bannerIconText}>✦</Text></View>
               <View style={styles.heroCopy}>
@@ -403,7 +405,7 @@ export default function TomorrowQueueScreen() {
 
             <TouchableOpacity style={styles.homeButton} onPress={() => router.push("/calendar")}><Text style={styles.homeButtonText}>← Back to Calendar</Text></TouchableOpacity>
           </FormScreen>
-          <BottomNav router={router} bottomOffset={mobile.bottomNavOffset} />
+          <BottomNav activeRoute="calendar" bottomOffset={mobile.bottomNavOffset} />
           {showInfo ? <InfoOverlay onClose={() => setShowInfo(false)} /> : null}
         </View>
       </View>
@@ -417,13 +419,9 @@ function InfoOverlay({ onClose }: { onClose: () => void }) {
       <View style={styles.infoCard}>
         <Text style={styles.infoTitle}>QUICK THOUGHTS</Text>
         <ScrollView style={styles.infoScroll} showsVerticalScrollIndicator={false} bounces={false}>
-          <Text style={styles.infoBullet}>{"• Quick Thoughts are for tasks and ideas that should become future quests."}</Text>
-          <Text style={styles.infoBullet}>{"• Scheduled Quick Thoughts can appear on Home and Calendar when their day arrives."}</Text>
-          <Text style={styles.infoBullet}>{"• Quest Board time limits follow your latest check-in: 8h in Progress mode, 5h in Recovery mode."}</Text>
-          <Text style={styles.infoBullet}>{"• Duration affects possible steps: 30 or 45 min = +1 step. 1 hr = +2 steps."}</Text>
-          <Text style={styles.infoBullet}>{"• Completing the item later earns steps."}</Text>
-          <Text style={styles.infoBullet}>{"• Saving the thought alone does not award steps."}</Text>
-          <Text style={styles.infoBullet}>{"• Missed quests show a Reflect option so you can log what happened."}</Text>
+          <Text style={styles.infoBody}>
+            Quick Thoughts are for tasks or ideas you do not want to forget. Schedule them for a future day and they can appear on Home and Calendar when it is time. Saving a thought does not give steps; completing it later can. Use this to clear your mind without overloading today.
+          </Text>
         </ScrollView>
         <TouchableOpacity style={styles.infoClose} onPress={onClose}>
           <Text style={styles.infoCloseText}>RETURN</Text>
@@ -431,10 +429,6 @@ function InfoOverlay({ onClose }: { onClose: () => void }) {
       </View>
     </View>
   );
-}
-
-function BottomNav({ router, bottomOffset }: { router: ReturnType<typeof useRouter>; bottomOffset: number }) {
-  return <View style={[styles.bottomNav, { bottom: bottomOffset }]}><TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}><Text style={styles.navIcon}>🏠</Text><Text style={styles.navLabel}>HOME</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/sleep")}><Text style={styles.navIcon}>🌙</Text><Text style={styles.navLabel}>SLEEP</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/mind")}><Text style={styles.navIcon}>🧠</Text><Text style={styles.navLabel}>MIND</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/path")}><Text style={styles.navIcon}>🌲</Text><Text style={styles.navLabel}>PATH</Text></TouchableOpacity><TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={() => router.push("/calendar")}><Text style={styles.navIcon}>📅</Text><Text style={[styles.navLabel, styles.navLabelActive]}>CAL</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/stats")}><Text style={styles.navIcon}>🎒</Text><Text style={styles.navLabel}>BAG</Text></TouchableOpacity></View>;
 }
 
 const styles = StyleSheet.create({
@@ -445,7 +439,7 @@ const styles = StyleSheet.create({
   backgroundImage: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, width: "100%", height: "100%" },
   worldOverlay: { flex: 1, backgroundColor: "rgba(2, 6, 12, 0.55)" },
   screenScroller: { flex: 1 },
-  hudContent: { minHeight: "100%", paddingTop: 18, paddingHorizontal: 14, paddingBottom: 104 },
+  hudContent: { flexGrow: 1, width: "100%", paddingTop: 18, paddingHorizontal: 14 },
   heroPanel: { backgroundColor: "rgba(5, 12, 24, 0.9)", borderWidth: 3, borderColor: "#D99B2B", borderRadius: 8, padding: 13, marginBottom: 12, flexDirection: "row", alignItems: "center" },
   bannerIcon: { width: 46, height: 66, backgroundColor: "rgba(70, 28, 112, 0.86)", borderWidth: 2, borderColor: "#FDE047", alignItems: "center", justifyContent: "center", marginRight: 12 },
   bannerIconText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 26, fontWeight: "900" },
@@ -523,7 +517,7 @@ const styles = StyleSheet.create({
   infoCard: { backgroundColor: "rgba(8,13,24,0.99)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 12, padding: 16, width: "100%" },
   infoTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", marginBottom: 10 },
   infoScroll: { maxHeight: 280 },
-  infoBullet: { color: "#CBD5E1", fontSize: 13, lineHeight: 20, fontWeight: "700", marginBottom: 6 },
+  infoBody: { color: "#CBD5E1", fontSize: 13, lineHeight: 20, fontWeight: "700" },
   infoClose: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", paddingVertical: 11, alignItems: "center", marginTop: 12 },
   infoCloseText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900" },
   bottomNav: { position: "absolute", bottom: 8, left: 8, right: 8, height: 62, flexDirection: "row", justifyContent: "space-between", backgroundColor: "rgba(4,8,16,0.98)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 5, padding: 4 },

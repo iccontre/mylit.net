@@ -20,6 +20,7 @@ import { signOut } from "../lib/auth";
 import { computeItemStepsFromSources, computeTotalEarnedSteps, loadTodayCompletions, USER_STATS_KEY } from "../lib/questProgress";
 import { forceUploadLocalProgressToCloud, persistProgressKeys } from "../lib/progressStore";
 import { ProgressRecoveryModal } from "../components/ProgressRecoveryModal";
+import { BottomNav } from "../components/BottomNav";
 
 type ActivePanel = "weekly" | "rank" | "behavior" | null;
 type ActiveInfo = "stats" | "evie" | "weekly" | "rank" | "behavior" | "weeklyPopup" | "rankPopup" | "behaviorPopup" | null;
@@ -487,7 +488,7 @@ export default function StatsScreen() {
 
             </ScrollView>
 
-            <BottomNav router={router} bottomOffset={mobile.bottomNavOffset} />
+            <BottomNav activeRoute="stats" bottomOffset={mobile.bottomNavOffset} />
 
             {activePanel !== null ? (
               <View style={styles.modalOverlay}>
@@ -698,19 +699,6 @@ function LunaNote({ text }: { text: string }) {
         <Text style={styles.lunaNoteName}>LUNA</Text>
         <Text style={styles.lunaNoteText}>{text}</Text>
       </View>
-    </View>
-  );
-}
-
-function BottomNav({ router, bottomOffset }: { router: ReturnType<typeof useRouter>; bottomOffset: number }) {
-  return (
-    <View style={[styles.bottomNav, { bottom: bottomOffset }]}>
-      <TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}><Text style={styles.navIcon}>🏠</Text><Text style={styles.navLabel}>HOME</Text></TouchableOpacity>
-      <TouchableOpacity style={styles.navButton} onPress={() => router.push("/sleep")}><Text style={styles.navIcon}>🌙</Text><Text style={styles.navLabel}>SLEEP</Text></TouchableOpacity>
-      <TouchableOpacity style={styles.navButton} onPress={() => router.push("/mind")}><Text style={styles.navIcon}>🧠</Text><Text style={styles.navLabel}>MIND</Text></TouchableOpacity>
-      <TouchableOpacity style={styles.navButton} onPress={() => router.push("/path")}><Text style={styles.navIcon}>🌲</Text><Text style={styles.navLabel}>PATH</Text></TouchableOpacity>
-      <TouchableOpacity style={styles.navButton} onPress={() => router.push("/calendar")}><Text style={styles.navIcon}>📅</Text><Text style={styles.navLabel}>CAL</Text></TouchableOpacity>
-      <TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={() => router.push("/stats")}><Text style={styles.navIcon}>🎒</Text><Text style={[styles.navLabel, styles.navLabelActive]}>BAG</Text></TouchableOpacity>
     </View>
   );
 }
