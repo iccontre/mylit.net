@@ -22,6 +22,11 @@ export default function Root({ children }: PropsWithChildren) {
         <link rel="manifest" href="/manifest.json" />
         <link rel="icon" href="/favicon.png" type="image/png" />
         <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var w=Math.max(window.screen.width||0,window.innerWidth||0);var h=Math.max(window.screen.height||0,window.innerHeight||0);var r=document.documentElement;r.style.setProperty('--mylit-layout-width',w+'px');r.style.setProperty('--mylit-layout-height',h+'px');}catch(e){}})();`,
+          }}
+        />
         <style
           dangerouslySetInnerHTML={{
             __html: `
@@ -41,6 +46,7 @@ export default function Root({ children }: PropsWithChildren) {
                 position: fixed;
                 inset: 0;
                 width: 100%;
+                max-width: 100%;
                 height: var(--mylit-layout-height, 100svh);
               }
               #root {
@@ -49,8 +55,18 @@ export default function Root({ children }: PropsWithChildren) {
                 flex: 1;
                 min-height: 0;
                 width: 100%;
+                max-width: 100%;
                 height: 100%;
                 overflow: hidden;
+                align-items: stretch;
+              }
+              @media (pointer: coarse) {
+                #root, #root > div {
+                  width: 100% !important;
+                  max-width: 100% !important;
+                  align-items: stretch !important;
+                  justify-content: flex-start !important;
+                }
               }
               input, textarea, select {
                 font-size: 16px !important;

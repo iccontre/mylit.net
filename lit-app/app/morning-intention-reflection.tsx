@@ -138,7 +138,7 @@ export default function MorningIntentionReflectionScreen() {
 
   return (
     <View style={[styles.pageRoot, mobile.pageRootStyle]}>
-      <View style={[styles.phoneStage, mobile.phoneStageStyle, mobile.isFullscreen && styles.phoneStageFullscreen, { borderColor: theme.accent }]}>
+      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen, { borderColor: theme.accent }]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={uiAssets.backgrounds.progress} style={styles.backgroundImage} resizeMode="cover" />
         </View>

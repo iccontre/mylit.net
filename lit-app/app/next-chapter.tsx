@@ -232,7 +232,7 @@ export default function NextChapterScreen() {
         </View>
       </Modal>
 
-      <View style={[styles.phoneStage, mobile.phoneStageStyle, mobile.isFullscreen && styles.phoneStageFullscreen]}>
+      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={pathBackground} style={styles.backgroundImage} resizeMode="stretch" />
         </View>
