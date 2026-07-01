@@ -6,7 +6,7 @@ import {
   collectQuickThoughtScheduledItems,
   formatDurationLabel,
   getDateKey,
-  getQuickThoughtSteps,
+  getStepsForDuration,
   inferScheduledClassification,
   parseDurationMinutes,
   parseTimeToMinutes,
@@ -31,8 +31,16 @@ export const PROGRESS_QUEST_CAPACITY = 8;
 /** @deprecated Item-count capacity — use minute-based capacity helpers instead. */
 export const RECOVERY_QUEST_CAPACITY = 5;
 
+/** Checklist items build habits, not a to-do dump — capped at 5 scheduled for any one day. */
+export const MAX_CHECKLIST_ITEMS_PER_DAY = 5;
+
 export type QuestSource = "Quest" | "Today's Quest" | "Checklist" | "Quick Thought" | "Calendar" | "Sleep";
 export type QuestKind = "progress" | "recovery";
+
+/** User-facing label for a quest source — "Quick Thought" displays as "Quest" everywhere in the UI. */
+export function questSourceLabel(source: QuestSource): string {
+  return source === "Quick Thought" ? "Quest" : source;
+}
 
 export type CompletionEntry = {
   id: string;
@@ -454,9 +462,10 @@ export function isItemMissed(item: Pick<HomeQuestItem, "id" | "title">, missed: 
   return missed.some((entry) => entry.dateKey === dateKey && (entry.id === item.id || entry.title === item.title));
 }
 
+/** Steps depend only on duration now — Progress and Recovery checklist items earn the same. */
 export function stepsForChecklistItem(kind: QuestKind, durationMinutes: number): number {
-  if (kind === "recovery") return durationMinutes >= 30 ? 1 : 0;
-  return durationMinutes >= 60 ? 2 : 1;
+  void kind;
+  return getStepsForDuration(durationMinutes);
 }
 
 export function getChecklistItemsForDay(plan: DayPlanRaw | null | undefined, day: WeekdayName): RawChecklistItem[] {
@@ -520,7 +529,7 @@ export function normalizeQuestItems(input: {
       title: todayQuest.title.trim(),
       source: "Today's Quest",
       kind,
-      steps: typeof todayQuest.steps === "number" ? todayQuest.steps : 2,
+      steps: typeof todayQuest.steps === "number" ? todayQuest.steps : getStepsForDuration(durationMinutes),
       durationMinutes,
       scheduledTime: todayQuest.startTime,
       description: "Your main quest from today's Day Plan.",
@@ -559,10 +568,10 @@ export function normalizeQuestItems(input: {
       title,
       source: "Quick Thought",
       kind,
-      steps: typeof raw.steps === "number" ? raw.steps : getQuickThoughtSteps(durationMinutes),
+      steps: typeof raw.steps === "number" ? raw.steps : getStepsForDuration(durationMinutes),
       durationMinutes,
       scheduledTime: raw.time || raw.startTime,
-      description: raw.type ? `Saved from Quick Thoughts (${raw.type})` : "Saved from Quick Thoughts.",
+      description: raw.type ? `Saved from Quests (${raw.type})` : "Saved from Quests.",
     });
   });
 
@@ -585,7 +594,7 @@ export function normalizeQuestItems(input: {
       title,
       source,
       kind,
-      steps: typeof raw.steps === "number" ? raw.steps : source === "Today's Quest" ? 2 : getQuickThoughtSteps(durationMinutes),
+      steps: typeof raw.steps === "number" ? raw.steps : getStepsForDuration(durationMinutes),
       durationMinutes,
       scheduledTime: raw.startTime || raw.time,
       description: raw.note || "Scheduled on your Calendar.",
@@ -944,7 +953,7 @@ export function collectTodayCalendarItems(dayPlan: unknown, quickThoughts: unkno
 export function sourceIcon(source: QuestSource): string {
   if (source === "Today's Quest") return "⭐";
   if (source === "Checklist") return "📋";
-  if (source === "Quick Thought") return "💭";
+  if (source === "Quick Thought") return "⏱️";
   if (source === "Calendar") return "📅";
   if (source === "Sleep") return "🌙";
   return "📜";

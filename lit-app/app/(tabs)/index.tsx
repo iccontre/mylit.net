@@ -32,13 +32,14 @@ import {
   markItemComplete,
   markItemMissed,
   normalizeQuestItems,
+  questSourceLabel,
   sourceIcon,
   type CompletionEntry,
   type HomeQuestItem,
   type MissedEntry,
   type QuestKind,
 } from "../../lib/questProgress";
-import { formatDurationLabel, inferScheduledClassification, parseTimeToMinutes } from "../../lib/scheduling";
+import { formatDurationLabel, formatMinutesAsTime, getRequiredRecoveryBlockForDate, inferScheduledClassification, parseTimeToMinutes } from "../../lib/scheduling";
 import { LATEST_PRE_SLEEP_INTENTION_KEY } from "../../lib/storageKeys";
 
 const mylitLogo = uiAssets.logo.mylit;
@@ -565,6 +566,13 @@ export default function HomeScreen() {
     lockMessageTimeout.current = setTimeout(() => setLockMessage(""), 2500);
   }
 
+  function showRecoveryLockMessage() {
+    mediumHaptic();
+    setLockMessage("Recovery time — the board unlocks again in a bit.");
+    if (lockMessageTimeout.current) clearTimeout(lockMessageTimeout.current);
+    lockMessageTimeout.current = setTimeout(() => setLockMessage(""), 2500);
+  }
+
   function openQuestItem(item: HomeQuestItem) {
     if (item.source === "Sleep") {
       lightHaptic();
@@ -572,10 +580,14 @@ export default function HomeScreen() {
       return;
     }
     // Checklist items are a checkbox, not a timed quest — they can be reviewed/marked
-    // complete even while another timed quest is active.
+    // complete even while another timed quest is active or during a recovery lock.
     if (item.source === "Checklist") {
       lightHaptic();
       setSelectedItem(item);
+      return;
+    }
+    if (isRecoveryLocked) {
+      showRecoveryLockMessage();
       return;
     }
     if (activeItem) {
@@ -596,6 +608,10 @@ export default function HomeScreen() {
   }
 
   async function startTimedItem(item: HomeQuestItem) {
+    if (isRecoveryLocked) {
+      showRecoveryLockMessage();
+      return;
+    }
     if (activeItem) {
       showLockMessage();
       return;
@@ -853,6 +869,20 @@ export default function HomeScreen() {
   const timeTrackPosition = getCurrentTimeTrackPosition(timeNow);
   const nextItem = activeItem ? findNextScheduledItem(availableItems, activeItem.id, nowMinutes) : null;
 
+  // 2 hours of back-to-back scheduled items today auto-locks the board for a 1-hour recovery window.
+  const todayQuestForRecovery = dayPlanRaw?.todayQuest?.title?.trim()
+    ? [{
+        id: dayPlanRaw.todayQuest.id ?? `today-quest-${todayKey}`,
+        date: todayKey,
+        startTime: dayPlanRaw.todayQuest.startTime ?? "9:00 AM",
+        durationMinutes: dayPlanRaw.todayQuest.durationMinutes ?? 60,
+      }]
+    : [];
+  const requiredRecoveryToday = getRequiredRecoveryBlockForDate([...calendarItems, ...todayQuestForRecovery], todayKey);
+  const recoveryStartMinutes = requiredRecoveryToday ? parseTimeToMinutes(requiredRecoveryToday.startTime ?? null) : null;
+  const isRecoveryLocked =
+    requiredRecoveryToday !== null && recoveryStartMinutes !== null && nowMinutes >= recoveryStartMinutes && nowMinutes < recoveryStartMinutes + 60;
+
   const currentBackground = isRecovery
     ? uiAssets.backgrounds.recovery
     : isProgress
@@ -1032,7 +1062,7 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               </View>
 
-              <View style={[styles.questBoard, { borderColor: isBoardLocked && activeItem ? kindAccent(activeItem.kind) : theme.accent }]}>
+              <View style={[styles.questBoard, { borderColor: isBoardLocked && activeItem ? kindAccent(activeItem.kind) : isRecoveryLocked ? "#C4A7FF" : theme.accent }]}>
                 <View style={styles.questHeaderRow}>
                   <View style={styles.questTitleRow}>
                     <Text style={[styles.questTitle, { color: theme.accent }]}>{isRecovery ? "+ QUEST BOARD +" : "⚔ QUEST BOARD"}</Text>
@@ -1043,7 +1073,7 @@ export default function HomeScreen() {
                     ) : null}
                   </View>
                   <Text style={[styles.questCount, { color: theme.accent }]}>
-                    {isNeutral ? "LOCKED" : isBoardLocked ? "LOCKED" : capacityLabel}
+                    {isNeutral ? "LOCKED" : isBoardLocked ? "LOCKED" : isRecoveryLocked ? "RECOVERY" : capacityLabel}
                   </Text>
                 </View>
 
@@ -1073,7 +1103,7 @@ export default function HomeScreen() {
                       {formatCountdown(remainingMs)}
                     </Text>
                     <Text style={styles.activeMeta} numberOfLines={1}>
-                      {activeItem.source} · {formatDurationLabel(activeItem.durationMinutes)} · +{activeItem.steps} steps
+                      {questSourceLabel(activeItem.source)} · {formatDurationLabel(activeItem.durationMinutes)} · +{activeItem.steps} steps
                     </Text>
 
                     {!timerFinished ? (
@@ -1083,7 +1113,7 @@ export default function HomeScreen() {
                             <Text style={[styles.nextLabel, { color: theme.accent }]}>NEXT</Text>
                             <Text style={styles.nextTitle} numberOfLines={1}>{nextItem.title}</Text>
                             <Text style={styles.nextMeta} numberOfLines={1}>
-                              {nextItem.source}{nextItem.scheduledTime ? ` · ${nextItem.scheduledTime}` : ""} · {formatDurationLabel(nextItem.durationMinutes)}
+                              {questSourceLabel(nextItem.source)}{nextItem.scheduledTime ? ` · ${nextItem.scheduledTime}` : ""} · {formatDurationLabel(nextItem.durationMinutes)}
                             </Text>
                           </View>
                         ) : (
@@ -1102,10 +1132,23 @@ export default function HomeScreen() {
                       </View>
                     )}
                   </View>
+                ) : isRecoveryLocked ? (
+                  <View style={[styles.activeCard, { borderColor: "#C4A7FF" }]}>
+                    <View style={styles.recoveryHeaderRow}>
+                      <Image source={uiAssets.guides.luna} style={styles.recoveryLunaAvatar} resizeMode="contain" />
+                      <Text style={[styles.activeLockLabel, { color: "#C4A7FF" }]}>RECOVERY TIME</Text>
+                    </View>
+                    <Text style={styles.recoveryLockText}>
+                      That was 2 hours of straight tasks — nice work. The board locks for 1 hour so you can actually rest.
+                    </Text>
+                    <Text style={styles.recoveryLockHint}>
+                      Stretch, drink some water, step outside, or just breathe for a minute. You&apos;ll be back on the board after {recoveryStartMinutes !== null ? formatMinutesAsTime(recoveryStartMinutes + 60) : "a bit"}.
+                    </Text>
+                  </View>
                 ) : availableItems.length === 0 ? (
                   <View style={styles.questLockedCard}>
                     <Text style={styles.questLockedTitle}>No quests yet</Text>
-                    <Text style={styles.questLockedText} numberOfLines={2}>Add items in Day Plan or Quick Thoughts to fill your board.</Text>
+                    <Text style={styles.questLockedText} numberOfLines={2}>Add items in Day Plan or Quests to fill your board.</Text>
                   </View>
                 ) : (
                   <>
@@ -1123,7 +1166,7 @@ export default function HomeScreen() {
                           <Text style={styles.questText} numberOfLines={1}>{item.title}</Text>
                           <View style={styles.questMetaRow}>
                             <Text style={[styles.questMeta, { color: theme.soft }]} numberOfLines={1}>
-                              {item.source} · {formatDurationLabel(item.durationMinutes)}{item.scheduledTime ? ` · ${item.scheduledTime}` : ""}
+                              {questSourceLabel(item.source)} · {formatDurationLabel(item.durationMinutes)}{item.scheduledTime ? ` · ${item.scheduledTime}` : ""}
                             </Text>
                             <Text style={[styles.questSteps, { color: kindAccent(item.kind) }]}>+{item.steps}</Text>
                           </View>
@@ -1178,7 +1221,7 @@ export default function HomeScreen() {
                   <Text style={styles.modalTitle}>How the Quest Board works</Text>
                   <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false} bounces={false}>
                     <Text style={styles.modalDescription}>
-                      Quest Board shows what to focus on now. It can include MYLIT quests, Day Plan items, checklist items, and Quick Thoughts. Start one timed item at a time; the board locks until it ends. Complete gives steps. Missed? helps you reflect without punishment. To protect energy, MYLIT limits long progress streaks — after about 2 hours, recovery comes before more work.
+                      Quest Board shows what to focus on now. It can include MYLIT quests, Day Plan items, checklist items, and Quests you scheduled. Quests are timed — start one at a time and the board locks until it ends. Checklist items are just checked off. Steps are based on duration: 30 min and under earns +1, 45 min earns +2, 1 hr earns +3. Missed? helps you reflect without punishment. To protect energy, MYLIT limits long progress streaks — after 2 hours of back-to-back tasks, the board locks for a 1-hour recovery break before more work.
                     </Text>
                   </ScrollView>
                   <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowQuestHelp(false)}>
@@ -1767,6 +1810,30 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     letterSpacing: 0.8,
     textTransform: "uppercase",
+  },
+  recoveryHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  recoveryLunaAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+  },
+  recoveryLockText: {
+    color: "#F8F1D7",
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
+    marginTop: 8,
+  },
+  recoveryLockHint: {
+    color: "#C4A7FF",
+    fontSize: 11,
+    fontWeight: "700",
+    lineHeight: 16,
+    marginTop: 6,
   },
   kindPill: {
     borderWidth: 2,

@@ -8,7 +8,21 @@ import { uiAssets } from "../constants/uiAssets";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { setChecklistItemChecked } from "../lib/progressSync";
-import { collectDayPlanScheduledItems, collectQuickThoughtScheduledItems, formatDurationLabel, getDateKey, getQuickThoughtSteps, inferScheduledClassification, parseDurationMinutes, parseSleepGuideTime, parseTimeToMinutes, type ScheduledClassification, type ScheduledQuestLike } from "../lib/scheduling";
+import {
+  collectDayPlanScheduledItems,
+  collectQuickThoughtScheduledItems,
+  formatDurationLabel,
+  getDateKey,
+  getQuickThoughtSteps,
+  getRequiredRecoveryBlockForDate,
+  getStepsForDuration,
+  inferScheduledClassification,
+  parseDurationMinutes,
+  parseSleepGuideTime,
+  parseTimeToMinutes,
+  type ScheduledClassification,
+  type ScheduledQuestLike,
+} from "../lib/scheduling";
 
 type WeekdayName = "Sunday" | "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "Saturday";
 type EventTone = "gold" | "purple" | "blue" | "green";
@@ -231,34 +245,37 @@ export default function CalendarScreen() {
     events.push(...sleepGuideEvents(latestCheckIn, date));
 
     const todayQuest = dayPlan?.todayQuest;
+    const todayQuestDurationMinutes = todayQuest ? parseDurationMinutes(todayQuest.durationMinutes ?? todayQuest.duration, 60) : 60;
+    const todayQuestSteps = todayQuest?.steps ?? getStepsForDuration(todayQuestDurationMinutes);
     if (todayQuest && (todayQuest.date || getDateKey()) === dateKey && todayQuest.title?.trim()) {
       const classification = normalizeClassification(todayQuest.kind);
       events.push({
         id: todayQuest.id || `${dateKey}-today-quest`,
         title: todayQuest.title,
-        cellLabel: "Today Quest +2",
+        cellLabel: `Today Quest +${todayQuestSteps}`,
         source: "Day Plan / Quest Board",
         date: dateKey,
         dayLabel,
         startTime: todayQuest.startTime || "9:00 AM",
         duration: todayQuest.duration || "1 hr",
-        durationMinutes: parseDurationMinutes(todayQuest.durationMinutes ?? todayQuest.duration, 60),
-        steps: 2,
+        durationMinutes: todayQuestDurationMinutes,
+        steps: todayQuestSteps,
         classification,
         tone: eventTone(classification),
         status: todayQuest.status || "scheduled",
-        note: "This is the actual Day Plan quest. It appears on Quest Board and earns +2 steps.",
+        note: `This is the actual Day Plan quest. It appears on Quest Board and earns +${todayQuestSteps} steps.`,
         priority: 1,
       });
     }
 
-    quickThoughtItems.filter((item) => item.date === dateKey).forEach((item: ScheduledQuestLike) => {
+    const quickThoughtItemsForDay = quickThoughtItems.filter((item) => item.date === dateKey);
+    quickThoughtItemsForDay.forEach((item: ScheduledQuestLike) => {
       const classification = item.classification || inferScheduledClassification(item);
       events.push({
         id: item.id,
-        title: item.title || item.text || "Quick Thought Quest",
+        title: item.title || item.text || "Quest",
         cellLabel: item.classification === "recovery" ? "Recovery quest" : "Progress quest",
-        source: "Quick Thoughts",
+        source: "Quests",
         date: dateKey,
         dayLabel,
         startTime: item.startTime || item.time,
@@ -268,12 +285,13 @@ export default function CalendarScreen() {
         classification,
         tone: eventTone(classification),
         status: item.status,
-        note: item.note || "Scheduled future quest from Quick Thoughts.",
+        note: item.note || "Scheduled future quest from Quests.",
         priority: 2,
       });
     });
 
-    checklistItems.filter((item) => item.date === dateKey).forEach((item: ScheduledQuestLike) => {
+    const checklistItemsForDay = checklistItems.filter((item) => item.date === dateKey);
+    checklistItemsForDay.forEach((item: ScheduledQuestLike) => {
       const classification = item.classification || inferScheduledClassification(item);
       events.push({
         id: item.id,
@@ -285,7 +303,7 @@ export default function CalendarScreen() {
         startTime: item.startTime || item.time,
         duration: item.duration || formatDurationLabel(item.durationMinutes, 30),
         durationMinutes: item.durationMinutes,
-        steps: item.steps ?? 1,
+        steps: item.steps ?? getStepsForDuration(item.durationMinutes),
         classification,
         tone: eventTone(classification),
         status: item.status,
@@ -293,6 +311,34 @@ export default function CalendarScreen() {
         priority: 3,
       });
     });
+
+    const dayItemsForRecoveryCheck: Partial<ScheduledQuestLike>[] = [
+      ...(todayQuest && (todayQuest.date || getDateKey()) === dateKey && todayQuest.title?.trim()
+        ? [{ id: todayQuest.id || `${dateKey}-today-quest`, date: dateKey, startTime: todayQuest.startTime || "9:00 AM", durationMinutes: todayQuestDurationMinutes }]
+        : []),
+      ...quickThoughtItemsForDay,
+      ...checklistItemsForDay,
+    ];
+    const requiredRecovery = getRequiredRecoveryBlockForDate(dayItemsForRecoveryCheck, dateKey);
+    if (requiredRecovery) {
+      events.push({
+        id: requiredRecovery.id,
+        title: "Required Recovery",
+        cellLabel: "Recovery Required",
+        source: "MYLIT Recovery",
+        date: dateKey,
+        dayLabel,
+        startTime: requiredRecovery.startTime,
+        duration: "1 hr",
+        durationMinutes: 60,
+        steps: 0,
+        classification: "recovery",
+        tone: eventTone("recovery"),
+        status: "recoveryRequired",
+        note: "2 hours of back-to-back tasks reached — the Quest Board locks for 1 hour so you can rest.",
+        priority: 2.5,
+      });
+    }
 
     const role = getDayRole(dayPlan, dayName);
     if (role) {
@@ -357,14 +403,14 @@ export default function CalendarScreen() {
             </View>
 
             <View style={styles.summaryGrid}>
-              <SummaryCard icon="⭐" label="TODAY QUEST" value={todayQuestTitle} hint="Quest Board • +2 steps" />
-              <SummaryCard icon="💭" label="NEXT QUICK THOUGHT" value={nextQuickThought} hint="Future scheduled quest" />
+              <SummaryCard icon="⭐" label="TODAY QUEST" value={todayQuestTitle} hint="Quest Board • steps by duration" />
+              <SummaryCard icon="⏱️" label="NEXT QUEST" value={nextQuickThought} hint="Future scheduled quest" />
               <SummaryCard icon="🌙" label="SLEEP GUIDE" value={expectedSleep} hint="Blue timing guidance" />
               <SummaryCard icon="📜" label="WEEKLY HABIT" value={getDayRole(dayPlan, WEEKDAY_NAMES[today.getDay()] as WeekdayName) || "Not set"} hint="Theme only, no steps" />
             </View>
 
             <View style={styles.actionGrid}>
-              <ActionButton icon="💭" title="Quick Thoughts" subtitle="Schedule a future quest" onPress={() => router.push("/tomorrow-queue")} />
+              <ActionButton icon="⏱️" title="Quests" subtitle="Schedule a future quest" onPress={() => router.push("/tomorrow-queue")} />
               <ActionButton icon="📜" title="Day Plan" subtitle="Set today and weekly roles" onPress={() => router.push("/day-plan")} />
             </View>
 
@@ -526,7 +572,7 @@ function InfoOverlay({ onClose }: { onClose: () => void }) {
       <View style={styles.infoCard}>
         <Text style={styles.infoTitle}>CALENDAR</Text>
         <ScrollView style={styles.infoScroll} showsVerticalScrollIndicator={false} bounces={false}>
-          <Text style={styles.infoBullet}>{"• Calendar shows sleep guides, quests, checklist habits, Quick Thoughts, recovery blocks, and day focus."}</Text>
+          <Text style={styles.infoBullet}>{"• Calendar shows sleep guides, quests, checklist habits, required recovery blocks, and day focus."}</Text>
           <Text style={styles.infoBullet}>{"• Blue = sleep guide / sleep timing. Gold = progress. Purple = recovery. Green = day focus / no-step focus."}</Text>
           <Text style={styles.infoBullet}>{"• Tap an item to inspect it when supported."}</Text>
           <Text style={styles.infoBullet}>{"• Completed items earn steps only when marked complete."}</Text>

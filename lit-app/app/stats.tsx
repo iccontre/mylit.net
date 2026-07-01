@@ -382,7 +382,7 @@ export default function StatsScreen() {
   }, [stats]);
 
   const smallWin = computed.completedQuickThoughts > 0
-    ? "You completed a quick thought quest this week."
+    ? "You completed a scheduled quest this week."
     : computed.questsCompleted > 0 ? "You finished at least one quest. That's a real step forward."
     : computed.checkInCount > 0 ? "You checked in this week. That gives you real data to work with."
     : "Starting with one honest check-in is enough.";
@@ -633,7 +633,7 @@ function WeeklyPanel({ computed, smallWin }: { computed: ComputedStats; smallWin
         <StatCard label="Total Steps" value={computed.totalSteps} accent="#FBBF24" />
         <StatCard label="Steps This Week" value={computed.weeklySteps} accent="#FDE68A" />
         <StatCard label="Quests Completed" value={computed.questsCompleted} />
-        <StatCard label="Quick Thoughts Done" value={computed.completedQuickThoughts} accent="#C084FC" />
+        <StatCard label="Scheduled Quests Done" value={computed.completedQuickThoughts} accent="#C084FC" />
         <StatCard label="Progress Days" value={computed.progressDays} accent="#6EE7B7" />
         <StatCard label="Recovery Days" value={computed.recoveryDays} accent="#C084FC" />
         <StatCard label="Avg Energy" value={computed.averageEnergy ?? "—"} accent="#67E8F9" />

@@ -101,8 +101,21 @@ export function formatDurationLabel(value?: string | number | null, fallbackMinu
   return `${hours} hr ${remainingMinutes} min`;
 }
 
+/**
+ * Unified step reward for every quest/checklist item, based only on duration:
+ * 30 min and under → 1 step, 45 min → 2 steps, 1 hr → 3 steps. Beyond 1 hr
+ * (only possible for app-generated quests — checklist items cap at 1 hr)
+ * extends the same +1-per-15-min pattern.
+ */
+export function getStepsForDuration(duration?: string | number | null): number {
+  const minutes = parseDurationMinutes(duration, 30);
+  if (minutes <= 30) return 1;
+  return 1 + Math.ceil((minutes - 30) / 15);
+}
+
+/** @deprecated Use getStepsForDuration — kept as an alias so existing imports keep working. */
 export function getQuickThoughtSteps(duration?: string | number | null): number {
-  return parseDurationMinutes(duration, 30) >= 60 ? 2 : 1;
+  return getStepsForDuration(duration);
 }
 
 export function inferScheduledClassification(item: Partial<ScheduledQuestLike> | string | null | undefined): ScheduledClassification {
@@ -213,76 +226,80 @@ export function findScheduleOverlap(candidate: Partial<ScheduledQuestLike>, exis
   return null;
 }
 
-export function requiresRecoveryBeforeNewProgress(candidate: Partial<ScheduledQuestLike>, existingItems: Partial<ScheduledQuestLike>[]): boolean {
-  if (inferScheduledClassification(candidate) !== "progress") return false;
-  const candidateRange = getRange(candidate);
-  if (!candidateRange) return false;
-
-  const sameDayItems = existingItems
-    .filter((item) => sameScheduledDay(candidate, item))
-    .filter((item) => item.status !== "expired" && item.status !== "needsReflection")
-    .filter((item) => getRange(item) !== null)
-    .sort((a, b) => (getRange(a)?.start ?? 0) - (getRange(b)?.start ?? 0));
-
-  let progressMinutes = 0;
-  for (const item of sameDayItems) {
-    const range = getRange(item);
-    if (!range) continue;
-    if (range.start >= candidateRange.start) break;
-    if (inferScheduledClassification(item) === "recovery") {
-      if (range.duration >= 60) progressMinutes = 0;
-      continue;
-    }
-    progressMinutes += range.duration;
-    if (progressMinutes >= 120) return true;
-  }
-
-  return false;
-}
-
+/**
+ * After 120 minutes of *contiguous* (back-to-back, no gap) scheduled items on
+ * a day — mixing progress and recovery items alike — MYLIT auto-inserts a
+ * 1-hour recovery block right after. A gap between items, or an existing
+ * recovery item of 60+ minutes, resets the streak (the user already took a
+ * real break).
+ */
 export function getRequiredRecoveryBlockForDate(items: Partial<ScheduledQuestLike>[], date: string): ScheduledQuestLike | null {
   const dayItems = items
     .filter((item) => getItemDate(item) === date)
     .filter((item) => item.status !== "expired" && item.status !== "needsReflection")
-    .filter((item) => getRange(item) !== null)
-    .sort((a, b) => (getRange(a)?.start ?? 0) - (getRange(b)?.start ?? 0));
+    .map((item) => ({ item, range: getRange(item) }))
+    .filter((entry): entry is { item: Partial<ScheduledQuestLike>; range: { start: number; end: number; duration: number } } => entry.range !== null)
+    .sort((a, b) => a.range.start - b.range.start);
 
-  let progressMinutes = 0;
-  let requiredStart: number | null = null;
-  for (const item of dayItems) {
-    const range = getRange(item);
-    if (!range) continue;
-    if (inferScheduledClassification(item) === "recovery") {
-      if (range.duration >= 60) {
-        progressMinutes = 0;
-        requiredStart = null;
-      }
+  let cursor: number | null = null;
+  let streakMinutes = 0;
+
+  for (const { item, range } of dayItems) {
+    const isNaturalBreak = inferScheduledClassification(item) === "recovery" && range.duration >= 60;
+
+    if (isNaturalBreak) {
+      cursor = range.end;
+      streakMinutes = 0;
       continue;
     }
-    progressMinutes += range.duration;
-    if (progressMinutes >= 120) {
-      requiredStart = range.end;
-      break;
+
+    if (cursor === null || range.start > cursor) {
+      streakMinutes = range.duration;
+    } else {
+      streakMinutes += Math.max(0, range.end - cursor);
+    }
+    cursor = Math.max(cursor ?? range.start, range.end);
+
+    if (streakMinutes >= 120) {
+      const requiredStart = cursor;
+      const startTime = formatMinutesAsTime(requiredStart);
+      return {
+        id: `required-recovery-${date}-${requiredStart}`,
+        source: "recoveryBlock",
+        title: "Required Recovery",
+        date,
+        startTime,
+        time: startTime,
+        duration: "1 hr",
+        durationMinutes: 60,
+        steps: 0,
+        status: "recoveryRequired",
+        kind: "recovery",
+        classification: "recovery",
+        isMandatoryRecovery: true,
+      };
     }
   }
 
-  if (requiredStart === null) return null;
-  const startTime = formatMinutesAsTime(requiredStart);
-  return {
-    id: `required-recovery-${date}-${requiredStart}`,
-    source: "recoveryBlock",
-    title: "Required Recovery",
-    date,
-    startTime,
-    time: startTime,
-    duration: "1 hr",
-    durationMinutes: 60,
-    steps: 0,
-    status: "recoveryRequired",
-    kind: "recovery",
-    classification: "recovery",
-    isMandatoryRecovery: true,
-  };
+  return null;
+}
+
+/**
+ * Whether adding `candidate` to a day's schedule is what pushes a contiguous
+ * streak from under 2 hours to 2+ hours — i.e. whether this specific item is
+ * the one that would trigger the mandatory recovery lock. Used by creation
+ * flows to warn before saving.
+ */
+export function wouldTriggerRecoveryLock(
+  candidate: Partial<ScheduledQuestLike>,
+  existingItemsForDate: Partial<ScheduledQuestLike>[],
+  date: string
+): boolean {
+  const before = getRequiredRecoveryBlockForDate(existingItemsForDate, date);
+  const after = getRequiredRecoveryBlockForDate([...existingItemsForDate, candidate], date);
+  if (!after) return false;
+  if (!before) return true;
+  return after.startTime !== before.startTime;
 }
 
 export function collectQuickThoughtScheduledItems(items: unknown[] = []): ScheduledQuestLike[] {

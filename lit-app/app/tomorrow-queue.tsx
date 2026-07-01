@@ -9,10 +9,38 @@ import { formPageContent } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
+import { LOCAL_PROFILE_KEY } from "../lib/auth";
 import { syncQuickThoughtItems } from "../lib/progressSync";
-import { TOMORROW_QUEUE_KEY, checkUserScheduledQuestCapacity, computeUserScheduledMinutesForDay, formatPlannedDurationLabel, getQuestCapacityMinutes } from "../lib/questProgress";
+import {
+  COMPLETED_QUESTS_KEY,
+  DAY_PLAN_KEY,
+  MISSED_QUESTS_KEY,
+  TOMORROW_QUEUE_KEY,
+  checkUserScheduledQuestCapacity,
+  computeUserScheduledMinutesForDay,
+  formatPlannedDurationLabel,
+  getQuestCapacityMinutes,
+  parseCompletions,
+  parseMissed,
+} from "../lib/questProgress";
+import { getActiveSuggestedQuest, type GeneratedQuest, type QuestProfileContext } from "../lib/questGeneration";
 import { persistProgressKeys } from "../lib/progressStore";
-import { formatDurationLabel, generateTimeSlots, getDateKey, getQuickThoughtSteps, inferScheduledClassification, parseDurationMinutes, shiftTimeSlot, type ScheduledClassification, type ScheduledStatus, type WeekdayName } from "../lib/scheduling";
+import {
+  collectDayPlanScheduledItems,
+  findScheduleOverlap,
+  formatDurationLabel,
+  generateTimeSlots,
+  getDateKey,
+  getQuickThoughtSteps,
+  inferScheduledClassification,
+  parseDurationMinutes,
+  shiftTimeSlot,
+  wouldTriggerRecoveryLock,
+  type ScheduledClassification,
+  type ScheduledQuestLike,
+  type ScheduledStatus,
+  type WeekdayName,
+} from "../lib/scheduling";
 
 type QuestKind = "progress" | "recovery";
 
@@ -72,11 +100,12 @@ function parseTimeInput(raw: string): string {
 type QuestDay = { date: Date; dateKey: string; weekday: string; label: string; dayNumber: number };
 
 const STORAGE_KEY = TOMORROW_QUEUE_KEY;
-const DAY_PLAN_KEY = "lit_day_plan";
 const CHECKIN_KEY = "lit_latest_checkin";
 const TIME_SLOTS = generateTimeSlots(7, 22, 30);
 const DURATIONS = ["30 min", "45 min", "1 hr"];
 const WEEKDAY_LABELS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+const RECOVERY_LOCK_WARNING =
+  "Adding this task will create 2 hours of straight work, meaning there has to be 1 hour of recovery time after — you won't be able to do any tasks during that time. Tap Save again to confirm.";
 
 const pixelFont = Platform.select({ ios: "Menlo", android: "monospace", web: "monospace", default: "monospace" });
 
@@ -145,6 +174,18 @@ type CheckIn = {
   energy?: number;
 };
 
+type LocalProfile = {
+  dreamCategory?: string;
+  specificGoal?: string;
+  progressMeaning?: string;
+  shortTermGoal?: string;
+  midTermGoal?: string;
+  longTermGoal?: string;
+  goalOne?: string;
+  goalTwo?: string;
+  goalThree?: string;
+};
+
 export default function TomorrowQueueScreen() {
   const router = useRouter();
   const mobile = useMobileFrame();
@@ -159,9 +200,14 @@ export default function TomorrowQueueScreen() {
   const [selectedDuration, setSelectedDuration] = useState("30 min");
   const [selectedKind, setSelectedKind] = useState<QuestKind>("progress");
   const [message, setMessage] = useState("");
+  const [conflictMessage, setConflictMessage] = useState("");
+  const [recoveryWarning, setRecoveryWarning] = useState("");
+  const [pendingRecoveryConfirm, setPendingRecoveryConfirm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [showInfo, setShowInfo] = useState(false);
   const [timeInputDraft, setTimeInputDraft] = useState("9:00 AM");
   const [timeInputError, setTimeInputError] = useState("");
+  const [suggestedQuest, setSuggestedQuest] = useState<GeneratedQuest | null>(null);
 
   const selectedDay = weekDays.find((day: QuestDay) => day.dateKey === selectedDateKey) || todayInWeek;
   const selectedDayIsPast = isPastDateKey(selectedDay.dateKey);
@@ -177,6 +223,10 @@ export default function TomorrowQueueScreen() {
   const selectedDayAtCapacity = selectedDayRemainingMinutes <= 0;
   const savedItemsForSelectedDay = items.filter((item: QueueItem) => item.date === selectedDateKey);
 
+  function resolveDateForWeekday(weekday: string): string | undefined {
+    return weekDays.find((day: QuestDay) => day.weekday === weekday)?.dateKey;
+  }
+
   useEffect(() => {
     void loadQueue();
   }, []);
@@ -187,15 +237,38 @@ export default function TomorrowQueueScreen() {
     }, [])
   );
 
+  // Any change to the pending quest invalidates a previously shown recovery-lock confirmation.
+  useEffect(() => {
+    setConflictMessage("");
+    setRecoveryWarning("");
+    setPendingRecoveryConfirm(false);
+  }, [request, selectedKind, selectedDateKey, selectedTime, selectedDuration]);
+
   async function loadQueue() {
-    const [saved, plan, checkIn] = await Promise.all([
+    const [saved, plan, checkIn, profileRaw, completedRaw, missedRaw] = await Promise.all([
       readJson<Partial<QueueItem>[]>(STORAGE_KEY, []),
       readJson<Record<string, unknown> | null>(DAY_PLAN_KEY, null),
       readJson<CheckIn | null>(CHECKIN_KEY, null),
+      readJson<LocalProfile | null>(LOCAL_PROFILE_KEY, null),
+      readJson<unknown>(COMPLETED_QUESTS_KEY, []),
+      readJson<unknown>(MISSED_QUESTS_KEY, []),
     ]);
     setItems(Array.isArray(saved) ? saved.map(normalizeQueueItem) : []);
     setDayPlan(plan);
-    setBoardMode(checkIn?.mode === "Recovery" ? "Recovery" : "Progress");
+    const mode: "Progress" | "Recovery" = checkIn?.mode === "Recovery" ? "Recovery" : "Progress";
+    setBoardMode(mode);
+
+    const context: QuestProfileContext = {
+      category: profileRaw?.dreamCategory?.trim() || "Purpose",
+      specificGoal: profileRaw?.specificGoal?.trim() || "",
+      progressMeaning: profileRaw?.progressMeaning?.trim() || "",
+      shortTermBenchmark: profileRaw?.shortTermGoal?.trim() || profileRaw?.goalOne?.trim() || "",
+      midTermBenchmark: profileRaw?.midTermGoal?.trim() || profileRaw?.goalTwo?.trim() || "",
+      longTermBenchmark: profileRaw?.longTermGoal?.trim() || profileRaw?.goalThree?.trim() || "",
+    };
+    const completedTitles = new Set(parseCompletions(completedRaw).map((entry) => entry.title));
+    const missedTitles = new Set(parseMissed(missedRaw).map((entry) => entry.title));
+    setSuggestedQuest(getActiveSuggestedQuest(context, mode === "Recovery" ? "recovery" : "progress", completedTitles, missedTitles));
   }
 
   async function saveQueue(nextItems: QueueItem[]) {
@@ -203,7 +276,16 @@ export default function TomorrowQueueScreen() {
     await persistProgressKeys({ [STORAGE_KEY]: JSON.stringify(nextItems) });
   }
 
-  async function addToQueue() {
+  /** Day Plan checklist/Today's Quest + every other saved Quest, as date-based items for conflict/recovery checks. */
+  function existingScheduledItemsExcluding(excludeId: string): Partial<ScheduledQuestLike>[] {
+    const dayPlanItems = collectDayPlanScheduledItems(dayPlan, resolveDateForWeekday);
+    const questItems = items
+      .filter((item) => item.id !== excludeId)
+      .map((item) => ({ id: item.id, title: item.title, date: item.date, startTime: item.startTime, durationMinutes: item.durationMinutes }));
+    return [...dayPlanItems, ...questItems];
+  }
+
+  async function saveQuest() {
     const trimmed = request.trim();
     if (!trimmed) {
       setMessage("Write the quest first, then choose when it should happen.");
@@ -215,10 +297,11 @@ export default function TomorrowQueueScreen() {
     }
 
     const durationMinutes = parseDurationMinutes(selectedDuration, 30);
+    const otherItems = editingId ? items.filter((item) => item.id !== editingId) : items;
     const capacity = checkUserScheduledQuestCapacity({
       dateKey: selectedDay.dateKey,
       weekday: selectedDay.weekday as WeekdayName,
-      quickThoughts: items,
+      quickThoughts: otherItems,
       dayPlan,
       additionalMinutes: durationMinutes,
       boardMode,
@@ -231,45 +314,104 @@ export default function TomorrowQueueScreen() {
       );
       return;
     }
+    setMessage("");
 
-    const nextItem: QueueItem = {
-      id: `quick-${Date.now()}`,
-      source: "quickThought",
-      text: trimmed,
-      title: trimmed,
-      type: selectedKind === "recovery" ? "Recovery Quest" : "Progress Quest",
-      classification: selectedKind,
-      kind: "quickThought",
-      date: selectedDay.dateKey,
-      weekday: selectedDay.weekday as WeekdayName,
-      time: selectedTime,
-      startTime: selectedTime,
-      duration: selectedDuration,
-      durationMinutes,
-      steps: getQuickThoughtSteps(durationMinutes),
-      status: "scheduled",
-      createdAt: new Date().toISOString(),
-    };
+    const candidateId = editingId ?? `quick-${Date.now()}`;
+    const existing = existingScheduledItemsExcluding(editingId ?? "");
+    const candidate = { id: candidateId, date: selectedDay.dateKey, startTime: selectedTime, durationMinutes };
 
-    await saveQueue([nextItem, ...items]);
+    const conflict = findScheduleOverlap(candidate, existing, candidateId);
+    if (conflict) {
+      const conflictTitle = (conflict as { title?: string }).title || "another scheduled item";
+      setConflictMessage(`This time interferes with "${conflictTitle}" — change the time.`);
+      setRecoveryWarning("");
+      setPendingRecoveryConfirm(false);
+      return;
+    }
+    setConflictMessage("");
+
+    if (!pendingRecoveryConfirm && wouldTriggerRecoveryLock(candidate, existing, selectedDay.dateKey)) {
+      setRecoveryWarning(RECOVERY_LOCK_WARNING);
+      setPendingRecoveryConfirm(true);
+      return;
+    }
+    setRecoveryWarning("");
+    setPendingRecoveryConfirm(false);
+
+    const steps = getQuickThoughtSteps(durationMinutes);
+
+    if (editingId) {
+      const nextItems = items.map((item) =>
+        item.id === editingId
+          ? {
+              ...item,
+              text: trimmed,
+              title: trimmed,
+              type: selectedKind === "recovery" ? "Recovery Quest" : "Progress Quest",
+              classification: selectedKind,
+              date: selectedDay.dateKey,
+              weekday: selectedDay.weekday as WeekdayName,
+              time: selectedTime,
+              startTime: selectedTime,
+              duration: selectedDuration,
+              durationMinutes,
+              steps,
+            }
+          : item
+      );
+      await saveQueue(nextItems);
+      setMessage("Quest updated.");
+      void trackEvent(ANALYTICS_EVENTS.quick_thought_saved, { id: editingId, kind: selectedKind, edited: true });
+    } else {
+      const nextItem: QueueItem = {
+        id: candidateId,
+        source: "quickThought",
+        text: trimmed,
+        title: trimmed,
+        type: selectedKind === "recovery" ? "Recovery Quest" : "Progress Quest",
+        classification: selectedKind,
+        kind: "quickThought",
+        date: selectedDay.dateKey,
+        weekday: selectedDay.weekday as WeekdayName,
+        time: selectedTime,
+        startTime: selectedTime,
+        duration: selectedDuration,
+        durationMinutes,
+        steps,
+        status: "scheduled",
+        createdAt: new Date().toISOString(),
+      };
+      await saveQueue([nextItem, ...items]);
+      setMessage(`Saved ${selectedKind} quest to Calendar.`);
+      void trackEvent(ANALYTICS_EVENTS.quick_thought_saved, { id: nextItem.id, kind: selectedKind });
+    }
+
     setRequest("");
-    setMessage(`Saved ${selectedKind} quest to Calendar.`);
-    void trackEvent(ANALYTICS_EVENTS.quick_thought_saved, { id: nextItem.id, kind: selectedKind });
+    setEditingId(null);
     void syncQuickThoughtItems();
+  }
+
+  function startEditItem(item: QueueItem) {
+    setEditingId(item.id);
+    setRequest(item.text);
+    setSelectedKind(item.classification);
+    setSelectedDateKey(item.date);
+    setSelectedTime(item.startTime);
+    setTimeInputDraft(item.startTime);
+    setSelectedDuration(item.duration);
+    setMessage("");
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setRequest("");
+    setMessage("");
   }
 
   async function deleteItem(id: string) {
     await saveQueue(items.filter((item: QueueItem) => item.id !== id));
     setMessage("Quest deleted.");
-  }
-
-  async function toggleItemCompleted(id: string) {
-    const nextItems = items.map((item: QueueItem) => {
-      if (item.id !== id) return item;
-      const wasCompleted = Boolean(item.completedAt);
-      return { ...item, completedAt: wasCompleted ? undefined : new Date().toISOString(), status: (wasCompleted ? "scheduled" : "completed") as ScheduledStatus };
-    });
-    await saveQueue(nextItems);
+    if (editingId === id) cancelEdit();
   }
 
   function commitTimeInput() {
@@ -295,8 +437,8 @@ export default function TomorrowQueueScreen() {
               <View style={styles.bannerIcon}><Text style={styles.bannerIconText}>✦</Text></View>
               <View style={styles.heroCopy}>
                 <Text style={styles.heroKicker}>QUEST SCHEDULER</Text>
-                <Text style={styles.title}>QUICK THOUGHTS</Text>
-                <Text style={styles.summary}>Schedule a future quest. 30–45 min earns +1 step, 1 hr earns +2 steps.</Text>
+                <Text style={styles.title}>QUESTS</Text>
+                <Text style={styles.summary}>30 min and under earns +1 step, 45 min earns +2, 1 hr earns +3. Quests are timed — start them from the Home Quest Board.</Text>
               </View>
             </View>
 
@@ -304,14 +446,39 @@ export default function TomorrowQueueScreen() {
               <Image source={uiAssets.guides.evie} style={styles.evieAvatar} resizeMode="contain" />
               <View style={styles.evieCopy}>
                 <Text style={styles.evieName}>EVIE</Text>
-                <Text style={styles.evieText}>Quick Thoughts schedule quests for your board. Your check-in mode sets the daily cap — 8h in Progress, 5h in Recovery.</Text>
+                <Text style={styles.evieText}>See what MYLIT suggests for direction, or create your own. Your check-in mode sets the daily cap — 8h in Progress, 5h in Recovery.</Text>
               </View>
               <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
                 <Text style={styles.infoBtnText}>?</Text>
               </TouchableOpacity>
             </View>
 
+            <View style={styles.appQuestPanel}>
+              <Text style={styles.sectionTitle}>⏱️ APP QUESTS FOR YOUR PATH</Text>
+              <Text style={styles.helperText}>
+                For direction only — optional, not required in one day. Start and complete these from the Home Quest Board.
+              </Text>
+              {suggestedQuest ? (
+                <View style={styles.appQuestCard}>
+                  <Text style={styles.appQuestTitle}>{suggestedQuest.title}</Text>
+                  <Text style={styles.appQuestMeta}>
+                    {formatDurationLabel(suggestedQuest.durationMinutes ?? 30)} • +{suggestedQuest.steps} step{suggestedQuest.steps === 1 ? "" : "s"} • {boardMode}
+                  </Text>
+                </View>
+              ) : (
+                <Text style={styles.emptyPreviewText}>No app quest suggested right now — check Home after your next check-in.</Text>
+              )}
+            </View>
+
             <View style={styles.creationPanel}>
+              <View style={styles.rowBetween}>
+                <Text style={styles.panelHeading}>{editingId ? "EDIT QUEST" : "CREATE A QUEST"}</Text>
+                {editingId ? (
+                  <TouchableOpacity onPress={cancelEdit}>
+                    <Text style={styles.cancelEditText}>CANCEL</Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
               <Text style={styles.sectionTitle}>1. QUEST TITLE</Text>
               <TextInput style={styles.input} placeholder="Ex: Email professor tomorrow" placeholderTextColor="#94A3B8" value={request} onChangeText={(text: string) => { setRequest(text); setMessage(""); }} />
 
@@ -363,13 +530,17 @@ export default function TomorrowQueueScreen() {
                 <Text style={styles.stepsPreview}>+{selectedSteps} step{selectedSteps === 1 ? "" : "s"}</Text>
               </View>
 
-              {message ? <Text style={message.includes("deleted") || message.includes("Saved") ? styles.statusMessage : styles.errorMessage}>{message}</Text> : null}
+              {message ? <Text style={message.includes("deleted") || message.includes("Saved") || message.includes("updated") ? styles.statusMessage : styles.errorMessage}>{message}</Text> : null}
+              {conflictMessage ? <Text style={styles.errorMessage}>{conflictMessage}</Text> : null}
+              {recoveryWarning ? <Text style={styles.recoveryWarning}>{recoveryWarning}</Text> : null}
               <TouchableOpacity
                 style={[styles.saveButton, (selectedDayIsPast || selectedDayAtCapacity || !request.trim()) && styles.saveButtonDisabled]}
                 disabled={selectedDayIsPast || selectedDayAtCapacity || !request.trim()}
-                onPress={addToQueue}
+                onPress={saveQuest}
               >
-                <Text style={styles.saveButtonText}>SAVE QUEST · +{selectedSteps} STEP{selectedSteps === 1 ? "" : "S"}</Text>
+                <Text style={styles.saveButtonText}>
+                  {pendingRecoveryConfirm ? "CONFIRM & SAVE" : editingId ? "SAVE CHANGES" : "SAVE QUEST"} · +{selectedSteps} STEP{selectedSteps === 1 ? "" : "S"}
+                </Text>
               </TouchableOpacity>
             </View>
 
@@ -381,19 +552,23 @@ export default function TomorrowQueueScreen() {
             </View>
 
             {savedItemsForSelectedDay.length === 0 ? (
-              <View style={styles.emptyCard}><Text style={styles.emptyIcon}>🪶</Text><Text style={styles.emptyText}>No quick thought quests saved for {selectedDay.label} yet. Add one and it will appear on your calendar.</Text></View>
+              <View style={styles.emptyCard}><Text style={styles.emptyIcon}>🪶</Text><Text style={styles.emptyText}>No quests saved for {selectedDay.label} yet. Add one and it will appear on your calendar.</Text></View>
             ) : (
               savedItemsForSelectedDay.map((item: QueueItem) => {
                 const isCompleted = Boolean(item.completedAt);
                 const isMissed = isPastDateKey(item.date) && !isCompleted;
+                const statusLabel = isCompleted ? "✓ COMPLETED" : isMissed ? "MISSED" : "SCHEDULED";
                 return (
-                  <View key={item.id} style={[styles.queueCard, item.classification === "recovery" ? styles.queueRecovery : styles.queueProgress, isCompleted && styles.queueCompleted]}>
+                  <View key={item.id} style={[styles.queueCard, item.classification === "recovery" ? styles.queueRecovery : styles.queueProgress, isCompleted && styles.queueCompleted, editingId === item.id && styles.queueEditing]}>
                     <View style={styles.queueTopRow}>
-                      <TouchableOpacity style={styles.checkboxBtn} onPress={() => toggleItemCompleted(item.id)}>
-                        <Text style={styles.checkboxText}>{isCompleted ? "☑" : "☐"}</Text>
-                      </TouchableOpacity>
-                      <Text style={styles.questLabel}>{isCompleted ? "✓ DONE" : `+${item.steps} STEP${item.steps === 1 ? "" : "S"}`}</Text>
-                      <TouchableOpacity style={styles.deleteButton} onPress={() => deleteItem(item.id)}><Text style={styles.deleteButtonText}>🗑</Text></TouchableOpacity>
+                      <Text style={styles.statusPill}>{statusLabel}</Text>
+                      <Text style={styles.questLabel}>+{item.steps} STEP{item.steps === 1 ? "" : "S"}</Text>
+                      <View style={styles.queueActions}>
+                        {!isCompleted ? (
+                          <TouchableOpacity style={styles.editButton} onPress={() => startEditItem(item)}><Text style={styles.editButtonText}>✎</Text></TouchableOpacity>
+                        ) : null}
+                        <TouchableOpacity style={styles.deleteButton} onPress={() => deleteItem(item.id)}><Text style={styles.deleteButtonText}>🗑</Text></TouchableOpacity>
+                      </View>
                     </View>
                     <Text style={[styles.queueTitle, isCompleted && styles.queueTitleDone]}>{item.title}</Text>
                     <Text style={styles.queueDetail}>{formatSavedDate(item)} • {item.startTime} • {item.duration} • {item.classification}</Text>
@@ -421,10 +596,10 @@ function InfoOverlay({ onClose }: { onClose: () => void }) {
   return (
     <View style={styles.infoOverlay}>
       <View style={styles.infoCard}>
-        <Text style={styles.infoTitle}>QUICK THOUGHTS</Text>
+        <Text style={styles.infoTitle}>QUESTS</Text>
         <ScrollView style={styles.infoScroll} showsVerticalScrollIndicator={false} bounces={false}>
           <Text style={styles.infoBody}>
-            Quick Thoughts are for tasks or ideas you do not want to forget. Schedule them for a future day and they can appear on Home and Calendar when it is time. Saving a thought does not give steps; completing it later can. Use this to clear your mind without overloading today.
+            App Quests are suggested by MYLIT based on your path — optional, for direction, not required in one day. Create your own Quest for anything you want to schedule for a future day; it can appear on Home and Calendar when it&apos;s time. Quests are timed — start and complete them from the Home Quest Board, not here. Saving a quest does not give steps; completing it does. Use the pencil to edit a saved quest instead of deleting and recreating it.
           </Text>
         </ScrollView>
         <TouchableOpacity style={styles.infoClose} onPress={onClose}>
@@ -451,7 +626,16 @@ const styles = StyleSheet.create({
   heroKicker: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", letterSpacing: 1.2, marginBottom: 5 },
   title: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 27, fontWeight: "900", letterSpacing: 1, lineHeight: 32 },
   summary: { color: "#F8E7A1", fontFamily: pixelFont, fontSize: 12, fontWeight: "800", lineHeight: 17, marginTop: 5 },
+  appQuestPanel: { backgroundColor: "rgba(8, 13, 24, 0.95)", borderRadius: 8, padding: 12, marginBottom: 14, borderWidth: 3, borderColor: "#38BDF8" },
+  helperText: { color: "#CBD5E1", fontSize: 12, lineHeight: 17, fontWeight: "700", marginBottom: 8 },
+  appQuestCard: { borderWidth: 2, borderColor: "#67E8F9", backgroundColor: "rgba(2,6,23,0.8)", borderRadius: 6, padding: 10 },
+  appQuestTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900", marginBottom: 4 },
+  appQuestMeta: { color: "#67E8F9", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
+  emptyPreviewText: { color: "#94A3B8", fontSize: 12, lineHeight: 17, fontWeight: "700", fontStyle: "italic" },
   creationPanel: { backgroundColor: "rgba(8, 13, 24, 0.95)", borderRadius: 8, padding: 12, marginBottom: 14, borderWidth: 3, borderColor: "#334155" },
+  rowBetween: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  panelHeading: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", letterSpacing: 0.5 },
+  cancelEditText: { color: "#FCA5A5", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
   sectionTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 0.5, lineHeight: 17, marginTop: 10, marginBottom: 8 },
   input: { backgroundColor: "rgba(2, 6, 23, 0.95)", borderRadius: 5, padding: 13, fontSize: 15, color: "#F9FAFB", borderWidth: 2, borderColor: "#475569", fontWeight: "800" },
   kindSelectorRow: { flexDirection: "row", gap: 10 },
@@ -487,6 +671,7 @@ const styles = StyleSheet.create({
   saveButton: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", paddingVertical: 13, alignItems: "center", marginTop: 12 },
   saveButtonDisabled: { opacity: 0.45 },
   saveButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900", letterSpacing: 1 },
+  recoveryWarning: { color: "#FDBA74", fontFamily: pixelFont, fontSize: 12, textAlign: "center", marginTop: 10, fontWeight: "800", lineHeight: 17 },
   savedHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
   savedTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 14, fontWeight: "900" },
   savedCount: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 10, fontWeight: "900" },
@@ -496,8 +681,13 @@ const styles = StyleSheet.create({
   queueCard: { backgroundColor: "rgba(8,13,24,0.95)", borderWidth: 2, borderRadius: 8, padding: 12, marginBottom: 10 },
   queueProgress: { borderColor: "#FBBF24" },
   queueRecovery: { borderColor: "#A78BFA" },
+  queueEditing: { borderColor: "#67E8F9", borderWidth: 3 },
   queueTopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
   questLabel: { color: "#86EFAC", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
+  statusPill: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 10, fontWeight: "900" },
+  queueActions: { flexDirection: "row", gap: 6 },
+  editButton: { width: 34, height: 30, borderWidth: 1, borderColor: "#67E8F9", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(8,60,74,0.45)" },
+  editButtonText: { fontSize: 15 },
   deleteButton: { width: 34, height: 30, borderWidth: 1, borderColor: "#FCA5A5", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(127,29,29,0.45)" },
   deleteButtonText: { fontSize: 15 },
   queueTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", marginBottom: 5 },
@@ -511,8 +701,6 @@ const styles = StyleSheet.create({
   evieText: { color: "#CBD5E1", fontSize: 12, lineHeight: 16, fontWeight: "700", marginTop: 2 },
   infoBtn: { width: 28, height: 28, borderWidth: 2, borderColor: "#FBBF24", borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(113,63,18,0.7)", marginLeft: 8 },
   infoBtnText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 14, fontWeight: "900" },
-  checkboxBtn: { marginRight: 8 },
-  checkboxText: { color: "#F8FAFC", fontSize: 22 },
   queueCompleted: { opacity: 0.65 },
   queueTitleDone: { textDecorationLine: "line-through", color: "#86EFAC" },
   reflectButton: { borderWidth: 1, borderColor: "#A78BFA", paddingVertical: 7, paddingHorizontal: 12, backgroundColor: "rgba(88,28,135,0.45)", marginTop: 8, alignSelf: "flex-start" },

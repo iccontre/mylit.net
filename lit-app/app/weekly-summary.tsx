@@ -135,7 +135,7 @@ export default function WeeklySummaryScreen() {
   }, [snapshot]);
 
   const smallWin = computed.completedQuickThoughts > 0
-    ? "You completed a quick thought quest this week."
+    ? "You completed a scheduled quest this week."
     : computed.questsCompleted > 0 ? "You finished at least one quest. That's a real step forward."
     : computed.progressDays + computed.recoveryDays > 0 ? "You checked in this week. That gives you real data to work with."
     : "Starting with one honest check-in is enough.";
@@ -186,7 +186,7 @@ export default function WeeklySummaryScreen() {
 
               <View style={styles.grid}>
                 <StatCard label="Quests Completed" value={computed.questsCompleted} />
-                <StatCard label="Quick Thoughts Done" value={computed.completedQuickThoughts} accent="#C084FC" />
+                <StatCard label="Scheduled Quests Done" value={computed.completedQuickThoughts} accent="#C084FC" />
                 <StatCard label="Progress Days" value={computed.progressDays} accent="#86EFAC" />
                 <StatCard label="Recovery Days" value={computed.recoveryDays} accent="#C084FC" />
                 <StatCard label="Avg Energy" value={computed.averageEnergy ?? "—"} accent="#67E8F9" />
@@ -200,7 +200,7 @@ export default function WeeklySummaryScreen() {
                 <StatCard label="Reflections" value={computed.reflectionCount} accent="#86EFAC" />
                 <StatCard label="Morning Reflections" value={computed.morningCount} accent="#FDE68A" />
                 <StatCard label="Journal Entries" value={computed.journalCount} />
-                <StatCard label="Quick Thoughts Saved" value={computed.quickThoughtCount} accent="#F472B6" />
+                <StatCard label="Quests Saved" value={computed.quickThoughtCount} accent="#F472B6" />
               </View>
 
               <View style={styles.smallWinCard}>
