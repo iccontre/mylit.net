@@ -14,10 +14,12 @@ import {
 import { ANALYTICS_EVENTS, trackEvent } from "../../lib/analytics";
 import { setChecklistItemChecked, syncQuestCompleted, syncQuestMissed, syncQuestStarted } from "../../lib/progressSync";
 import { clearProgressKey, persistProgressKeys } from "../../lib/progressStore";
+import { syncAndGetStepRank, type StepRank } from "../../lib/stepRank";
 import {
   ACTIVE_TIMED_ITEM_KEY,
   applyQuestBoardCapacity,
   collectTodayCalendarItems,
+  computeFreshRankBonuses,
   computeTotalEarnedSteps,
   findNextScheduledItem,
   formatCapacityHeader,
@@ -279,6 +281,7 @@ export default function HomeScreen() {
   const [userStats, setUserStats] = useState<{ totalSteps?: number }>({});
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileChecked, setProfileChecked] = useState(false);
+  const [stepRank, setStepRank] = useState<StepRank | null>(null);
 
   const [dayPlanRaw, setDayPlanRaw] = useState<DayPlanRaw | null>(null);
   const [preSleepDoneToday, setPreSleepDoneToday] = useState(false);
@@ -874,7 +877,14 @@ export default function HomeScreen() {
   });
   const completedCount = completedQuests.length;
   const totalCount = allHomeItems.length + completedCount;
-  const rank = totalEarnedSteps >= 100 ? "Consistent" : totalEarnedSteps >= 5 ? "Explorer" : "Beginner";
+  // Same bonus-inclusive total the Stats page ranks with, so Home and Stats agree.
+  const totalStepsForRank = totalEarnedSteps + computeFreshRankBonuses(totalEarnedSteps).rankBonusPool;
+  const rankDisplay = stepRank ? `#${stepRank.rank}` : "Unranked";
+
+  useEffect(() => {
+    if (!profileChecked) return;
+    void syncAndGetStepRank(totalStepsForRank).then(setStepRank);
+  }, [profileChecked, totalStepsForRank]);
 
   if (!profileChecked) return null;
 
@@ -1131,10 +1141,10 @@ export default function HomeScreen() {
 
               <View style={[styles.statsBar, { borderColor: theme.accent }]}>
                 <View style={styles.statCell}>
-                  <Text style={styles.statIcon}>🛡️</Text>
+                  <Text style={styles.statIcon}>🏆</Text>
                   <View>
                     <Text style={[styles.statLabel, { color: theme.accent }]}>RANK</Text>
-                    <Text style={styles.statValue}>{rank}</Text>
+                    <Text style={styles.statValue}>{rankDisplay}</Text>
                   </View>
                 </View>
                 <View style={styles.statDivider} />

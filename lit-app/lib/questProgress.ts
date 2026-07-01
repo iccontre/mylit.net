@@ -705,6 +705,27 @@ export function computeTotalEarnedSteps(input: {
   return total + safeNumber(input.userStats?.totalSteps, 0);
 }
 
+/** Every SKILL_TIER_SIZE earned steps unlocks the next Skill tier. */
+export const SKILL_TIER_SIZE = 100;
+
+// Always compute fresh from earnedSteps — never trust stale storage values.
+// At 0 earned steps, display must be 0. Bonuses are only awarded after crossing a real threshold.
+// Shared by the Stats "Skill Progress" panel and the Home/Stats step-rank sync so both
+// screens compare players using the same bonus-inclusive step total.
+export function computeFreshRankBonuses(earnedSteps: number): { rankBonusPool: number; awardedThresholds: number[] } {
+  let display = earnedSteps;
+  const awardedThresholds: number[] = [];
+  for (let i = 1; i <= 50; i++) {
+    if (display >= i * SKILL_TIER_SIZE) {
+      awardedThresholds.push(i);
+      display += 10; // one-time +10 per skill tier unlock
+    } else {
+      break;
+    }
+  }
+  return { rankBonusPool: awardedThresholds.length * 10, awardedThresholds };
+}
+
 export async function loadTodayCompletions(): Promise<CompletionEntry[]> {
   const today = getTodayKey();
   const savedDate = await AsyncStorage.getItem(TODAY_PROGRESS_DATE_KEY);

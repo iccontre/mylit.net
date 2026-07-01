@@ -17,13 +17,32 @@ import { uiAssets } from "../constants/uiAssets";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { signOut } from "../lib/auth";
-import { computeItemStepsFromSources, computeTotalEarnedSteps, loadTodayCompletions, USER_STATS_KEY } from "../lib/questProgress";
+import {
+  computeFreshRankBonuses,
+  computeItemStepsFromSources,
+  computeTotalEarnedSteps,
+  loadTodayCompletions,
+  SKILL_TIER_SIZE,
+  USER_STATS_KEY,
+} from "../lib/questProgress";
 import { forceUploadLocalProgressToCloud, persistProgressKeys } from "../lib/progressStore";
+import { syncAndGetStepRank, type StepRank } from "../lib/stepRank";
 import { ProgressRecoveryModal } from "../components/ProgressRecoveryModal";
 import { BottomNav } from "../components/BottomNav";
 
-type ActivePanel = "weekly" | "rank" | "behavior" | null;
-type ActiveInfo = "stats" | "evie" | "weekly" | "rank" | "behavior" | "weeklyPopup" | "rankPopup" | "behaviorPopup" | null;
+type ActivePanel = "weekly" | "skill" | "rank" | "behavior" | null;
+type ActiveInfo =
+  | "stats"
+  | "evie"
+  | "weekly"
+  | "skill"
+  | "rank"
+  | "behavior"
+  | "weeklyPopup"
+  | "skillPopup"
+  | "rankPopup"
+  | "behaviorPopup"
+  | null;
 type Mode = "Recovery" | "Progress";
 
 type CheckIn = {
@@ -77,18 +96,19 @@ const MORNING_INTENTION_REFLECTIONS_KEY = "lit_morning_intention_reflections";
 const MEDITATIONS_KEY = "lit_awareness_checks";
 const REFLECTIONS_KEY = "lit_reflections";
 const SLEEP_CALENDAR_KEY = "lit_sleep_calendar";
-const RANK_SIZE = 100;
 
 const pixelFont = Platform.select({ ios: "Menlo", android: "monospace", web: "monospace", default: "monospace" });
 
 const INFO_COPY: Record<NonNullable<ActiveInfo>, { title: string; body: string }> = {
-  stats: { title: "STATS BOARD", body: "Stats are feedback, not judgment. Steps come from completed actions only — saving a task does not earn steps. Completing quests, checklist items, reflections, and sleep actions can earn steps when supported. Rank progress grows from accumulated completed steps. Missed items are useful data, not failure." },
+  stats: { title: "STATS BOARD", body: "Stats are feedback, not judgment. Steps come from completed actions only — saving a task does not earn steps. Completing quests, checklist items, reflections, and sleep actions can earn steps when supported. Skill grows from your own accumulated steps. Rank compares your total steps to every other MYLIT player — most steps earns Rank #1. Missed items are useful data, not failure." },
   evie: { title: "EVIE'S NOTE", body: "Stats are for learning, not judging. Look for patterns that help you adjust your next step honestly. One good data point is enough to move forward." },
   weekly: { title: "WEEKLY SUMMARY", body: "Weekly Summary shows what happened this week: energy, steps, completed quests, saved thoughts, sleep and mind entries, and your progress vs recovery balance." },
-  rank: { title: "RANK PROGRESS", body: "Rank Progress turns completed actions into visible growth. Every 100 steps unlocks the next rank, and each new rank grants a one-time +10 step bonus. Only completed actions count toward rank." },
+  skill: { title: "SKILL PROGRESS", body: "Skill Progress turns your own completed actions into visible growth. Every 100 steps unlocks the next skill tier, and each new tier grants a one-time +10 step bonus. Only completed actions count toward skill. Skill is personal — it does not compare you to other players." },
+  rank: { title: "RANK", body: "Rank compares your total steps to every other signed-in MYLIT player. Whoever has the most steps holds Rank #1 — ties share the same rank. Sign in and keep completing actions to be ranked; Rank updates each time you open Stats." },
   behavior: { title: "BEHAVIOR", body: "Behavior shows patterns across energy, sleep, recovery, progress, and cognitive habits so you can adjust without judging yourself." },
   weeklyPopup: { title: "WEEKLY SUMMARY", body: "Weekly Summary shows what happened this week: energy, steps, completed quests, saved thoughts, sleep and mind entries, and your progress vs recovery balance." },
-  rankPopup: { title: "RANK PROGRESS", body: "Rank Progress turns completed actions into visible growth. Every 100 steps unlocks the next rank, and each new rank grants a one-time +10 step bonus. Only completed actions count toward rank." },
+  skillPopup: { title: "SKILL PROGRESS", body: "Skill Progress turns your own completed actions into visible growth. Every 100 steps unlocks the next skill tier, and each new tier grants a one-time +10 step bonus. Only completed actions count toward skill. Skill is personal — it does not compare you to other players." },
+  rankPopup: { title: "RANK", body: "Rank compares your total steps to every other signed-in MYLIT player. Whoever has the most steps holds Rank #1 — ties share the same rank. Sign in and keep completing actions to be ranked; Rank updates each time you open Stats." },
   behaviorPopup: { title: "BEHAVIOR", body: "Behavior shows patterns across energy, sleep, recovery, progress, and cognitive habits so you can adjust without judging yourself." },
 };
 
@@ -162,7 +182,7 @@ function weekRange(): string {
   return `${fmt(monday)} – ${fmt(sunday)}`;
 }
 
-function rankName(level: number): string {
+function skillTierName(level: number): string {
   const names: Record<number, string> = {
     1: "Beginner", 2: "Explorer", 3: "Trailblazer", 4: "Dreamsmith",
     5: "Luminary", 6: "Waykeeper", 7: "Mythwalker", 8: "Starbound",
@@ -170,29 +190,13 @@ function rankName(level: number): string {
   return names[level] ?? `Legend ${level - 8}`;
 }
 
-function getRankInfo(totalSteps: number) {
-  const currentLevel = Math.floor(totalSteps / RANK_SIZE) + 1;
-  const stepsIntoRank = totalSteps % RANK_SIZE;
-  const percentToNext = Math.min(100, Math.round((stepsIntoRank / RANK_SIZE) * 100));
-  const nextRankAt = currentLevel * RANK_SIZE;
+function getSkillInfo(totalSteps: number) {
+  const currentLevel = Math.floor(totalSteps / SKILL_TIER_SIZE) + 1;
+  const stepsIntoRank = totalSteps % SKILL_TIER_SIZE;
+  const percentToNext = Math.min(100, Math.round((stepsIntoRank / SKILL_TIER_SIZE) * 100));
+  const nextRankAt = currentLevel * SKILL_TIER_SIZE;
   const stepsRemaining = nextRankAt - totalSteps;
   return { currentLevel, stepsIntoRank, percentToNext, nextRankAt, stepsRemaining };
-}
-
-// Always compute rank bonuses fresh from earnedSteps — never trust stale storage values.
-// At 0 earned steps, display must be 0. Bonuses are only awarded after crossing a real threshold.
-function computeFreshRankBonuses(earnedSteps: number): { rankBonusPool: number; awardedThresholds: number[] } {
-  let display = earnedSteps;
-  const awardedThresholds: number[] = [];
-  for (let i = 1; i <= 50; i++) {
-    if (display >= i * RANK_SIZE) {
-      awardedThresholds.push(i);
-      display += 10; // one-time +10 per rank unlock
-    } else {
-      break;
-    }
-  }
-  return { rankBonusPool: awardedThresholds.length * 10, awardedThresholds };
 }
 
 function computeItemSteps(dayPlan: unknown, quickThoughts: unknown): number {
@@ -259,6 +263,7 @@ export default function StatsScreen() {
   const modalMaxHeight = Math.min(height * 0.88, 720);
 
   const [stats, setStats] = useState<StatsSnapshot>(emptyStats);
+  const [stepRank, setStepRank] = useState<StepRank | null>(null);
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const [activeInfo, setActiveInfo] = useState<ActiveInfo>(null);
   const [recoveryVisible, setRecoveryVisible] = useState(false);
@@ -341,6 +346,10 @@ export default function StatsScreen() {
       meditations, reflections, sleepCalendar,
       earnedSteps: displayEarnedSteps, rankBonusPool, rankBonusesAwarded: awardedThresholds,
     });
+
+    // Fire-and-forget: Rank compares against other players and needs a network
+    // round trip, so it should never block the rest of the stats screen.
+    void syncAndGetStepRank(displayEarnedSteps + rankBonusPool).then(setStepRank);
   }
 
   const computed = useMemo(() => {
@@ -357,7 +366,7 @@ export default function StatsScreen() {
     const checkInCount = checkIns.length + (stats.latestCheckIn && checkIns.length === 0 ? 1 : 0);
     const totalSteps = stats.earnedSteps + stats.rankBonusPool;
     const weeklySteps = getWeeklySteps(stats.quickThoughts, stats.dayPlan);
-    const rankInfo = getRankInfo(totalSteps);
+    const rankInfo = getSkillInfo(totalSteps);
     return {
       latest, latestEnergy: getNumber(latest?.energy), latestMode: latest?.mode ?? "Not logged yet",
       latestSleep: latest?.sleep ?? latest?.hours, latestMood: latest?.mood, latestStress: latest?.stress,
@@ -421,8 +430,8 @@ export default function StatsScreen() {
                     <Text style={styles.snapLabel}>TOTAL STEPS</Text>
                   </View>
                   <View style={[styles.snapStat, styles.snapDividerLeft]}>
-                    <Text style={styles.snapValue}>{rankName(computed.currentLevel)}</Text>
-                    <Text style={styles.snapLabel}>LV {computed.currentLevel} RANK</Text>
+                    <Text style={styles.snapValue}>{skillTierName(computed.currentLevel)}</Text>
+                    <Text style={styles.snapLabel}>LV {computed.currentLevel} SKILL</Text>
                   </View>
                   <View style={[styles.snapStat, styles.snapDividerTop]}>
                     <Text style={styles.snapValue}>{computed.latestEnergy !== null ? `${computed.latestEnergy}` : "—"}</Text>
@@ -437,13 +446,14 @@ export default function StatsScreen() {
                   <View style={[styles.miniProgressFill, { width: `${computed.percentToNext}%` }]} />
                 </View>
                 <Text style={styles.rankCaption}>
-                  {computed.percentToNext}% to {rankName(computed.currentLevel + 1)} · {computed.stepsRemaining} steps remain
+                  {computed.percentToNext}% to {skillTierName(computed.currentLevel + 1)} · {computed.stepsRemaining} steps remain
                 </Text>
               </View>
 
               <ChestCard accent="gold" icon="📅" title="WEEKLY SUMMARY" subtitle="Energy, steps & activity this week." meta={`${weekRange()} · ${computed.weeklySteps} steps`} onPress={() => setActivePanel("weekly")} onInfo={() => setActiveInfo("weekly")} />
-              <ChestCard accent="green" icon="🛡️" title="RANK PROGRESS" subtitle="Steps, level, and next rank unlock." meta={`${computed.totalSteps} / ${computed.nextRankAt} · ${computed.percentToNext}%`} onPress={() => setActivePanel("rank")} onInfo={() => setActiveInfo("rank")} />
-              <ChestCard accent="purple" icon="📊" title="BEHAVIOR" subtitle="Routines, sleep & cognitive habits." meta={`${computed.progressDays} progress · ${computed.recoveryDays} recovery`} onPress={() => setActivePanel("behavior")} onInfo={() => setActiveInfo("behavior")} />
+              <ChestCard accent="green" icon="🛡️" title="SKILL PROGRESS" subtitle="Steps, level, and next skill unlock." meta={`${computed.totalSteps} / ${computed.nextRankAt} · ${computed.percentToNext}%`} onPress={() => setActivePanel("skill")} onInfo={() => setActiveInfo("skill")} />
+              <ChestCard accent="purple" icon="🏆" title="RANK" subtitle="Your steps vs other players." meta={stepRank ? `#${stepRank.rank} of ${stepRank.totalPlayers}` : "Sign in to rank"} onPress={() => setActivePanel("rank")} onInfo={() => setActiveInfo("rank")} />
+              <ChestCard accent="gold" icon="📊" title="BEHAVIOR" subtitle="Routines, sleep & cognitive habits." meta={`${computed.progressDays} progress · ${computed.recoveryDays} recovery`} onPress={() => setActivePanel("behavior")} onInfo={() => setActiveInfo("behavior")} />
 
               <View style={styles.pageFooter}>
                 <View style={styles.pageFooterLine} />
@@ -494,7 +504,20 @@ export default function StatsScreen() {
               <View style={styles.modalOverlay}>
                 <View style={[styles.modalPanel, { width: modalWidth, maxHeight: modalMaxHeight }]}>
                   <View style={styles.modalTopBar}>
-                    <TouchableOpacity style={styles.infoBtn} onPress={() => setActiveInfo(activePanel === "weekly" ? "weeklyPopup" : activePanel === "rank" ? "rankPopup" : "behaviorPopup")}>
+                    <TouchableOpacity
+                      style={styles.infoBtn}
+                      onPress={() =>
+                        setActiveInfo(
+                          activePanel === "weekly"
+                            ? "weeklyPopup"
+                            : activePanel === "skill"
+                            ? "skillPopup"
+                            : activePanel === "rank"
+                            ? "rankPopup"
+                            : "behaviorPopup"
+                        )
+                      }
+                    >
                       <Text style={styles.infoBtnText}>?</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.closeButton} onPress={() => setActivePanel(null)}>
@@ -503,7 +526,8 @@ export default function StatsScreen() {
                   </View>
                   <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
                     {activePanel === "weekly" ? <WeeklyPanel computed={computed} smallWin={smallWin} /> : null}
-                    {activePanel === "rank" ? <RankPanel computed={computed} /> : null}
+                    {activePanel === "skill" ? <SkillPanel computed={computed} /> : null}
+                    {activePanel === "rank" ? <RankPanel stepRank={stepRank} /> : null}
                     {activePanel === "behavior" ? <BehaviorPanel computed={computed} /> : null}
                     <TouchableOpacity style={styles.returnButton} onPress={() => setActivePanel(null)}>
                       <Text style={styles.returnButtonText}>RETURN</Text>
@@ -625,33 +649,58 @@ function WeeklyPanel({ computed, smallWin }: { computed: ComputedStats; smallWin
   );
 }
 
-function RankPanel({ computed }: { computed: ComputedStats }) {
+function SkillPanel({ computed }: { computed: ComputedStats }) {
   const bonusStepsTotal = computed.rankBonusesAwarded.length * 10;
   return (
     <>
-      <Text style={styles.modalTitle}>RANK PROGRESS</Text>
+      <Text style={styles.modalTitle}>SKILL PROGRESS</Text>
       <View style={styles.rankDuelCard}>
-        <View style={styles.rankBlock}><Text style={styles.cardKicker}>CURRENT RANK</Text><Text style={styles.rankBadge}>🛡️</Text><Text style={styles.rankName}>{rankName(computed.currentLevel)}</Text><Text style={styles.levelText}>Level {computed.currentLevel}</Text></View>
+        <View style={styles.rankBlock}><Text style={styles.cardKicker}>CURRENT SKILL</Text><Text style={styles.rankBadge}>🛡️</Text><Text style={styles.rankName}>{skillTierName(computed.currentLevel)}</Text><Text style={styles.levelText}>Level {computed.currentLevel}</Text></View>
         <Text style={styles.rankArrow}>»</Text>
-        <View style={styles.rankBlock}><Text style={styles.cardKicker}>NEXT RANK</Text><Text style={styles.rankBadge}>💎</Text><Text style={styles.rankName}>{rankName(computed.currentLevel + 1)}</Text><Text style={styles.levelText}>Level {computed.currentLevel + 1}</Text></View>
+        <View style={styles.rankBlock}><Text style={styles.cardKicker}>NEXT SKILL</Text><Text style={styles.rankBadge}>💎</Text><Text style={styles.rankName}>{skillTierName(computed.currentLevel + 1)}</Text><Text style={styles.levelText}>Level {computed.currentLevel + 1}</Text></View>
       </View>
       <View style={styles.progressCard}>
-        <Text style={styles.cardKicker}>TOTAL STEPS → NEXT RANK AT {computed.nextRankAt}</Text>
+        <Text style={styles.cardKicker}>TOTAL STEPS → NEXT SKILL AT {computed.nextRankAt}</Text>
         <Text style={styles.progressTotal}>{computed.totalSteps} <Text style={styles.progressUnit}>/ {computed.nextRankAt}</Text></Text>
         <View style={styles.progressTrack}><View style={[styles.progressFill, { width: `${computed.percentToNext}%` }]} /></View>
-        <Text style={styles.progressCaption}>{computed.percentToNext}% to next rank • {computed.stepsRemaining} steps remain</Text>
+        <Text style={styles.progressCaption}>{computed.percentToNext}% to next skill • {computed.stepsRemaining} steps remain</Text>
       </View>
       <View style={styles.statsGrid}>
         <StatCard label="Total Steps" value={computed.totalSteps} accent="#FBBF24" />
         <StatCard label="Steps This Week" value={computed.weeklySteps} accent="#67E8F9" />
-        <StatCard label="Rank Bonuses Earned" value={`+${bonusStepsTotal} pts`} accent="#86EFAC" />
-        <StatCard label="Next Unlock" value={rankName(computed.currentLevel + 1)} accent="#C084FC" />
+        <StatCard label="Skill Bonuses Earned" value={`+${bonusStepsTotal} pts`} accent="#86EFAC" />
+        <StatCard label="Next Unlock" value={skillTierName(computed.currentLevel + 1)} accent="#C084FC" />
       </View>
       <View style={styles.smallWinCard}>
         <Text style={styles.smallWinTitle}>NEXT UNLOCK PREVIEW</Text>
-        <Text style={styles.smallWinText}>Reach {computed.nextRankAt} steps to unlock {rankName(computed.currentLevel + 1)}. Each rank unlock grants +10 bonus steps — once only.</Text>
+        <Text style={styles.smallWinText}>Reach {computed.nextRankAt} steps to unlock {skillTierName(computed.currentLevel + 1)}. Each skill unlock grants +10 bonus steps — once only.</Text>
       </View>
       <LunaNote text="Progress builds quietly. Every honest step still counts." />
+    </>
+  );
+}
+
+function RankPanel({ stepRank }: { stepRank: StepRank | null }) {
+  return (
+    <>
+      <Text style={styles.modalTitle}>RANK</Text>
+      <View style={styles.rankDuelCard}>
+        <View style={styles.rankBlock}>
+          <Text style={styles.cardKicker}>YOUR RANK</Text>
+          <Text style={styles.rankBadge}>🏆</Text>
+          <Text style={styles.rankName}>{stepRank ? `#${stepRank.rank}` : "Unranked"}</Text>
+          <Text style={styles.levelText}>{stepRank ? `of ${stepRank.totalPlayers} players` : "Sign in to rank"}</Text>
+        </View>
+      </View>
+      <View style={styles.smallWinCard}>
+        <Text style={styles.smallWinTitle}>HOW RANK WORKS</Text>
+        <Text style={styles.smallWinText}>
+          Rank compares your total steps to every other signed-in MYLIT player. Whoever has the
+          most steps holds Rank #1 — ties share the same rank. Sign in and keep completing
+          actions to be ranked.
+        </Text>
+      </View>
+      <LunaNote text="Rank is a mirror, not a judgment. Compare kindly." />
     </>
   );
 }
