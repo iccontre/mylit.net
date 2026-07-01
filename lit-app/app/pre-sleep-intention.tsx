@@ -44,7 +44,10 @@ type PreSleepIntention = {
 };
 
 const FEELING_OPTIONS = ["Focused", "Energized", "Calm", "Grounded", "Rested", "Brave", "Gentle", "Steady"];
-const SUPPORT_OPTIONS = ["No screens", "Gratitude", "Breathe", "Let go", "Sleep early"];
+const SUPPORT_OPTIONS = ["No screens", "Gratitude", "Breathe", "Let go", "Sleep early", "Shower"];
+const SUPPORT_HELPER_TEXT: Partial<Record<string, string>> = {
+  Shower: "Reset your body before rest.",
+};
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -87,23 +90,29 @@ export default function PreSleepIntentionScreen() {
   async function saveIntention() {
     if (!intention.trim()) return;
 
+    const todayKey = getTodayKey();
+    const saved = await AsyncStorage.getItem(PRE_SLEEP_INTENTIONS_KEY);
+    const history: PreSleepIntention[] = saved ? JSON.parse(saved) : [];
+    const alreadyEarnedToday = history.some((past) => past.date === todayKey);
+
     const entry: PreSleepIntention = {
       id: String(Date.now()),
-      date: getTodayKey(),
+      date: todayKey,
       intention: intention.trim(),
       feeling,
       support,
       createdAt: new Date().toISOString(),
     };
 
-    const saved = await AsyncStorage.getItem(PRE_SLEEP_INTENTIONS_KEY);
-    const history: PreSleepIntention[] = saved ? JSON.parse(saved) : [];
-
     await persistProgressKeys({
       [PRE_SLEEP_INTENTIONS_KEY]: JSON.stringify([entry, ...history]),
       [LATEST_PRE_SLEEP_INTENTION_KEY]: JSON.stringify(entry),
     });
-    await earnSteps(1);
+    // Only the first save of the day earns the step — editing/resaving today's
+    // intention should not award it again.
+    if (!alreadyEarnedToday) {
+      await earnSteps(1);
+    }
     await successHaptic();
 
     router.push("/");
@@ -149,7 +158,7 @@ export default function PreSleepIntentionScreen() {
                 multiline
                 scrollEnabled
                 textAlignVertical="top"
-                placeholder="Example: I want to feel calm and make progress on my work."
+                placeholder="Tonight, I want to focus on…"
                 placeholderTextColor="#94A3B8"
                 value={intention}
                 onChangeText={setIntention}
@@ -186,6 +195,9 @@ export default function PreSleepIntentionScreen() {
                   );
                 })}
               </View>
+              {support.filter((opt) => SUPPORT_HELPER_TEXT[opt]).map((opt) => (
+                <Text key={`helper-${opt}`} style={[styles.supportHelperText, { color: theme.soft }]}>{SUPPORT_HELPER_TEXT[opt]}</Text>
+              ))}
 
               <TouchableOpacity style={[styles.saveButton, { borderColor: theme.accent }]} onPress={saveIntention}>
                 <Text style={styles.saveButtonText}>Save Intention · +1 Step</Text>
@@ -383,6 +395,13 @@ const styles = StyleSheet.create({
     borderColor: "#334155",
     paddingVertical: 7,
     paddingHorizontal: 11,
+  },
+  supportHelperText: {
+    fontFamily: pixelFont,
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: -6,
+    marginBottom: 10,
   },
   chipText: {
     color: "#CBD5E1",

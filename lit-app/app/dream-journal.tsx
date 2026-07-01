@@ -199,7 +199,7 @@ export default function DreamJournalScreen() {
                 multiline
                 scrollEnabled
                 textAlignVertical="top"
-                placeholder="Describe scenes, people, places, and details you remember."
+                placeholder="Write what you remember…"
                 placeholderTextColor="#94A3B8"
                 value={summary}
                 onChangeText={setSummary}

@@ -174,6 +174,12 @@ function SectionShell({
   );
 }
 
+const MILESTONE_PLACEHOLDERS: Record<GoalHorizon, string> = {
+  shortTerm: "Ex: Sleep by 11 twice this week",
+  midTerm: "Ex: Build a steady study routine",
+  longTerm: "Ex: Feel ready for next quarter",
+};
+
 function MilestoneField({
   horizon,
   value,
@@ -183,7 +189,6 @@ function MilestoneField({
   value: string;
   onChange: (next: string) => void;
 }) {
-  const meta = GOAL_HORIZON_LABELS[horizon];
   const cardMeta = MILESTONE_META[horizon];
 
   return (
@@ -191,13 +196,13 @@ function MilestoneField({
       <View style={[styles.milestoneBanner, { backgroundColor: cardMeta.tone }]}>
         <Text style={styles.milestoneBannerText}>{cardMeta.title}</Text>
       </View>
-      <Text style={styles.milestoneCaption}>{meta.caption}</Text>
+      <Text style={styles.milestoneCaption}>{GOAL_HORIZON_LABELS[horizon].caption}</Text>
       <TextInput
         style={styles.milestoneInput}
         multiline
         numberOfLines={3}
         textAlignVertical="top"
-        placeholder={`Your ${meta.label.toLowerCase()} goal`}
+        placeholder={MILESTONE_PLACEHOLDERS[horizon]}
         placeholderTextColor="#8A5D2B"
         value={value}
         onChangeText={onChange}

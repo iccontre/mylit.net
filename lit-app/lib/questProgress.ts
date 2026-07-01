@@ -31,7 +31,7 @@ export const PROGRESS_QUEST_CAPACITY = 8;
 /** @deprecated Item-count capacity — use minute-based capacity helpers instead. */
 export const RECOVERY_QUEST_CAPACITY = 5;
 
-export type QuestSource = "Quest" | "Today's Quest" | "Checklist" | "Quick Thought" | "Calendar";
+export type QuestSource = "Quest" | "Today's Quest" | "Checklist" | "Quick Thought" | "Calendar" | "Sleep";
 export type QuestKind = "progress" | "recovery";
 
 export type CompletionEntry = {
@@ -286,7 +286,8 @@ export function isQuestBoardItemAllowed(item: HomeQuestItem): boolean {
     item.source === "Today's Quest" ||
     item.source === "Checklist" ||
     item.source === "Quick Thought" ||
-    item.source === "Calendar"
+    item.source === "Calendar" ||
+    item.source === "Sleep"
   ) {
     return true;
   }
@@ -306,6 +307,7 @@ function getItemPriorityTier(item: HomeQuestItem): QuestPriorityTier {
   if (item.source === "Today's Quest") return 3;
   if (item.source === "Checklist") return 4;
   if (item.source === "Quick Thought") return 5;
+  if (item.source === "Sleep") return 5;
   return 6;
 }
 
@@ -484,6 +486,8 @@ export function normalizeQuestItems(input: {
   todayKey: string;
   completedIds: Set<string>;
   missedIds: Set<string>;
+  /** True once today's Pre-Sleep Intention has been saved — hides the Sleep reminder for the rest of the day. */
+  preSleepIntentionDoneToday?: boolean;
 }): HomeQuestItem[] {
   const items: HomeQuestItem[] = [];
   const seenIds = new Set<string>();
@@ -493,6 +497,18 @@ export function normalizeQuestItems(input: {
     seenIds.add(item.id);
     items.push(item);
   };
+
+  if (!input.preSleepIntentionDoneToday) {
+    pushItem({
+      id: buildStableItemId("Sleep", "Set Pre-Sleep Intention", { dateKey: input.todayKey }),
+      title: "Set Pre-Sleep Intention",
+      source: "Sleep",
+      kind: "recovery",
+      steps: 1,
+      durationMinutes: 10,
+      description: "Wind down and set tonight's intention before bed.",
+    });
+  }
 
   const todayQuest = input.todayQuest;
   if (todayQuest?.title?.trim() && todayQuest.status !== "completed" && String(todayQuest.status) !== "missed") {
@@ -909,6 +925,7 @@ export function sourceIcon(source: QuestSource): string {
   if (source === "Checklist") return "📋";
   if (source === "Quick Thought") return "💭";
   if (source === "Calendar") return "📅";
+  if (source === "Sleep") return "🌙";
   return "📜";
 }
 

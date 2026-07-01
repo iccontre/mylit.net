@@ -9,6 +9,8 @@ export const LEGACY_DEFAULT_CHECKLIST_TITLES = new Set([
   "Walk",
   "Journal",
   "Habit action",
+  "New progress quest",
+  "New recovery action",
 ]);
 
 type ChecklistLike = { text?: string; title?: string };

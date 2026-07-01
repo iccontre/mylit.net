@@ -313,7 +313,7 @@ export default function TomorrowQueueScreen() {
 
             <View style={styles.creationPanel}>
               <Text style={styles.sectionTitle}>1. QUEST TITLE</Text>
-              <TextInput style={styles.input} placeholder="Example: finish coding app at coffee shop" placeholderTextColor="#94A3B8" value={request} onChangeText={(text: string) => { setRequest(text); setMessage(""); }} />
+              <TextInput style={styles.input} placeholder="Ex: Email professor tomorrow" placeholderTextColor="#94A3B8" value={request} onChangeText={(text: string) => { setRequest(text); setMessage(""); }} />
 
               <Text style={styles.sectionTitle}>2. PROGRESS OR RECOVERY?</Text>
               <View style={styles.kindSelectorRow}>
@@ -364,8 +364,12 @@ export default function TomorrowQueueScreen() {
               </View>
 
               {message ? <Text style={message.includes("deleted") || message.includes("Saved") ? styles.statusMessage : styles.errorMessage}>{message}</Text> : null}
-              <TouchableOpacity style={[styles.saveButton, (selectedDayIsPast || selectedDayAtCapacity) && styles.saveButtonDisabled]} onPress={addToQueue}>
-                <Text style={styles.saveButtonText}>SAVE +{selectedSteps} STEP{selectedSteps === 1 ? "" : "S"} QUEST</Text>
+              <TouchableOpacity
+                style={[styles.saveButton, (selectedDayIsPast || selectedDayAtCapacity || !request.trim()) && styles.saveButtonDisabled]}
+                disabled={selectedDayIsPast || selectedDayAtCapacity || !request.trim()}
+                onPress={addToQueue}
+              >
+                <Text style={styles.saveButtonText}>SAVE QUEST · +{selectedSteps} STEP{selectedSteps === 1 ? "" : "S"}</Text>
               </TouchableOpacity>
             </View>
 

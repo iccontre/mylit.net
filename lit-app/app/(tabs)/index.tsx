@@ -37,6 +37,7 @@ import {
   type QuestKind,
 } from "../../lib/questProgress";
 import { formatDurationLabel, inferScheduledClassification, parseTimeToMinutes } from "../../lib/scheduling";
+import { LATEST_PRE_SLEEP_INTENTION_KEY } from "../../lib/storageKeys";
 
 const mylitLogo = uiAssets.logo.mylit;
 const fireAssets = uiAssets.fires;
@@ -280,6 +281,7 @@ export default function HomeScreen() {
   const [profileChecked, setProfileChecked] = useState(false);
 
   const [dayPlanRaw, setDayPlanRaw] = useState<DayPlanRaw | null>(null);
+  const [preSleepDoneToday, setPreSleepDoneToday] = useState(false);
   const [activeItem, setActiveItem] = useState<ActiveTimedItem | null>(null);
   const [selectedItem, setSelectedItem] = useState<HomeQuestItem | null>(null);
   const [lockMessage, setLockMessage] = useState("");
@@ -331,6 +333,7 @@ export default function HomeScreen() {
       loadQuickThoughts();
       loadDayPlan();
       loadActiveItem();
+      loadPreSleepStatus();
     }, [])
   );
 
@@ -341,6 +344,7 @@ export default function HomeScreen() {
     loadQuickThoughts();
     loadDayPlan();
     loadActiveItem();
+    loadPreSleepStatus();
   }, []);
 
   // Keep the Day / Time Track marker on the real local time (refresh every 30s).
@@ -507,6 +511,20 @@ export default function HomeScreen() {
     }
   }
 
+  async function loadPreSleepStatus() {
+    const saved = await AsyncStorage.getItem(LATEST_PRE_SLEEP_INTENTION_KEY);
+    if (!saved) {
+      setPreSleepDoneToday(false);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(saved) as { date?: string };
+      setPreSleepDoneToday(parsed?.date === getTodayKey());
+    } catch {
+      setPreSleepDoneToday(false);
+    }
+  }
+
   async function loadActiveItem() {
     const saved = await AsyncStorage.getItem(ACTIVE_TIMED_ITEM_KEY);
 
@@ -545,6 +563,11 @@ export default function HomeScreen() {
   }
 
   function openQuestItem(item: HomeQuestItem) {
+    if (item.source === "Sleep") {
+      lightHaptic();
+      router.push("/pre-sleep-intention");
+      return;
+    }
     if (activeItem) {
       showLockMessage();
       return;
@@ -793,6 +816,7 @@ export default function HomeScreen() {
           todayKey,
           completedIds,
           missedIds,
+          preSleepIntentionDoneToday: preSleepDoneToday,
         })
       : [];
 

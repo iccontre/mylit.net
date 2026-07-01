@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   Image,
+  ImageBackground,
   Platform,
   StyleSheet,
   Text,
@@ -110,7 +111,7 @@ export default function JournalScreen() {
     <View style={[styles.pageRoot, mobile.pageRootStyle]}>
       <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
-          <Image source={uiAssets.backgrounds.journal} style={styles.backgroundImage} resizeMode="cover" />
+          <Image source={uiAssets.backgrounds.neutral} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
           <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.hudContent]}>
@@ -133,8 +134,13 @@ export default function JournalScreen() {
               </TouchableOpacity>
             </View>
 
-            <View style={styles.panel}>
-              <Text style={styles.label}>Entry Type</Text>
+            <ImageBackground
+              source={uiAssets.backgrounds.journal}
+              style={styles.panel}
+              imageStyle={styles.panelPageImage}
+              resizeMode="cover"
+            >
+              <Text style={styles.pageLabel}>Entry Type</Text>
               <View style={styles.toggleRow}>
                 <TouchableOpacity
                   style={[styles.toggleButton, entryType === "Morning" && styles.activeToggle]}
@@ -155,7 +161,7 @@ export default function JournalScreen() {
                 </TouchableOpacity>
               </View>
 
-              <Text style={styles.label}>Mood (1–10)</Text>
+              <Text style={styles.pageLabel}>Mood (1–10)</Text>
               <TextInput
                 style={[formStyles.input, styles.input]}
                 keyboardType="numeric"
@@ -165,19 +171,19 @@ export default function JournalScreen() {
                 onChangeText={setMood}
               />
 
-              <Text style={styles.label}>What happened today?</Text>
+              <Text style={styles.pageLabel}>What happened today?</Text>
               <TextInput
                 style={[formStyles.textArea, styles.largeTextArea]}
                 multiline
                 scrollEnabled
                 textAlignVertical="top"
-                placeholder="Write freely. A moment, a feeling, a win, a mistake, or anything that stayed with you."
+                placeholder="Write what feels true right now…"
                 placeholderTextColor="#94A3B8"
                 value={content}
                 onChangeText={setContent}
               />
 
-              <Text style={styles.label}>What do you want to remember?</Text>
+              <Text style={styles.pageLabel}>What do you want to remember?</Text>
               <TextInput
                 style={[formStyles.textArea, styles.largeTextArea]}
                 multiline
@@ -188,7 +194,7 @@ export default function JournalScreen() {
                 value={gratitude}
                 onChangeText={setGratitude}
               />
-            </View>
+            </ImageBackground>
 
             <TouchableOpacity style={styles.saveButton} onPress={saveJournalEntry}>
               <Text style={styles.saveButtonText}>Save Journal Entry</Text>
@@ -363,15 +369,18 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   panel: {
-    backgroundColor: "rgba(8, 13, 24, 0.96)",
     borderWidth: 4,
-    borderColor: "#FBBF24",
+    borderColor: "#8A5D2B",
     borderRadius: 8,
-    padding: 14,
+    padding: 16,
     marginBottom: 16,
+    overflow: "hidden",
   },
-  label: {
-    color: "#F9FAFB",
+  panelPageImage: {
+    borderRadius: 4,
+  },
+  pageLabel: {
+    color: "#3B2A14",
     fontFamily: pixelFont,
     fontSize: 12,
     fontWeight: "900",
@@ -379,6 +388,9 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 8,
     textTransform: "uppercase",
+    textShadowColor: "rgba(255, 255, 255, 0.35)",
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 0,
   },
   toggleRow: {
     flexDirection: "row",

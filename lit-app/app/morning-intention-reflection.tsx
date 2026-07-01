@@ -190,7 +190,7 @@ export default function MorningIntentionReflectionScreen() {
                 multiline
                 scrollEnabled
                 textAlignVertical="top"
-                placeholder="How are you feeling this morning? What is on your mind?"
+                placeholder="What do you need this morning?"
                 placeholderTextColor="#94A3B8"
                 value={reflectionText}
                 onChangeText={setReflectionText}

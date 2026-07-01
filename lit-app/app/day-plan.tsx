@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 import { FormScreen } from "../components/FormScreen";
@@ -255,6 +255,18 @@ function normalizePlan(raw: Partial<DayPlan>): DayPlan {
   };
 }
 
+/** Fields that count when deciding whether a checklist item has unsaved edits. */
+function checklistItemSignature(item: ChecklistItem): string {
+  return JSON.stringify({
+    text: item.text,
+    startTime: item.startTime,
+    duration: item.duration,
+    durationMinutes: item.durationMinutes,
+    kind: item.kind,
+    weekdays: [...item.weekdays].sort(),
+  });
+}
+
 export default function DayPlanScreen() {
   const router = useRouter();
   const mobile = useMobileFrame();
@@ -263,6 +275,7 @@ export default function DayPlanScreen() {
   const [isLowEnergy, setIsLowEnergy] = useState(false);
   const [savedMessage, setSavedMessage] = useState("");
   const [showInfo, setShowInfo] = useState(false);
+  const committedPlanRef = useRef<DayPlan>(createDefaultPlan());
 
   useEffect(() => {
     loadDayPlan();
@@ -271,7 +284,10 @@ export default function DayPlanScreen() {
 
   async function loadDayPlan() {
     const saved = await readJson<Partial<DayPlan> | null>(DAY_PLAN_KEY, null);
-    if (!saved) return;
+    if (!saved) {
+      committedPlanRef.current = createDefaultPlan();
+      return;
+    }
     const cleanedChecklists = sanitizeDayPlanChecklists(
       saved.weekdayChecklists as Partial<Record<WeekdayName, Partial<ChecklistItem>[]>> | undefined
     );
@@ -280,9 +296,67 @@ export default function DayPlanScreen() {
       weekdayChecklists: cleanedChecklists as DayPlan["weekdayChecklists"],
     });
     setDayPlan(normalized);
+    committedPlanRef.current = normalized;
     if (JSON.stringify(cleanedChecklists) !== JSON.stringify(saved.weekdayChecklists)) {
       await persistProgressKeys({ [DAY_PLAN_KEY]: JSON.stringify(normalized) });
     }
+  }
+
+  /** Finds an item's committed (already-persisted) version, if it was ever saved. */
+  function findCommittedChecklistItem(itemId: string): ChecklistItem | null {
+    for (const day of WEEKDAYS) {
+      const found = committedPlanRef.current.weekdayChecklists[day]?.find((entry) => entry.id === itemId);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  function isChecklistItemDirty(item: ChecklistItem): boolean {
+    const committed = findCommittedChecklistItem(item.id);
+    if (!committed) return true;
+    return checklistItemSignature(committed) !== checklistItemSignature(item);
+  }
+
+  function isTodayQuestDirty(): boolean {
+    const committed = committedPlanRef.current.todayQuest;
+    return committed.title !== dayPlan.todayQuest.title || committed.startTime !== dayPlan.todayQuest.startTime;
+  }
+
+  /** Persists exactly one checklist item into the committed plan without pulling in other unsaved drafts. */
+  async function saveChecklistItem(itemId: string) {
+    const bucketDay = findChecklistBucket(dayPlan, itemId);
+    const item = bucketDay ? dayPlan.weekdayChecklists[bucketDay].find((entry) => entry.id === itemId) : null;
+    if (!bucketDay || !item || !item.text.trim()) return;
+
+    const nextCommitted: DayPlan = {
+      ...committedPlanRef.current,
+      weekdayChecklists: {
+        ...committedPlanRef.current.weekdayChecklists,
+        [bucketDay]: (() => {
+          const existing = committedPlanRef.current.weekdayChecklists[bucketDay] ?? [];
+          const withoutItem = existing.filter((entry) => entry.id !== itemId);
+          return [...withoutItem, item];
+        })(),
+      },
+    };
+
+    committedPlanRef.current = nextCommitted;
+    await persistProgressKeys({ [DAY_PLAN_KEY]: JSON.stringify(nextCommitted) });
+    void trackEvent(ANALYTICS_EVENTS.day_plan_saved, { scope: "checklistItem" });
+    void syncDayPlanScheduledItems();
+  }
+
+  /** Persists Today's Quest (title/time) into the committed plan independently of Weekly Habit or checklist drafts. */
+  async function saveTodayQuest() {
+    if (!dayPlan.todayQuest.title.trim()) return;
+    const nextCommitted: DayPlan = {
+      ...committedPlanRef.current,
+      todayQuest: dayPlan.todayQuest,
+    };
+    committedPlanRef.current = nextCommitted;
+    await persistProgressKeys({ [DAY_PLAN_KEY]: JSON.stringify(nextCommitted) });
+    void trackEvent(ANALYTICS_EVENTS.day_plan_saved, { scope: "todayQuest" });
+    void syncDayPlanScheduledItems();
   }
 
   async function loadLatestCheckIn() {
@@ -290,11 +364,18 @@ export default function DayPlanScreen() {
     setIsLowEnergy(checkIn?.mode === "Recovery" || Number(checkIn?.energy ?? 100) <= 60);
   }
 
-  async function savePlan(nextPlan: DayPlan) {
-    setDayPlan(nextPlan);
-    await persistProgressKeys({ [DAY_PLAN_KEY]: JSON.stringify(nextPlan) });
-    setSavedMessage("Day Plan saved to Calendar.");
-    void trackEvent(ANALYTICS_EVENTS.day_plan_saved);
+  /** Saves Weekly Habit only — Today's Quest and checklist items each have their own Save Quest button. */
+  async function saveWeeklyHabit() {
+    const nextCommitted: DayPlan = {
+      ...committedPlanRef.current,
+      weekdayRoles: dayPlan.weekdayRoles,
+      todayFocus: dayPlan.weekdayRoles[todayWeekday()],
+      todayGoal: dayPlan.weekdayRoles[todayWeekday()],
+    };
+    committedPlanRef.current = nextCommitted;
+    await persistProgressKeys({ [DAY_PLAN_KEY]: JSON.stringify(nextCommitted) });
+    setSavedMessage("Weekly Habit saved to Calendar.");
+    void trackEvent(ANALYTICS_EVENTS.day_plan_saved, { scope: "weeklyHabit" });
     void syncDayPlanScheduledItems();
   }
 
@@ -367,10 +448,9 @@ export default function DayPlanScreen() {
   }
 
   function addChecklistItem(kind: "progress" | "recovery") {
-    const text = kind === "progress" ? "New progress quest" : "New recovery action";
     const nextItem: ChecklistItem = {
       id: `${selectedDay}-${Date.now()}`,
-      text,
+      text: "",
       checked: false,
       steps: kind === "recovery" ? 0 : 1,
       startTime: "8:30 AM",
@@ -402,6 +482,22 @@ export default function DayPlanScreen() {
         },
       };
     });
+
+    // If this item was already saved, remove it from the committed plan too —
+    // otherwise it would reappear on Calendar/Quest Board and come back on reload.
+    const committedBucket = findChecklistBucket(committedPlanRef.current, itemId);
+    if (committedBucket) {
+      const nextCommitted: DayPlan = {
+        ...committedPlanRef.current,
+        weekdayChecklists: {
+          ...committedPlanRef.current.weekdayChecklists,
+          [committedBucket]: committedPlanRef.current.weekdayChecklists[committedBucket].filter((item) => item.id !== itemId),
+        },
+      };
+      committedPlanRef.current = nextCommitted;
+      void persistProgressKeys({ [DAY_PLAN_KEY]: JSON.stringify(nextCommitted) });
+      void syncDayPlanScheduledItems();
+    }
   }
 
   const visibleChecklist = useMemo(
@@ -409,13 +505,21 @@ export default function DayPlanScreen() {
     [dayPlan, selectedDay]
   );
   const selectedRole = dayPlan.weekdayRoles[selectedDay]?.trim() ?? "";
+  // Preview reflects only SAVED data — matches what Calendar/Quest Board actually show,
+  // so unsaved checklist/quest drafts never appear to already be scheduled.
+  const committedChecklistForSelectedDay = useMemo(
+    () => getChecklistItemsForDay(committedPlanRef.current, selectedDay) as ChecklistItem[],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [dayPlan, selectedDay]
+  );
   const previewItems = useMemo(
-    () => visibleChecklist.slice().sort((a: ChecklistItem, b: ChecklistItem) => TIME_SLOTS.indexOf(a.startTime) - TIME_SLOTS.indexOf(b.startTime)),
-    [visibleChecklist]
+    () => committedChecklistForSelectedDay.slice().sort((a: ChecklistItem, b: ChecklistItem) => TIME_SLOTS.indexOf(a.startTime) - TIME_SLOTS.indexOf(b.startTime)),
+    [committedChecklistForSelectedDay]
   );
   const currentInterval = useMemo(() => getCurrentInterval(), []);
   const intervalItems = previewItems.filter((item: ChecklistItem) => timeInInterval(item.startTime, currentInterval));
-  const questInInterval = timeInInterval(dayPlan.todayQuest.startTime, currentInterval);
+  const committedTodayQuest = committedPlanRef.current.todayQuest;
+  const questInInterval = !isTodayQuestDirty() && timeInInterval(committedTodayQuest.startTime, currentInterval);
 
   return (
     <View style={[styles.pageRoot, mobile.pageRootStyle]}>
@@ -471,6 +575,13 @@ export default function DayPlanScreen() {
               <Text style={styles.helperText}>This is the actual quest for today. It appears on Calendar and earns +2 steps only when completed.</Text>
               <TextInput style={formStyles.input} value={dayPlan.todayQuest.title} onChangeText={updateTodayQuestTitle} placeholder="Finish profile page layout" placeholderTextColor="#94A3B8" />
               <TimeStepper value={dayPlan.todayQuest.startTime} onChange={(next) => setDayPlan((current: DayPlan) => ({ ...current, todayQuest: { ...current.todayQuest, startTime: next } }))} />
+              <TouchableOpacity
+                style={[styles.saveQuestButton, !isTodayQuestDirty() && styles.saveQuestButtonDisabled]}
+                disabled={!isTodayQuestDirty() || !dayPlan.todayQuest.title.trim()}
+                onPress={saveTodayQuest}
+              >
+                <Text style={styles.saveQuestButtonText}>{isTodayQuestDirty() ? "SAVE QUEST" : "SAVED ✓"}</Text>
+              </TouchableOpacity>
               {dayPlan.todayQuest.status !== "completed" ? (
                 <TouchableOpacity style={styles.reflectButton} onPress={() => router.push("/reflection")}>
                   <Text style={styles.reflectButtonText}>REFLECT ON TODAY’S QUEST</Text>
@@ -498,7 +609,7 @@ export default function DayPlanScreen() {
                       <TouchableOpacity style={styles.deleteButton} onPress={() => deleteChecklistItem(item.id)}><Text style={styles.deleteButtonText}>🗑</Text></TouchableOpacity>
                     </View>
                   </View>
-                  <TextInput style={[formStyles.input, styles.itemInput]} value={item.text} onChangeText={(text: string) => updateChecklistItem(item.id, { text })} placeholder="Checklist item" placeholderTextColor="#94A3B8" />
+                  <TextInput style={[formStyles.input, styles.itemInput]} value={item.text} onChangeText={(text: string) => updateChecklistItem(item.id, { text })} placeholder="Ex: Study 30 min" placeholderTextColor="#94A3B8" />
                   <TimeStepper value={item.startTime} onChange={(next) => updateChecklistItem(item.id, { startTime: next })} />
                   <View style={styles.durationRow}>
                     {durationsForKind(item.kind).map((duration) => (
@@ -519,6 +630,13 @@ export default function DayPlanScreen() {
                       );
                     })}
                   </ScrollView>
+                  <TouchableOpacity
+                    style={[styles.saveQuestButton, !isChecklistItemDirty(item) && styles.saveQuestButtonDisabled]}
+                    disabled={!isChecklistItemDirty(item) || !item.text.trim()}
+                    onPress={() => saveChecklistItem(item.id)}
+                  >
+                    <Text style={styles.saveQuestButtonText}>{isChecklistItemDirty(item) ? "SAVE QUEST" : "SAVED ✓"}</Text>
+                  </TouchableOpacity>
                   {!item.checked && selectedDay === todayWeekday() ? (
                     <TouchableOpacity style={styles.reflectButton} onPress={() => router.push("/reflection")}>
                       <Text style={styles.reflectButtonText}>REFLECT</Text>
@@ -537,7 +655,7 @@ export default function DayPlanScreen() {
               <Text style={styles.previewFocus}>
                 {selectedRole ? `Weekly Habit: ${selectedRole} — calendar marker only` : "No weekly habit set for this day."}
               </Text>
-              {selectedDay === todayWeekday() && questInInterval ? <Text style={styles.previewQuest}>Today’s Quest: {dayPlan.todayQuest.title} • {dayPlan.todayQuest.startTime} • +2 steps</Text> : null}
+              {selectedDay === todayWeekday() && questInInterval ? <Text style={styles.previewQuest}>Today’s Quest: {committedTodayQuest.title} • {committedTodayQuest.startTime} • +2 steps</Text> : null}
               {intervalItems.length === 0 && !(selectedDay === todayWeekday() && questInInterval) ? <Text style={styles.emptyPreview}>No planned items in this time block.</Text> : null}
               {intervalItems.map((item: ChecklistItem) => (
                 <Text key={`preview-${item.id}`} style={item.kind === "recovery" ? styles.previewRecovery : styles.previewProgress}>{item.startTime} • {item.text} • {item.duration} • +{item.steps}</Text>
@@ -545,7 +663,7 @@ export default function DayPlanScreen() {
             </View>
 
             {savedMessage ? <Text style={styles.savedMessage}>{savedMessage}</Text> : null}
-            <TouchableOpacity style={styles.saveButton} onPress={() => savePlan(dayPlan)}><Text style={styles.saveButtonText}>SAVE DAY PLAN</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.saveButton} onPress={saveWeeklyHabit}><Text style={styles.saveButtonText}>SAVE WEEKLY HABIT</Text></TouchableOpacity>
             <TouchableOpacity style={styles.backButton} onPress={() => router.push("/calendar")}><Text style={styles.backButtonText}>BACK TO CALENDAR</Text></TouchableOpacity>
           </FormScreen>
           <BottomNav activeRoute="calendar" bottomOffset={mobile.bottomNavOffset} />
@@ -702,6 +820,9 @@ const styles = StyleSheet.create({
   panelGreen: { backgroundColor: "rgba(5,28,16,0.95)", borderRadius: 8, padding: 12, marginBottom: 12, borderWidth: 3, borderColor: "#22C55E" },
   reflectButton: { borderWidth: 1, borderColor: "#A78BFA", paddingVertical: 7, paddingHorizontal: 12, backgroundColor: "rgba(88,28,135,0.45)", marginTop: 8, alignSelf: "flex-start" },
   reflectButtonText: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 10, fontWeight: "900" },
+  saveQuestButton: { borderWidth: 2, borderColor: "#22C55E", backgroundColor: "rgba(20,83,45,0.75)", paddingVertical: 9, alignItems: "center", marginTop: 10 },
+  saveQuestButtonDisabled: { borderColor: "#334155", backgroundColor: "rgba(15,23,42,0.75)" },
+  saveQuestButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", letterSpacing: 0.6 },
   infoOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.82)", justifyContent: "center", alignItems: "center", padding: 20, zIndex: 25 },
   infoCard: { backgroundColor: "rgba(8,13,24,0.99)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 12, padding: 16, width: "100%" },
   infoTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", marginBottom: 10 },

@@ -42,12 +42,15 @@ export function useKeyboardInset(): number {
 
     update();
     viewport.addEventListener("resize", update);
-    viewport.addEventListener("scroll", update);
     window.addEventListener("resize", update);
+
+    // Deliberately not listening to visualViewport "scroll" — iOS fires that
+    // continuously while it auto-scrolls a focused input into view, and
+    // reacting to it recomputed/changed padding mid-scroll, which fought the
+    // keyboard-open animation and could close the keyboard right after it opened.
 
     return () => {
       viewport.removeEventListener("resize", update);
-      viewport.removeEventListener("scroll", update);
       window.removeEventListener("resize", update);
     };
   }, []);
