@@ -12,6 +12,15 @@ import {
 /** Local metadata for last-write timestamps per synced storage key. */
 export const PROGRESS_SYNC_META_KEY = "lit_progress_sync_meta";
 
+/** Pointer to the most recent full local progress backup. */
+export const LAST_PROGRESS_BACKUP_KEY = "lit_last_progress_backup";
+
+/** Prefix for timestamped local progress backups (`lit_progress_backup_<iso>`). */
+export const PROGRESS_BACKUP_PREFIX = "lit_progress_backup_";
+
+/** Older keys still scanned during recovery. */
+export const LEGACY_PROGRESS_KEYS = ["lit_morning_reflections", "lit_sleep_calendar"] as const;
+
 export const LATEST_CHECKIN_KEY = "lit_latest_checkin";
 export const CHECKIN_HISTORY_KEY = "lit_checkin_history";
 export const JOURNAL_ENTRIES_KEY = "lit_journal_entries";
@@ -63,3 +72,19 @@ export const ARRAY_MERGE_PROGRESS_KEYS = new Set<SyncableProgressKey>([
 export function isSyncableProgressKey(key: string): key is SyncableProgressKey {
   return (SYNCABLE_PROGRESS_KEYS as readonly string[]).includes(key);
 }
+
+/** All keys scanned for backup/recovery (current + legacy). */
+export const ALL_SCANNABLE_PROGRESS_KEYS = [
+  ...SYNCABLE_PROGRESS_KEYS,
+  ...LEGACY_PROGRESS_KEYS,
+] as const;
+
+export {
+  ACTIVE_TIMED_ITEM_KEY,
+  COMPLETED_QUESTS_KEY,
+  DAY_PLAN_KEY,
+  MISSED_QUESTS_KEY,
+  TODAY_PROGRESS_DATE_KEY,
+  TOMORROW_QUEUE_KEY,
+  USER_STATS_KEY,
+} from "./questProgress";

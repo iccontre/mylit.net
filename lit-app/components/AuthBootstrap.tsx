@@ -4,7 +4,7 @@ import { ActivityIndicator, StyleSheet, View } from "react-native";
 
 import { getSession } from "../lib/auth";
 import { resolveRequiredRouteForPath } from "../lib/authFlow";
-import { mergeProgressWithCloud } from "../lib/progressStore";
+import { mergeCloudIntoLocalSafely } from "../lib/progressStore";
 import { isSupabaseConfigured } from "../lib/supabase";
 
 type AuthBootstrapProps = {
@@ -27,7 +27,7 @@ export function AuthBootstrap({ children }: AuthBootstrapProps) {
       const session = await getSession();
       if (!session || cancelled) return;
       hasSyncedProgressRef.current = true;
-      await mergeProgressWithCloud();
+      await mergeCloudIntoLocalSafely();
     }
 
     async function enforceRoute() {

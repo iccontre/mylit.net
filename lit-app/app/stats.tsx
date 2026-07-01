@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
   useWindowDimensions,
+  ActivityIndicator,
 } from "react-native";
 
 import { uiAssets } from "../constants/uiAssets";
@@ -17,7 +18,8 @@ import { useMobileFrame } from "../constants/mobileLayout";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { signOut } from "../lib/auth";
 import { computeItemStepsFromSources, computeTotalEarnedSteps, loadTodayCompletions, USER_STATS_KEY } from "../lib/questProgress";
-import { persistProgressKeys } from "../lib/progressStore";
+import { forceUploadLocalProgressToCloud, persistProgressKeys } from "../lib/progressStore";
+import { ProgressRecoveryModal } from "../components/ProgressRecoveryModal";
 
 type ActivePanel = "weekly" | "rank" | "behavior" | null;
 type ActiveInfo = "stats" | "evie" | "weekly" | "rank" | "behavior" | "weeklyPopup" | "rankPopup" | "behaviorPopup" | null;
@@ -258,11 +260,30 @@ export default function StatsScreen() {
   const [stats, setStats] = useState<StatsSnapshot>(emptyStats);
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const [activeInfo, setActiveInfo] = useState<ActiveInfo>(null);
+  const [recoveryVisible, setRecoveryVisible] = useState(false);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryMessage, setRecoveryMessage] = useState("");
 
   useEffect(() => {
     loadStats();
     void trackEvent(ANALYTICS_EVENTS.stats_opened);
   }, []);
+
+  async function handleQuickUpload() {
+    setRecoveryBusy(true);
+    setRecoveryMessage("");
+    try {
+      const uploaded = await forceUploadLocalProgressToCloud();
+      if (uploaded > 0) {
+        setRecoveryMessage(`Uploaded ${uploaded} progress keys to your account.`);
+        await loadStats();
+      } else {
+        setRecoveryMessage("No saved progress found to upload, or sign in first.");
+      }
+    } finally {
+      setRecoveryBusy(false);
+    }
+  }
 
   async function handleLogout() {
     await signOut();
@@ -429,6 +450,29 @@ export default function StatsScreen() {
                 <View style={styles.pageFooterLine} />
               </View>
 
+              <View style={styles.recoveryCard}>
+                <Text style={styles.recoveryTitle}>PROGRESS RECOVERY</Text>
+                <Text style={styles.recoveryText}>
+                  Use this if your steps or quests disappeared after signing in. MYLIT will scan this
+                  device for saved progress and merge it into your account without deleting anything.
+                </Text>
+                {recoveryMessage ? <Text style={styles.recoveryMessage}>{recoveryMessage}</Text> : null}
+                <TouchableOpacity style={styles.recoveryButton} onPress={() => setRecoveryVisible(true)}>
+                  <Text style={styles.recoveryButtonText}>RECOVER LOCAL PROGRESS</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.recoveryButton, styles.recoveryButtonSecondary]}
+                  onPress={() => void handleQuickUpload()}
+                  disabled={recoveryBusy}
+                >
+                  {recoveryBusy ? (
+                    <ActivityIndicator color="#E9D5FF" />
+                  ) : (
+                    <Text style={styles.recoveryButtonTextSecondary}>UPLOAD THIS DEVICE&apos;S PROGRESS</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+
               <TouchableOpacity style={styles.logoutButton} onPress={() => void handleLogout()}>
                 <Text style={styles.logoutButtonText}>SIGN OUT</Text>
               </TouchableOpacity>
@@ -483,6 +527,15 @@ export default function StatsScreen() {
                 </View>
               </View>
             ) : null}
+
+            <ProgressRecoveryModal
+              visible={recoveryVisible}
+              onClose={() => setRecoveryVisible(false)}
+              onRecovered={() => {
+                void loadStats();
+                setRecoveryMessage("Progress recovered and saved to your account.");
+              }}
+            />
           </View>
         </View>
       </View>
@@ -777,6 +830,66 @@ const styles = StyleSheet.create({
   infoBody: { color: "#CBD5E1", fontSize: 13, lineHeight: 20, fontWeight: "700", marginBottom: 14 },
   returnButton: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", borderRadius: 6, paddingVertical: 11, alignItems: "center", marginTop: 6 },
   returnButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", letterSpacing: 1 },
+  recoveryCard: {
+    marginTop: 8,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: "#7C3AED",
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: "rgba(49,46,129,0.22)",
+  },
+  recoveryTitle: {
+    color: "#C4B5FD",
+    fontFamily: pixelFont,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  recoveryText: {
+    color: "#CBD5E1",
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: "700",
+    marginBottom: 10,
+  },
+  recoveryMessage: {
+    color: "#86EFAC",
+    fontFamily: pixelFont,
+    fontSize: 10,
+    fontWeight: "900",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  recoveryButton: {
+    backgroundColor: "rgba(15,23,42,0.96)",
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+    borderRadius: 6,
+    paddingVertical: 10,
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  recoveryButtonSecondary: {
+    borderColor: "#475569",
+    backgroundColor: "rgba(7,19,38,0.85)",
+    marginBottom: 0,
+  },
+  recoveryButtonText: {
+    color: "#E9D5FF",
+    fontFamily: pixelFont,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
+  recoveryButtonTextSecondary: {
+    color: "#94A3B8",
+    fontFamily: pixelFont,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
   logoutButton: {
     marginTop: 8,
     marginBottom: 12,

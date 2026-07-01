@@ -7,7 +7,7 @@ import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { getOrCreateProfile, getSession, isOnboardingComplete } from "../lib/auth";
 import { consumeAuthCallbackFromUrl } from "../lib/authEmailConfirm";
-import { mergeProgressWithCloud } from "../lib/progressStore";
+import { mergeCloudIntoLocalSafely } from "../lib/progressStore";
 import {
   clearAuthAwaitingContinue,
   clearAuthPendingEmailConfirm,
@@ -70,7 +70,7 @@ export default function AuthConfirmedScreen() {
   async function handleContinueToMylit() {
     setLoading(true);
     try {
-      await mergeProgressWithCloud();
+      await mergeCloudIntoLocalSafely();
       await clearAuthAwaitingContinue();
       const profile = await getOrCreateProfile();
       const onboardingDone = await isOnboardingComplete(profile);

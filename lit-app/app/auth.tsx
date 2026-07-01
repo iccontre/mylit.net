@@ -24,7 +24,7 @@ import {
   signInWithEmail,
   signUpWithEmail,
 } from "../lib/auth";
-import { mergeProgressWithCloud } from "../lib/progressStore";
+import { mergeCloudIntoLocalSafely } from "../lib/progressStore";
 import { getSupabaseConfigHelp, getSupabaseConfigIssue, getSupabaseClient } from "../lib/supabase";
 import {
   markWelcomeSeen,
@@ -115,7 +115,10 @@ export default function AuthScreen() {
   async function handleContinueToMylit() {
     setBusy(true);
     try {
-      await mergeProgressWithCloud();
+      const mergeResult = await mergeCloudIntoLocalSafely();
+      if (!mergeResult.ok) {
+        setMessage("Signed in. Local progress kept — cloud sync will retry later.");
+      }
       await clearAuthAwaitingContinue();
       const profile = await getOrCreateProfile();
       const onboardingDone = await isOnboardingComplete(profile);
