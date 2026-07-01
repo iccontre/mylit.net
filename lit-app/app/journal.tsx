@@ -57,7 +57,6 @@ export default function JournalScreen() {
   const [showInfo, setShowInfo] = useState(false);
   const [mood, setMood] = useState("");
   const [content, setContent] = useState("");
-  const [gratitude, setGratitude] = useState("");
   const [entries, setEntries] = useState<JournalEntry[]>([]);
 
   useEffect(() => {
@@ -77,7 +76,7 @@ export default function JournalScreen() {
   }
 
   async function saveJournalEntry() {
-    const hasEntry = content.trim() || gratitude.trim() || mood.trim();
+    const hasEntry = content.trim() || mood.trim();
 
     if (!hasEntry) return;
 
@@ -86,7 +85,7 @@ export default function JournalScreen() {
       type: entryType,
       mood,
       content: content.trim(),
-      gratitude: gratitude.trim(),
+      gratitude: "",
       thoughtPattern: "",
       thoughtImpact: "Neutral",
       honestReframe: "",
@@ -98,7 +97,6 @@ export default function JournalScreen() {
     await saveEntries(nextEntries);
 
     setContent("");
-    setGratitude("");
     setMood("");
   }
 
@@ -110,7 +108,7 @@ export default function JournalScreen() {
     <View style={[styles.pageRoot, mobile.pageRootStyle]}>
       <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
-          <Image source={uiAssets.backgrounds.journal} style={styles.backgroundImage} resizeMode="cover" />
+          <Image source={uiAssets.backgrounds.journal} style={styles.backgroundImage} resizeMode="contain" />
         </View>
         <View style={styles.worldOverlay}>
           <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.hudContent]}>
@@ -134,7 +132,7 @@ export default function JournalScreen() {
             </View>
 
             <View style={styles.panel}>
-              <Text style={styles.label}>Entry Type</Text>
+              <Text style={styles.panelLabel}>Entry Type</Text>
               <View style={styles.toggleRow}>
                 <TouchableOpacity
                   style={[styles.toggleButton, entryType === "Morning" && styles.activeToggle]}
@@ -155,38 +153,25 @@ export default function JournalScreen() {
                 </TouchableOpacity>
               </View>
 
-              <Text style={styles.label}>Mood (1–10)</Text>
+              <Text style={styles.panelLabel}>Mood (1–10)</Text>
               <TextInput
-                style={[formStyles.input, styles.input]}
+                style={[formStyles.input, styles.panelInput]}
                 keyboardType="numeric"
                 placeholder="Optional"
-                placeholderTextColor="#94A3B8"
+                placeholderTextColor="#7C6A4F"
                 value={mood}
                 onChangeText={setMood}
               />
 
-              <Text style={styles.label}>What happened today?</Text>
               <TextInput
-                style={[formStyles.textArea, styles.largeTextArea]}
+                style={[formStyles.textArea, styles.journalTextArea]}
                 multiline
                 scrollEnabled
                 textAlignVertical="top"
-                placeholder="Write freely. A moment, a feeling, a win, a mistake, or anything that stayed with you."
-                placeholderTextColor="#94A3B8"
+                placeholder="Be honest and express your truth. Write about anything"
+                placeholderTextColor="#7C6A4F"
                 value={content}
                 onChangeText={setContent}
-              />
-
-              <Text style={styles.label}>What do you want to remember?</Text>
-              <TextInput
-                style={[formStyles.textArea, styles.largeTextArea]}
-                multiline
-                scrollEnabled
-                textAlignVertical="top"
-                placeholder="One thing you learned, appreciated, or want to carry forward."
-                placeholderTextColor="#94A3B8"
-                value={gratitude}
-                onChangeText={setGratitude}
               />
             </View>
 
@@ -272,15 +257,17 @@ const styles = StyleSheet.create({
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,
     zIndex: 0,
+    backgroundColor: "#0B1220",
+    alignItems: "center",
+    justifyContent: "center",
   },
   backgroundImage: {
-    ...StyleSheet.absoluteFillObject,
     width: "100%",
     height: "100%",
   },
   worldOverlay: {
     flex: 1,
-    backgroundColor: "rgba(4, 8, 14, 0.16)",
+    backgroundColor: "rgba(4, 8, 14, 0.08)",
   },
   screenScroller: {
     flex: 1,
@@ -363,12 +350,23 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   panel: {
-    backgroundColor: "rgba(8, 13, 24, 0.96)",
-    borderWidth: 4,
-    borderColor: "#FBBF24",
+    backgroundColor: "transparent",
+    borderWidth: 0,
     borderRadius: 8,
-    padding: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     marginBottom: 16,
+    marginTop: 4,
+  },
+  panelLabel: {
+    color: "#3D2E1E",
+    fontFamily: pixelFont,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1,
+    marginTop: 8,
+    marginBottom: 6,
+    textTransform: "uppercase",
   },
   label: {
     color: "#F9FAFB",
@@ -387,21 +385,21 @@ const styles = StyleSheet.create({
   },
   toggleButton: {
     flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
+    backgroundColor: "rgba(248, 241, 215, 0.82)",
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#8B7355",
     borderRadius: 6,
     alignItems: "center",
-    paddingVertical: 12,
+    paddingVertical: 10,
   },
   activeToggle: {
-    backgroundColor: "rgba(49, 46, 129, 0.96)",
+    backgroundColor: "rgba(49, 46, 129, 0.92)",
     borderColor: "#A78BFA",
   },
   toggleText: {
-    color: "#CBD5E1",
+    color: "#4A3B2A",
     fontFamily: pixelFont,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "900",
     textTransform: "uppercase",
   },
@@ -414,6 +412,20 @@ const styles = StyleSheet.create({
   },
   input: {
     marginBottom: 4,
+  },
+  panelInput: {
+    backgroundColor: "rgba(248, 241, 215, 0.82)",
+    borderColor: "#8B7355",
+    color: "#2C2116",
+    marginBottom: 8,
+  },
+  journalTextArea: {
+    backgroundColor: "rgba(248, 241, 215, 0.72)",
+    borderColor: "#8B7355",
+    color: "#2C2116",
+    minHeight: 220,
+    maxHeight: 360,
+    marginTop: 4,
   },
   largeTextArea: {
     marginBottom: 4,
