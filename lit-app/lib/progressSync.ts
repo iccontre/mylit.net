@@ -11,6 +11,7 @@ import {
   type HomeQuestItem,
   type MissedEntry,
 } from "./questProgress";
+import { persistProgressKeys } from "./progressStore";
 import { getDateKey } from "./scheduling";
 import { getSupabaseClient, isSupabaseConfigured } from "./supabase";
 
@@ -256,6 +257,41 @@ export async function syncDayPlanScheduledItems(): Promise<void> {
     await syncScheduledItems(items);
   } catch (error) {
     console.warn("syncDayPlanScheduledItems error:", error);
+  }
+}
+
+/**
+ * Marks (or unmarks) a Day Plan checklist item checked directly in storage — checklist
+ * items complete like a checkbox, not a timed quest. Shared so Day Plan, Calendar, and
+ * the Home Quest Board all agree on the same completed state (no separate completion path).
+ */
+export async function setChecklistItemChecked(itemId: string, checked: boolean): Promise<boolean> {
+  try {
+    const raw = await AsyncStorage.getItem(DAY_PLAN_KEY);
+    const plan = parseJson<Record<string, unknown> | null>(raw, null);
+    const weekdayChecklists = plan?.weekdayChecklists as Record<string, unknown[]> | undefined;
+    if (!plan || !weekdayChecklists) return false;
+
+    let found = false;
+    const nextLists: Record<string, unknown[]> = {};
+    for (const [weekday, checklist] of Object.entries(weekdayChecklists)) {
+      if (!Array.isArray(checklist)) continue;
+      nextLists[weekday] = checklist.map((entry) => {
+        const row = entry as Record<string, unknown>;
+        if (String(row.id ?? "") !== itemId) return row;
+        found = true;
+        return { ...row, checked, status: checked ? "completed" : "scheduled" };
+      });
+    }
+    if (!found) return false;
+
+    const nextPlan = { ...plan, weekdayChecklists: nextLists };
+    await persistProgressKeys({ [DAY_PLAN_KEY]: JSON.stringify(nextPlan) });
+    void syncDayPlanScheduledItems();
+    return true;
+  } catch (error) {
+    console.warn("setChecklistItemChecked error:", error);
+    return false;
   }
 }
 

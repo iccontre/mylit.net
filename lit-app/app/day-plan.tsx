@@ -12,8 +12,8 @@ import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { DAY_PLAN_KEY, getChecklistItemsForDay } from "../lib/questProgress";
 import { sanitizeDayPlanChecklists } from "../lib/dayPlanChecklist";
 import { persistProgressKeys } from "../lib/progressStore";
-import { syncDayPlanScheduledItems } from "../lib/progressSync";
-import { formatDurationLabel, generateTimeSlots, getDateKey, inferScheduledClassification, parseDurationMinutes, shiftTimeSlot, type ScheduledClassification, type ScheduledStatus } from "../lib/scheduling";
+import { setChecklistItemChecked, syncDayPlanScheduledItems } from "../lib/progressSync";
+import { findScheduleOverlap, formatDurationLabel, generateTimeSlots, getDateKey, inferScheduledClassification, parseDurationMinutes, shiftTimeSlot, type ScheduledClassification, type ScheduledStatus } from "../lib/scheduling";
 
 type WeekdayName = "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "Saturday" | "Sunday";
 
@@ -274,6 +274,7 @@ export default function DayPlanScreen() {
   const [selectedDay, setSelectedDay] = useState<WeekdayName>(todayWeekday());
   const [isLowEnergy, setIsLowEnergy] = useState(false);
   const [savedMessage, setSavedMessage] = useState("");
+  const [conflictMessage, setConflictMessage] = useState("");
   const [showInfo, setShowInfo] = useState(false);
   const committedPlanRef = useRef<DayPlan>(createDefaultPlan());
 
@@ -322,11 +323,50 @@ export default function DayPlanScreen() {
     return committed.title !== dayPlan.todayQuest.title || committed.startTime !== dayPlan.todayQuest.startTime;
   }
 
+  /** Every already-saved checklist item + Today's Quest, expanded one row per weekday it applies to. */
+  function collectCommittedSlots(excludeId: string): { id: string; title: string; weekday: WeekdayName; startTime: string; durationMinutes: number }[] {
+    const slots: { id: string; title: string; weekday: WeekdayName; startTime: string; durationMinutes: number }[] = [];
+    for (const day of WEEKDAYS) {
+      for (const entry of committedPlanRef.current.weekdayChecklists[day] ?? []) {
+        if (entry.id === excludeId) continue;
+        for (const weekday of entry.weekdays) {
+          slots.push({ id: entry.id, title: entry.text, weekday, startTime: entry.startTime, durationMinutes: entry.durationMinutes });
+        }
+      }
+    }
+    const quest = committedPlanRef.current.todayQuest;
+    if (quest.id !== excludeId && quest.title.trim()) {
+      slots.push({ id: quest.id, title: quest.title, weekday: quest.weekday, startTime: quest.startTime, durationMinutes: quest.durationMinutes });
+    }
+    return slots;
+  }
+
+  /** Checklist items/Today's Quest don't run on a timer, but their times still can't overlap another scheduled item on the same day. */
+  function findTimeConflictTitle(candidateId: string, weekdays: WeekdayName[], startTime: string, durationMinutes: number): string | null {
+    const slots = collectCommittedSlots(candidateId);
+    for (const weekday of weekdays) {
+      const conflict = findScheduleOverlap(
+        { id: candidateId, weekday, startTime, durationMinutes },
+        slots.filter((slot) => slot.weekday === weekday),
+        candidateId
+      );
+      if (conflict) return (conflict as { title?: string }).title || "another scheduled item";
+    }
+    return null;
+  }
+
   /** Persists exactly one checklist item into the committed plan without pulling in other unsaved drafts. */
   async function saveChecklistItem(itemId: string) {
     const bucketDay = findChecklistBucket(dayPlan, itemId);
     const item = bucketDay ? dayPlan.weekdayChecklists[bucketDay].find((entry) => entry.id === itemId) : null;
     if (!bucketDay || !item || !item.text.trim()) return;
+
+    const conflictTitle = findTimeConflictTitle(itemId, item.weekdays, item.startTime, item.durationMinutes);
+    if (conflictTitle) {
+      setConflictMessage(`${item.startTime} overlaps with "${conflictTitle}" — pick a different time so you're not doing two tasks at once.`);
+      return;
+    }
+    setConflictMessage("");
 
     const nextCommitted: DayPlan = {
       ...committedPlanRef.current,
@@ -349,6 +389,19 @@ export default function DayPlanScreen() {
   /** Persists Today's Quest (title/time) into the committed plan independently of Weekly Habit or checklist drafts. */
   async function saveTodayQuest() {
     if (!dayPlan.todayQuest.title.trim()) return;
+
+    const conflictTitle = findTimeConflictTitle(
+      dayPlan.todayQuest.id,
+      [dayPlan.todayQuest.weekday],
+      dayPlan.todayQuest.startTime,
+      dayPlan.todayQuest.durationMinutes
+    );
+    if (conflictTitle) {
+      setConflictMessage(`${dayPlan.todayQuest.startTime} overlaps with "${conflictTitle}" — pick a different time so you're not doing two tasks at once.`);
+      return;
+    }
+    setConflictMessage("");
+
     const nextCommitted: DayPlan = {
       ...committedPlanRef.current,
       todayQuest: dayPlan.todayQuest,
@@ -357,6 +410,30 @@ export default function DayPlanScreen() {
     await persistProgressKeys({ [DAY_PLAN_KEY]: JSON.stringify(nextCommitted) });
     void trackEvent(ANALYTICS_EVENTS.day_plan_saved, { scope: "todayQuest" });
     void syncDayPlanScheduledItems();
+  }
+
+  /** Checking a checklist item off marks it done for the day immediately — no Save Quest step needed. */
+  async function toggleChecklistItemChecked(itemId: string) {
+    const bucketDay = findChecklistBucket(dayPlan, itemId);
+    const item = bucketDay ? dayPlan.weekdayChecklists[bucketDay].find((entry) => entry.id === itemId) : null;
+    if (!bucketDay || !item) return;
+
+    const nextChecked = !item.checked;
+    const patch = { checked: nextChecked, status: (nextChecked ? "completed" : "scheduled") as ScheduledStatus };
+    updateChecklistItem(itemId, patch);
+
+    const persisted = await setChecklistItemChecked(itemId, nextChecked);
+    if (persisted) {
+      committedPlanRef.current = {
+        ...committedPlanRef.current,
+        weekdayChecklists: {
+          ...committedPlanRef.current.weekdayChecklists,
+          [bucketDay]: (committedPlanRef.current.weekdayChecklists[bucketDay] ?? []).map((entry) =>
+            entry.id === itemId ? { ...entry, ...patch } : entry
+          ),
+        },
+      };
+    }
   }
 
   async function loadLatestCheckIn() {
@@ -600,7 +677,7 @@ export default function DayPlanScreen() {
               {visibleChecklist.map((item: ChecklistItem) => (
                 <View key={item.id} style={[styles.checkCard, item.kind === "recovery" ? styles.recoveryBorder : styles.progressBorder]}>
                   <View style={styles.rowBetween}>
-                    <TouchableOpacity onPress={() => updateChecklistItem(item.id, { checked: !item.checked })}>
+                    <TouchableOpacity onPress={() => toggleChecklistItemChecked(item.id)}>
                       <Text style={styles.checkToggle}>{item.checked ? "☑" : "☐"}</Text>
                     </TouchableOpacity>
                     <View style={styles.kindSwitchRow}>
@@ -662,6 +739,7 @@ export default function DayPlanScreen() {
               ))}
             </View>
 
+            {conflictMessage ? <Text style={styles.conflictMessage}>{conflictMessage}</Text> : null}
             {savedMessage ? <Text style={styles.savedMessage}>{savedMessage}</Text> : null}
             <TouchableOpacity style={styles.saveButton} onPress={saveWeeklyHabit}><Text style={styles.saveButtonText}>SAVE WEEKLY HABIT</Text></TouchableOpacity>
             <TouchableOpacity style={styles.backButton} onPress={() => router.push("/calendar")}><Text style={styles.backButtonText}>BACK TO CALENDAR</Text></TouchableOpacity>
@@ -806,6 +884,7 @@ const styles = StyleSheet.create({
   previewRecovery: { color: "#C4B5FD", fontSize: 12, lineHeight: 18, fontWeight: "800" },
   emptyPreview: { color: "#CBD5E1", fontSize: 12, lineHeight: 18, fontWeight: "800" },
   savedMessage: { color: "#86EFAC", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", textAlign: "center", marginBottom: 10 },
+  conflictMessage: { color: "#FCA5A5", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", textAlign: "center", marginBottom: 10, lineHeight: 17 },
   saveButton: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", paddingVertical: 13, alignItems: "center", marginBottom: 10 },
   saveButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900", letterSpacing: 1 },
   backButton: { borderWidth: 2, borderColor: "#FBBF24", backgroundColor: "rgba(69,43,8,0.6)", paddingVertical: 13, alignItems: "center", marginBottom: 10 },

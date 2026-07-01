@@ -7,6 +7,7 @@ import { BottomNav } from "../components/BottomNav";
 import { uiAssets } from "../constants/uiAssets";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
+import { setChecklistItemChecked } from "../lib/progressSync";
 import { collectDayPlanScheduledItems, collectQuickThoughtScheduledItems, formatDurationLabel, getDateKey, getQuickThoughtSteps, inferScheduledClassification, parseDurationMinutes, parseSleepGuideTime, parseTimeToMinutes, type ScheduledClassification, type ScheduledQuestLike } from "../lib/scheduling";
 
 type WeekdayName = "Sunday" | "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "Saturday";
@@ -423,7 +424,20 @@ export default function CalendarScreen() {
           </ScrollView>
           <BottomNav activeRoute="calendar" bottomOffset={mobile.bottomNavOffset} />
 
-          {selectedEvent ? <EventPopup event={selectedEvent} onClose={() => setSelectedEvent(null)} router={router} /> : null}
+          {selectedEvent ? (
+            <EventPopup
+              event={selectedEvent}
+              onClose={() => setSelectedEvent(null)}
+              router={router}
+              onMarkComplete={async () => {
+                const ok = await setChecklistItemChecked(selectedEvent.id, true);
+                if (ok) {
+                  setSelectedEvent(null);
+                  await loadCalendarData();
+                }
+              }}
+            />
+          ) : null}
           {showInfo ? <InfoOverlay onClose={() => setShowInfo(false)} /> : null}
         </View>
       </View>
@@ -452,9 +466,21 @@ function getEventToneStyle(tone: EventTone) {
   }
 }
 
-function EventPopup({ event, onClose, router }: { event: CalendarEvent; onClose: () => void; router: ReturnType<typeof useRouter> }) {
+function EventPopup({
+  event,
+  onClose,
+  router,
+  onMarkComplete,
+}: {
+  event: CalendarEvent;
+  onClose: () => void;
+  router: ReturnType<typeof useRouter>;
+  onMarkComplete: () => void;
+}) {
   const todayKey = getDateKey(new Date());
   const isMissed = event.date < todayKey && event.status !== "completed" && event.classification !== "focus" && event.classification !== "sleepGuide";
+  const isChecklistItem = event.source === "Day Plan Checklist";
+  const canMarkComplete = isChecklistItem && event.status !== "completed";
   return (
     <View style={styles.popupOverlay}>
       <View style={[styles.popupCard, getPopupBorder(event.tone)]}>
@@ -467,6 +493,11 @@ function EventPopup({ event, onClose, router }: { event: CalendarEvent; onClose:
         <PopupRow label="Type" value={event.classification === "sleepGuide" ? "Sleep guide — no steps" : event.classification === "focus" ? "Day focus — theme only" : event.classification} />
         {event.status ? <PopupRow label="Status" value={event.status} /> : null}
         {event.note ? <Text style={styles.popupNote}>{event.note}</Text> : null}
+        {canMarkComplete ? (
+          <TouchableOpacity style={styles.completeButton} onPress={onMarkComplete}>
+            <Text style={styles.completeButtonText}>MARK COMPLETE</Text>
+          </TouchableOpacity>
+        ) : null}
         {isMissed ? (
           <TouchableOpacity style={styles.reflectButton} onPress={() => { onClose(); router.push("/reflection"); }}>
             <Text style={styles.reflectButtonText}>REFLECT ON THIS</Text>
@@ -555,6 +586,8 @@ const styles = StyleSheet.create({
   infoCloseText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900" },
   reflectButton: { backgroundColor: "rgba(88,28,135,0.7)", borderWidth: 2, borderColor: "#A78BFA", paddingVertical: 10, alignItems: "center", marginTop: 10 },
   reflectButtonText: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
+  completeButton: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", paddingVertical: 10, alignItems: "center", marginTop: 12 },
+  completeButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
   bottomNav: { position: "absolute", bottom: 8, left: 8, right: 8, height: 62, flexDirection: "row", justifyContent: "space-between", backgroundColor: "rgba(4,8,16,0.98)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 5, padding: 4 },
   navButton: { flex: 1, backgroundColor: "#111827", borderWidth: 2, borderColor: "#3A4558", borderRadius: 3, paddingVertical: 4, marginHorizontal: 2, alignItems: "center", justifyContent: "center" },
   navButtonActive: { backgroundColor: "#162314", borderColor: "#FBBF24" },

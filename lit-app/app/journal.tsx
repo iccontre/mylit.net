@@ -138,7 +138,7 @@ export default function JournalScreen() {
               source={uiAssets.backgrounds.journal}
               style={styles.panel}
               imageStyle={styles.panelPageImage}
-              resizeMode="cover"
+              resizeMode="contain"
             >
               <Text style={styles.pageLabel}>Entry Type</Text>
               <View style={styles.toggleRow}>
@@ -372,9 +372,15 @@ const styles = StyleSheet.create({
     borderWidth: 4,
     borderColor: "#8A5D2B",
     borderRadius: 8,
-    padding: 16,
+    // Extra left padding clears the page's spiral-binding artwork so the
+    // fields sit on the actual paper, not on top of the rings/cover edge.
+    paddingLeft: 34,
+    paddingRight: 16,
+    paddingTop: 22,
+    paddingBottom: 18,
     marginBottom: 16,
     overflow: "hidden",
+    backgroundColor: "#140D06",
   },
   panelPageImage: {
     borderRadius: 4,

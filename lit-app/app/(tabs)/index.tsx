@@ -12,7 +12,7 @@ import {
   type QuestProfileContext,
 } from "../../lib/questGeneration";
 import { ANALYTICS_EVENTS, trackEvent } from "../../lib/analytics";
-import { syncQuestCompleted, syncQuestMissed, syncQuestStarted } from "../../lib/progressSync";
+import { setChecklistItemChecked, syncQuestCompleted, syncQuestMissed, syncQuestStarted } from "../../lib/progressSync";
 import { clearProgressKey, persistProgressKeys } from "../../lib/progressStore";
 import {
   ACTIVE_TIMED_ITEM_KEY,
@@ -568,12 +568,28 @@ export default function HomeScreen() {
       router.push("/pre-sleep-intention");
       return;
     }
+    // Checklist items are a checkbox, not a timed quest — they can be reviewed/marked
+    // complete even while another timed quest is active.
+    if (item.source === "Checklist") {
+      lightHaptic();
+      setSelectedItem(item);
+      return;
+    }
     if (activeItem) {
       showLockMessage();
       return;
     }
     lightHaptic();
     setSelectedItem(item);
+  }
+
+  async function completeChecklistItem(item: HomeQuestItem) {
+    const ok = await setChecklistItemChecked(item.id, true);
+    if (!ok) return;
+    await successHaptic();
+    setSelectedItem(null);
+    await loadDayPlan();
+    void trackEvent(ANALYTICS_EVENTS.quest_completed, { id: item.id, title: item.title, steps: item.steps, source: item.source });
   }
 
   async function startTimedItem(item: HomeQuestItem) {
@@ -1196,9 +1212,15 @@ export default function HomeScreen() {
                       <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setSelectedItem(null)}>
                         <Text style={styles.modalCancelText}>CLOSE</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity style={styles.modalStartBtn} onPress={() => startTimedItem(selectedItem)}>
-                        <Text style={styles.modalStartText}>START</Text>
-                      </TouchableOpacity>
+                      {selectedItem.source === "Checklist" ? (
+                        <TouchableOpacity style={styles.modalStartBtn} onPress={() => void completeChecklistItem(selectedItem)}>
+                          <Text style={styles.modalStartText}>MARK COMPLETE</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <TouchableOpacity style={styles.modalStartBtn} onPress={() => startTimedItem(selectedItem)}>
+                          <Text style={styles.modalStartText}>START</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                     <View style={styles.modalButtonRow}>
                       <TouchableOpacity
