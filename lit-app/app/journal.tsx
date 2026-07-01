@@ -4,24 +4,28 @@ import { useEffect, useState } from "react";
 import {
   Image,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
 
+import { FormScreen } from "../components/FormScreen";
+import { BottomNav } from "../components/BottomNav";
 import { GuideInfoModal } from "../components/GuideInfoModal";
+import { formPageContent, formStyles } from "../constants/formStyles";
+import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
+import { persistProgressKeys } from "../lib/progressStore";
+import { JOURNAL_ENTRIES_KEY } from "../lib/storageKeys";
 
 const LUNA_JOURNAL_BULLETS = [
-  "Journal is for writing what happened, what mood or pattern showed up, and what to remember.",
-  "It does not need to be perfect — one honest sentence is enough to start.",
+  "Journal is for honest notes and thought patterns — not perfection.",
+  "Write what happened, what mood or pattern showed up, and what to remember.",
+  "One honest sentence is enough to start.",
   "Honest entries help MYLIT reveal patterns in your thinking over time.",
-  "Morning and Evening entries help you track how the day opened and closed.",
-  "The 'What do you want to remember?' field keeps the most useful part of the day.",
+  "Morning and Evening entries track how the day opened and closed.",
 ];
 
 type JournalEntry = {
@@ -37,9 +41,7 @@ type JournalEntry = {
   createdAt: string;
 };
 
-const STORAGE_KEY = "lit_journal_entries";
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
+const STORAGE_KEY = JOURNAL_ENTRIES_KEY;
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -50,22 +52,13 @@ const pixelFont = Platform.select({
 
 export default function JournalScreen() {
   const router = useRouter();
-  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const mobile = useMobileFrame();
   const [entryType, setEntryType] = useState<"Morning" | "Evening">("Morning");
   const [showInfo, setShowInfo] = useState(false);
   const [mood, setMood] = useState("");
   const [content, setContent] = useState("");
   const [gratitude, setGratitude] = useState("");
   const [entries, setEntries] = useState<JournalEntry[]>([]);
-
-  const safeViewportWidth = Math.max(0, viewportWidth - 24);
-  const safeViewportHeight = Math.max(0, viewportHeight - 24);
-  const frameWidth = Math.min(
-    MAX_FRAME_WIDTH,
-    safeViewportWidth,
-    safeViewportHeight * APP_FRAME_ASPECT_RATIO
-  );
-  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   useEffect(() => {
     loadEntries();
@@ -80,7 +73,7 @@ export default function JournalScreen() {
 
   async function saveEntries(nextEntries: JournalEntry[]) {
     setEntries(nextEntries);
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(nextEntries));
+    await persistProgressKeys({ [STORAGE_KEY]: JSON.stringify(nextEntries) });
   }
 
   async function saveJournalEntry() {
@@ -114,18 +107,13 @@ export default function JournalScreen() {
   }
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight }]}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={uiAssets.backgrounds.journal} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
-          <ScrollView
-            style={styles.screenScroller}
-            contentContainerStyle={styles.hudContent}
-            showsVerticalScrollIndicator={false}
-            bounces={false}
-          >
+          <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.hudContent]}>
             <View style={styles.hero}>
               <Text style={styles.heroKicker}>MIND LOG</Text>
               <Text style={styles.title}>JOURNAL</Text>
@@ -169,7 +157,7 @@ export default function JournalScreen() {
 
               <Text style={styles.label}>Mood (1–10)</Text>
               <TextInput
-                style={styles.input}
+                style={[formStyles.input, styles.input]}
                 keyboardType="numeric"
                 placeholder="Optional"
                 placeholderTextColor="#94A3B8"
@@ -179,8 +167,9 @@ export default function JournalScreen() {
 
               <Text style={styles.label}>What happened today?</Text>
               <TextInput
-                style={styles.largeTextArea}
+                style={[formStyles.textArea, styles.largeTextArea]}
                 multiline
+                scrollEnabled
                 textAlignVertical="top"
                 placeholder="Write freely. A moment, a feeling, a win, a mistake, or anything that stayed with you."
                 placeholderTextColor="#94A3B8"
@@ -190,8 +179,9 @@ export default function JournalScreen() {
 
               <Text style={styles.label}>What do you want to remember?</Text>
               <TextInput
-                style={styles.largeTextArea}
+                style={[formStyles.textArea, styles.largeTextArea]}
                 multiline
+                scrollEnabled
                 textAlignVertical="top"
                 placeholder="One thing you learned, appreciated, or want to carry forward."
                 placeholderTextColor="#94A3B8"
@@ -237,7 +227,7 @@ export default function JournalScreen() {
             <TouchableOpacity style={styles.backButton} onPress={() => router.push("/mind")}>
               <Text style={styles.backButtonText}>← Back to Mind Hub</Text>
             </TouchableOpacity>
-          </ScrollView>
+          </FormScreen>
 
           <GuideInfoModal
             visible={showInfo}
@@ -249,32 +239,7 @@ export default function JournalScreen() {
             accentColor="#C4A7FF"
           />
 
-          <View style={styles.bottomNav}>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}>
-              <Text style={styles.navText}>🏠</Text>
-              <Text style={styles.navLabel}>HOME</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/sleep")}>
-              <Text style={styles.navText}>🌙</Text>
-              <Text style={styles.navLabel}>SLEEP</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={() => router.push("/mind")}>
-              <Text style={styles.navTextActive}>🧠</Text>
-              <Text style={styles.navLabelActive}>MIND</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/path")}>
-              <Text style={styles.navText}>🌲</Text>
-              <Text style={styles.navLabel}>PATH</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/calendar")}>
-              <Text style={styles.navText}>📅</Text>
-              <Text style={styles.navLabel}>CAL</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/stats")}>
-              <Text style={styles.navText}>🎒</Text>
-              <Text style={styles.navLabel}>BAG</Text>
-            </TouchableOpacity>
-          </View>
+          <BottomNav activeRoute="mind" theme="purple" bottomOffset={mobile.bottomNavOffset} />
         </View>
       </View>
     </View>
@@ -285,8 +250,6 @@ const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
     backgroundColor: "#02040A",
-    alignItems: "center",
-    justifyContent: "center",
   },
   phoneStage: {
     alignSelf: "center",
@@ -299,6 +262,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.85,
     shadowRadius: 0,
     shadowOffset: { width: 6, height: 6 },
+  },
+  phoneStageFullscreen: {
+    borderWidth: 0,
+    maxWidth: undefined,
+    aspectRatio: undefined,
+    shadowOpacity: 0,
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -317,10 +286,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   hudContent: {
-    minHeight: "100%",
-    paddingTop: 24,
-    paddingHorizontal: 14,
-    paddingBottom: 82,
+    paddingTop: 8,
   },
   hero: {
     backgroundColor: "rgba(31, 27, 75, 0.95)",
@@ -447,28 +413,10 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   input: {
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
-    borderWidth: 2,
-    borderColor: "#475569",
-    borderRadius: 6,
-    color: "#F9FAFB",
-    fontFamily: pixelFont,
-    fontSize: 14,
-    fontWeight: "800",
-    padding: 12,
+    marginBottom: 4,
   },
   largeTextArea: {
-    minHeight: 132,
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
-    borderWidth: 2,
-    borderColor: "#475569",
-    borderRadius: 6,
-    color: "#F9FAFB",
-    fontFamily: pixelFont,
-    fontSize: 14,
-    fontWeight: "800",
-    lineHeight: 20,
-    padding: 12,
+    marginBottom: 4,
   },
   saveButton: {
     backgroundColor: "#A78BFA",

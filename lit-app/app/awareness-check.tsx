@@ -5,24 +5,28 @@ import { useEffect, useState } from "react";
 import {
   Image,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
 
+import { BottomNav } from "../components/BottomNav";
+import { FormScreen } from "../components/FormScreen";
 import { GuideInfoModal } from "../components/GuideInfoModal";
+import { formPageContent, formStyles } from "../constants/formStyles";
+import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
+import { persistProgressKeys } from "../lib/progressStore";
+import { AWARENESS_CHECKS_KEY } from "../lib/storageKeys";
 
 const LUNA_MEDITATIONS_BULLETS = [
-  "Meditations are short attention check-ins — not traditional seated meditation.",
-  "The goal is to name where focus went, what pulled it away, and what helped you return.",
-  "You do not need to have meditated well. Honest answers are more useful than perfect ones.",
-  "Over time, patterns in what pulls you away reveal important data about your environment.",
-  "Use this after a work session, before bed, or any time you want to understand where your mind went.",
+  "Meditation/Awareness is for grounding and attention — not traditional seated meditation.",
+  "Name where focus went, what pulled it away, and what helped you return.",
+  "Honest answers are more useful than perfect ones.",
+  "Patterns in what pulls you away reveal important data about your environment.",
+  "Use this after a work session, before bed, or any time you want clarity.",
 ];
 
 type AwarenessCheck = {
@@ -35,10 +39,6 @@ type AwarenessCheck = {
   createdAt: string;
 };
 
-const AWARENESS_CHECKS_KEY = "lit_awareness_checks";
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
-
 const pixelFont = Platform.select({
   ios: "Menlo",
   android: "monospace",
@@ -48,7 +48,7 @@ const pixelFont = Platform.select({
 
 export default function AwarenessCheckScreen() {
   const router = useRouter();
-  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const mobile = useMobileFrame();
 
   const [attentionFocus, setAttentionFocus] = useState("");
   const [automaticOrIntentional, setAutomaticOrIntentional] =
@@ -57,15 +57,6 @@ export default function AwarenessCheckScreen() {
   const [broughtBack, setBroughtBack] = useState("");
   const [checks, setChecks] = useState<AwarenessCheck[]>([]);
   const [showInfo, setShowInfo] = useState(false);
-
-  const safeViewportWidth = Math.max(0, viewportWidth - 24);
-  const safeViewportHeight = Math.max(0, viewportHeight - 24);
-  const frameWidth = Math.min(
-    MAX_FRAME_WIDTH,
-    safeViewportWidth,
-    safeViewportHeight * APP_FRAME_ASPECT_RATIO
-  );
-  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   useEffect(() => {
     loadChecks();
@@ -105,7 +96,7 @@ export default function AwarenessCheckScreen() {
     const nextChecks = [newCheck, ...checks];
 
     setChecks(nextChecks);
-    await AsyncStorage.setItem(AWARENESS_CHECKS_KEY, JSON.stringify(nextChecks));
+    await persistProgressKeys({ [AWARENESS_CHECKS_KEY]: JSON.stringify(nextChecks) });
 
     setAttentionFocus("");
     setAutomaticOrIntentional("Mixed");
@@ -117,7 +108,7 @@ export default function AwarenessCheckScreen() {
 
   async function clearChecks() {
     setChecks([]);
-    await AsyncStorage.setItem(AWARENESS_CHECKS_KEY, JSON.stringify([]));
+    await persistProgressKeys({ [AWARENESS_CHECKS_KEY]: JSON.stringify([]) });
   }
 
   const intentionOptions: AwarenessCheck["automaticOrIntentional"][] = [
@@ -127,18 +118,13 @@ export default function AwarenessCheckScreen() {
   ];
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight }]}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={uiAssets.backgrounds.neutral} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
-          <ScrollView
-            style={styles.screenScroller}
-            contentContainerStyle={styles.hudContent}
-            showsVerticalScrollIndicator={false}
-            bounces={false}
-          >
+          <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.hudContent]}>
             <View style={styles.hero}>
               <Text style={styles.heroLabel}>MIND HUB</Text>
               <Text style={[styles.title, { fontSize: 34, letterSpacing: 3 }]}>MEDITATIONS</Text>
@@ -161,8 +147,9 @@ export default function AwarenessCheckScreen() {
             <View style={styles.card}>
               <Text style={styles.label}>Where did your attention go today?</Text>
               <TextInput
-                style={styles.largeTextArea}
+                style={[formStyles.textArea, styles.largeTextArea]}
                 multiline
+                scrollEnabled
                 textAlignVertical="top"
                 placeholder="School, work, your phone, stress, a person, a goal, or just getting through the day."
                 placeholderTextColor="#94A3B8"
@@ -190,8 +177,9 @@ export default function AwarenessCheckScreen() {
 
               <Text style={styles.label}>What pulled you away?</Text>
               <TextInput
-                style={styles.largeTextArea}
+                style={[formStyles.textArea, styles.largeTextArea]}
                 multiline
+                scrollEnabled
                 textAlignVertical="top"
                 placeholder="Scrolling, stress, tiredness, comparison, overthinking, or not knowing where to start."
                 placeholderTextColor="#94A3B8"
@@ -201,8 +189,9 @@ export default function AwarenessCheckScreen() {
 
               <Text style={styles.label}>What helped you come back?</Text>
               <TextInput
-                style={styles.largeTextArea}
+                style={[formStyles.textArea, styles.largeTextArea]}
                 multiline
+                scrollEnabled
                 textAlignVertical="top"
                 placeholder="A reminder, a person, music, journaling, a walk, or one small task."
                 placeholderTextColor="#94A3B8"
@@ -251,7 +240,7 @@ export default function AwarenessCheckScreen() {
             <TouchableOpacity style={styles.homeButton} onPress={() => router.push("/mind")}>
               <Text style={styles.homeButtonText}>← Back to Mind Hub</Text>
             </TouchableOpacity>
-          </ScrollView>
+          </FormScreen>
 
           <GuideInfoModal
             visible={showInfo}
@@ -263,32 +252,7 @@ export default function AwarenessCheckScreen() {
             accentColor="#C4A7FF"
           />
 
-          <View style={styles.bottomNav}>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}>
-              <Text style={styles.navText}>🏠</Text>
-              <Text style={styles.navLabel}>HOME</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/sleep")}>
-              <Text style={styles.navText}>🌙</Text>
-              <Text style={styles.navLabel}>SLEEP</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={() => router.push("/mind")}>
-              <Text style={styles.navTextActive}>🧠</Text>
-              <Text style={styles.navLabelActive}>MIND</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/path")}>
-              <Text style={styles.navText}>🌲</Text>
-              <Text style={styles.navLabel}>PATH</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/calendar")}>
-              <Text style={styles.navText}>📅</Text>
-              <Text style={styles.navLabel}>CAL</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/stats")}>
-              <Text style={styles.navText}>🎒</Text>
-              <Text style={styles.navLabel}>BAG</Text>
-            </TouchableOpacity>
-          </View>
+          <BottomNav activeRoute="mind" theme="purple" bottomOffset={mobile.bottomNavOffset} />
         </View>
       </View>
     </View>
@@ -299,8 +263,6 @@ const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
     backgroundColor: "#02040A",
-    alignItems: "center",
-    justifyContent: "center",
   },
   phoneStage: {
     alignSelf: "center",
@@ -313,6 +275,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.85,
     shadowRadius: 0,
     shadowOffset: { width: 6, height: 6 },
+  },
+  phoneStageFullscreen: {
+    borderWidth: 0,
+    maxWidth: undefined,
+    aspectRatio: undefined,
+    shadowOpacity: 0,
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -331,10 +299,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   hudContent: {
-    minHeight: "100%",
+    flexGrow: 1,
     paddingTop: 24,
     paddingHorizontal: 14,
-    paddingBottom: 82,
   },
   hero: {
     backgroundColor: "rgba(31, 27, 75, 0.95)",
@@ -428,17 +395,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   largeTextArea: {
-    minHeight: 118,
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
-    borderWidth: 2,
-    borderColor: "#475569",
-    borderRadius: 6,
-    color: "#F9FAFB",
-    fontFamily: pixelFont,
-    fontSize: 14,
-    fontWeight: "800",
-    lineHeight: 20,
-    padding: 12,
+    marginBottom: 4,
   },
   optionRow: {
     gap: 8,

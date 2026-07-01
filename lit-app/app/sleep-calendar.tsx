@@ -5,15 +5,18 @@ import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View }
 
 import { GuideInfoModal } from "../components/GuideInfoModal";
 import { uiAssets } from "../constants/uiAssets";
+import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
+import { persistProgressKeys } from "../lib/progressStore";
+import { LATEST_CHECKIN_KEY } from "../lib/storageKeys";
 
 const LUNA_SLEEP_GUIDE_BULLETS = [
   "The Sleep Guide suggests timing — not strict rules.",
-  "Set your desired sleep time and wake time to generate your personal cutoffs.",
-  "Caffeine cut-off: 11–12 hours before sleep.",
-  "Last meal: 3–4 hours before sleep.",
-  "Blue screen: at least 1 hour before sleep.",
+  "Set your desired sleep and wake times to generate personal cutoffs.",
+  "Caffeine cutoff, screen cutoff, meals, and exercise timing help protect sleep quality.",
+  "Caffeine cut-off: about 11–12 hours before sleep.",
+  "Last meal: 3–4 hours before sleep. Blue screen: at least 1 hour before sleep.",
   "Last exercise: avoid intense activity within 3 hours of sleep.",
-  "Imperfect sleep is okay. The guide is here to support, not to judge.",
+  "Imperfect sleep is okay. Recovery nights still count.",
 ];
 
 type CheckIn = {
@@ -36,7 +39,7 @@ type Suggestion = {
   value: string;
 };
 
-const CHECKIN_KEY = "lit_latest_checkin";
+const CHECKIN_KEY = LATEST_CHECKIN_KEY;
 const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
 const MAX_FRAME_WIDTH = 520;
 const MIN_SLEEP_HOURS = 9;
@@ -183,8 +186,9 @@ export default function SleepCalendarScreen() {
       createdAt: current.createdAt || new Date().toISOString(),
     };
 
-    await AsyncStorage.setItem(CHECKIN_KEY, JSON.stringify(next));
+    await persistProgressKeys({ [CHECKIN_KEY]: JSON.stringify(next) });
     setSavedMessage("Sleep guide saved.");
+    void trackEvent(ANALYTICS_EVENTS.sleep_guide_saved);
   }
 
   function TimeStepper({ label, icon, value, onChange }: { label: string; icon: string; value: string; onChange: (next: string) => void }) {

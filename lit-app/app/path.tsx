@@ -8,20 +8,23 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
 
 import { GuideInfoModal } from "../components/GuideInfoModal";
 import { GOAL_HORIZON_LABELS } from "../constants/goalMilestoneTemplates";
+import { BottomNav } from "../components/BottomNav";
+import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 
 const EVIE_PATH_BULLETS = [
-  "Path Board shows your current direction — keep it visible and update it when life changes.",
-  "Your category and resources help MYLIT choose better quests and checklist habits over time.",
-  "Milestones give you three concrete checkpoints: 2 weeks, 1 month, and 3 months out.",
-  "Progress Meaning is your personal definition of moving forward — use it as your gut check.",
-  "Tap 'Set My Path' to edit any of these fields. Tap 'Start Next Chapter' when you are ready to change direction.",
+  "Path sets your direction. Short, mid, and long-term goals are benchmarks — not single-day quests.",
+  "Short-term = around 2 weeks. Mid-term = around 1 month. Long-term = around 3 months.",
+  "Your category and resources help MYLIT choose better quests and checklist habits.",
+  "Progress Meaning is your personal definition of moving forward.",
+  "Updating the path does not reset your progress.",
+  "Set My Path opens path setup — it does not reset the whole app.",
+  "Tap Start Next Chapter when you are ready to change direction.",
 ];
 
 type UserProfile = {
@@ -61,8 +64,6 @@ type MilestoneCard = {
 };
 
 const PROFILE_KEY = "lit_user_profile";
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -73,18 +74,9 @@ const pixelFont = Platform.select({
 
 export default function PathScreen() {
   const router = useRouter();
-  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const mobile = useMobileFrame();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [showInfo, setShowInfo] = useState(false);
-
-  const safeViewportWidth = Math.max(0, viewportWidth - 24);
-  const safeViewportHeight = Math.max(0, viewportHeight - 24);
-  const frameWidth = Math.min(
-    MAX_FRAME_WIDTH,
-    safeViewportWidth,
-    safeViewportHeight * APP_FRAME_ASPECT_RATIO
-  );
-  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   useEffect(() => {
     loadProfile();
@@ -141,15 +133,15 @@ export default function PathScreen() {
   ];
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight }]}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={uiAssets.backgrounds.default} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
           <ScrollView
             style={styles.screenScroller}
-            contentContainerStyle={styles.hudContent}
+            contentContainerStyle={[styles.hudContent, { paddingBottom: mobile.scrollPaddingBottom }]}
             showsVerticalScrollIndicator={false}
             bounces={false}
           >
@@ -267,7 +259,10 @@ export default function PathScreen() {
               </View>
             )}
 
-            <TouchableOpacity style={styles.primaryActionButton} onPress={() => router.push("/onboarding")}>
+            <TouchableOpacity
+              style={styles.primaryActionButton}
+              onPress={() => router.push({ pathname: "/onboarding", params: { mode: "editPath" } })}
+            >
               <Text style={styles.actionIcon}>🗡️</Text>
               <Text style={styles.primaryActionText}>Set My Path</Text>
               <Text style={styles.actionArrow}>›</Text>
@@ -290,32 +285,7 @@ export default function PathScreen() {
             accentColor="#22C55E"
           />
 
-          <View style={styles.bottomNav}>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}>
-              <Text style={styles.navText}>🏠</Text>
-              <Text style={styles.navLabel}>HOME</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/sleep")}>
-              <Text style={styles.navText}>🌙</Text>
-              <Text style={styles.navLabel}>SLEEP</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/mind")}>
-              <Text style={styles.navText}>🧠</Text>
-              <Text style={styles.navLabel}>MIND</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={() => router.push("/path")}>
-              <Text style={styles.navTextActive}>🌲</Text>
-              <Text style={styles.navLabelActive}>PATH</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/calendar")}>
-              <Text style={styles.navText}>📅</Text>
-              <Text style={styles.navLabel}>CAL</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/stats")}>
-              <Text style={styles.navText}>🎒</Text>
-              <Text style={styles.navLabel}>BAG</Text>
-            </TouchableOpacity>
-          </View>
+          <BottomNav activeRoute="path" bottomOffset={mobile.bottomNavOffset} />
         </View>
       </View>
     </View>
@@ -326,8 +296,6 @@ const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
     backgroundColor: "#02040A",
-    alignItems: "center",
-    justifyContent: "center",
   },
   phoneStage: {
     alignSelf: "center",
@@ -340,6 +308,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.85,
     shadowRadius: 0,
     shadowOffset: { width: 6, height: 6 },
+  },
+  phoneStageFullscreen: {
+    borderWidth: 0,
+    shadowOpacity: 0,
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,

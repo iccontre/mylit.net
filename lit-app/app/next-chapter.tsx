@@ -14,7 +14,12 @@ import {
   View,
 } from "react-native";
 
+import { FormScreen } from "../components/FormScreen";
+import { formPageContent } from "../constants/formStyles";
+import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
+import { LOCAL_PROFILE_KEY } from "../lib/auth";
+import { persistProgressKeys } from "../lib/progressStore";
 
 type DirectionChoice = "recovery" | "connection" | "future" | "stronger" | null;
 
@@ -37,9 +42,7 @@ type UserProfile = {
   hasFoodControl: boolean;
 };
 
-const PROFILE_KEY = "lit_user_profile";
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
+const PROFILE_KEY = LOCAL_PROFILE_KEY;
 const pathBackground = require("../assets/ui/backgrounds/path-background.png");
 
 const pixelFont = Platform.select({
@@ -58,6 +61,7 @@ const readableFont = Platform.select({
 
 export default function NextChapterScreen() {
   const router = useRouter();
+  const mobile = useMobileFrame();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const modalWidth = Math.min(screenWidth - 32, 480);
   const modalMaxHeight = Math.min(screenHeight * 0.78, 620);
@@ -123,7 +127,7 @@ export default function NextChapterScreen() {
       hasFoodControl,
     };
 
-    await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(updatedProfile));
+    await persistProgressKeys({ [PROFILE_KEY]: JSON.stringify(updatedProfile) });
     setProfile(updatedProfile);
     setChapterNote("");
   }
@@ -190,7 +194,7 @@ export default function NextChapterScreen() {
   }
 
   return (
-    <View style={styles.pageRoot}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
       <Modal
         visible={showInfo}
         transparent
@@ -210,7 +214,8 @@ export default function NextChapterScreen() {
             <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent} showsVerticalScrollIndicator={false}>
               {[
                 "Next Chapter updates your direction without erasing progress.",
-                "Choose what matters next.",
+                "Choose what matters next — your steps and history stay.",
+                "Short-term = around 2 weeks. Mid-term = around 1 month. Long-term = around 3 months.",
                 "Your new category and resources guide future quests and checklist habits.",
                 "Your path can change when your life, energy, or confidence changes.",
               ].map((bullet, i) => (
@@ -227,13 +232,13 @@ export default function NextChapterScreen() {
         </View>
       </Modal>
 
-      <View style={styles.phoneStage}>
+      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={pathBackground} style={styles.backgroundImage} resizeMode="stretch" />
         </View>
 
         <View style={styles.pageContainer}>
-        <ScrollView style={styles.screenScroller} contentContainerStyle={styles.boardContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.boardContent]}>
           <View style={styles.titleBanner}>
             <Text style={styles.kicker}>PATH UPDATE</Text>
             <Text style={styles.title}>NEXT CHAPTER</Text>
@@ -392,7 +397,7 @@ export default function NextChapterScreen() {
           <TouchableOpacity style={styles.homeButton} onPress={() => router.push("/path")}>
             <Text style={styles.homeButtonText}>← Back to Path</Text>
           </TouchableOpacity>
-        </ScrollView>
+        </FormScreen>
 
         </View>
       </View>
@@ -404,17 +409,19 @@ const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
     backgroundColor: "#0E0703",
-    alignItems: "center",
-    justifyContent: "center",
   },
   phoneStage: {
-    width: "100%",
-    maxWidth: MAX_FRAME_WIDTH,
-    aspectRatio: APP_FRAME_ASPECT_RATIO,
     alignSelf: "center",
     backgroundColor: "#2A1608",
     overflow: "hidden",
     position: "relative",
+  },
+  phoneStageFullscreen: {
+    width: "100%",
+    maxWidth: undefined,
+    aspectRatio: undefined,
+    alignSelf: "stretch",
+    flex: 1,
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,

@@ -3,8 +3,11 @@ import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
+import { BottomNav } from "../components/BottomNav";
 import { uiAssets } from "../constants/uiAssets";
-import { collectDayPlanScheduledItems, collectQuickThoughtScheduledItems, formatDurationLabel, getDateKey, getQuickThoughtSteps, inferScheduledClassification, parseDurationMinutes, parseTimeToMinutes, type ScheduledClassification, type ScheduledQuestLike } from "../lib/scheduling";
+import { useMobileFrame } from "../constants/mobileLayout";
+import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
+import { collectDayPlanScheduledItems, collectQuickThoughtScheduledItems, formatDurationLabel, getDateKey, getQuickThoughtSteps, inferScheduledClassification, parseDurationMinutes, parseSleepGuideTime, parseTimeToMinutes, type ScheduledClassification, type ScheduledQuestLike } from "../lib/scheduling";
 
 type WeekdayName = "Sunday" | "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "Saturday";
 type EventTone = "gold" | "purple" | "blue" | "green";
@@ -60,8 +63,6 @@ type CalendarEvent = {
 const TOMORROW_QUEUE_KEY = "lit_tomorrow_queue";
 const DAY_PLAN_KEY = "lit_day_plan";
 const CHECKIN_KEY = "lit_latest_checkin";
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
 const WEEKDAY_NAMES: WeekdayName[] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const WEEKDAY_LABELS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 const TIME_ROWS = ["7 AM", "8 AM", "9 AM", "10 AM", "11 AM", "12 PM", "1 PM", "2 PM", "3 PM", "4 PM", "5 PM", "6 PM", "7 PM", "8 PM", "9 PM", "10 PM", "11 PM"];
@@ -93,7 +94,7 @@ function buildDayLabel(date: Date) {
 
 function calendarTimeRow(time?: string): string {
   if (!time || time === "All day") return "7 AM";
-  const minutes = parseTimeToMinutes(time);
+  const minutes = parseSleepGuideTime(time) ?? parseTimeToMinutes(time);
   if (minutes === null) return "9 AM";
 
   let bestRow = TIME_ROWS[0];
@@ -176,6 +177,7 @@ function extractFirstTime(value?: string) {
 
 export default function CalendarScreen() {
   const router = useRouter();
+  const mobile = useMobileFrame();
   const [queueItems, setQueueItems] = useState<unknown[]>([]);
   const [dayPlan, setDayPlan] = useState<DayPlan | null>(null);
   const [latestCheckIn, setLatestCheckIn] = useState<CheckIn | null>(null);
@@ -184,6 +186,7 @@ export default function CalendarScreen() {
   const [showInfo, setShowInfo] = useState(false);
 
   useEffect(() => {
+    void trackEvent(ANALYTICS_EVENTS.calendar_opened);
     loadCalendarData();
   }, []);
 
@@ -308,7 +311,10 @@ export default function CalendarScreen() {
     }
 
     return dedupeCalendarEvents(events).sort(
-      (a, b) => a.priority - b.priority || (parseTimeToMinutes(a.startTime) ?? 0) - (parseTimeToMinutes(b.startTime) ?? 0)
+      (a, b) =>
+        a.priority - b.priority ||
+        (parseSleepGuideTime(a.startTime) ?? parseTimeToMinutes(a.startTime) ?? 0) -
+          (parseSleepGuideTime(b.startTime) ?? parseTimeToMinutes(b.startTime) ?? 0)
     );
   });
 
@@ -327,11 +333,11 @@ export default function CalendarScreen() {
   }
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={styles.phoneStage}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}><Image source={uiAssets.backgrounds.neutral} style={styles.backgroundImage} resizeMode="cover" /></View>
         <View style={styles.worldOverlay}>
-          <ScrollView style={styles.screenScroller} contentContainerStyle={styles.hudContent} showsVerticalScrollIndicator={false} bounces={false}>
+          <ScrollView style={styles.screenScroller} contentContainerStyle={[styles.hudContent, { paddingBottom: mobile.scrollPaddingBottom }]} showsVerticalScrollIndicator={false} bounces={false}>
             <View style={styles.heroPanel}>
               <View style={styles.bannerIcon}><Text style={styles.bannerIconText}>📖</Text></View>
               <View style={styles.heroCopy}><Text style={styles.heroLabel}>SCHEDULE BOARD</Text><Text style={styles.heroTitle}>CALENDAR</Text><Text style={styles.heroSubtitle}>Sleep guides, quests, roles, and checklist habits.</Text></View>
@@ -353,7 +359,7 @@ export default function CalendarScreen() {
               <SummaryCard icon="⭐" label="TODAY QUEST" value={todayQuestTitle} hint="Quest Board • +2 steps" />
               <SummaryCard icon="💭" label="NEXT QUICK THOUGHT" value={nextQuickThought} hint="Future scheduled quest" />
               <SummaryCard icon="🌙" label="SLEEP GUIDE" value={expectedSleep} hint="Blue timing guidance" />
-              <SummaryCard icon="📜" label="DAY FOCUS" value={dayPlan?.todayFocus || dayPlan?.todayGoal || "Not set"} hint="Theme only, no steps" />
+              <SummaryCard icon="📜" label="WEEKLY HABIT" value={getDayRole(dayPlan, WEEKDAY_NAMES[today.getDay()] as WeekdayName) || "Not set"} hint="Theme only, no steps" />
             </View>
 
             <View style={styles.actionGrid}>
@@ -368,7 +374,7 @@ export default function CalendarScreen() {
             </View>
 
             <View style={styles.legendRow}>
-              <Legend tone="blue" label="Sleep guide" /><Legend tone="gold" label="Progress" /><Legend tone="purple" label="Recovery" /><Legend tone="green" label="Focus" />
+              <Legend tone="blue" label="Sleep guide" /><Legend tone="gold" label="Progress" /><Legend tone="purple" label="Recovery" /><Legend tone="green" label="Weekly Habit" />
             </View>
 
             <View style={styles.calendarGrid}>
@@ -383,7 +389,7 @@ export default function CalendarScreen() {
                     <Text style={[styles.dayNumber, isToday && styles.dayHeaderToday]}>{date.getDate()}</Text>
                     {focusEvent ? (
                       <TouchableOpacity style={[styles.focusTab, getEventToneStyle("green")]} onPress={() => setSelectedEvent(focusEvent)}>
-                        <Text style={styles.focusTabText} numberOfLines={1}>Focus: {focusEvent.title}</Text>
+                        <Text style={styles.focusTabText} numberOfLines={1}>Habit: {focusEvent.title}</Text>
                       </TouchableOpacity>
                     ) : null}
                     {TIME_ROWS.map((row) => {
@@ -392,23 +398,21 @@ export default function CalendarScreen() {
                         .sort((a, b) => {
                           if (a.classification === "sleepGuide" && b.classification !== "sleepGuide") return 1;
                           if (b.classification === "sleepGuide" && a.classification !== "sleepGuide") return -1;
-                          return (parseTimeToMinutes(a.startTime) ?? 0) - (parseTimeToMinutes(b.startTime) ?? 0);
+                          return (parseSleepGuideTime(a.startTime) ?? parseTimeToMinutes(a.startTime) ?? 0) -
+                            (parseSleepGuideTime(b.startTime) ?? parseTimeToMinutes(b.startTime) ?? 0);
                         });
-                      const primaryEvent = rowEvents[0] ?? null;
-                      const overflowCount = Math.max(0, rowEvents.length - 1);
                       return (
                         <View key={`${date.toISOString()}-${row}`} style={styles.hourCell}>
-                          {primaryEvent ? (
+                          {rowEvents.map((event) => (
                             <TouchableOpacity
-                              key={primaryEvent.classification === "sleepGuide" ? sleepGuideDedupeKey(primaryEvent) : primaryEvent.id}
-                              style={[styles.eventBlock, getEventToneStyle(primaryEvent.tone)]}
-                              onPress={() => setSelectedEvent(primaryEvent)}
+                              key={event.classification === "sleepGuide" ? sleepGuideDedupeKey(event) : event.id}
+                              style={[styles.eventBlock, getEventToneStyle(event.tone)]}
+                              onPress={() => setSelectedEvent(event)}
                             >
-                              <Text style={styles.eventTime} numberOfLines={1}>{primaryEvent.startTime || "—"}</Text>
-                              <Text style={styles.eventText} numberOfLines={2}>{primaryEvent.cellLabel}</Text>
+                              <Text style={styles.eventTime} numberOfLines={1}>{event.startTime || "—"}</Text>
+                              <Text style={styles.eventText} numberOfLines={2}>{event.cellLabel}</Text>
                             </TouchableOpacity>
-                          ) : null}
-                          {overflowCount > 0 ? <Text style={styles.moreText}>+{overflowCount}</Text> : null}
+                          ))}
                         </View>
                       );
                     })}
@@ -417,7 +421,7 @@ export default function CalendarScreen() {
               })}
             </View>
           </ScrollView>
-          <BottomNav router={router} />
+          <BottomNav activeRoute="calendar" bottomOffset={mobile.bottomNavOffset} />
 
           {selectedEvent ? <EventPopup event={selectedEvent} onClose={() => setSelectedEvent(null)} router={router} /> : null}
           {showInfo ? <InfoOverlay onClose={() => setShowInfo(false)} /> : null}
@@ -490,10 +494,14 @@ function InfoOverlay({ onClose }: { onClose: () => void }) {
     <View style={styles.infoOverlay}>
       <View style={styles.infoCard}>
         <Text style={styles.infoTitle}>CALENDAR</Text>
-        <Text style={styles.infoBullet}>{"• Shows quests, checklist habits, quick thoughts, sleep guide times, and recovery blocks in one weekly view."}</Text>
-        <Text style={styles.infoBullet}>{"• Tap any event to inspect it. Missed events show a Reflect option."}</Text>
-        <Text style={styles.infoBullet}>{"• Blue = sleep guide timing. Gold = progress. Purple = recovery. Green = day focus (no steps)."}</Text>
-        <Text style={styles.infoBullet}>{"• Day Plan and Quick Thought quests earn steps only when marked complete."}</Text>
+        <ScrollView style={styles.infoScroll} showsVerticalScrollIndicator={false} bounces={false}>
+          <Text style={styles.infoBullet}>{"• Calendar shows sleep guides, quests, checklist habits, Quick Thoughts, recovery blocks, and day focus."}</Text>
+          <Text style={styles.infoBullet}>{"• Blue = sleep guide / sleep timing. Gold = progress. Purple = recovery. Green = day focus / no-step focus."}</Text>
+          <Text style={styles.infoBullet}>{"• Tap an item to inspect it when supported."}</Text>
+          <Text style={styles.infoBullet}>{"• Completed items earn steps only when marked complete."}</Text>
+          <Text style={styles.infoBullet}>{"• Missed or reflected items do not award steps unless the app says otherwise."}</Text>
+          <Text style={styles.infoBullet}>{"• Recovery blocks may appear after too much continuous progress work."}</Text>
+        </ScrollView>
         <TouchableOpacity style={styles.infoClose} onPress={onClose}>
           <Text style={styles.infoCloseText}>RETURN</Text>
         </TouchableOpacity>
@@ -502,13 +510,10 @@ function InfoOverlay({ onClose }: { onClose: () => void }) {
   );
 }
 
-function BottomNav({ router }: { router: ReturnType<typeof useRouter> }) {
-  return <View style={styles.bottomNav}><TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}><Text style={styles.navIcon}>🏠</Text><Text style={styles.navLabel}>HOME</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/sleep")}><Text style={styles.navIcon}>🌙</Text><Text style={styles.navLabel}>SLEEP</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/mind")}><Text style={styles.navIcon}>🧠</Text><Text style={styles.navLabel}>MIND</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/path")}><Text style={styles.navIcon}>🌲</Text><Text style={styles.navLabel}>PATH</Text></TouchableOpacity><TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={() => router.push("/calendar")}><Text style={styles.navIcon}>📅</Text><Text style={[styles.navLabel, styles.navLabelActive]}>CAL</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/stats")}><Text style={styles.navIcon}>🎒</Text><Text style={styles.navLabel}>BAG</Text></TouchableOpacity></View>;
-}
-
 const styles = StyleSheet.create({
-  pageRoot: { flex: 1, backgroundColor: "#02040A", alignItems: "center", justifyContent: "center" },
-  phoneStage: { width: "100%", maxWidth: MAX_FRAME_WIDTH, aspectRatio: APP_FRAME_ASPECT_RATIO, alignSelf: "center", backgroundColor: "#050814", overflow: "hidden", position: "relative", borderWidth: 2, borderColor: "#FBBF24" },
+  pageRoot: { flex: 1, backgroundColor: "#02040A" },
+  phoneStage: { alignSelf: "center", backgroundColor: "#050814", overflow: "hidden", position: "relative", borderWidth: 2, borderColor: "#FBBF24" },
+  phoneStageFullscreen: { borderWidth: 0, maxWidth: undefined, aspectRatio: undefined },
   backgroundLayer: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, zIndex: 0 },
   backgroundImage: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, width: "100%", height: "100%" },
   worldOverlay: { flex: 1, backgroundColor: "rgba(2, 6, 12, 0.58)" },
@@ -528,10 +533,10 @@ const styles = StyleSheet.create({
   weekArrowText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 18, fontWeight: "900" }, weekCenter: { flex: 1, alignItems: "center" }, weekKicker: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 9, fontWeight: "900" }, weekRange: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", marginTop: 3 },
   legendRow: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginBottom: 8 }, legendItem: { flexDirection: "row", alignItems: "center" }, legendDot: { width: 12, height: 12, borderRadius: 2, marginRight: 4 }, legendText: { color: "#CBD5E1", fontSize: 10, fontWeight: "800" },
   calendarGrid: { flexDirection: "row", backgroundColor: "rgba(8,13,24,0.92)", borderWidth: 2, borderColor: "#334155", borderRadius: 8, overflow: "hidden" },
-  timeColumn: { width: 42, borderRightWidth: 1, borderRightColor: "#334155" }, gridCorner: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 8, textAlign: "center", paddingVertical: 8 },   timeCell: { color: "#64748B", fontSize: 8, height: 54, textAlign: "center", paddingTop: 4 },
+  timeColumn: { width: 42, borderRightWidth: 1, borderRightColor: "#334155" }, gridCorner: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 8, textAlign: "center", paddingVertical: 8 }, timeCell: { color: "#64748B", fontSize: 8, minHeight: 44, textAlign: "center", paddingTop: 4 },
   dayColumn: { flex: 1, borderRightWidth: 1, borderRightColor: "#1F2937", padding: 3 },
   todayColumn: { backgroundColor: "rgba(34,197,94,0.08)", borderColor: "#86EFAC" }, dayHeader: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", textAlign: "center" }, dayHeaderToday: { color: "#FDE68A" }, dayNumber: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", textAlign: "center", marginBottom: 4 },
-  hourCell: { height: 54, borderTopWidth: 1, borderTopColor: "rgba(51,65,85,0.55)", paddingTop: 2, overflow: "hidden", justifyContent: "flex-start" }, focusTab: { minHeight: 28, borderWidth: 1, borderRadius: 4, padding: 3, marginBottom: 3 }, focusTabText: { color: "#F8FAFC", fontSize: 8, lineHeight: 10, fontWeight: "900" }, eventBlock: { borderWidth: 1, borderRadius: 4, padding: 3, minHeight: 36 }, eventTime: { color: "#F8FAFC", fontSize: 8, fontWeight: "900" }, eventText: { color: "#F8FAFC", fontSize: 8, lineHeight: 10, fontWeight: "800" }, moreText: { color: "#94A3B8", fontSize: 9, textAlign: "center", marginTop: 2 },
+  hourCell: { minHeight: 44, borderTopWidth: 1, borderTopColor: "rgba(51,65,85,0.55)", paddingTop: 2, paddingBottom: 2, gap: 2, justifyContent: "flex-start" }, focusTab: { minHeight: 24, borderWidth: 1, borderRadius: 4, padding: 2, marginBottom: 2 }, focusTabText: { color: "#F8FAFC", fontSize: 7, lineHeight: 9, fontWeight: "900" }, eventBlock: { borderWidth: 1, borderRadius: 3, paddingHorizontal: 2, paddingVertical: 2, minHeight: 26, marginBottom: 1 }, eventTime: { color: "#F8FAFC", fontSize: 7, fontWeight: "900" }, eventText: { color: "#F8FAFC", fontSize: 7, lineHeight: 9, fontWeight: "800" },
   eventGold: { backgroundColor: "rgba(113,63,18,0.85)", borderColor: "#FBBF24" }, eventPurple: { backgroundColor: "rgba(88,28,135,0.85)", borderColor: "#A78BFA" }, eventBlue: { backgroundColor: "rgba(14,116,144,0.85)", borderColor: "#67E8F9" }, eventGreen: { backgroundColor: "rgba(20,83,45,0.65)", borderColor: "#86EFAC" },
   popupOverlay: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "center", padding: 18, zIndex: 10 }, popupCard: { backgroundColor: "rgba(8,13,24,0.98)", borderWidth: 3, borderRadius: 12, padding: 16 }, popupGold: { borderColor: "#FBBF24" }, popupPurple: { borderColor: "#A78BFA" }, popupBlue: { borderColor: "#67E8F9" }, popupGreen: { borderColor: "#86EFAC" }, popupTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 20, fontWeight: "900", marginBottom: 4 }, popupSource: { color: "#FDE047", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", marginBottom: 12 }, popupRow: { flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: "#1F2937", paddingVertical: 6 }, popupLabel: { color: "#94A3B8", fontSize: 12, fontWeight: "800" }, popupValue: { color: "#F8FAFC", fontSize: 12, fontWeight: "900", maxWidth: "60%", textAlign: "right" }, popupNote: { color: "#CBD5E1", fontSize: 13, lineHeight: 19, marginTop: 12 }, popupButton: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", paddingVertical: 12, alignItems: "center", marginTop: 14 }, popupButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900" },
   eviePanel: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(8,13,24,0.95)", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, padding: 10, marginBottom: 10 },
@@ -544,6 +549,7 @@ const styles = StyleSheet.create({
   infoOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.82)", justifyContent: "center", alignItems: "center", padding: 20, zIndex: 25 },
   infoCard: { backgroundColor: "rgba(8,13,24,0.99)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 12, padding: 16, width: "100%" },
   infoTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", marginBottom: 10 },
+  infoScroll: { maxHeight: 280 },
   infoBullet: { color: "#CBD5E1", fontSize: 13, lineHeight: 20, fontWeight: "700", marginBottom: 6 },
   infoClose: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", paddingVertical: 11, alignItems: "center", marginTop: 12 },
   infoCloseText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900" },

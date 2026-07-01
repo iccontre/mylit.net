@@ -1,10 +1,18 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useRouter, useFocusEffect } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
+import { FormScreen } from "../components/FormScreen";
+import { BottomNav } from "../components/BottomNav";
+import { formPageContent } from "../constants/formStyles";
+import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
-import { formatDurationLabel, generateTimeSlots, getDateKey, getQuickThoughtSteps, inferScheduledClassification, parseDurationMinutes, shiftTimeSlot, type ScheduledClassification, type ScheduledStatus } from "../lib/scheduling";
+import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
+import { syncQuickThoughtItems } from "../lib/progressSync";
+import { TOMORROW_QUEUE_KEY, checkUserScheduledQuestCapacity, computeUserScheduledMinutesForDay, formatPlannedDurationLabel, getQuestCapacityMinutes } from "../lib/questProgress";
+import { persistProgressKeys } from "../lib/progressStore";
+import { formatDurationLabel, generateTimeSlots, getDateKey, getQuickThoughtSteps, inferScheduledClassification, parseDurationMinutes, shiftTimeSlot, type ScheduledClassification, type ScheduledStatus, type WeekdayName } from "../lib/scheduling";
 
 type QuestKind = "progress" | "recovery";
 
@@ -63,10 +71,9 @@ function parseTimeInput(raw: string): string {
 
 type QuestDay = { date: Date; dateKey: string; weekday: string; label: string; dayNumber: number };
 
-const STORAGE_KEY = "lit_tomorrow_queue";
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
-const DAILY_QUEST_LIMIT = 3;
+const STORAGE_KEY = TOMORROW_QUEUE_KEY;
+const DAY_PLAN_KEY = "lit_day_plan";
+const CHECKIN_KEY = "lit_latest_checkin";
 const TIME_SLOTS = generateTimeSlots(7, 22, 30);
 const DURATIONS = ["30 min", "45 min", "1 hr"];
 const WEEKDAY_LABELS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
@@ -133,12 +140,20 @@ function formatSavedDate(item: QueueItem) {
   return `${item.weekday} ${Number(month)}/${Number(day)}`;
 }
 
+type CheckIn = {
+  mode?: "Recovery" | "Progress";
+  energy?: number;
+};
+
 export default function TomorrowQueueScreen() {
   const router = useRouter();
+  const mobile = useMobileFrame();
   const weekDays = useMemo(() => generateCurrentWeek(), []);
   const todayInWeek = weekDays.find((day: QuestDay) => day.dateKey === getDateKey()) || weekDays[0];
   const [request, setRequest] = useState("");
   const [items, setItems] = useState<QueueItem[]>([]);
+  const [dayPlan, setDayPlan] = useState<Record<string, unknown> | null>(null);
+  const [boardMode, setBoardMode] = useState<"Progress" | "Recovery">("Progress");
   const [selectedDateKey, setSelectedDateKey] = useState(todayInWeek.dateKey);
   const [selectedTime, setSelectedTime] = useState("9:00 AM");
   const [selectedDuration, setSelectedDuration] = useState("30 min");
@@ -150,21 +165,42 @@ export default function TomorrowQueueScreen() {
 
   const selectedDay = weekDays.find((day: QuestDay) => day.dateKey === selectedDateKey) || todayInWeek;
   const selectedDayIsPast = isPastDateKey(selectedDay.dateKey);
-  const selectedDayQuestCount = items.filter((item: QueueItem) => item.date === selectedDateKey).length;
   const selectedSteps = getQuickThoughtSteps(selectedDuration);
+  const selectedDayPlannedMinutes = computeUserScheduledMinutesForDay({
+    dateKey: selectedDay.dateKey,
+    weekday: selectedDay.weekday as WeekdayName,
+    quickThoughts: items,
+    dayPlan,
+  });
+  const selectedDayCapacityMinutes = getQuestCapacityMinutes(boardMode);
+  const selectedDayRemainingMinutes = Math.max(0, selectedDayCapacityMinutes - selectedDayPlannedMinutes);
+  const selectedDayAtCapacity = selectedDayRemainingMinutes <= 0;
+  const savedItemsForSelectedDay = items.filter((item: QueueItem) => item.date === selectedDateKey);
 
   useEffect(() => {
-    loadQueue();
+    void loadQueue();
   }, []);
 
+  useFocusEffect(
+    useCallback(() => {
+      void loadQueue();
+    }, [])
+  );
+
   async function loadQueue() {
-    const saved = await readJson<Partial<QueueItem>[]>(STORAGE_KEY, []);
+    const [saved, plan, checkIn] = await Promise.all([
+      readJson<Partial<QueueItem>[]>(STORAGE_KEY, []),
+      readJson<Record<string, unknown> | null>(DAY_PLAN_KEY, null),
+      readJson<CheckIn | null>(CHECKIN_KEY, null),
+    ]);
     setItems(Array.isArray(saved) ? saved.map(normalizeQueueItem) : []);
+    setDayPlan(plan);
+    setBoardMode(checkIn?.mode === "Recovery" ? "Recovery" : "Progress");
   }
 
   async function saveQueue(nextItems: QueueItem[]) {
     setItems(nextItems);
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(nextItems));
+    await persistProgressKeys({ [STORAGE_KEY]: JSON.stringify(nextItems) });
   }
 
   async function addToQueue() {
@@ -177,12 +213,25 @@ export default function TomorrowQueueScreen() {
       setMessage("Past days can’t be edited.");
       return;
     }
-    if (selectedDayQuestCount >= DAILY_QUEST_LIMIT) {
-      setMessage("You can only save 3 Quick Thought quests for this day.");
+
+    const durationMinutes = parseDurationMinutes(selectedDuration, 30);
+    const capacity = checkUserScheduledQuestCapacity({
+      dateKey: selectedDay.dateKey,
+      weekday: selectedDay.weekday as WeekdayName,
+      quickThoughts: items,
+      dayPlan,
+      additionalMinutes: durationMinutes,
+      boardMode,
+    });
+
+    if (!capacity.allowed) {
+      const capLabel = formatPlannedDurationLabel(capacity.capacityMinutes);
+      setMessage(
+        `Quest Board limit reached for this day — your ${capacity.modeLabel} check-in allows up to ${capLabel} of planned quests (${formatPlannedDurationLabel(capacity.remainingMinutes)} left).`
+      );
       return;
     }
 
-    const durationMinutes = parseDurationMinutes(selectedDuration, 30);
     const nextItem: QueueItem = {
       id: `quick-${Date.now()}`,
       source: "quickThought",
@@ -192,7 +241,7 @@ export default function TomorrowQueueScreen() {
       classification: selectedKind,
       kind: "quickThought",
       date: selectedDay.dateKey,
-      weekday: selectedDay.weekday,
+      weekday: selectedDay.weekday as WeekdayName,
       time: selectedTime,
       startTime: selectedTime,
       duration: selectedDuration,
@@ -205,6 +254,8 @@ export default function TomorrowQueueScreen() {
     await saveQueue([nextItem, ...items]);
     setRequest("");
     setMessage(`Saved ${selectedKind} quest to Calendar.`);
+    void trackEvent(ANALYTICS_EVENTS.quick_thought_saved, { id: nextItem.id, kind: selectedKind });
+    void syncQuickThoughtItems();
   }
 
   async function deleteItem(id: string) {
@@ -233,13 +284,13 @@ export default function TomorrowQueueScreen() {
   }
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={styles.phoneStage}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={uiAssets.backgrounds.neutral} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
-          <ScrollView style={styles.screenScroller} contentContainerStyle={styles.hudContent} showsVerticalScrollIndicator={false} bounces={false}>
+          <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.hudContent]}>
             <View style={styles.heroPanel}>
               <View style={styles.bannerIcon}><Text style={styles.bannerIconText}>✦</Text></View>
               <View style={styles.heroCopy}>
@@ -253,7 +304,7 @@ export default function TomorrowQueueScreen() {
               <Image source={uiAssets.guides.evie} style={styles.evieAvatar} resizeMode="contain" />
               <View style={styles.evieCopy}>
                 <Text style={styles.evieName}>EVIE</Text>
-                <Text style={styles.evieText}>Quick Thoughts schedule future quests. They appear on Calendar and earn steps only when you check them off.</Text>
+                <Text style={styles.evieText}>Quick Thoughts schedule quests for your board. Your check-in mode sets the daily cap — 8h in Progress, 5h in Recovery.</Text>
               </View>
               <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
                 <Text style={styles.infoBtnText}>?</Text>
@@ -313,20 +364,22 @@ export default function TomorrowQueueScreen() {
               </View>
 
               {message ? <Text style={message.includes("deleted") || message.includes("Saved") ? styles.statusMessage : styles.errorMessage}>{message}</Text> : null}
-              <TouchableOpacity style={[styles.saveButton, (selectedDayQuestCount >= DAILY_QUEST_LIMIT || selectedDayIsPast) && styles.saveButtonDisabled]} onPress={addToQueue}>
+              <TouchableOpacity style={[styles.saveButton, (selectedDayIsPast || selectedDayAtCapacity) && styles.saveButtonDisabled]} onPress={addToQueue}>
                 <Text style={styles.saveButtonText}>SAVE +{selectedSteps} STEP{selectedSteps === 1 ? "" : "S"} QUEST</Text>
               </TouchableOpacity>
             </View>
 
             <View style={styles.savedHeaderRow}>
               <Text style={styles.savedTitle}>🎒 SAVED QUESTS</Text>
-              <Text style={styles.savedCount}>{selectedDayQuestCount}/{DAILY_QUEST_LIMIT} selected day</Text>
+              <Text style={styles.savedCount}>
+                {formatPlannedDurationLabel(selectedDayRemainingMinutes)} left · {boardMode} ({boardMode === "Recovery" ? "5h" : "8h"} limit)
+              </Text>
             </View>
 
-            {items.length === 0 ? (
-              <View style={styles.emptyCard}><Text style={styles.emptyIcon}>🪶</Text><Text style={styles.emptyText}>No quick thought quests saved yet. Add one and it will appear on your calendar.</Text></View>
+            {savedItemsForSelectedDay.length === 0 ? (
+              <View style={styles.emptyCard}><Text style={styles.emptyIcon}>🪶</Text><Text style={styles.emptyText}>No quick thought quests saved for {selectedDay.label} yet. Add one and it will appear on your calendar.</Text></View>
             ) : (
-              items.map((item: QueueItem) => {
+              savedItemsForSelectedDay.map((item: QueueItem) => {
                 const isCompleted = Boolean(item.completedAt);
                 const isMissed = isPastDateKey(item.date) && !isCompleted;
                 return (
@@ -351,8 +404,8 @@ export default function TomorrowQueueScreen() {
             )}
 
             <TouchableOpacity style={styles.homeButton} onPress={() => router.push("/calendar")}><Text style={styles.homeButtonText}>← Back to Calendar</Text></TouchableOpacity>
-          </ScrollView>
-          <BottomNav router={router} />
+          </FormScreen>
+          <BottomNav activeRoute="calendar" bottomOffset={mobile.bottomNavOffset} />
           {showInfo ? <InfoOverlay onClose={() => setShowInfo(false)} /> : null}
         </View>
       </View>
@@ -365,10 +418,11 @@ function InfoOverlay({ onClose }: { onClose: () => void }) {
     <View style={styles.infoOverlay}>
       <View style={styles.infoCard}>
         <Text style={styles.infoTitle}>QUICK THOUGHTS</Text>
-        <Text style={styles.infoBullet}>{"• Quick Thoughts schedule future quests. They appear on Calendar for the day and time you choose."}</Text>
-        <Text style={styles.infoBullet}>{"• Steps are awarded only when you check the quest as completed — never when you save it."}</Text>
-        <Text style={styles.infoBullet}>{"• 30 or 45 min = +1 step. 1 hr = +2 steps."}</Text>
-        <Text style={styles.infoBullet}>{"• Missed quests show a Reflect button so you can log what happened."}</Text>
+        <ScrollView style={styles.infoScroll} showsVerticalScrollIndicator={false} bounces={false}>
+          <Text style={styles.infoBody}>
+            Quick Thoughts are for tasks or ideas you do not want to forget. Schedule them for a future day and they can appear on Home and Calendar when it is time. Saving a thought does not give steps; completing it later can. Use this to clear your mind without overloading today.
+          </Text>
+        </ScrollView>
         <TouchableOpacity style={styles.infoClose} onPress={onClose}>
           <Text style={styles.infoCloseText}>RETURN</Text>
         </TouchableOpacity>
@@ -377,18 +431,15 @@ function InfoOverlay({ onClose }: { onClose: () => void }) {
   );
 }
 
-function BottomNav({ router }: { router: ReturnType<typeof useRouter> }) {
-  return <View style={styles.bottomNav}><TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}><Text style={styles.navIcon}>🏠</Text><Text style={styles.navLabel}>HOME</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/sleep")}><Text style={styles.navIcon}>🌙</Text><Text style={styles.navLabel}>SLEEP</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/mind")}><Text style={styles.navIcon}>🧠</Text><Text style={styles.navLabel}>MIND</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/path")}><Text style={styles.navIcon}>🌲</Text><Text style={styles.navLabel}>PATH</Text></TouchableOpacity><TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={() => router.push("/calendar")}><Text style={styles.navIcon}>📅</Text><Text style={[styles.navLabel, styles.navLabelActive]}>CAL</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/stats")}><Text style={styles.navIcon}>🎒</Text><Text style={styles.navLabel}>BAG</Text></TouchableOpacity></View>;
-}
-
 const styles = StyleSheet.create({
-  pageRoot: { flex: 1, backgroundColor: "#02040A", alignItems: "center", justifyContent: "center" },
-  phoneStage: { width: "100%", maxWidth: MAX_FRAME_WIDTH, aspectRatio: APP_FRAME_ASPECT_RATIO, alignSelf: "center", backgroundColor: "#050814", overflow: "hidden", position: "relative", borderWidth: 2, borderColor: "#FBBF24" },
+  pageRoot: { flex: 1, backgroundColor: "#02040A" },
+  phoneStage: { alignSelf: "center", backgroundColor: "#050814", overflow: "hidden", position: "relative", borderWidth: 2, borderColor: "#FBBF24" },
+  phoneStageFullscreen: { borderWidth: 0, maxWidth: undefined, aspectRatio: undefined },
   backgroundLayer: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, zIndex: 0 },
   backgroundImage: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, width: "100%", height: "100%" },
   worldOverlay: { flex: 1, backgroundColor: "rgba(2, 6, 12, 0.55)" },
   screenScroller: { flex: 1 },
-  hudContent: { minHeight: "100%", paddingTop: 18, paddingHorizontal: 14, paddingBottom: 104 },
+  hudContent: { flexGrow: 1, width: "100%", paddingTop: 18, paddingHorizontal: 14 },
   heroPanel: { backgroundColor: "rgba(5, 12, 24, 0.9)", borderWidth: 3, borderColor: "#D99B2B", borderRadius: 8, padding: 13, marginBottom: 12, flexDirection: "row", alignItems: "center" },
   bannerIcon: { width: 46, height: 66, backgroundColor: "rgba(70, 28, 112, 0.86)", borderWidth: 2, borderColor: "#FDE047", alignItems: "center", justifyContent: "center", marginRight: 12 },
   bannerIconText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 26, fontWeight: "900" },
@@ -465,7 +516,8 @@ const styles = StyleSheet.create({
   infoOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.82)", justifyContent: "center", alignItems: "center", padding: 20, zIndex: 25 },
   infoCard: { backgroundColor: "rgba(8,13,24,0.99)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 12, padding: 16, width: "100%" },
   infoTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", marginBottom: 10 },
-  infoBullet: { color: "#CBD5E1", fontSize: 13, lineHeight: 20, fontWeight: "700", marginBottom: 6 },
+  infoScroll: { maxHeight: 280 },
+  infoBody: { color: "#CBD5E1", fontSize: 13, lineHeight: 20, fontWeight: "700" },
   infoClose: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", paddingVertical: 11, alignItems: "center", marginTop: 12 },
   infoCloseText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900" },
   bottomNav: { position: "absolute", bottom: 8, left: 8, right: 8, height: 62, flexDirection: "row", justifyContent: "space-between", backgroundColor: "rgba(4,8,16,0.98)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 5, padding: 4 },

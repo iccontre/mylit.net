@@ -10,13 +10,17 @@ import {
   TouchableOpacity,
   View,
   useWindowDimensions,
+  ActivityIndicator,
 } from "react-native";
 
 import { uiAssets } from "../constants/uiAssets";
-import { computeItemStepsFromSources, computeTotalEarnedSteps, loadTodayCompletions } from "../lib/questProgress";
-
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
+import { useMobileFrame } from "../constants/mobileLayout";
+import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
+import { signOut } from "../lib/auth";
+import { computeItemStepsFromSources, computeTotalEarnedSteps, loadTodayCompletions, USER_STATS_KEY } from "../lib/questProgress";
+import { forceUploadLocalProgressToCloud, persistProgressKeys } from "../lib/progressStore";
+import { ProgressRecoveryModal } from "../components/ProgressRecoveryModal";
+import { BottomNav } from "../components/BottomNav";
 
 type ActivePanel = "weekly" | "rank" | "behavior" | null;
 type ActiveInfo = "stats" | "evie" | "weekly" | "rank" | "behavior" | "weeklyPopup" | "rankPopup" | "behaviorPopup" | null;
@@ -73,19 +77,18 @@ const MORNING_INTENTION_REFLECTIONS_KEY = "lit_morning_intention_reflections";
 const MEDITATIONS_KEY = "lit_awareness_checks";
 const REFLECTIONS_KEY = "lit_reflections";
 const SLEEP_CALENDAR_KEY = "lit_sleep_calendar";
-const USER_STATS_KEY = "lit_user_stats";
 const RANK_SIZE = 100;
 
 const pixelFont = Platform.select({ ios: "Menlo", android: "monospace", web: "monospace", default: "monospace" });
 
 const INFO_COPY: Record<NonNullable<ActiveInfo>, { title: string; body: string }> = {
-  stats: { title: "STATS BOARD", body: "Your Stats Board tracks growth, behavior patterns, and rank progress over time. Everything here comes from what you actually did — check-ins, quests, reflections, and habits." },
+  stats: { title: "STATS BOARD", body: "Stats are feedback, not judgment. Steps come from completed actions only — saving a task does not earn steps. Completing quests, checklist items, reflections, and sleep actions can earn steps when supported. Rank progress grows from accumulated completed steps. Missed items are useful data, not failure." },
   evie: { title: "EVIE'S NOTE", body: "Stats are for learning, not judging. Look for patterns that help you adjust your next step honestly. One good data point is enough to move forward." },
   weekly: { title: "WEEKLY SUMMARY", body: "Weekly Summary shows what happened this week: energy, steps, completed quests, saved thoughts, sleep and mind entries, and your progress vs recovery balance." },
-  rank: { title: "RANK PROGRESS", body: "Rank Progress turns completed actions into visible growth. Every 100 steps unlocks the next rank, and each new rank grants a one-time +10 step bonus." },
+  rank: { title: "RANK PROGRESS", body: "Rank Progress turns completed actions into visible growth. Every 100 steps unlocks the next rank, and each new rank grants a one-time +10 step bonus. Only completed actions count toward rank." },
   behavior: { title: "BEHAVIOR", body: "Behavior shows patterns across energy, sleep, recovery, progress, and cognitive habits so you can adjust without judging yourself." },
   weeklyPopup: { title: "WEEKLY SUMMARY", body: "Weekly Summary shows what happened this week: energy, steps, completed quests, saved thoughts, sleep and mind entries, and your progress vs recovery balance." },
-  rankPopup: { title: "RANK PROGRESS", body: "Rank Progress turns completed actions into visible growth. Every 100 steps unlocks the next rank, and each new rank grants a one-time +10 step bonus." },
+  rankPopup: { title: "RANK PROGRESS", body: "Rank Progress turns completed actions into visible growth. Every 100 steps unlocks the next rank, and each new rank grants a one-time +10 step bonus. Only completed actions count toward rank." },
   behaviorPopup: { title: "BEHAVIOR", body: "Behavior shows patterns across energy, sleep, recovery, progress, and cognitive habits so you can adjust without judging yourself." },
 };
 
@@ -250,19 +253,43 @@ function getWeeklySteps(quickThoughts: unknown, dayPlan: unknown): number {
 
 export default function StatsScreen() {
   const router = useRouter();
+  const mobile = useMobileFrame();
   const { width, height } = useWindowDimensions();
   const modalWidth = Math.min(width - 24, 520);
   const modalMaxHeight = Math.min(height * 0.88, 720);
-  const safeVW = Math.max(0, width - 24);
-  const safeVH = Math.max(0, height - 24);
-  const frameWidth = Math.min(MAX_FRAME_WIDTH, safeVW, safeVH * APP_FRAME_ASPECT_RATIO);
-  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   const [stats, setStats] = useState<StatsSnapshot>(emptyStats);
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const [activeInfo, setActiveInfo] = useState<ActiveInfo>(null);
+  const [recoveryVisible, setRecoveryVisible] = useState(false);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  const [recoveryMessage, setRecoveryMessage] = useState("");
 
-  useEffect(() => { loadStats(); }, []);
+  useEffect(() => {
+    loadStats();
+    void trackEvent(ANALYTICS_EVENTS.stats_opened);
+  }, []);
+
+  async function handleQuickUpload() {
+    setRecoveryBusy(true);
+    setRecoveryMessage("");
+    try {
+      const uploaded = await forceUploadLocalProgressToCloud();
+      if (uploaded > 0) {
+        setRecoveryMessage(`Uploaded ${uploaded} progress keys to your account.`);
+        await loadStats();
+      } else {
+        setRecoveryMessage("No saved progress found to upload, or sign in first.");
+      }
+    } finally {
+      setRecoveryBusy(false);
+    }
+  }
+
+  async function handleLogout() {
+    await signOut();
+    router.replace("/auth");
+  }
 
   async function loadStats() {
     const [latestCheckIn, checkIns, completedQuests, quickThoughts, dayPlan, journalEntries,
@@ -299,9 +326,12 @@ export default function StatsScreen() {
     const hasNewBonuses = awardedThresholds.some(t => !prevAwarded.includes(t));
 
     if (hasNewBonuses) {
-      await AsyncStorage.setItem(USER_STATS_KEY, JSON.stringify({
-        ...userStats, rankBonusesAwarded: awardedThresholds,
-      }));
+      await persistProgressKeys({
+        [USER_STATS_KEY]: JSON.stringify({
+          ...userStats,
+          rankBonusesAwarded: awardedThresholds,
+        }),
+      });
     }
 
     setStats({
@@ -349,13 +379,13 @@ export default function StatsScreen() {
     : "Starting with one honest check-in is enough.";
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight }]}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={uiAssets.backgrounds.default} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
-            <ScrollView style={styles.screenScroller} contentContainerStyle={styles.hudContent} showsVerticalScrollIndicator={false} bounces={false}>
+            <ScrollView style={styles.screenScroller} contentContainerStyle={[styles.hudContent, { paddingBottom: mobile.scrollPaddingBottom }]} showsVerticalScrollIndicator={false} bounces={false}>
 
               <View style={styles.heroPanel}>
                 <View style={styles.heroCopyRow}>
@@ -421,9 +451,44 @@ export default function StatsScreen() {
                 <View style={styles.pageFooterLine} />
               </View>
 
+              <View style={styles.recoveryCard}>
+                <Text style={styles.recoveryTitle}>PROGRESS RECOVERY</Text>
+                <Text style={styles.recoveryText}>
+                  Use this if your steps or quests disappeared after signing in. MYLIT will scan this
+                  device for saved progress and merge it into your account without deleting anything.
+                </Text>
+                {recoveryMessage ? <Text style={styles.recoveryMessage}>{recoveryMessage}</Text> : null}
+                <TouchableOpacity style={styles.recoveryButton} onPress={() => setRecoveryVisible(true)}>
+                  <Text style={styles.recoveryButtonText}>RECOVER LOCAL PROGRESS</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.recoveryButton, styles.recoveryButtonSecondary]}
+                  onPress={() => void handleQuickUpload()}
+                  disabled={recoveryBusy}
+                >
+                  {recoveryBusy ? (
+                    <ActivityIndicator color="#E9D5FF" />
+                  ) : (
+                    <Text style={styles.recoveryButtonTextSecondary}>UPLOAD THIS DEVICE&apos;S PROGRESS</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity style={styles.logoutButton} onPress={() => void handleLogout()}>
+                <Text style={styles.logoutButtonText}>SIGN OUT</Text>
+              </TouchableOpacity>
+
+              <View style={styles.installCard}>
+                <Text style={styles.installTitle}>INSTALL MYLIT</Text>
+                <Text style={styles.installText}>1. Open mylit.net in Safari</Text>
+                <Text style={styles.installText}>2. Tap Share</Text>
+                <Text style={styles.installText}>3. Tap Add to Home Screen</Text>
+                <Text style={styles.installText}>4. Open MYLIT from your Home Screen</Text>
+              </View>
+
             </ScrollView>
 
-            <BottomNav router={router} />
+            <BottomNav activeRoute="stats" bottomOffset={mobile.bottomNavOffset} />
 
             {activePanel !== null ? (
               <View style={styles.modalOverlay}>
@@ -463,6 +528,15 @@ export default function StatsScreen() {
                 </View>
               </View>
             ) : null}
+
+            <ProgressRecoveryModal
+              visible={recoveryVisible}
+              onClose={() => setRecoveryVisible(false)}
+              onRecovered={() => {
+                void loadStats();
+                setRecoveryMessage("Progress recovered and saved to your account.");
+              }}
+            />
           </View>
         </View>
       </View>
@@ -629,22 +703,10 @@ function LunaNote({ text }: { text: string }) {
   );
 }
 
-function BottomNav({ router }: { router: ReturnType<typeof useRouter> }) {
-  return (
-    <View style={styles.bottomNav}>
-      <TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}><Text style={styles.navIcon}>🏠</Text><Text style={styles.navLabel}>HOME</Text></TouchableOpacity>
-      <TouchableOpacity style={styles.navButton} onPress={() => router.push("/sleep")}><Text style={styles.navIcon}>🌙</Text><Text style={styles.navLabel}>SLEEP</Text></TouchableOpacity>
-      <TouchableOpacity style={styles.navButton} onPress={() => router.push("/mind")}><Text style={styles.navIcon}>🧠</Text><Text style={styles.navLabel}>MIND</Text></TouchableOpacity>
-      <TouchableOpacity style={styles.navButton} onPress={() => router.push("/path")}><Text style={styles.navIcon}>🌲</Text><Text style={styles.navLabel}>PATH</Text></TouchableOpacity>
-      <TouchableOpacity style={styles.navButton} onPress={() => router.push("/calendar")}><Text style={styles.navIcon}>📅</Text><Text style={styles.navLabel}>CAL</Text></TouchableOpacity>
-      <TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={() => router.push("/stats")}><Text style={styles.navIcon}>🎒</Text><Text style={[styles.navLabel, styles.navLabelActive]}>BAG</Text></TouchableOpacity>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
-  pageRoot: { flex: 1, backgroundColor: "#02040A", alignItems: "center", justifyContent: "center" },
+  pageRoot: { flex: 1, backgroundColor: "#02040A" },
   phoneStage: { alignSelf: "center", backgroundColor: "#050814", overflow: "hidden", position: "relative", borderWidth: 2, borderColor: "rgba(251,191,36,0.55)", shadowColor: "#000", shadowOpacity: 0.85, shadowRadius: 0, shadowOffset: { width: 6, height: 6 } },
+  phoneStageFullscreen: { borderWidth: 0, shadowOpacity: 0 },
   backgroundLayer: { ...StyleSheet.absoluteFillObject },
   backgroundImage: { width: "100%", height: "100%" },
   worldOverlay: { flex: 1, backgroundColor: "rgba(2, 6, 12, 0.65)" },
@@ -756,4 +818,105 @@ const styles = StyleSheet.create({
   infoBody: { color: "#CBD5E1", fontSize: 13, lineHeight: 20, fontWeight: "700", marginBottom: 14 },
   returnButton: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", borderRadius: 6, paddingVertical: 11, alignItems: "center", marginTop: 6 },
   returnButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", letterSpacing: 1 },
+  recoveryCard: {
+    marginTop: 8,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: "#7C3AED",
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: "rgba(49,46,129,0.22)",
+  },
+  recoveryTitle: {
+    color: "#C4B5FD",
+    fontFamily: pixelFont,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  recoveryText: {
+    color: "#CBD5E1",
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: "700",
+    marginBottom: 10,
+  },
+  recoveryMessage: {
+    color: "#86EFAC",
+    fontFamily: pixelFont,
+    fontSize: 10,
+    fontWeight: "900",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  recoveryButton: {
+    backgroundColor: "rgba(15,23,42,0.96)",
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+    borderRadius: 6,
+    paddingVertical: 10,
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  recoveryButtonSecondary: {
+    borderColor: "#475569",
+    backgroundColor: "rgba(7,19,38,0.85)",
+    marginBottom: 0,
+  },
+  recoveryButtonText: {
+    color: "#E9D5FF",
+    fontFamily: pixelFont,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
+  recoveryButtonTextSecondary: {
+    color: "#94A3B8",
+    fontFamily: pixelFont,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
+  logoutButton: {
+    marginTop: 8,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: "#334155",
+    borderRadius: 6,
+    paddingVertical: 10,
+    alignItems: "center",
+    backgroundColor: "rgba(15,23,42,0.75)",
+  },
+  logoutButtonText: {
+    color: "#94A3B8",
+    fontFamily: pixelFont,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
+  installCard: {
+    marginTop: 4,
+    marginBottom: 12,
+    borderWidth: 2,
+    borderColor: "#334155",
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: "rgba(7,19,38,0.85)",
+  },
+  installTitle: {
+    color: "#86EFAC",
+    fontFamily: pixelFont,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  installText: {
+    color: "#CBD5E1",
+    fontFamily: pixelFont,
+    fontSize: 10,
+    fontWeight: "800",
+    lineHeight: 16,
+  },
 });
