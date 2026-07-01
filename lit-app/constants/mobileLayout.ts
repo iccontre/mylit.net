@@ -26,40 +26,78 @@ export type MobileFrame = {
   bottomNavOffset: number;
 };
 
+function isLikelyKeyboardViewportSqueeze(
+  nextWidth: number,
+  nextHeight: number,
+  stableWidth: number,
+  stableHeight: number
+): boolean {
+  if (stableWidth <= 0 || stableHeight <= 0) return false;
+  const heightDropped = nextHeight < stableHeight * 0.85;
+  const widthGrew = nextWidth > stableWidth + 8;
+  return heightDropped && !widthGrew;
+}
+
 export function useMobileFrame(): MobileFrame {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const stableViewport = useRef({ width, height });
+  const stableSize = useRef({ width: 0, height: 0 });
 
-  // Width changes = rotation or real layout change. Height-only shrink = virtual keyboard.
-  if (Math.abs(stableViewport.current.width - width) > 1) {
-    stableViewport.current = { width, height };
-  } else if (height > stableViewport.current.height) {
-    stableViewport.current.height = height;
+  if (width > 0 && height > 0) {
+    if (stableSize.current.width === 0) {
+      stableSize.current = { width, height };
+    } else if (
+      !isLikelyKeyboardViewportSqueeze(width, height, stableSize.current.width, stableSize.current.height)
+    ) {
+      const mobileLocked = isMobileFullscreen(stableSize.current.width);
+      if (mobileLocked) {
+        stableSize.current.width = Math.max(stableSize.current.width, width);
+        stableSize.current.height = Math.max(stableSize.current.height, height);
+      } else {
+        stableSize.current = { width, height };
+      }
+    }
   }
 
-  const layoutWidth = stableViewport.current.width;
-  const layoutHeight = stableViewport.current.height;
+  const layoutWidth = stableSize.current.width || width;
+  const layoutHeight = stableSize.current.height || height;
   const fullscreen = isMobileFullscreen(layoutWidth);
   const bottomNavOffset = 8 + insets.bottom;
   const scrollPaddingBottom = BOTTOM_NAV_CLEARANCE + insets.bottom;
   const formScrollPaddingBottom = scrollPaddingBottom + FORM_KEYBOARD_CLEARANCE;
 
   if (fullscreen) {
+    const pageRootStyle: ViewStyle =
+      Platform.OS === "web"
+        ? {
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            width: "100%",
+            height: "100%",
+            backgroundColor: "#02040A",
+            paddingTop: insets.top,
+          }
+        : {
+            flex: 1,
+            width: "100%",
+            backgroundColor: "#02040A",
+            paddingTop: insets.top,
+          };
+
     return {
       frameWidth: layoutWidth,
       frameHeight: layoutHeight,
       isFullscreen: true,
-      pageRootStyle: {
-        flex: 1,
-        width: "100%",
-        backgroundColor: "#02040A",
-        paddingTop: insets.top,
-      },
+      pageRootStyle,
       phoneStageStyle: {
         flex: 1,
         width: "100%",
+        height: "100%",
         alignSelf: "stretch",
+        minHeight: 0,
       },
       scrollPaddingBottom,
       formScrollPaddingBottom,

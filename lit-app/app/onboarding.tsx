@@ -15,6 +15,7 @@ import {
 } from "react-native";
 
 import { FormScreen } from "../components/FormScreen";
+import { formPageContent } from "../constants/formStyles";
 import {
   GOAL_HORIZON_LABELS,
   type GoalHorizon,
@@ -470,7 +471,7 @@ export default function OnboardingScreen() {
           <Image source={pathBackground} style={styles.backgroundImage} resizeMode="stretch" />
         </View>
         <View style={styles.pageContainer}>
-        <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={styles.boardContent}>
+        <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.boardContent]}>
           <Image source={uiAssets.logo.mylit} style={styles.logo} resizeMode="contain" />
 
           <View style={styles.bannerPanel}>

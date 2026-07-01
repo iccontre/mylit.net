@@ -12,8 +12,9 @@ import {
   View,
 } from "react-native";
 
-import { uiAssets } from "../constants/uiAssets";
 import { FormScreen } from "../components/FormScreen";
+import { uiAssets } from "../constants/uiAssets";
+import { formPageContent } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { persistProgressKeys } from "../lib/progressStore";
@@ -234,7 +235,7 @@ export default function SleepCheckInScreen() {
           <Image source={currentBackground} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
-          <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={styles.hudContent}>
+          <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.hudContent]}>
             <View style={[styles.hero, { borderColor: theme.accent, backgroundColor: theme.panel }]}>
               <View style={styles.heroTopRow}>
                 <View style={styles.heroCopy}>

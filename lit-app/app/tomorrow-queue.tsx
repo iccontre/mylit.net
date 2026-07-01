@@ -5,7 +5,7 @@ import { Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpac
 
 import { FormScreen } from "../components/FormScreen";
 import { BottomNav } from "../components/BottomNav";
-import { formStyles } from "../constants/formStyles";
+import { formPageContent } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
@@ -290,7 +290,7 @@ export default function TomorrowQueueScreen() {
           <Image source={uiAssets.backgrounds.neutral} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
-          <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={styles.hudContent}>
+          <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.hudContent]}>
             <View style={styles.heroPanel}>
               <View style={styles.bannerIcon}><Text style={styles.bannerIconText}>✦</Text></View>
               <View style={styles.heroCopy}>

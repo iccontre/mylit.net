@@ -51,11 +51,13 @@ export function FormScreen({
     nestedScrollEnabled: true,
   };
 
+  const containerStyle = [styles.flex, styles.fullWidth, style];
+
   if (Platform.OS === "web") {
     return (
       <ScrollView
         {...scrollProps}
-        style={[styles.flex, style]}
+        style={containerStyle}
         contentContainerStyle={contentStyle}
       >
         {children}
@@ -65,7 +67,7 @@ export function FormScreen({
 
   return (
     <KeyboardAvoidingView
-      style={[styles.flex, style]}
+      style={containerStyle}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
       keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
     >
@@ -77,6 +79,7 @@ export function FormScreen({
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
+  flex: { flex: 1, minHeight: 0 },
+  fullWidth: { width: "100%", alignSelf: "stretch" },
   content: { flexGrow: 1, width: "100%", alignSelf: "stretch" },
 });

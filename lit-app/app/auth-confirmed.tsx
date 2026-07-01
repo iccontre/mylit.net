@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Image, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { FormScreen } from "../components/FormScreen";
+import { formPageContent } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { getOrCreateProfile, getSession, isOnboardingComplete } from "../lib/auth";
@@ -91,7 +92,7 @@ export default function AuthConfirmedScreen() {
           <Image source={uiAssets.backgrounds.neutral} style={styles.backgroundImage} resizeMode="cover" />
         </View>
 
-        <FormScreen contentContainerStyle={styles.content}>
+        <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.content]}>
           <Image source={uiAssets.logo.mylit} style={styles.logo} resizeMode="contain" />
 
           <View style={styles.heroPanel}>

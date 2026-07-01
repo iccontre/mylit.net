@@ -12,6 +12,7 @@ import {
 } from "react-native";
 
 import { FormScreen } from "../components/FormScreen";
+import { formPageContent } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { getOrCreateProfile, isProfileComplete, updateProfile } from "../lib/auth";
@@ -114,7 +115,7 @@ export default function ProfileSetupScreen() {
           />
         </View>
 
-        <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={styles.content}>
+        <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.content]}>
           <Image source={uiAssets.logo.mylit} style={styles.logo} resizeMode="contain" />
 
           <View style={styles.heroPanel}>

@@ -26,9 +26,10 @@ export default function Root({ children }: PropsWithChildren) {
           dangerouslySetInnerHTML={{
             __html: `
               html, body, #root {
-                height: 100%;
                 width: 100%;
-                min-height: 100svh;
+                height: var(--mylit-layout-height, 100svh);
+                min-height: var(--mylit-layout-height, 100svh);
+                max-height: var(--mylit-layout-height, 100svh);
                 margin: 0;
                 padding: 0;
                 background: #02040A;
@@ -39,16 +40,21 @@ export default function Root({ children }: PropsWithChildren) {
                 -webkit-text-size-adjust: 100%;
                 position: fixed;
                 inset: 0;
+                width: 100%;
+                height: var(--mylit-layout-height, 100svh);
               }
               #root {
                 display: flex;
                 flex-direction: column;
                 flex: 1;
                 min-height: 0;
+                width: 100%;
                 height: 100%;
+                overflow: hidden;
               }
               input, textarea, select {
-                font-size: 16px;
+                font-size: 16px !important;
+                max-width: 100%;
               }
               textarea:focus, input:focus {
                 scroll-margin-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
