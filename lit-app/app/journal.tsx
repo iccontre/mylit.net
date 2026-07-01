@@ -3,7 +3,6 @@ import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   Image,
-  ImageBackground,
   Platform,
   StyleSheet,
   Text,
@@ -34,7 +33,6 @@ type JournalEntry = {
   type: "Morning" | "Evening";
   mood: string;
   content: string;
-  gratitude: string;
   thoughtPattern: string;
   thoughtImpact: "Helpful" | "Harmful" | "Neutral";
   honestReframe: string;
@@ -58,7 +56,6 @@ export default function JournalScreen() {
   const [showInfo, setShowInfo] = useState(false);
   const [mood, setMood] = useState("");
   const [content, setContent] = useState("");
-  const [gratitude, setGratitude] = useState("");
   const [entries, setEntries] = useState<JournalEntry[]>([]);
 
   useEffect(() => {
@@ -78,7 +75,7 @@ export default function JournalScreen() {
   }
 
   async function saveJournalEntry() {
-    const hasEntry = content.trim() || gratitude.trim() || mood.trim();
+    const hasEntry = content.trim() || mood.trim();
 
     if (!hasEntry) return;
 
@@ -87,7 +84,6 @@ export default function JournalScreen() {
       type: entryType,
       mood,
       content: content.trim(),
-      gratitude: gratitude.trim(),
       thoughtPattern: "",
       thoughtImpact: "Neutral",
       honestReframe: "",
@@ -99,7 +95,6 @@ export default function JournalScreen() {
     await saveEntries(nextEntries);
 
     setContent("");
-    setGratitude("");
     setMood("");
   }
 
@@ -134,12 +129,7 @@ export default function JournalScreen() {
               </TouchableOpacity>
             </View>
 
-            <ImageBackground
-              source={uiAssets.backgrounds.journal}
-              style={styles.panel}
-              imageStyle={styles.panelPageImage}
-              resizeMode="contain"
-            >
+            <View style={styles.panel}>
               <Text style={styles.pageLabel}>Entry Type</Text>
               <View style={styles.toggleRow}>
                 <TouchableOpacity
@@ -171,30 +161,18 @@ export default function JournalScreen() {
                 onChangeText={setMood}
               />
 
-              <Text style={styles.pageLabel}>What happened today?</Text>
+              <Text style={styles.pageLabel}>Be honest and write whatever is on your mind</Text>
               <TextInput
                 style={[formStyles.textArea, styles.largeTextArea]}
                 multiline
                 scrollEnabled
                 textAlignVertical="top"
-                placeholder="Write what feels true right now…"
+                placeholder="Write freely. A moment, a feeling, a win, a mistake, or anything that stayed with you."
                 placeholderTextColor="#94A3B8"
                 value={content}
                 onChangeText={setContent}
               />
-
-              <Text style={styles.pageLabel}>What do you want to remember?</Text>
-              <TextInput
-                style={[formStyles.textArea, styles.largeTextArea]}
-                multiline
-                scrollEnabled
-                textAlignVertical="top"
-                placeholder="One thing you learned, appreciated, or want to carry forward."
-                placeholderTextColor="#94A3B8"
-                value={gratitude}
-                onChangeText={setGratitude}
-              />
-            </ImageBackground>
+            </View>
 
             <TouchableOpacity style={styles.saveButton} onPress={saveJournalEntry}>
               <Text style={styles.saveButtonText}>Save Journal Entry</Text>
@@ -216,10 +194,6 @@ export default function JournalScreen() {
                   </Text>
 
                   {entry.content ? <Text style={styles.entryText}>{entry.content}</Text> : null}
-
-                  {entry.gratitude ? (
-                    <Text style={styles.gratitudeText}>Remember: {entry.gratitude}</Text>
-                  ) : null}
                 </View>
               ))
             )}
@@ -369,24 +343,15 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   panel: {
+    backgroundColor: "rgba(8, 13, 24, 0.96)",
     borderWidth: 4,
-    borderColor: "#8A5D2B",
+    borderColor: "#FBBF24",
     borderRadius: 8,
-    // Extra left padding clears the page's spiral-binding artwork so the
-    // fields sit on the actual paper, not on top of the rings/cover edge.
-    paddingLeft: 34,
-    paddingRight: 16,
-    paddingTop: 22,
-    paddingBottom: 18,
+    padding: 14,
     marginBottom: 16,
-    overflow: "hidden",
-    backgroundColor: "#140D06",
-  },
-  panelPageImage: {
-    borderRadius: 4,
   },
   pageLabel: {
-    color: "#3B2A14",
+    color: "#F9FAFB",
     fontFamily: pixelFont,
     fontSize: 12,
     fontWeight: "900",
@@ -394,9 +359,6 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginBottom: 8,
     textTransform: "uppercase",
-    textShadowColor: "rgba(255, 255, 255, 0.35)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 0,
   },
   toggleRow: {
     flexDirection: "row",
@@ -434,6 +396,8 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   largeTextArea: {
+    minHeight: 200,
+    maxHeight: 320,
     marginBottom: 4,
   },
   saveButton: {
@@ -505,14 +469,6 @@ const styles = StyleSheet.create({
   },
   entryText: {
     color: "#F8F1D7",
-    fontFamily: pixelFont,
-    fontSize: 12,
-    fontWeight: "700",
-    lineHeight: 18,
-    marginTop: 8,
-  },
-  gratitudeText: {
-    color: "#DDD6FE",
     fontFamily: pixelFont,
     fontSize: 12,
     fontWeight: "700",
