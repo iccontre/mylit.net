@@ -3,7 +3,16 @@ import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import { Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
+import { FormScreen } from "../components/FormScreen";
+import { BottomNav } from "../components/BottomNav";
+import { formPageContent, formStyles } from "../constants/formStyles";
+import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
+import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
+import { DAY_PLAN_KEY, getChecklistItemsForDay } from "../lib/questProgress";
+import { sanitizeDayPlanChecklists } from "../lib/dayPlanChecklist";
+import { persistProgressKeys } from "../lib/progressStore";
+import { syncDayPlanScheduledItems } from "../lib/progressSync";
 import { formatDurationLabel, generateTimeSlots, getDateKey, inferScheduledClassification, parseDurationMinutes, shiftTimeSlot, type ScheduledClassification, type ScheduledStatus } from "../lib/scheduling";
 
 type WeekdayName = "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "Saturday" | "Sunday";
@@ -45,24 +54,22 @@ type DayPlan = {
 
 type CheckIn = { mode?: string; energy?: number };
 
-const DAY_PLAN_KEY = "lit_day_plan";
 const CHECKIN_KEY = "lit_latest_checkin";
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
 const TIME_SLOTS = generateTimeSlots(7, 22, 30);
 const PROGRESS_DURATIONS = ["30 min", "45 min", "1 hr"];
 const RECOVERY_DURATIONS = ["10 min", "20 min", "30 min"];
 const WEEKDAYS: WeekdayName[] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const DEFAULT_ROLES: Record<WeekdayName, string> = {
-  Monday: "Coding Day",
-  Tuesday: "Study Day",
-  Wednesday: "Gym Day",
-  Thursday: "Build Day",
-  Friday: "Social Day",
-  Saturday: "Adventure Day",
-  Sunday: "Recovery Day",
+  Monday: "",
+  Tuesday: "",
+  Wednesday: "",
+  Thursday: "",
+  Friday: "",
+  Saturday: "",
+  Sunday: "",
 };
-const DEFAULT_CHECKLIST = ["Coding session", "Gym", "Read", "Meal prep", "Walk", "Journal"];
+
+const EMPTY_CHECKLIST_COPY = "No checklist items yet. Add one small habit when you're ready.";
 
 const pixelFont = Platform.select({ ios: "Menlo", android: "monospace", web: "monospace", default: "monospace" });
 
@@ -154,11 +161,10 @@ function timeInInterval(time: string, interval: Interval) {
   return total >= interval.start && total < interval.end;
 }
 
-function createChecklist(day: WeekdayName, saved: Partial<ChecklistItem>[] = [], useDefaults = false): ChecklistItem[] {
-  if (saved.length === 0 && !useDefaults) return [];
-  const source: Partial<ChecklistItem>[] = saved.length > 0 ? saved : DEFAULT_CHECKLIST.map((text) => ({ text }));
-  return source.map((item, index) => {
-    const text = item.text?.trim() || DEFAULT_CHECKLIST[index] || "Habit action";
+function createChecklist(day: WeekdayName, saved: Partial<ChecklistItem>[] = []): ChecklistItem[] {
+  if (saved.length === 0) return [];
+  return saved.map((item, index) => {
+    const text = item.text?.trim() || "Habit action";
     const durationMinutes = parseDurationMinutes(item.durationMinutes ?? item.duration, 30);
     const weekdays =
       Array.isArray(item.weekdays) && item.weekdays.length > 0
@@ -181,13 +187,13 @@ function createChecklist(day: WeekdayName, saved: Partial<ChecklistItem>[] = [],
 
 function createDefaultPlan(): DayPlan {
   const weekdayChecklists = WEEKDAYS.reduce((acc, day) => {
-    acc[day] = day === todayWeekday() ? createChecklist(day, [], true) : [];
+    acc[day] = [];
     return acc;
   }, {} as Record<WeekdayName, ChecklistItem[]>);
   const day = todayWeekday();
   return {
-    todayFocus: DEFAULT_ROLES[day],
-    todayGoal: DEFAULT_ROLES[day],
+    todayFocus: "",
+    todayGoal: "",
     todayQuest: {
       id: `today-quest-${getDateKey()}`,
       title: "Choose one honest quest for today",
@@ -206,21 +212,31 @@ function createDefaultPlan(): DayPlan {
   };
 }
 
+function findChecklistBucket(plan: DayPlan, itemId: string): WeekdayName | null {
+  for (const day of WEEKDAYS) {
+    if (plan.weekdayChecklists[day].some((item) => item.id === itemId)) {
+      return day;
+    }
+  }
+  return null;
+}
+
 function normalizePlan(raw: Partial<DayPlan>): DayPlan {
   const fallback = createDefaultPlan();
   const roles = WEEKDAYS.reduce((acc, day) => {
-    acc[day] = raw.weekdayRoles?.[day]?.trim() || (raw as Record<string, unknown>)[day]?.toString() || DEFAULT_ROLES[day];
+    acc[day] = raw.weekdayRoles?.[day]?.trim() || (raw as Record<string, unknown>)[day]?.toString() || "";
     return acc;
   }, {} as Record<WeekdayName, string>);
   const checklists = WEEKDAYS.reduce((acc, day) => {
-    acc[day] = createChecklist(day, raw.weekdayChecklists?.[day] || []);
+    const saved = sanitizeDayPlanChecklists(raw.weekdayChecklists)[day] || [];
+    acc[day] = createChecklist(day, saved as Partial<ChecklistItem>[]);
     return acc;
   }, {} as Record<WeekdayName, ChecklistItem[]>);
   const quest = raw.todayQuest || fallback.todayQuest;
   const questTitle = quest.title?.trim() || raw.todayGoal?.trim() || fallback.todayQuest.title;
   return {
-    todayFocus: raw.todayFocus?.trim() || raw.todayGoal?.trim() || roles[todayWeekday()],
-    todayGoal: raw.todayFocus?.trim() || raw.todayGoal?.trim() || roles[todayWeekday()],
+    todayFocus: roles[todayWeekday()],
+    todayGoal: roles[todayWeekday()],
     todayQuest: {
       id: quest.id || `today-quest-${getDateKey()}`,
       title: questTitle,
@@ -241,6 +257,7 @@ function normalizePlan(raw: Partial<DayPlan>): DayPlan {
 
 export default function DayPlanScreen() {
   const router = useRouter();
+  const mobile = useMobileFrame();
   const [dayPlan, setDayPlan] = useState<DayPlan>(() => createDefaultPlan());
   const [selectedDay, setSelectedDay] = useState<WeekdayName>(todayWeekday());
   const [isLowEnergy, setIsLowEnergy] = useState(false);
@@ -254,7 +271,18 @@ export default function DayPlanScreen() {
 
   async function loadDayPlan() {
     const saved = await readJson<Partial<DayPlan> | null>(DAY_PLAN_KEY, null);
-    if (saved) setDayPlan(normalizePlan(saved));
+    if (!saved) return;
+    const cleanedChecklists = sanitizeDayPlanChecklists(
+      saved.weekdayChecklists as Partial<Record<WeekdayName, Partial<ChecklistItem>[]>> | undefined
+    );
+    const normalized = normalizePlan({
+      ...saved,
+      weekdayChecklists: cleanedChecklists as DayPlan["weekdayChecklists"],
+    });
+    setDayPlan(normalized);
+    if (JSON.stringify(cleanedChecklists) !== JSON.stringify(saved.weekdayChecklists)) {
+      await persistProgressKeys({ [DAY_PLAN_KEY]: JSON.stringify(normalized) });
+    }
   }
 
   async function loadLatestCheckIn() {
@@ -264,21 +292,10 @@ export default function DayPlanScreen() {
 
   async function savePlan(nextPlan: DayPlan) {
     setDayPlan(nextPlan);
-    await AsyncStorage.setItem(DAY_PLAN_KEY, JSON.stringify(nextPlan));
+    await persistProgressKeys({ [DAY_PLAN_KEY]: JSON.stringify(nextPlan) });
     setSavedMessage("Day Plan saved to Calendar.");
-  }
-
-  function updateFocus(value: string) {
-    setSavedMessage("");
-    setDayPlan((current: DayPlan) => ({ ...current, todayFocus: value, todayGoal: value }));
-  }
-
-  function updateTodayQuestTitle(value: string) {
-    setSavedMessage("");
-    setDayPlan((current: DayPlan) => ({
-      ...current,
-      todayQuest: { ...current.todayQuest, title: value, kind: normalizeKind(inferScheduledClassification(value)) },
-    }));
+    void trackEvent(ANALYTICS_EVENTS.day_plan_saved);
+    void syncDayPlanScheduledItems();
   }
 
   function updateSelectedRole(value: string) {
@@ -297,42 +314,56 @@ export default function DayPlanScreen() {
     setSelectedDay(next);
   }
 
-  function updateChecklistItem(itemId: string, patch: Partial<ChecklistItem>) {
+  function updateTodayQuestTitle(value: string) {
     setSavedMessage("");
     setDayPlan((current: DayPlan) => ({
       ...current,
-      weekdayChecklists: {
-        ...current.weekdayChecklists,
-        [selectedDay]: current.weekdayChecklists[selectedDay as WeekdayName].map((item: ChecklistItem) =>
-          item.id === itemId
-            ? {
-                ...item,
-                ...patch,
-                durationMinutes: patch.duration ? parseDurationMinutes(patch.duration, patch.kind === "recovery" || item.kind === "recovery" ? 10 : 30) : patch.durationMinutes ?? item.durationMinutes,
-                kind: patch.text ? normalizeKind(inferScheduledClassification(patch.text)) : patch.kind ?? item.kind,
-                steps: patch.duration || patch.kind ? stepsForItem(patch.kind ?? item.kind, patch.duration ?? item.duration) : patch.steps ?? item.steps,
-                status: patch.checked !== undefined ? (patch.checked ? "completed" : "scheduled") : patch.status ?? item.status,
-              }
-            : item
-        ),
-      },
+      todayQuest: { ...current.todayQuest, title: value, kind: normalizeKind(inferScheduledClassification(value)) },
     }));
+  }
+
+  function updateChecklistItem(itemId: string, patch: Partial<ChecklistItem>) {
+    setSavedMessage("");
+    setDayPlan((current: DayPlan) => {
+      const bucketDay = findChecklistBucket(current, itemId) ?? selectedDay;
+      return {
+        ...current,
+        weekdayChecklists: {
+          ...current.weekdayChecklists,
+          [bucketDay]: current.weekdayChecklists[bucketDay].map((item: ChecklistItem) =>
+            item.id === itemId
+              ? {
+                  ...item,
+                  ...patch,
+                  durationMinutes: patch.duration ? parseDurationMinutes(patch.duration, patch.kind === "recovery" || item.kind === "recovery" ? 10 : 30) : patch.durationMinutes ?? item.durationMinutes,
+                  kind: patch.text ? normalizeKind(inferScheduledClassification(patch.text)) : patch.kind ?? item.kind,
+                  steps: patch.duration || patch.kind ? stepsForItem(patch.kind ?? item.kind, patch.duration ?? item.duration) : patch.steps ?? item.steps,
+                  status: patch.checked !== undefined ? (patch.checked ? "completed" : "scheduled") : patch.status ?? item.status,
+                }
+              : item
+          ),
+        },
+      };
+    });
   }
 
   function toggleChecklistWeekday(itemId: string, weekday: WeekdayName) {
     setSavedMessage("");
-    setDayPlan((current: DayPlan) => ({
-      ...current,
-      weekdayChecklists: {
-        ...current.weekdayChecklists,
-        [selectedDay]: current.weekdayChecklists[selectedDay as WeekdayName].map((item: ChecklistItem) => {
-          if (item.id !== itemId) return item;
-          const hasDay = item.weekdays.includes(weekday);
-          const weekdays = hasDay ? item.weekdays.filter((d) => d !== weekday) : [...item.weekdays, weekday];
-          return { ...item, weekdays: weekdays.length > 0 ? weekdays : [selectedDay] };
-        }),
-      },
-    }));
+    setDayPlan((current: DayPlan) => {
+      const bucketDay = findChecklistBucket(current, itemId) ?? selectedDay;
+      return {
+        ...current,
+        weekdayChecklists: {
+          ...current.weekdayChecklists,
+          [bucketDay]: current.weekdayChecklists[bucketDay].map((item: ChecklistItem) => {
+            if (item.id !== itemId) return item;
+            const hasDay = item.weekdays.includes(weekday);
+            const weekdays = hasDay ? item.weekdays.filter((d) => d !== weekday) : [...item.weekdays, weekday];
+            return { ...item, weekdays: weekdays.length > 0 ? weekdays : [selectedDay] };
+          }),
+        },
+      };
+    });
   }
 
   function addChecklistItem(kind: "progress" | "recovery") {
@@ -361,35 +392,45 @@ export default function DayPlanScreen() {
 
   function deleteChecklistItem(itemId: string) {
     setSavedMessage("");
-    setDayPlan((current: DayPlan) => ({
-      ...current,
-      weekdayChecklists: {
-        ...current.weekdayChecklists,
-        [selectedDay]: current.weekdayChecklists[selectedDay as WeekdayName].filter((item: ChecklistItem) => item.id !== itemId),
-      },
-    }));
+    setDayPlan((current: DayPlan) => {
+      const bucketDay = findChecklistBucket(current, itemId) ?? selectedDay;
+      return {
+        ...current,
+        weekdayChecklists: {
+          ...current.weekdayChecklists,
+          [bucketDay]: current.weekdayChecklists[bucketDay].filter((item: ChecklistItem) => item.id !== itemId),
+        },
+      };
+    });
   }
 
-  const selectedChecklist = dayPlan.weekdayChecklists[selectedDay] || [];
-  const previewItems = useMemo(() => selectedChecklist.slice().sort((a: ChecklistItem, b: ChecklistItem) => TIME_SLOTS.indexOf(a.startTime) - TIME_SLOTS.indexOf(b.startTime)), [selectedChecklist]);
+  const visibleChecklist = useMemo(
+    () => getChecklistItemsForDay(dayPlan, selectedDay) as ChecklistItem[],
+    [dayPlan, selectedDay]
+  );
+  const selectedRole = dayPlan.weekdayRoles[selectedDay]?.trim() ?? "";
+  const previewItems = useMemo(
+    () => visibleChecklist.slice().sort((a: ChecklistItem, b: ChecklistItem) => TIME_SLOTS.indexOf(a.startTime) - TIME_SLOTS.indexOf(b.startTime)),
+    [visibleChecklist]
+  );
   const currentInterval = useMemo(() => getCurrentInterval(), []);
   const intervalItems = previewItems.filter((item: ChecklistItem) => timeInInterval(item.startTime, currentInterval));
   const questInInterval = timeInInterval(dayPlan.todayQuest.startTime, currentInterval);
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={styles.phoneStage}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={uiAssets.backgrounds.neutral} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
-          <ScrollView style={styles.screenScroller} contentContainerStyle={styles.hudContent} showsVerticalScrollIndicator={false} bounces={false}>
+          <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.hudContent]}>
             <View style={styles.heroPanel}>
               <View style={styles.bannerIcon}><Text style={styles.bannerIconText}>📜</Text></View>
               <View style={styles.heroCopy}>
                 <Text style={styles.heroKicker}>DAY PLAN</Text>
                 <Text style={styles.title}>DAY PLAN</Text>
-                <Text style={styles.summary}>Set your quest, weekly role, and habit schedule.</Text>
+                <Text style={styles.summary}>Choose your weekly habit and optional checklist items.</Text>
               </View>
             </View>
 
@@ -397,7 +438,7 @@ export default function DayPlanScreen() {
               <Image source={uiAssets.guides.evie} style={styles.evieAvatar} resizeMode="contain" />
               <View style={styles.evieCopy}>
                 <Text style={styles.evieName}>EVIE</Text>
-                <Text style={styles.evieText}>Day Plan separates your daily focus from the quest that earns steps. Checklist habits only add steps when checked off.</Text>
+                <Text style={styles.evieText}>Weekly Habit is your recurring role for selected days. Checklist items are optional — add them only when you are ready.</Text>
               </View>
               <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
                 <Text style={styles.infoBtnText}>?</Text>
@@ -405,30 +446,13 @@ export default function DayPlanScreen() {
             </View>
 
             <View style={styles.panelGreen}>
-              <Text style={styles.sectionTitle}>TODAY’S FOCUS — THEME ONLY</Text>
-              <Text style={styles.helperText}>Your daily role. Shown on Calendar as a green marker. No steps awarded.</Text>
-              <TextInput style={styles.input} value={dayPlan.todayFocus} onChangeText={updateFocus} placeholder="Coding Day" placeholderTextColor="#94A3B8" />
-            </View>
-
-            <View style={dayPlan.todayQuest.kind === "recovery" ? styles.panelPurple : styles.panelGold}>
-              <Text style={styles.sectionTitle}>TODAY’S QUEST — QUEST BOARD • +2 STEPS</Text>
-              <Text style={styles.helperText}>This is the actual quest for today. It appears on Calendar and earns +2 steps only when completed.</Text>
-              <TextInput style={styles.input} value={dayPlan.todayQuest.title} onChangeText={updateTodayQuestTitle} placeholder="Finish profile page layout" placeholderTextColor="#94A3B8" />
-              <TimeStepper value={dayPlan.todayQuest.startTime} onChange={(next) => setDayPlan((current: DayPlan) => ({ ...current, todayQuest: { ...current.todayQuest, startTime: next } }))} />
-              {dayPlan.todayQuest.status !== "completed" ? (
-                <TouchableOpacity style={styles.reflectButton} onPress={() => router.push("/reflection")}>
-                  <Text style={styles.reflectButtonText}>REFLECT ON TODAY’S QUEST</Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
-
-            <View style={styles.panel}>
-              <Text style={styles.sectionTitle}>WEEKLY HABIT ROLE</Text>
+              <Text style={styles.sectionTitle}>WEEKLY HABIT</Text>
+              <Text style={styles.helperText}>Your recurring role for {selectedDay}. Shown on Calendar as a green marker. No steps awarded.</Text>
               <View style={styles.dayStepperRow}>
                 <TouchableOpacity style={styles.arrowButton} onPress={() => moveSelectedDay(-1)}><Text style={styles.arrowText}>←</Text></TouchableOpacity>
                 <View style={styles.dayStepperCenter}>
                   <Text style={styles.dayStepperTitle}>{selectedDay}</Text>
-                  <Text style={styles.dayStepperRole}>{dayPlan.weekdayRoles[selectedDay]}</Text>
+                  {selectedRole ? <Text style={styles.dayStepperRole}>{selectedRole}</Text> : null}
                 </View>
                 <TouchableOpacity style={styles.arrowButton} onPress={() => moveSelectedDay(1)}><Text style={styles.arrowText}>→</Text></TouchableOpacity>
               </View>
@@ -439,15 +463,30 @@ export default function DayPlanScreen() {
                   </TouchableOpacity>
                 ))}
               </ScrollView>
-              <TextInput style={styles.input} value={dayPlan.weekdayRoles[selectedDay]} onChangeText={updateSelectedRole} placeholder="Coding Day" placeholderTextColor="#94A3B8" />
+              <TextInput style={formStyles.input} value={dayPlan.weekdayRoles[selectedDay]} onChangeText={updateSelectedRole} placeholder="e.g. Coding Day" placeholderTextColor="#94A3B8" />
+            </View>
+
+            <View style={dayPlan.todayQuest.kind === "recovery" ? styles.panelPurple : styles.panelGold}>
+              <Text style={styles.sectionTitle}>TODAY’S QUEST — QUEST BOARD • +2 STEPS</Text>
+              <Text style={styles.helperText}>This is the actual quest for today. It appears on Calendar and earns +2 steps only when completed.</Text>
+              <TextInput style={formStyles.input} value={dayPlan.todayQuest.title} onChangeText={updateTodayQuestTitle} placeholder="Finish profile page layout" placeholderTextColor="#94A3B8" />
+              <TimeStepper value={dayPlan.todayQuest.startTime} onChange={(next) => setDayPlan((current: DayPlan) => ({ ...current, todayQuest: { ...current.todayQuest, startTime: next } }))} />
+              {dayPlan.todayQuest.status !== "completed" ? (
+                <TouchableOpacity style={styles.reflectButton} onPress={() => router.push("/reflection")}>
+                  <Text style={styles.reflectButtonText}>REFLECT ON TODAY’S QUEST</Text>
+                </TouchableOpacity>
+              ) : null}
             </View>
 
             <View style={styles.panel}>
               <View style={styles.rowBetween}>
                 <Text style={styles.sectionTitle}>CHECKLIST ITEMS</Text>
-                <Text style={styles.helperPill}>{isLowEnergy ? "Recovery mode suggested" : "30-min slots"}</Text>
+                <Text style={styles.helperPill}>{isLowEnergy ? "Recovery mode suggested" : "Optional"}</Text>
               </View>
-              {selectedChecklist.map((item: ChecklistItem) => (
+              {visibleChecklist.length === 0 ? (
+                <Text style={styles.emptyChecklist}>{EMPTY_CHECKLIST_COPY}</Text>
+              ) : null}
+              {visibleChecklist.map((item: ChecklistItem) => (
                 <View key={item.id} style={[styles.checkCard, item.kind === "recovery" ? styles.recoveryBorder : styles.progressBorder]}>
                   <View style={styles.rowBetween}>
                     <TouchableOpacity onPress={() => updateChecklistItem(item.id, { checked: !item.checked })}>
@@ -459,7 +498,7 @@ export default function DayPlanScreen() {
                       <TouchableOpacity style={styles.deleteButton} onPress={() => deleteChecklistItem(item.id)}><Text style={styles.deleteButtonText}>🗑</Text></TouchableOpacity>
                     </View>
                   </View>
-                  <TextInput style={styles.itemInput} value={item.text} onChangeText={(text: string) => updateChecklistItem(item.id, { text })} placeholder="Checklist item" placeholderTextColor="#94A3B8" />
+                  <TextInput style={[formStyles.input, styles.itemInput]} value={item.text} onChangeText={(text: string) => updateChecklistItem(item.id, { text })} placeholder="Checklist item" placeholderTextColor="#94A3B8" />
                   <TimeStepper value={item.startTime} onChange={(next) => updateChecklistItem(item.id, { startTime: next })} />
                   <View style={styles.durationRow}>
                     {durationsForKind(item.kind).map((duration) => (
@@ -495,7 +534,9 @@ export default function DayPlanScreen() {
 
             <View style={styles.previewPanel}>
               <Text style={styles.sectionTitle}>CALENDAR PREVIEW • {currentInterval.label}</Text>
-              <Text style={styles.previewFocus}>Theme: {dayPlan.weekdayRoles[selectedDay]} — calendar marker only</Text>
+              <Text style={styles.previewFocus}>
+                {selectedRole ? `Weekly Habit: ${selectedRole} — calendar marker only` : "No weekly habit set for this day."}
+              </Text>
               {selectedDay === todayWeekday() && questInInterval ? <Text style={styles.previewQuest}>Today’s Quest: {dayPlan.todayQuest.title} • {dayPlan.todayQuest.startTime} • +2 steps</Text> : null}
               {intervalItems.length === 0 && !(selectedDay === todayWeekday() && questInInterval) ? <Text style={styles.emptyPreview}>No planned items in this time block.</Text> : null}
               {intervalItems.map((item: ChecklistItem) => (
@@ -506,8 +547,8 @@ export default function DayPlanScreen() {
             {savedMessage ? <Text style={styles.savedMessage}>{savedMessage}</Text> : null}
             <TouchableOpacity style={styles.saveButton} onPress={() => savePlan(dayPlan)}><Text style={styles.saveButtonText}>SAVE DAY PLAN</Text></TouchableOpacity>
             <TouchableOpacity style={styles.backButton} onPress={() => router.push("/calendar")}><Text style={styles.backButtonText}>BACK TO CALENDAR</Text></TouchableOpacity>
-          </ScrollView>
-          <BottomNav router={router} />
+          </FormScreen>
+          <BottomNav activeRoute="calendar" bottomOffset={mobile.bottomNavOffset} />
           {showInfo ? <InfoOverlay onClose={() => setShowInfo(false)} /> : null}
         </View>
       </View>
@@ -558,10 +599,11 @@ function InfoOverlay({ onClose }: { onClose: () => void }) {
     <View style={styles.infoOverlay}>
       <View style={styles.infoCard}>
         <Text style={styles.infoTitle}>DAY PLAN</Text>
-        <Text style={styles.infoBullet}>{"• Today's Focus is your daily theme. It appears on Calendar as a green marker but earns no steps."}</Text>
-        <Text style={styles.infoBullet}>{"• Today's Quest is the actual goal for today. It earns +2 steps only when you mark it complete."}</Text>
-        <Text style={styles.infoBullet}>{"• Checklist items are recurring habits. Each earns steps only when checked off — never on save."}</Text>
-        <Text style={styles.infoBullet}>{"• Use Reflect on any item you missed to log a reflection."}</Text>
+        <ScrollView style={styles.infoScroll} showsVerticalScrollIndicator={false} bounces={false}>
+          <Text style={styles.infoBody}>
+            Day Plan helps you choose what matters today. Weekly Habit is your recurring role for selected days. Checklist items are optional — MYLIT starts with 0 so you do not get overloaded. Items only appear on the days you choose. Saving does not give steps; completing does. Your Day Plan can show on Home and Calendar.
+          </Text>
+        </ScrollView>
         <TouchableOpacity style={styles.infoClose} onPress={onClose}>
           <Text style={styles.infoCloseText}>RETURN</Text>
         </TouchableOpacity>
@@ -570,18 +612,15 @@ function InfoOverlay({ onClose }: { onClose: () => void }) {
   );
 }
 
-function BottomNav({ router }: { router: ReturnType<typeof useRouter> }) {
-  return <View style={styles.bottomNav}><TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}><Text style={styles.navIcon}>🏠</Text><Text style={styles.navLabel}>HOME</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/sleep")}><Text style={styles.navIcon}>🌙</Text><Text style={styles.navLabel}>SLEEP</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/mind")}><Text style={styles.navIcon}>🧠</Text><Text style={styles.navLabel}>MIND</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/path")}><Text style={styles.navIcon}>🌲</Text><Text style={styles.navLabel}>PATH</Text></TouchableOpacity><TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={() => router.push("/calendar")}><Text style={styles.navIcon}>📅</Text><Text style={[styles.navLabel, styles.navLabelActive]}>CAL</Text></TouchableOpacity><TouchableOpacity style={styles.navButton} onPress={() => router.push("/stats")}><Text style={styles.navIcon}>🎒</Text><Text style={styles.navLabel}>BAG</Text></TouchableOpacity></View>;
-}
-
 const styles = StyleSheet.create({
-  pageRoot: { flex: 1, backgroundColor: "#02040A", alignItems: "center", justifyContent: "center" },
-  phoneStage: { width: "100%", maxWidth: MAX_FRAME_WIDTH, aspectRatio: APP_FRAME_ASPECT_RATIO, alignSelf: "center", backgroundColor: "#050814", overflow: "hidden", position: "relative", borderWidth: 2, borderColor: "#FBBF24" },
+  pageRoot: { flex: 1, backgroundColor: "#02040A" },
+  phoneStage: { alignSelf: "center", backgroundColor: "#050814", overflow: "hidden", position: "relative", borderWidth: 2, borderColor: "#FBBF24" },
+  phoneStageFullscreen: { borderWidth: 0, maxWidth: undefined, aspectRatio: undefined },
   backgroundLayer: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, zIndex: 0 },
   backgroundImage: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, width: "100%", height: "100%" },
   worldOverlay: { flex: 1, backgroundColor: "rgba(2, 6, 12, 0.62)" },
   screenScroller: { flex: 1 },
-  hudContent: { minHeight: "100%", paddingTop: 18, paddingHorizontal: 14, paddingBottom: 104 },
+  hudContent: { flexGrow: 1, width: "100%", paddingTop: 18, paddingHorizontal: 14 },
   heroPanel: { backgroundColor: "rgba(5, 12, 24, 0.92)", borderWidth: 3, borderColor: "#D99B2B", borderRadius: 8, padding: 13, marginBottom: 12, flexDirection: "row", alignItems: "center" },
   bannerIcon: { width: 46, height: 66, backgroundColor: "rgba(70, 28, 112, 0.86)", borderWidth: 2, borderColor: "#FDE047", alignItems: "center", justifyContent: "center", marginRight: 12 },
   bannerIconText: { fontSize: 26 },
@@ -596,7 +635,8 @@ const styles = StyleSheet.create({
   helperText: { color: "#CBD5E1", fontSize: 12, lineHeight: 18, marginBottom: 8, fontWeight: "700" },
   helperPill: { color: "#67E8F9", fontFamily: pixelFont, fontSize: 10, fontWeight: "900" },
   input: { backgroundColor: "rgba(2, 6, 23, 0.95)", borderRadius: 5, padding: 12, fontSize: 15, color: "#F9FAFB", borderWidth: 2, borderColor: "#475569", fontWeight: "800" },
-  itemInput: { color: "#F9FAFB", fontSize: 15, fontWeight: "800", borderBottomWidth: 1, borderBottomColor: "#334155", paddingVertical: 8, marginVertical: 6 },
+  itemInput: { marginVertical: 6 },
+  emptyChecklist: { color: "#94A3B8", fontSize: 13, lineHeight: 18, fontWeight: "700", marginBottom: 10, fontStyle: "italic" },
   timeStepperRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: 10 },
   timeStepButton: { width: 42, height: 36, borderWidth: 2, borderColor: "#FBBF24", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(69, 43, 8, 0.5)" },
   timeStepText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 18, fontWeight: "900" },
@@ -665,7 +705,8 @@ const styles = StyleSheet.create({
   infoOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.82)", justifyContent: "center", alignItems: "center", padding: 20, zIndex: 25 },
   infoCard: { backgroundColor: "rgba(8,13,24,0.99)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 12, padding: 16, width: "100%" },
   infoTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", marginBottom: 10 },
-  infoBullet: { color: "#CBD5E1", fontSize: 13, lineHeight: 20, fontWeight: "700", marginBottom: 6 },
+  infoScroll: { maxHeight: 280 },
+  infoBody: { color: "#CBD5E1", fontSize: 13, lineHeight: 20, fontWeight: "700" },
   infoClose: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", paddingVertical: 11, alignItems: "center", marginTop: 12 },
   infoCloseText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900" },
   bottomNav: { position: "absolute", bottom: 8, left: 8, right: 8, height: 62, flexDirection: "row", justifyContent: "space-between", backgroundColor: "rgba(4,8,16,0.98)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 5, padding: 4 },

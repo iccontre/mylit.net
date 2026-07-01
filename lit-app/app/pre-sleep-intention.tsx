@@ -5,25 +5,33 @@ import { useState } from "react";
 import {
   Image,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
 
+import { FormScreen } from "../components/FormScreen";
 import { GuideInfoModal } from "../components/GuideInfoModal";
+import { formPageContent, formStyles } from "../constants/formStyles";
+import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
+import { persistProgressKeys } from "../lib/progressStore";
+import {
+  LATEST_PRE_SLEEP_INTENTION_KEY,
+  PRE_SLEEP_INTENTIONS_KEY,
+} from "../lib/storageKeys";
+import { USER_STATS_KEY } from "../lib/questProgress";
 
 const LUNA_PRE_SLEEP_BULLETS = [
-  "Write one intention before sleep to prime tomorrow's mindset.",
+  "Pre-Sleep Intention gives your mind one clear signal before bed.",
+  "Write one intention to prime tomorrow's mindset.",
   "Pick a Feeling to clarify what state you want to wake up in.",
-  "Pick a Support option to give yourself a simple wind-down anchor for tonight.",
+  "Pick a Support option for a simple wind-down anchor tonight.",
   "Saving a complete intention earns +1 step.",
   "Your intention appears in Morning Reflection the next day.",
-  "You do not need to force anything — one clear direction is enough.",
+  "One clear direction is enough — you do not need to force anything.",
 ];
 
 type PreSleepIntention = {
@@ -35,14 +43,8 @@ type PreSleepIntention = {
   createdAt: string;
 };
 
-const PRE_SLEEP_INTENTIONS_KEY = "lit_pre_sleep_intentions";
-const LATEST_PRE_SLEEP_INTENTION_KEY = "lit_latest_pre_sleep_intention";
-const USER_STATS_KEY = "lit_user_stats";
-
 const FEELING_OPTIONS = ["Focused", "Energized", "Calm", "Grounded", "Rested", "Brave", "Gentle", "Steady"];
 const SUPPORT_OPTIONS = ["No screens", "Gratitude", "Breathe", "Let go", "Sleep early"];
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -59,17 +61,12 @@ const theme = { accent: "#C4A7FF", glow: "#E9D5FF", panel: "rgba(18, 16, 34, 0.9
 
 export default function PreSleepIntentionScreen() {
   const router = useRouter();
-  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const mobile = useMobileFrame();
 
   const [intention, setIntention] = useState("");
   const [feeling, setFeeling] = useState("");
   const [support, setSupport] = useState<string[]>([]);
   const [showInfo, setShowInfo] = useState(false);
-
-  const safeViewportWidth = Math.max(0, viewportWidth - 24);
-  const safeViewportHeight = Math.max(0, viewportHeight - 24);
-  const frameWidth = Math.min(MAX_FRAME_WIDTH, safeViewportWidth, safeViewportHeight * APP_FRAME_ASPECT_RATIO);
-  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   async function successHaptic() {
     try {
@@ -82,7 +79,9 @@ export default function PreSleepIntentionScreen() {
   async function earnSteps(count: number) {
     const saved = await AsyncStorage.getItem(USER_STATS_KEY);
     const current: Record<string, unknown> = saved ? JSON.parse(saved) : {};
-    await AsyncStorage.setItem(USER_STATS_KEY, JSON.stringify({ ...current, totalSteps: Number(current.totalSteps ?? 0) + count }));
+    await persistProgressKeys({
+      [USER_STATS_KEY]: JSON.stringify({ ...current, totalSteps: Number(current.totalSteps ?? 0) + count }),
+    });
   }
 
   async function saveIntention() {
@@ -100,8 +99,10 @@ export default function PreSleepIntentionScreen() {
     const saved = await AsyncStorage.getItem(PRE_SLEEP_INTENTIONS_KEY);
     const history: PreSleepIntention[] = saved ? JSON.parse(saved) : [];
 
-    await AsyncStorage.setItem(PRE_SLEEP_INTENTIONS_KEY, JSON.stringify([entry, ...history]));
-    await AsyncStorage.setItem(LATEST_PRE_SLEEP_INTENTION_KEY, JSON.stringify(entry));
+    await persistProgressKeys({
+      [PRE_SLEEP_INTENTIONS_KEY]: JSON.stringify([entry, ...history]),
+      [LATEST_PRE_SLEEP_INTENTION_KEY]: JSON.stringify(entry),
+    });
     await earnSteps(1);
     await successHaptic();
 
@@ -113,13 +114,13 @@ export default function PreSleepIntentionScreen() {
   }
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight, borderColor: theme.accent }]}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen, { borderColor: theme.accent }]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={uiAssets.backgrounds.recovery} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
-          <ScrollView style={styles.screenScroller} contentContainerStyle={styles.hudContent} showsVerticalScrollIndicator={false} bounces={false}>
+          <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.hudContent]}>
             <View style={[styles.hero, { borderColor: theme.accent, backgroundColor: theme.panel }]}>
               <View style={styles.heroTopRow}>
                 <View style={styles.heroCopy}>
@@ -144,8 +145,10 @@ export default function PreSleepIntentionScreen() {
             <View style={[styles.formCard, { borderColor: theme.accent }]}>
               <Text style={styles.label}>What do you want to carry into tomorrow?</Text>
               <TextInput
-                style={styles.textArea}
+                style={[formStyles.textArea, styles.textArea]}
                 multiline
+                scrollEnabled
+                textAlignVertical="top"
                 placeholder="Example: I want to feel calm and make progress on my work."
                 placeholderTextColor="#94A3B8"
                 value={intention}
@@ -192,7 +195,7 @@ export default function PreSleepIntentionScreen() {
             <TouchableOpacity style={styles.backButton} onPress={() => router.push("/sleep")}>
               <Text style={styles.backButtonText}>Back to Sleep Hub</Text>
             </TouchableOpacity>
-          </ScrollView>
+          </FormScreen>
 
           <GuideInfoModal
             visible={showInfo}
@@ -213,8 +216,6 @@ const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
     backgroundColor: "#02040A",
-    alignItems: "center",
-    justifyContent: "center",
   },
   phoneStage: {
     alignSelf: "center",
@@ -226,6 +227,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.85,
     shadowRadius: 0,
     shadowOffset: { width: 6, height: 6 },
+  },
+  phoneStageFullscreen: {
+    borderWidth: 0,
+    maxWidth: undefined,
+    aspectRatio: undefined,
+    shadowOpacity: 0,
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -244,10 +251,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   hudContent: {
-    minHeight: "100%",
+    flexGrow: 1,
     paddingTop: 18,
     paddingHorizontal: 16,
-    paddingBottom: 18,
   },
   hero: {
     borderWidth: 4,
@@ -361,17 +367,8 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   textArea: {
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
     borderRadius: 4,
-    padding: 12,
-    minHeight: 78,
-    fontSize: 15,
-    color: "#F9FAFB",
     marginBottom: 6,
-    textAlignVertical: "top",
-    borderWidth: 2,
-    borderColor: "#475569",
-    fontFamily: pixelFont,
   },
   chipRow: {
     flexDirection: "row",

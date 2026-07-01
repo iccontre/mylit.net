@@ -4,24 +4,28 @@ import { useState } from "react";
 import {
   Image,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
 
+import { BottomNav } from "../components/BottomNav";
+import { FormScreen } from "../components/FormScreen";
 import { GuideInfoModal } from "../components/GuideInfoModal";
+import { formPageContent, formStyles } from "../constants/formStyles";
+import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
+import { persistProgressKeys } from "../lib/progressStore";
+import { REFLECTIONS_KEY } from "../lib/storageKeys";
 
 const LUNA_REFLECTION_BULLETS = [
-  "Reflection is not self-criticism — it is investigation. You are looking for data, not a verdict.",
-  "Missed quests are not failures. They are information about what the step actually needed.",
+  "Reflection helps process missed or completed quests — it is not self-criticism.",
+  "Missed quests are information about what the step actually needed.",
   "Ask what got in the way before asking what to do differently.",
-  "The smaller next step field is the most important one — make the quest easier to start.",
-  "Saving a reflection earns steps: every honest entry is progress, even about something that did not go well.",
+  "The smaller next step field is the most important — make the quest easier to start.",
+  "Saving a reflection earns steps. Honest entries are progress, even about hard moments.",
 ];
 
 type ReflectionEntry = {
@@ -34,10 +38,6 @@ type ReflectionEntry = {
   createdAt: string;
 };
 
-const REFLECTIONS_KEY = "lit_reflections";
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
-
 const pixelFont = Platform.select({
   ios: "Menlo",
   android: "monospace",
@@ -48,7 +48,7 @@ const pixelFont = Platform.select({
 export default function ReflectionScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const mobile = useMobileFrame();
 
   const rawQuest = Array.isArray(params.quest) ? params.quest[0] : params.quest;
   const quest = rawQuest || "Open reflection";
@@ -57,15 +57,6 @@ export default function ReflectionScreen() {
   const [whatGotInTheWay, setWhatGotInTheWay] = useState("");
   const [whatWasOff, setWhatWasOff] = useState("");
   const [smallerVersion, setSmallerVersion] = useState("");
-
-  const safeViewportWidth = Math.max(0, viewportWidth - 24);
-  const safeViewportHeight = Math.max(0, viewportHeight - 24);
-  const frameWidth = Math.min(
-    MAX_FRAME_WIDTH,
-    safeViewportWidth,
-    safeViewportHeight * APP_FRAME_ASPECT_RATIO
-  );
-  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   async function saveReflection() {
     const newEntry: ReflectionEntry = {
@@ -82,23 +73,18 @@ export default function ReflectionScreen() {
     const parsed: ReflectionEntry[] = saved ? JSON.parse(saved) : [];
     const next = [newEntry, ...parsed];
 
-    await AsyncStorage.setItem(REFLECTIONS_KEY, JSON.stringify(next));
+    await persistProgressKeys({ [REFLECTIONS_KEY]: JSON.stringify(next) });
     router.push("/");
   }
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight }]}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={uiAssets.backgrounds.neutral} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
-          <ScrollView
-            style={styles.screenScroller}
-            contentContainerStyle={styles.hudContent}
-            showsVerticalScrollIndicator={false}
-            bounces={false}
-          >
+          <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.hudContent]}>
             <View style={styles.hero}>
               <Text style={styles.heroLabel}>MIND HUB</Text>
               <Text style={[styles.heroTitle, { fontSize: 34, letterSpacing: 3 }]}>REFLECTION</Text>
@@ -126,8 +112,9 @@ export default function ReflectionScreen() {
             <View style={styles.panel}>
               <Text style={styles.label}>What got in the way?</Text>
               <TextInput
-                style={styles.textArea}
+                style={[formStyles.textArea, styles.textArea]}
                 multiline
+                scrollEnabled
                 textAlignVertical="top"
                 placeholder="Energy, timing, stress, distraction, fear, or something else."
                 placeholderTextColor="#94A3B8"
@@ -137,8 +124,9 @@ export default function ReflectionScreen() {
 
               <Text style={styles.label}>Was the step too big?</Text>
               <TextInput
-                style={styles.textArea}
+                style={[formStyles.textArea, styles.textArea]}
                 multiline
+                scrollEnabled
                 textAlignVertical="top"
                 placeholder="What made it hard to start or finish?"
                 placeholderTextColor="#94A3B8"
@@ -148,8 +136,9 @@ export default function ReflectionScreen() {
 
               <Text style={styles.label}>What is the smaller next step?</Text>
               <TextInput
-                style={styles.textArea}
+                style={[formStyles.textArea, styles.textArea]}
                 multiline
+                scrollEnabled
                 textAlignVertical="top"
                 placeholder="Make it easier, clearer, or better timed."
                 placeholderTextColor="#94A3B8"
@@ -165,7 +154,7 @@ export default function ReflectionScreen() {
             <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.push("/mind")}>
               <Text style={styles.secondaryText}>← Back to Mind Hub</Text>
             </TouchableOpacity>
-          </ScrollView>
+          </FormScreen>
 
           <GuideInfoModal
             visible={showInfo}
@@ -177,32 +166,7 @@ export default function ReflectionScreen() {
             accentColor="#C4A7FF"
           />
 
-          <View style={styles.bottomNav}>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}>
-              <Text style={styles.navText}>🏠</Text>
-              <Text style={styles.navLabel}>HOME</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/sleep")}>
-              <Text style={styles.navText}>🌙</Text>
-              <Text style={styles.navLabel}>SLEEP</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={() => router.push("/mind")}>
-              <Text style={styles.navTextActive}>🧠</Text>
-              <Text style={styles.navLabelActive}>MIND</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/path")}>
-              <Text style={styles.navText}>🌲</Text>
-              <Text style={styles.navLabel}>PATH</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/calendar")}>
-              <Text style={styles.navText}>📅</Text>
-              <Text style={styles.navLabel}>CAL</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/stats")}>
-              <Text style={styles.navText}>🎒</Text>
-              <Text style={styles.navLabel}>BAG</Text>
-            </TouchableOpacity>
-          </View>
+          <BottomNav activeRoute="mind" theme="purple" bottomOffset={mobile.bottomNavOffset} />
         </View>
       </View>
     </View>
@@ -213,8 +177,6 @@ const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
     backgroundColor: "#02040A",
-    alignItems: "center",
-    justifyContent: "center",
   },
   phoneStage: {
     alignSelf: "center",
@@ -227,6 +189,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.85,
     shadowRadius: 0,
     shadowOffset: { width: 6, height: 6 },
+  },
+  phoneStageFullscreen: {
+    borderWidth: 0,
+    maxWidth: undefined,
+    aspectRatio: undefined,
+    shadowOpacity: 0,
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -245,10 +213,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   hudContent: {
-    minHeight: "100%",
+    flexGrow: 1,
     paddingTop: 24,
     paddingHorizontal: 14,
-    paddingBottom: 82,
   },
   hero: {
     backgroundColor: "rgba(8, 13, 24, 0.96)",
@@ -362,17 +329,8 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   textArea: {
-    minHeight: 112,
-    borderWidth: 2,
     borderColor: "#A78BFA",
-    borderRadius: 6,
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
-    padding: 12,
-    color: "#F9FAFB",
-    fontFamily: pixelFont,
-    fontSize: 14,
-    fontWeight: "800",
-    lineHeight: 20,
+    marginBottom: 4,
   },
   primaryBtn: {
     backgroundColor: "#FBBF24",

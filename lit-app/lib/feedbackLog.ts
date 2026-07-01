@@ -19,10 +19,13 @@
 
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+import { GOAL_FEEDBACK_LOG_KEY } from "./storageKeys";
+import { persistProgressKeys } from "./progressStore";
+
 import { diffMilestoneSets, type GenerationMode } from "./goalGeneration";
 import type { GoalMilestoneSet } from "../constants/goalMilestoneTemplates";
 
-export const FEEDBACK_LOG_KEY = "lit_goal_feedback_log";
+export const FEEDBACK_LOG_KEY = GOAL_FEEDBACK_LOG_KEY;
 
 const MAX_ENTRIES = 200;
 
@@ -68,7 +71,7 @@ export async function logGoalFeedback(input: {
     const existing = await AsyncStorage.getItem(FEEDBACK_LOG_KEY);
     const parsed: GoalFeedbackEntry[] = existing ? JSON.parse(existing) : [];
     const next = [...parsed, entry].slice(-MAX_ENTRIES);
-    await AsyncStorage.setItem(FEEDBACK_LOG_KEY, JSON.stringify(next));
+    await persistProgressKeys({ [FEEDBACK_LOG_KEY]: JSON.stringify(next) });
   } catch {
     // AsyncStorage failure is not user-facing. Drop silently.
   }

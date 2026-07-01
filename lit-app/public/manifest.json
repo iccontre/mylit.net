@@ -1,0 +1,29 @@
+{
+  "name": "MYLIT",
+  "short_name": "MYLIT",
+  "description": "A sleep, energy, and quest-based productivity app for honest daily progress.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#07111f",
+  "theme_color": "#7CFF3A",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/pwa-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/pwa-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/maskable-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

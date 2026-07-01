@@ -153,6 +153,18 @@ export function parseTimeToMinutes(time?: string | null): number | null {
   return null;
 }
 
+/** Parses a single time or sleep-guide range like "7:00 PM – 8:00 PM" (uses the first time for placement). */
+export function parseSleepGuideTime(value?: string | null): number | null {
+  if (!value) return null;
+  const trimmed = String(value).trim();
+  const rangeMatch = trimmed.match(/^(.+?)\s*[–—-]\s*(.+)$/);
+  if (rangeMatch) {
+    const start = parseTimeToMinutes(rangeMatch[1].trim());
+    if (start !== null) return start;
+  }
+  return parseTimeToMinutes(trimmed);
+}
+
 export function formatMinutesAsTime(minutes: number): string {
   const safe = ((minutes % 1440) + 1440) % 1440;
   const hour24 = Math.floor(safe / 60);
@@ -315,48 +327,53 @@ function normalizeChecklistItems(raw: unknown): unknown[] {
 export function collectDayPlanScheduledItems(plan: unknown, resolveDateForWeekday: (weekday: WeekdayName) => string | undefined | null): ScheduledQuestLike[] {
   if (!plan || typeof plan !== "object") return [];
   const source = plan as Record<string, unknown>;
+  const weekdayChecklists = source.weekdayChecklists as Record<string, unknown[]> | undefined;
+  if (!weekdayChecklists) return [];
+
   const scheduledItems: ScheduledQuestLike[] = [];
-  const weekdayChecklists = source.weekdayChecklists as Record<string, unknown> | undefined;
+  const seen = new Set<string>();
 
   for (const weekday of WEEKDAYS) {
-    const short = weekday.slice(0, 3).toUpperCase();
-    const lower = weekday.toLowerCase();
-    const possibleSources = [
-      weekdayChecklists?.[weekday],
-      (source.checklist as Record<string, unknown> | undefined)?.[weekday],
-      (source.checklist as Record<string, unknown> | undefined)?.[short],
-      (source.checklist as Record<string, unknown> | undefined)?.[lower],
-      (source.checklists as Record<string, unknown> | undefined)?.[weekday],
-      (source.dayChecklists as Record<string, unknown> | undefined)?.[weekday],
-    ];
     const date = resolveDateForWeekday(weekday) ?? undefined;
-    possibleSources.flatMap(normalizeChecklistItems).forEach((raw, index) => {
-      const item = raw as Partial<ScheduledQuestLike>;
-      const title = getItemTitle(item);
-      const durationMinutes = parseDurationMinutes(item.durationMinutes ?? item.duration, 30);
-      const classification = inferScheduledClassification(item);
-      scheduledItems.push({
-        id: String(item.id ?? `day-plan-${weekday}-${index}-${title}`),
-        source: "dayPlanChecklist",
-        title,
-        text: item.text,
-        task: item.task,
-        note: item.note,
-        date,
-        weekday,
-        startTime: item.startTime ?? item.time,
-        time: item.time ?? item.startTime,
-        duration: item.duration ?? formatDurationLabel(durationMinutes),
-        durationMinutes,
-        steps: item.steps ?? 1,
-        status: item.status ?? (item.checked ? "completed" : "scheduled"),
-        kind: "checklist",
-        classification,
-        checked: Boolean(item.checked),
-        createdAt: item.createdAt,
-        completedAt: item.completedAt,
+    for (const bucketDay of WEEKDAYS) {
+      const bucketItems = weekdayChecklists[bucketDay];
+      if (!Array.isArray(bucketItems)) continue;
+      bucketItems.forEach((raw, index) => {
+        const item = raw as Partial<ScheduledQuestLike> & { weekdays?: WeekdayName[] };
+        const itemWeekdays =
+          Array.isArray(item.weekdays) && item.weekdays.length > 0 ? item.weekdays : [bucketDay];
+        if (!itemWeekdays.includes(weekday)) return;
+
+        const title = getItemTitle(item);
+        const id = String(item.id ?? `day-plan-${bucketDay}-${index}-${title}`);
+        if (seen.has(id)) return;
+        seen.add(id);
+
+        const durationMinutes = parseDurationMinutes(item.durationMinutes ?? item.duration, 30);
+        const classification = inferScheduledClassification(item);
+        scheduledItems.push({
+          id,
+          source: "dayPlanChecklist",
+          title,
+          text: item.text,
+          task: item.task,
+          note: item.note,
+          date,
+          weekday,
+          startTime: item.startTime ?? item.time,
+          time: item.time ?? item.startTime,
+          duration: item.duration ?? formatDurationLabel(durationMinutes),
+          durationMinutes,
+          steps: item.steps ?? 1,
+          status: item.status ?? (item.checked ? "completed" : "scheduled"),
+          kind: "checklist",
+          classification,
+          checked: Boolean(item.checked),
+          createdAt: item.createdAt,
+          completedAt: item.completedAt,
+        });
       });
-    });
+    }
   }
 
   return scheduledItems;

@@ -5,25 +5,33 @@ import { useCallback, useState } from "react";
 import {
   Image,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
 
+import { FormScreen } from "../components/FormScreen";
 import { GuideInfoModal } from "../components/GuideInfoModal";
+import { formPageContent, formStyles } from "../constants/formStyles";
+import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
+import { USER_STATS_KEY } from "../lib/questProgress";
+import { persistProgressKeys } from "../lib/progressStore";
+import {
+  LATEST_PRE_SLEEP_INTENTION_KEY,
+  MORNING_INTENTION_REFLECTIONS_KEY,
+} from "../lib/storageKeys";
 
 const EVIE_MORNING_BULLETS = [
-  "This page helps you compare last night's intention with how you feel this morning.",
-  "Write honestly in the reflection box — there is no wrong answer.",
+  "Morning Reflection connects sleep, intention, and the day's energy.",
+  "Compare last night's intention with how you feel this morning.",
+  "Write honestly — there is no wrong answer.",
   "More than 8.5 hours of sleep earns +2 steps. At least 7 hours earns +1 step.",
-  "Morning Support helps you pick one concrete first action to start the day.",
-  "This page should feel encouraging, not like a report card.",
+  "Morning Support helps you pick one concrete first action.",
   "Even if last night's intention did not carry through, noting that is still useful.",
+  "This page should feel encouraging, not like a report card.",
 ];
 
 type PreSleepIntention = {
@@ -44,18 +52,12 @@ type MorningIntentionReflection = {
   createdAt: string;
 };
 
-const LATEST_PRE_SLEEP_INTENTION_KEY = "lit_latest_pre_sleep_intention";
-const MORNING_INTENTION_REFLECTIONS_KEY = "lit_morning_intention_reflections";
-const USER_STATS_KEY = "lit_user_stats";
-
 const MORNING_SUPPORT_OPTIONS = [
   "Write in dream journal",
   "Shower",
   "Drink water / make food",
   "15 min of sunlight",
 ];
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -72,18 +74,13 @@ const theme = { accent: "#FBBF24", glow: "#FEF3C7", panel: "rgba(18, 16, 12, 0.9
 
 export default function MorningIntentionReflectionScreen() {
   const router = useRouter();
-  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const mobile = useMobileFrame();
 
   const [latestIntention, setLatestIntention] = useState<PreSleepIntention | null>(null);
   const [reflectionText, setReflectionText] = useState("");
   const [sleepHours, setSleepHours] = useState<"none" | "7hrs" | "8.5hrs">("none");
   const [morningSupport, setMorningSupport] = useState<string[]>([]);
   const [showInfo, setShowInfo] = useState(false);
-
-  const safeViewportWidth = Math.max(0, viewportWidth - 24);
-  const safeViewportHeight = Math.max(0, viewportHeight - 24);
-  const frameWidth = Math.min(MAX_FRAME_WIDTH, safeViewportWidth, safeViewportHeight * APP_FRAME_ASPECT_RATIO);
-  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   useFocusEffect(
     useCallback(() => {
@@ -107,7 +104,9 @@ export default function MorningIntentionReflectionScreen() {
   async function earnSteps(count: number) {
     const saved = await AsyncStorage.getItem(USER_STATS_KEY);
     const current: Record<string, unknown> = saved ? JSON.parse(saved) : {};
-    await AsyncStorage.setItem(USER_STATS_KEY, JSON.stringify({ ...current, totalSteps: Number(current.totalSteps ?? 0) + count }));
+    await persistProgressKeys({
+      [USER_STATS_KEY]: JSON.stringify({ ...current, totalSteps: Number(current.totalSteps ?? 0) + count }),
+    });
   }
 
   async function saveReflection() {
@@ -122,7 +121,9 @@ export default function MorningIntentionReflectionScreen() {
 
     const saved = await AsyncStorage.getItem(MORNING_INTENTION_REFLECTIONS_KEY);
     const history: MorningIntentionReflection[] = saved ? JSON.parse(saved) : [];
-    await AsyncStorage.setItem(MORNING_INTENTION_REFLECTIONS_KEY, JSON.stringify([reflection, ...history]));
+    await persistProgressKeys({
+      [MORNING_INTENTION_REFLECTIONS_KEY]: JSON.stringify([reflection, ...history]),
+    });
 
     const steps = sleepHours === "8.5hrs" ? 2 : sleepHours === "7hrs" ? 1 : 0;
     if (steps > 0) await earnSteps(steps);
@@ -136,13 +137,13 @@ export default function MorningIntentionReflectionScreen() {
   }
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight, borderColor: theme.accent }]}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen, { borderColor: theme.accent }]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={uiAssets.backgrounds.progress} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
-          <ScrollView style={styles.screenScroller} contentContainerStyle={styles.hudContent} showsVerticalScrollIndicator={false} bounces={false}>
+          <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.hudContent]}>
             <View style={[styles.hero, { borderColor: theme.accent, backgroundColor: theme.panel }]}>
               <View style={styles.heroTopRow}>
                 <View style={styles.heroCopy}>
@@ -184,7 +185,16 @@ export default function MorningIntentionReflectionScreen() {
 
             <View style={[styles.panel, { borderColor: theme.accent }]}>
               <Text style={styles.label}>Morning reflection</Text>
-              <TextInput style={[styles.textArea, { minHeight: 110 }]} multiline placeholder="How are you feeling this morning? What is on your mind?" placeholderTextColor="#94A3B8" value={reflectionText} onChangeText={setReflectionText} />
+              <TextInput
+                style={[formStyles.textArea, styles.textArea]}
+                multiline
+                scrollEnabled
+                textAlignVertical="top"
+                placeholder="How are you feeling this morning? What is on your mind?"
+                placeholderTextColor="#94A3B8"
+                value={reflectionText}
+                onChangeText={setReflectionText}
+              />
             </View>
 
             <View style={[styles.panel, { borderColor: theme.accent }]}>
@@ -233,7 +243,7 @@ export default function MorningIntentionReflectionScreen() {
             <TouchableOpacity style={styles.backButton} onPress={() => router.push("/sleep")}>
               <Text style={styles.backButtonText}>Back to Sleep Hub</Text>
             </TouchableOpacity>
-          </ScrollView>
+          </FormScreen>
 
           <GuideInfoModal
             visible={showInfo}
@@ -254,8 +264,6 @@ const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
     backgroundColor: "#02040A",
-    alignItems: "center",
-    justifyContent: "center",
   },
   phoneStage: {
     alignSelf: "center",
@@ -267,6 +275,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.85,
     shadowRadius: 0,
     shadowOffset: { width: 6, height: 6 },
+  },
+  phoneStageFullscreen: {
+    borderWidth: 0,
+    maxWidth: undefined,
+    aspectRatio: undefined,
+    shadowOpacity: 0,
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -285,10 +299,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   hudContent: {
-    minHeight: "100%",
+    flexGrow: 1,
     paddingTop: 18,
     paddingHorizontal: 16,
-    paddingBottom: 18,
   },
   hero: {
     borderWidth: 4,
@@ -475,16 +488,7 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   textArea: {
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
     borderRadius: 4,
-    padding: 12,
-    minHeight: 82,
-    fontSize: 15,
-    color: "#F9FAFB",
-    textAlignVertical: "top",
-    borderWidth: 2,
-    borderColor: "#475569",
-    fontFamily: pixelFont,
   },
   primaryButton: {
     backgroundColor: "#111827",

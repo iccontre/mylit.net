@@ -103,7 +103,9 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   scroll: {
-    maxHeight: 260,
+    flexGrow: 0,
+    flexShrink: 1,
+    maxHeight: 320,
   },
   bulletRow: {
     flexDirection: "row",
