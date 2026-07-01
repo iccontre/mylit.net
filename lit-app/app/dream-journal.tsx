@@ -5,25 +5,29 @@ import { useCallback, useState } from "react";
 import {
   Image,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
 
+import { FormScreen } from "../components/FormScreen";
 import { GuideInfoModal } from "../components/GuideInfoModal";
+import { formPageContent, formStyles } from "../constants/formStyles";
+import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
+import { USER_STATS_KEY } from "../lib/questProgress";
+import { persistProgressKeys } from "../lib/progressStore";
+import { DREAM_JOURNAL_KEY } from "../lib/storageKeys";
 
 const LUNA_DREAM_BULLETS = [
-  "Most dreams fade within 10 minutes of waking — write yours down quickly.",
+  "Dream Journal helps you capture dreams quickly after waking.",
+  "Most dreams fade within 10 minutes — write yours down fast.",
   "Add a title, describe the dream, and choose how it felt.",
   "Any saved dream earns +1 step.",
   "Even a single image, fragment, or feeling is worth recording.",
   "Over time, entries may help you notice patterns in your dream life.",
-  "There is no pressure to write perfectly — just capture what you remember.",
 ];
 
 type DreamEntry = {
@@ -33,11 +37,6 @@ type DreamEntry = {
   feeling: string;
   createdAt: string;
 };
-
-const DREAM_JOURNAL_KEY = "lit_dream_journal";
-const USER_STATS_KEY = "lit_user_stats";
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -80,18 +79,13 @@ const theme = { accent: "#C4A7FF", glow: "#E9D5FF", panel: "rgba(18, 16, 34, 0.9
 
 export default function DreamJournalScreen() {
   const router = useRouter();
-  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const mobile = useMobileFrame();
 
   const [entries, setEntries] = useState<DreamEntry[]>([]);
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [feeling, setFeeling] = useState("");
   const [showInfo, setShowInfo] = useState(false);
-
-  const safeViewportWidth = Math.max(0, viewportWidth - 24);
-  const safeViewportHeight = Math.max(0, viewportHeight - 24);
-  const frameWidth = Math.min(MAX_FRAME_WIDTH, safeViewportWidth, safeViewportHeight * APP_FRAME_ASPECT_RATIO);
-  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   useFocusEffect(
     useCallback(() => {
@@ -118,7 +112,9 @@ export default function DreamJournalScreen() {
   async function earnSteps(count: number) {
     const saved = await AsyncStorage.getItem(USER_STATS_KEY);
     const current: Record<string, unknown> = saved ? JSON.parse(saved) : {};
-    await AsyncStorage.setItem(USER_STATS_KEY, JSON.stringify({ ...current, totalSteps: Number(current.totalSteps ?? 0) + count }));
+    await persistProgressKeys({
+      [USER_STATS_KEY]: JSON.stringify({ ...current, totalSteps: Number(current.totalSteps ?? 0) + count }),
+    });
   }
 
   async function loadEntries() {
@@ -136,7 +132,7 @@ export default function DreamJournalScreen() {
 
   async function saveEntries(nextEntries: DreamEntry[]) {
     setEntries(nextEntries);
-    await AsyncStorage.setItem(DREAM_JOURNAL_KEY, JSON.stringify(nextEntries));
+    await persistProgressKeys({ [DREAM_JOURNAL_KEY]: JSON.stringify(nextEntries) });
   }
 
   async function saveDream() {
@@ -165,13 +161,13 @@ export default function DreamJournalScreen() {
   }
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight, borderColor: theme.accent }]}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen, { borderColor: theme.accent }]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={uiAssets.backgrounds.recovery} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
-          <ScrollView style={styles.screenScroller} contentContainerStyle={styles.hudContent} showsVerticalScrollIndicator={false} bounces={false}>
+          <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.hudContent]}>
             <View style={[styles.hero, { borderColor: theme.accent, backgroundColor: theme.panel }]}>
               <View style={styles.heroTopRow}>
                 <View style={styles.heroCopy}>
@@ -195,10 +191,19 @@ export default function DreamJournalScreen() {
 
             <View style={[styles.formCard, { borderColor: theme.accent }]}>
               <Text style={styles.label}>Dream title</Text>
-              <TextInput style={styles.input} placeholder="Example: The train under the ocean" placeholderTextColor="#94A3B8" value={title} onChangeText={setTitle} />
+              <TextInput style={[formStyles.input, styles.input]} placeholder="Example: The train under the ocean" placeholderTextColor="#94A3B8" value={title} onChangeText={setTitle} />
 
               <Text style={styles.label}>Write your dream</Text>
-              <TextInput style={[styles.textArea, { minHeight: 120 }]} multiline placeholder="Describe scenes, people, places, and details you remember." placeholderTextColor="#94A3B8" value={summary} onChangeText={setSummary} />
+              <TextInput
+                style={[formStyles.textArea, styles.textArea]}
+                multiline
+                scrollEnabled
+                textAlignVertical="top"
+                placeholder="Describe scenes, people, places, and details you remember."
+                placeholderTextColor="#94A3B8"
+                value={summary}
+                onChangeText={setSummary}
+              />
 
               <Text style={styles.label}>How did it feel?</Text>
               <View style={styles.chipRow}>
@@ -256,7 +261,7 @@ export default function DreamJournalScreen() {
             <TouchableOpacity style={styles.backButton} onPress={() => router.push("/")}>
               <Text style={styles.backButtonText}>Back to Today</Text>
             </TouchableOpacity>
-          </ScrollView>
+          </FormScreen>
 
           <GuideInfoModal
             visible={showInfo}
@@ -277,8 +282,6 @@ const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
     backgroundColor: "#02040A",
-    alignItems: "center",
-    justifyContent: "center",
   },
   phoneStage: {
     alignSelf: "center",
@@ -290,6 +293,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.85,
     shadowRadius: 0,
     shadowOffset: { width: 6, height: 6 },
+  },
+  phoneStageFullscreen: {
+    borderWidth: 0,
+    maxWidth: undefined,
+    aspectRatio: undefined,
+    shadowOpacity: 0,
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -308,10 +317,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   hudContent: {
-    minHeight: "100%",
+    flexGrow: 1,
     paddingTop: 18,
     paddingHorizontal: 16,
-    paddingBottom: 18,
   },
   hero: {
     borderWidth: 4,
@@ -425,26 +433,12 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   input: {
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
     borderRadius: 4,
-    padding: 12,
-    fontSize: 15,
-    color: "#F9FAFB",
-    borderWidth: 2,
-    borderColor: "#475569",
-    fontFamily: pixelFont,
+    marginBottom: 4,
   },
   textArea: {
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
     borderRadius: 4,
-    padding: 12,
-    minHeight: 82,
-    fontSize: 15,
-    color: "#F9FAFB",
-    textAlignVertical: "top",
-    borderWidth: 2,
-    borderColor: "#475569",
-    fontFamily: pixelFont,
+    marginBottom: 4,
   },
   chipRow: {
     flexDirection: "row",

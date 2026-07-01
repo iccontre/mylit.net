@@ -1,0 +1,7 @@
+# Root env files
+.env
+.env.local
+lit-app/.env
+lit-app/.env.local
+lit-app/.vercel
+.vercel

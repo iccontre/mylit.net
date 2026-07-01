@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   Image,
   Platform,
@@ -9,20 +9,22 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
 
+import { BottomNav } from "../components/BottomNav";
 import { GuideInfoModal } from "../components/GuideInfoModal";
+import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 
 const LUNA_SLEEP_HUB_BULLETS = [
-  "This is your center for nighttime and morning sleep tools.",
-  "Pre-Sleep Intention sets one clear direction for tomorrow before you sleep.",
-  "Morning Reflection returns in the morning to check if the intention carried through.",
-  "Sleep Guide helps plan your sleep/wake window and daily cutoffs like caffeine and screen time.",
-  "Dream Journal captures dream details before they fade — most are gone within 10 minutes.",
-  "These tools work together to improve energy, reflection, and daily direction.",
+  "Sleep is the foundation of your energy mode — rest supports everything else in MYLIT.",
+  "Sleep Guide suggestions are not strict rules. They help protect sleep quality.",
+  "Caffeine cutoff, screen cutoff, meals, and exercise timing all support better rest.",
+  "Pre-Sleep Intention gives your mind one clear signal before bed.",
+  "Dream Journal helps you capture dreams quickly after waking — most fade within minutes.",
+  "Morning Reflection connects sleep, intention, and the day's energy.",
+  "Recovery nights still count. Imperfect sleep is data, not failure.",
 ];
 
 type DreamEntry = {
@@ -37,18 +39,17 @@ type DreamEntry = {
   createdAt: string;
 };
 
-type MenuCard = {
+type SleepCard = {
   title: string;
   description: string;
+  buttonText: string;
   icon: string;
-  onPress: () => void;
+  route: "/pre-sleep-intention" | "/morning-intention-reflection" | "/sleep-calendar" | "/dream-journal";
   featured?: boolean;
   unlockable?: boolean;
 };
 
 const DREAM_JOURNAL_KEY = "lit_dream_journal";
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -59,23 +60,53 @@ const pixelFont = Platform.select({
 
 export default function SleepScreen() {
   const router = useRouter();
-  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const mobile = useMobileFrame();
   const [latestDream, setLatestDream] = useState<DreamEntry | null>(null);
   const [showInfo, setShowInfo] = useState(false);
-
-  const safeViewportWidth = Math.max(0, viewportWidth - 24);
-  const safeViewportHeight = Math.max(0, viewportHeight - 24);
-  const frameWidth = Math.min(
-    MAX_FRAME_WIDTH,
-    safeViewportWidth,
-    safeViewportHeight * APP_FRAME_ASPECT_RATIO
-  );
-  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   useFocusEffect(
     useCallback(() => {
       loadLatestDream();
     }, [])
+  );
+
+  const sleepCards = useMemo<SleepCard[]>(
+    () => [
+      {
+        title: "Pre-Sleep Intention",
+        description: "Set one clear signal for tomorrow before bed.",
+        buttonText: "Set Intention",
+        icon: "☾",
+        featured: true,
+        route: "/pre-sleep-intention",
+      },
+      {
+        title: "Morning Reflection",
+        description: "Reflect on sleep and set the morning tone.",
+        buttonText: "Open Reflection",
+        icon: "✦",
+        unlockable: true,
+        route: "/morning-intention-reflection",
+      },
+      {
+        title: "Sleep Guide",
+        description: "Set sleep window and daily cutoffs.",
+        buttonText: "Open Sleep Guide",
+        icon: "☽",
+        route: "/sleep-calendar",
+      },
+      {
+        title: "Dream Journal",
+        description: latestDream
+          ? `Latest: ${latestDream.title || "Untitled dream"}`
+          : "Capture dreams before they fade.",
+        buttonText: "Open Dream Journal",
+        icon: "📖",
+        featured: true,
+        route: "/dream-journal",
+      },
+    ],
+    [latestDream]
   );
 
   async function lightHaptic() {
@@ -86,7 +117,7 @@ export default function SleepScreen() {
     }
   }
 
-  async function navigate(path: any) {
+  async function navigate(path: Parameters<typeof router.push>[0]) {
     await lightHaptic();
     router.push(path);
   }
@@ -107,73 +138,38 @@ export default function SleepScreen() {
     }
   }
 
-  const preSleepCard: MenuCard = {
-    title: "Pre-Sleep\nIntention",
-    description: "Set one clear signal for tomorrow before bed.",
-    icon: "☾",
-    featured: true,
-    onPress: () => navigate("/pre-sleep-intention"),
-  };
-
-  const morningCard: MenuCard = {
-    title: "Morning\nReflection",
-    description: "Reflect on sleep and set the morning tone.",
-    icon: "✦",
-    unlockable: true,
-    onPress: () => navigate("/morning-intention-reflection"),
-  };
-
-  const sleepGuideCard: MenuCard = {
-    title: "Sleep\nGuide",
-    description: "Set sleep window and daily cutoffs.",
-    icon: "☽",
-    onPress: () => navigate("/sleep-calendar"),
-  };
-
-  const dreamCard: MenuCard = {
-    title: "Dream\nJournal",
-    description: latestDream
-      ? `Latest: ${latestDream.title || "Untitled dream"}`
-      : "Capture dreams before they fade.",
-    icon: "📖",
-    featured: true,
-    onPress: () => navigate("/dream-journal"),
-  };
-
-  function renderCard(card: MenuCard, variant: "half" | "wide") {
+  function renderSleepCard(card: SleepCard) {
     return (
-      <TouchableOpacity
-        key={card.title}
-        style={[
-          styles.menuCard,
-          variant === "half" ? styles.halfCard : styles.wideCard,
-          card.featured && styles.featuredCard,
-        ]}
-        onPress={card.onPress}
-      >
-        <View style={[styles.iconBox, variant === "wide" && styles.wideIconBox]}>
-          <Text style={[styles.cardIcon, variant === "wide" && styles.wideCardIcon]}>{card.icon}</Text>
+      <View key={card.title} style={[styles.card, card.featured && styles.featuredCard]}>
+        <View style={styles.cardTopRow}>
+          <View style={styles.iconBox}>
+            <Text style={styles.cardIcon}>{card.icon}</Text>
+          </View>
+          <View style={styles.cardCopy}>
+            <Text style={styles.cardTitle}>{card.title}</Text>
+            <Text style={styles.cardText}>{card.description}</Text>
+            {card.unlockable ? <Text style={styles.unlockBadge}>🔓 UNLOCK</Text> : null}
+          </View>
         </View>
-        <View style={styles.cardCopy}>
-          <Text style={[styles.cardTitle, variant === "wide" && styles.wideCardTitle]}>{card.title}</Text>
-          <Text style={styles.cardDescription}>{card.description}</Text>
-          {card.unlockable && <Text style={styles.unlockBadge}>🔓 UNLOCK</Text>}
-        </View>
-        <Text style={styles.cardArrow}>›</Text>
-      </TouchableOpacity>
+        <View style={styles.cardDivider} />
+        <TouchableOpacity style={styles.actionButton} onPress={() => navigate(card.route)}>
+          <Text style={styles.actionText}>{card.buttonText}</Text>
+          <Text style={styles.actionArrow}>›</Text>
+        </TouchableOpacity>
+      </View>
     );
   }
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight }]}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={uiAssets.backgrounds.recovery} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
           <ScrollView
             style={styles.screenScroller}
-            contentContainerStyle={styles.hudContent}
+            contentContainerStyle={[styles.hudContent, { paddingBottom: mobile.scrollPaddingBottom }]}
             showsVerticalScrollIndicator={false}
             bounces={false}
           >
@@ -187,7 +183,7 @@ export default function SleepScreen() {
               <Image source={uiAssets.guides.luna} style={styles.lunaAvatar} resizeMode="contain" />
               <View style={styles.lunaCopy}>
                 <Text style={styles.lunaText}>
-                  It’s okay to take it slow, stargazer. Rest is part of becoming your brightest self.
+                  It's okay to take it slow, stargazer. Rest is part of becoming your brightest self.
                 </Text>
                 <Text style={styles.lunaName}>Luna ♥</Text>
               </View>
@@ -196,14 +192,7 @@ export default function SleepScreen() {
               </TouchableOpacity>
             </View>
 
-            {renderCard(preSleepCard, "wide")}
-
-            <View style={styles.cardRow}>
-              {renderCard(morningCard, "half")}
-              {renderCard(sleepGuideCard, "half")}
-            </View>
-
-            {renderCard(dreamCard, "wide")}
+            <View style={styles.cardStack}>{sleepCards.map(renderSleepCard)}</View>
           </ScrollView>
 
           <GuideInfoModal
@@ -216,32 +205,7 @@ export default function SleepScreen() {
             accentColor="#C4A7FF"
           />
 
-          <View style={styles.bottomNav}>
-            <TouchableOpacity style={styles.navButton} onPress={() => navigate("/")}>
-              <Text style={styles.navText}>🏠</Text>
-              <Text style={styles.navLabel}>HOME</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={lightHaptic}>
-              <Text style={styles.navTextActive}>🌙</Text>
-              <Text style={styles.navLabelActive}>SLEEP</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => navigate("/mind")}>
-              <Text style={styles.navText}>🧠</Text>
-              <Text style={styles.navLabel}>MIND</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => navigate("/path")}>
-              <Text style={styles.navText}>🌲</Text>
-              <Text style={styles.navLabel}>PATH</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => navigate("/calendar")}>
-              <Text style={styles.navText}>📅</Text>
-              <Text style={styles.navLabel}>CAL</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => navigate("/stats")}>
-              <Text style={styles.navText}>🎒</Text>
-              <Text style={styles.navLabel}>BAG</Text>
-            </TouchableOpacity>
-          </View>
+          <BottomNav activeRoute="sleep" theme="purple" bottomOffset={mobile.bottomNavOffset} />
         </View>
       </View>
     </View>
@@ -252,8 +216,6 @@ const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
     backgroundColor: "#02040A",
-    alignItems: "center",
-    justifyContent: "center",
   },
   phoneStage: {
     alignSelf: "center",
@@ -266,6 +228,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.85,
     shadowRadius: 0,
     shadowOffset: { width: 6, height: 6 },
+  },
+  phoneStageFullscreen: {
+    borderWidth: 0,
+    maxWidth: undefined,
+    aspectRatio: undefined,
+    shadowOpacity: 0,
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -284,21 +252,20 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   hudContent: {
-    minHeight: "100%",
+    flexGrow: 1,
     paddingTop: 28,
     paddingHorizontal: 14,
-    paddingBottom: 82,
   },
   titlePanel: {
-    width: "78%",
-    alignSelf: "center",
+    width: "100%",
+    alignSelf: "stretch",
     backgroundColor: "rgba(7, 11, 27, 0.94)",
     borderWidth: 4,
     borderColor: "#8B5CF6",
     borderRadius: 8,
     paddingVertical: 15,
     paddingHorizontal: 14,
-    marginBottom: 72,
+    marginBottom: 34,
     alignItems: "center",
     shadowColor: "#000",
     shadowOpacity: 0.7,
@@ -344,7 +311,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingVertical: 10,
     paddingHorizontal: 12,
-    marginBottom: 26,
+    marginBottom: 22,
     shadowColor: "#000",
     shadowOpacity: 0.7,
     shadowRadius: 0,
@@ -376,85 +343,6 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontFamily: pixelFont,
   },
-  cardRow: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 14,
-  },
-  menuCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(7, 11, 27, 0.94)",
-    borderWidth: 3,
-    borderColor: "#8B5CF6",
-    borderRadius: 8,
-    shadowColor: "#000",
-    shadowOpacity: 0.68,
-    shadowRadius: 0,
-    shadowOffset: { width: 4, height: 4 },
-  },
-  halfCard: {
-    flex: 1,
-    minHeight: 112,
-    paddingVertical: 10,
-    paddingHorizontal: 9,
-  },
-  wideCard: {
-    minHeight: 102,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    marginBottom: 16,
-  },
-  featuredCard: {
-    borderColor: "#A78BFA",
-  },
-  iconBox: {
-    height: 54,
-    width: 54,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(49, 46, 129, 0.72)",
-    borderWidth: 2,
-    borderColor: "#4C1D95",
-    borderRadius: 5,
-    marginRight: 9,
-  },
-  wideIconBox: {
-    height: 66,
-    width: 74,
-    marginRight: 14,
-  },
-  cardIcon: {
-    fontSize: 31,
-    textShadowColor: "#000",
-    textShadowOffset: { width: 2, height: 2 },
-    textShadowRadius: 0,
-  },
-  wideCardIcon: {
-    fontSize: 41,
-  },
-  cardCopy: {
-    flex: 1,
-  },
-  cardTitle: {
-    color: "#F5F3FF",
-    fontSize: 18,
-    fontWeight: "900",
-    lineHeight: 24,
-    fontFamily: pixelFont,
-  },
-  wideCardTitle: {
-    fontSize: 20,
-    lineHeight: 25,
-  },
-  cardDescription: {
-    color: "#EDE9FE",
-    fontSize: 12,
-    fontWeight: "700",
-    lineHeight: 17,
-    marginTop: 7,
-    fontFamily: pixelFont,
-  },
   infoBtn: {
     width: 28,
     height: 28,
@@ -473,6 +361,66 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     lineHeight: 18,
   },
+  cardStack: {
+    gap: 14,
+    paddingBottom: 8,
+  },
+  card: {
+    backgroundColor: "rgba(7, 11, 27, 0.95)",
+    borderWidth: 3,
+    borderColor: "#8B5CF6",
+    borderRadius: 8,
+    padding: 13,
+    shadowColor: "#000",
+    shadowOpacity: 0.68,
+    shadowRadius: 0,
+    shadowOffset: { width: 4, height: 4 },
+  },
+  featuredCard: {
+    borderColor: "#A78BFA",
+  },
+  cardTopRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  iconBox: {
+    height: 62,
+    width: 62,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(49, 46, 129, 0.68)",
+    borderWidth: 2,
+    borderColor: "#4C1D95",
+    borderRadius: 5,
+    marginRight: 12,
+  },
+  cardIcon: {
+    fontSize: 34,
+    textShadowColor: "#000",
+    textShadowOffset: { width: 2, height: 2 },
+    textShadowRadius: 0,
+  },
+  cardCopy: {
+    flex: 1,
+    minWidth: 0,
+  },
+  cardTitle: {
+    color: "#F5F3FF",
+    fontFamily: pixelFont,
+    fontSize: 18,
+    fontWeight: "900",
+    lineHeight: 24,
+    flexShrink: 1,
+  },
+  cardText: {
+    color: "#EDE9FE",
+    fontFamily: pixelFont,
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 6,
+    fontWeight: "700",
+    flexShrink: 1,
+  },
   unlockBadge: {
     color: "#FDE68A",
     fontFamily: pixelFont,
@@ -481,14 +429,39 @@ const styles = StyleSheet.create({
     marginTop: 5,
     letterSpacing: 0.5,
   },
-  cardArrow: {
-    color: "#C084FC",
-    fontSize: 36,
+  cardDivider: {
+    height: 2,
+    backgroundColor: "rgba(196, 167, 255, 0.28)",
+    marginVertical: 11,
+  },
+  actionButton: {
+    minHeight: 38,
+    backgroundColor: "rgba(15, 23, 42, 0.96)",
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+    borderRadius: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  actionText: {
+    color: "#FDE68A",
+    fontFamily: pixelFont,
+    fontSize: 11,
     fontWeight: "900",
-    marginLeft: 5,
-    textShadowColor: "#000",
-    textShadowOffset: { width: 2, height: 2 },
-    textShadowRadius: 0,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+    flex: 1,
+    flexShrink: 1,
+    paddingRight: 8,
+  },
+  actionArrow: {
+    color: "#C084FC",
+    fontSize: 24,
+    fontWeight: "900",
+    lineHeight: 26,
   },
   bottomNav: {
     position: "absolute",

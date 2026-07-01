@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Image,
@@ -14,12 +14,19 @@ import {
   View,
 } from "react-native";
 
+import { FormScreen } from "../components/FormScreen";
+import { formPageContent } from "../constants/formStyles";
 import {
   GOAL_HORIZON_LABELS,
   type GoalHorizon,
   type GoalMilestoneSet,
 } from "../constants/goalMilestoneTemplates";
+import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
+import { LOCAL_PROFILE_KEY, getOrCreateProfile, updateProfile } from "../lib/auth";
+import { persistProgressKeys } from "../lib/progressStore";
+import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
+import { isSupabaseConfigured } from "../lib/supabase";
 import { logGoalFeedback } from "../lib/feedbackLog";
 import {
   generateFromDatabase,
@@ -54,9 +61,7 @@ type UserProfile = {
   hasFoodControl: boolean;
 };
 
-const PROFILE_KEY = "lit_user_profile";
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
+const PROFILE_KEY = LOCAL_PROFILE_KEY;
 const pathBackground = require("../assets/ui/backgrounds/path-background.png");
 
 const pixelFont = Platform.select({
@@ -186,15 +191,17 @@ function MilestoneField({
       <View style={[styles.milestoneBanner, { backgroundColor: cardMeta.tone }]}>
         <Text style={styles.milestoneBannerText}>{cardMeta.title}</Text>
       </View>
-      <Text style={styles.milestoneIcon}>{cardMeta.icon}</Text>
       <Text style={styles.milestoneCaption}>{meta.caption}</Text>
       <TextInput
         style={styles.milestoneInput}
         multiline
-        placeholder={`Your ${meta.label.toLowerCase()}`}
+        numberOfLines={3}
+        textAlignVertical="top"
+        placeholder={`Your ${meta.label.toLowerCase()} goal`}
         placeholderTextColor="#8A5D2B"
         value={value}
         onChangeText={onChange}
+        scrollEnabled={false}
       />
     </View>
   );
@@ -202,6 +209,9 @@ function MilestoneField({
 
 export default function OnboardingScreen() {
   const router = useRouter();
+  const { mode } = useLocalSearchParams<{ mode?: string }>();
+  const isEditPath = mode === "editPath";
+  const mobile = useMobileFrame();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const modalWidth = Math.min(screenWidth - 32, 480);
   const modalMaxHeight = Math.min(screenHeight * 0.78, 620);
@@ -250,7 +260,7 @@ export default function OnboardingScreen() {
    */
   function generateMilestones(cycle = false) {
     if (!dreamCategory) {
-      setValidationMessage("Pick a category first so we can draft your milestones.");
+      setValidationMessage("Pick a category first if you want goal suggestions.");
       return;
     }
     setValidationMessage("");
@@ -284,40 +294,43 @@ export default function OnboardingScreen() {
   async function loadProfile() {
     const saved = await AsyncStorage.getItem(PROFILE_KEY);
 
-    if (!saved) return;
+    if (saved) {
+      try {
+        const profile = JSON.parse(saved) as Partial<UserProfile>;
+        const savedCategory = normalizeDreamCategory(profile.dreamCategory);
 
-    try {
-      const profile = JSON.parse(saved) as Partial<UserProfile>;
-      const savedCategory = normalizeDreamCategory(profile.dreamCategory);
+        setName(profile.name || "");
+        setLongTermDream(profile.longTermDream || "");
+        setDreamCategory(savedCategory);
+        setProgressMeaning(profile.progressMeaning || "");
+        setSpecificGoal(profile.specificGoal || "");
 
-      setName(profile.name || "");
-      setLongTermDream(profile.longTermDream || "");
-      setDreamCategory(savedCategory);
-      setProgressMeaning(profile.progressMeaning || "");
-      setSpecificGoal(profile.specificGoal || "");
+        const loadedShort = profile.shortTermGoal || profile.goalOne || "";
+        const loadedMid = profile.midTermGoal || profile.goalTwo || "";
+        const loadedLong = profile.longTermGoal || profile.goalThree || "";
+        setShortTermGoal(loadedShort);
+        setMidTermGoal(loadedMid);
+        setLongTermGoal(loadedLong);
+        if (loadedShort || loadedMid || loadedLong) {
+          setHasGenerated(true);
+          setLastGenerated({ shortTerm: loadedShort, midTerm: loadedMid, longTerm: loadedLong });
+        }
+        if (profile.goalsSource) setGenerationSource(profile.goalsSource);
 
-      // Prefer tiered fields; fall back to legacy goalOne/Two/Three so users
-      // who set up their path before this flow existed don't lose anything.
-      const loadedShort = profile.shortTermGoal || profile.goalOne || "";
-      const loadedMid = profile.midTermGoal || profile.goalTwo || "";
-      const loadedLong = profile.longTermGoal || profile.goalThree || "";
-      setShortTermGoal(loadedShort);
-      setMidTermGoal(loadedMid);
-      setLongTermGoal(loadedLong);
-      if (loadedShort || loadedMid || loadedLong) {
-        setHasGenerated(true);
-        setLastGenerated({ shortTerm: loadedShort, midTerm: loadedMid, longTerm: loadedLong });
+        setBiggestObstacle(profile.biggestObstacle || "");
+        setHasWorkOrSchool(profile.hasWorkOrSchool ?? true);
+        setHasTransportation(profile.hasTransportation ?? false);
+        setHasGymAccess(profile.hasGymAccess ?? false);
+        setHasQuietSpace(profile.hasQuietSpace ?? false);
+        setHasFoodControl(profile.hasFoodControl ?? false);
+      } catch {
+        // Keep defaults on parse failure
       }
-      if (profile.goalsSource) setGenerationSource(profile.goalsSource);
+    }
 
-      setBiggestObstacle(profile.biggestObstacle || "");
-      setHasWorkOrSchool(profile.hasWorkOrSchool ?? true);
-      setHasTransportation(profile.hasTransportation ?? false);
-      setHasGymAccess(profile.hasGymAccess ?? false);
-      setHasQuietSpace(profile.hasQuietSpace ?? false);
-      setHasFoodControl(profile.hasFoodControl ?? false);
-    } catch {
-      // Keep defaults on parse failure
+    const betaProfile = await getOrCreateProfile();
+    if (betaProfile?.display_name) {
+      setName((current) => current || betaProfile.display_name || "");
     }
   }
 
@@ -333,7 +346,7 @@ export default function OnboardingScreen() {
     }
 
     if (milestonesEmpty) {
-      setValidationMessage("Tap Generate to draft your milestones (and edit them if you like).");
+      setValidationMessage("Write at least one milestone goal in the fields below.");
       return;
     }
 
@@ -384,7 +397,16 @@ export default function OnboardingScreen() {
       hasFoodControl,
     };
 
-    await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    await persistProgressKeys({ [PROFILE_KEY]: JSON.stringify(profile) });
+
+    if (isSupabaseConfigured()) {
+      await updateProfile({
+        display_name: trimmedName,
+        onboarding_complete: true,
+      });
+    }
+
+    void trackEvent(ANALYTICS_EVENTS.onboarding_completed, { category: dreamCategory });
 
     // Record the (generated, final) pair so we can learn from user edits.
     // Failures here are intentionally swallowed inside logGoalFeedback.
@@ -397,14 +419,14 @@ export default function OnboardingScreen() {
       final: finalMilestones,
     });
 
-    router.push("/");
+    router.replace(isEditPath ? "/path" : "/(tabs)");
   }
 
   const canRegenerate =
     dreamCategory !== "" && hasGenerated && variantCountFor(databaseCategoryFor(dreamCategory)) > 1;
 
   return (
-    <View style={styles.pageRoot}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
       <Modal
         visible={showInfo}
         transparent
@@ -424,10 +446,12 @@ export default function OnboardingScreen() {
             <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalScrollContent} showsVerticalScrollIndicator={false}>
               {[
                 "Set My Path creates your starting direction.",
+                "Path sets where MYLIT should focus — it does not reset your progress.",
+                "Short-term = around 2 weeks. Mid-term = around 1 month. Long-term = around 3 months.",
                 "Your category and resources shape future quests and checklist habits.",
-                "Milestones use 2 weeks, 1 month, and 3 months.",
                 "Resources help MYLIT suggest realistic habits.",
                 "Obstacles help MYLIT avoid quests that ignore your real life.",
+                "Updating your path later is safe — your steps and history stay.",
               ].map((bullet, i) => (
                 <View key={i} style={styles.modalBulletRow}>
                   <Text style={styles.modalBullet}>›</Text>
@@ -442,12 +466,12 @@ export default function OnboardingScreen() {
         </View>
       </Modal>
 
-      <View style={styles.phoneStage}>
+      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={pathBackground} style={styles.backgroundImage} resizeMode="stretch" />
         </View>
         <View style={styles.pageContainer}>
-        <ScrollView style={styles.screenScroller} contentContainerStyle={styles.boardContent} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.boardContent]}>
           <Image source={uiAssets.logo.mylit} style={styles.logo} resizeMode="contain" />
 
           <View style={styles.bannerPanel}>
@@ -512,26 +536,28 @@ export default function OnboardingScreen() {
           </SectionShell>
 
           <SectionShell number="4" title="YOUR PATH MILESTONES">
-            <View style={styles.milestoneHeaderRow}>
-              <Text style={styles.milestoneHint}>
-                {milestonesEmpty
-                  ? "Draft your route, then edit."
-                  : "Edit each step."}
-              </Text>
-              <TouchableOpacity
-                style={[styles.generateButton, !dreamCategory && styles.generateButtonDisabled]}
-                onPress={() => generateMilestones(Boolean(canRegenerate))}
-                disabled={!dreamCategory}
-              >
-                <Text style={styles.generateButtonText}>{hasGenerated ? "NEW DRAFT" : "GENERATE"}</Text>
-              </TouchableOpacity>
-            </View>
+            <Text style={styles.milestoneHint}>
+              Write your own short-, mid-, and long-term goals below. In beta, your words matter most.
+            </Text>
+            <Text style={styles.betaNoteText}>
+              Optional: tap Suggest goals for a starting draft you can edit.
+            </Text>
 
             <View style={styles.milestoneGrid}>
               <MilestoneField horizon="shortTerm" value={shortTermGoal} onChange={setShortTermGoal} />
               <MilestoneField horizon="midTerm" value={midTermGoal} onChange={setMidTermGoal} />
               <MilestoneField horizon="longTerm" value={longTermGoal} onChange={setLongTermGoal} />
             </View>
+
+            <TouchableOpacity
+              style={[styles.generateButtonSecondary, !dreamCategory && styles.generateButtonDisabled]}
+              onPress={() => generateMilestones(Boolean(canRegenerate))}
+              disabled={!dreamCategory}
+            >
+              <Text style={styles.generateButtonSecondaryText}>
+                {hasGenerated ? "NEW SUGGESTION" : "SUGGEST GOALS (BETA)"}
+              </Text>
+            </TouchableOpacity>
           </SectionShell>
 
           <SectionShell number="5" title="WHAT DOES PROGRESS MEAN?">
@@ -589,9 +615,9 @@ export default function OnboardingScreen() {
           {validationMessage ? <Text style={styles.validationText}>{validationMessage}</Text> : null}
 
           <TouchableOpacity style={styles.saveButton} onPress={saveProfile}>
-            <Text style={styles.saveButtonText}>SAVE MY PATH</Text>
+            <Text style={styles.saveButtonText}>{isEditPath ? "UPDATE MY PATH" : "SAVE MY PATH"}</Text>
           </TouchableOpacity>
-        </ScrollView>
+        </FormScreen>
 
         </View>
       </View>
@@ -603,17 +629,17 @@ const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
     backgroundColor: "#0E0703",
-    alignItems: "center",
-    justifyContent: "center",
   },
   phoneStage: {
-    width: "100%",
-    maxWidth: MAX_FRAME_WIDTH,
-    aspectRatio: APP_FRAME_ASPECT_RATIO,
     alignSelf: "center",
     backgroundColor: "#2A1608",
     overflow: "hidden",
     position: "relative",
+  },
+  phoneStageFullscreen: {
+    borderWidth: 0,
+    maxWidth: undefined,
+    aspectRatio: undefined,
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -630,7 +656,7 @@ const styles = StyleSheet.create({
   },
   boardContent: {
     paddingTop: 12,
-    paddingHorizontal: 34,
+    paddingHorizontal: 18,
     paddingBottom: 28,
   },
   logo: {
@@ -752,7 +778,7 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     color: "#1F1306",
     fontFamily: readableFont,
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "800",
     paddingHorizontal: 10,
     paddingVertical: 8,
@@ -816,64 +842,60 @@ const styles = StyleSheet.create({
   categoryMeaningTextActive: {
     color: "#17260D",
   },
-  milestoneHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 8,
-    marginBottom: 6,
-  },
   milestoneHint: {
-    flex: 1,
     color: "#3D2408",
     fontFamily: readableFont,
     fontSize: 12,
     fontWeight: "800",
-    lineHeight: 15,
+    lineHeight: 17,
+    marginBottom: 6,
   },
-  generateButton: {
-    backgroundColor: "#14532D",
-    borderWidth: 3,
-    borderColor: "#D99A16",
+  betaNoteText: {
+    color: "#6B4A1A",
+    fontFamily: readableFont,
+    fontSize: 11,
+    fontWeight: "700",
+    lineHeight: 15,
+    marginBottom: 10,
+  },
+  generateButtonSecondary: {
+    alignSelf: "center",
+    marginTop: 10,
+    backgroundColor: "rgba(255, 239, 197, 0.5)",
+    borderWidth: 2,
+    borderColor: "#A46B1C",
     borderRadius: 5,
-    paddingVertical: 7,
-    paddingHorizontal: 10,
-    shadowColor: "#2B1403",
-    shadowOpacity: 0.45,
-    shadowRadius: 0,
-    shadowOffset: { width: 2, height: 2 },
+    paddingVertical: 8,
+    paddingHorizontal: 12,
   },
   generateButtonDisabled: {
     opacity: 0.45,
   },
-  generateButtonText: {
-    color: "#FFF8E6",
+  generateButtonSecondaryText: {
+    color: "#4B2A0B",
     fontFamily: pixelFont,
     fontWeight: "900",
-    fontSize: 12,
-    letterSpacing: 0.6,
+    fontSize: 11,
+    letterSpacing: 0.5,
   },
   milestoneGrid: {
-    gap: 6,
+    gap: 12,
   },
   milestoneCard: {
-    minHeight: 78,
-    backgroundColor: "rgba(255, 239, 197, 0.84)",
+    backgroundColor: "rgba(255, 239, 197, 0.9)",
     borderWidth: 2,
     borderColor: "#A46B1C",
-    borderRadius: 4,
-    padding: 6,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 7,
+    borderRadius: 6,
+    padding: 10,
+    gap: 8,
   },
   milestoneBanner: {
-    width: 94,
+    alignSelf: "flex-start",
     borderWidth: 1,
     borderColor: "#2A1707",
-    borderRadius: 2,
+    borderRadius: 3,
     paddingVertical: 5,
-    alignItems: "center",
+    paddingHorizontal: 8,
   },
   milestoneBannerText: {
     color: "#FFF8E6",
@@ -887,25 +909,25 @@ const styles = StyleSheet.create({
   milestoneCaption: {
     color: "#2A1707",
     fontFamily: pixelFont,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "900",
-    textAlign: "center",
-    marginBottom: 4,
+    lineHeight: 16,
   },
   milestoneInput: {
-    flex: 1,
-    alignSelf: "stretch",
-    minHeight: 54,
-    backgroundColor: "rgba(255, 246, 214, 0.9)",
-    borderWidth: 1,
+    width: "100%",
+    minHeight: 88,
+    maxHeight: 160,
+    backgroundColor: "rgba(255, 246, 214, 0.96)",
+    borderWidth: 2,
     borderColor: "#A46B1C",
-    borderRadius: 3,
+    borderRadius: 4,
     color: "#1F1306",
     fontFamily: readableFont,
-    fontSize: 12,
-    fontWeight: "800",
-    lineHeight: 17,
-    padding: 6,
+    fontSize: 16,
+    fontWeight: "700",
+    lineHeight: 22,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
     textAlignVertical: "top",
   },
   resourceList: {

@@ -2,10 +2,18 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, useWindowDimensions, View } from "react-native";
+import { Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
+import { BottomNav } from "../../components/BottomNav";
 import { uiAssets } from "../../constants/uiAssets";
-import { generateProgressQuests } from "../../lib/questGeneration";
+import { useMobileFrame } from "../../constants/mobileLayout";
+import {
+  getActiveSuggestedQuest,
+  type QuestProfileContext,
+} from "../../lib/questGeneration";
+import { ANALYTICS_EVENTS, trackEvent } from "../../lib/analytics";
+import { syncQuestCompleted, syncQuestMissed, syncQuestStarted } from "../../lib/progressSync";
+import { clearProgressKey, persistProgressKeys } from "../../lib/progressStore";
 import {
   ACTIVE_TIMED_ITEM_KEY,
   applyQuestBoardCapacity,
@@ -16,7 +24,6 @@ import {
   getChecklistItemsForDay,
   getTodayKey,
   getWeekdayName,
-  hasUserCreatedQuestItems,
   kindAccent,
   loadTodayCompletions,
   loadTodayMissed,
@@ -31,9 +38,6 @@ import {
 } from "../../lib/questProgress";
 import { formatDurationLabel, inferScheduledClassification, parseTimeToMinutes } from "../../lib/scheduling";
 
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
-
 const mylitLogo = uiAssets.logo.mylit;
 const fireAssets = uiAssets.fires;
 
@@ -44,6 +48,9 @@ type Quest = {
   description?: string;
   mandatory?: boolean;
   restoreEnergy?: number;
+  starter?: boolean;
+  suggested?: boolean;
+  durationMinutes?: number;
 };
 
 type QueueItem = {
@@ -229,7 +236,7 @@ function formatCountdown(ms: number): string {
 export default function HomeScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const { width: viewportWidth, height: viewportHeight } = useWindowDimensions();
+  const mobile = useMobileFrame();
 
   const rawMode = Array.isArray(params.mode) ? params.mode[0] : params.mode;
   const rawEnergy = Array.isArray(params.energy) ? params.energy[0] : params.energy;
@@ -300,15 +307,6 @@ export default function HomeScreen() {
     latestCheckIn !== null &&
     isSavedCheckInToday &&
     isSavedCheckInAfterPath;
-
-  const safeViewportWidth = Math.max(0, viewportWidth - 24);
-  const safeViewportHeight = Math.max(0, viewportHeight - 24);
-  const frameWidth = Math.min(
-    MAX_FRAME_WIDTH,
-    safeViewportWidth,
-    safeViewportHeight * APP_FRAME_ASPECT_RATIO
-  );
-  const frameHeight = frameWidth / APP_FRAME_ASPECT_RATIO;
 
   const hasEnergyData = hasRouteEnergy || hasSavedEnergyData;
 
@@ -406,8 +404,8 @@ export default function HomeScreen() {
     const saved = await AsyncStorage.getItem(PROFILE_KEY);
 
     if (!saved) {
+      setProfile(null);
       setProfileChecked(true);
-      router.replace("/onboarding");
       return;
     }
 
@@ -531,12 +529,12 @@ export default function HomeScreen() {
 
   async function saveActiveItem(item: ActiveTimedItem) {
     setActiveItem(item);
-    await AsyncStorage.setItem(ACTIVE_TIMED_ITEM_KEY, JSON.stringify(item));
+    await persistProgressKeys({ [ACTIVE_TIMED_ITEM_KEY]: JSON.stringify(item) });
   }
 
   async function clearActiveItem() {
     setActiveItem(null);
-    await AsyncStorage.removeItem(ACTIVE_TIMED_ITEM_KEY);
+    await clearProgressKey(ACTIVE_TIMED_ITEM_KEY);
   }
 
   function showLockMessage() {
@@ -578,6 +576,8 @@ export default function HomeScreen() {
     setSelectedItem(null);
     await saveActiveItem(next);
     await mediumHaptic();
+    void trackEvent(ANALYTICS_EVENTS.quest_started, { id: item.id, title: item.title, source: item.source });
+    void syncQuestStarted(item);
   }
 
   // Completion is the ONLY place steps are awarded — never on Start.
@@ -593,6 +593,8 @@ export default function HomeScreen() {
     if (activeItem?.id === item.id) {
       await clearActiveItem();
     }
+    void trackEvent(ANALYTICS_EVENTS.quest_completed, { id: item.id, title: item.title, steps: item.steps });
+    void syncQuestCompleted(item);
   }
 
   async function completeActiveItem() {
@@ -617,6 +619,8 @@ export default function HomeScreen() {
     if (activeItem?.id === item.id) {
       await clearActiveItem();
     }
+    void trackEvent(ANALYTICS_EVENTS.quest_missed, { id: item.id, title: item.title });
+    void syncQuestMissed(item);
     router.push({ pathname: "/reflection", params: { quest: item.title } });
   }
 
@@ -634,26 +638,14 @@ export default function HomeScreen() {
     await missQuestItem(boardItem);
   }
 
-  async function toggleQuestItemFromRow(item: HomeQuestItem) {
-    if (activeItem && activeItem.id !== item.id) {
-      showLockMessage();
-      return;
-    }
-    if (completedQuests.some((entry) => entry.id === item.id)) return;
-    await completeQuestItem(item);
-  }
-
-  // Prefer the new tiered milestone fields; fall back to legacy goalOne/Two/Three
-  // so older profiles keep working until users re-save through PATH SETUP.
-  const topGoal =
-    profile?.shortTermGoal?.trim() || profile?.goalOne?.trim() || "your top goal";
-  const secondGoal =
-    profile?.midTermGoal?.trim() || profile?.goalTwo?.trim() || "your next goal";
-  const thirdGoal =
-    profile?.longTermGoal?.trim() || profile?.goalThree?.trim() || "your future";
-
-  // The specific goal anchors goal-aware quest generation (Progress mode).
-  const specificGoal = profile?.specificGoal?.trim() || "";
+  const questContext: QuestProfileContext = {
+    category: profile?.dreamCategory?.trim() || "Purpose",
+    specificGoal: profile?.specificGoal?.trim() || "",
+    progressMeaning: profile?.progressMeaning?.trim() || "",
+    shortTermBenchmark: profile?.shortTermGoal?.trim() || profile?.goalOne?.trim() || "",
+    midTermBenchmark: profile?.midTermGoal?.trim() || profile?.goalTwo?.trim() || "",
+    longTermBenchmark: profile?.longTermGoal?.trim() || profile?.goalThree?.trim() || "",
+  };
 
   const completedMandatoryTitles = completedQuests.filter(
     (entry) => entry.title === "Eat to restore energy" || entry.title === "Relax for 30 minutes"
@@ -675,21 +667,7 @@ export default function HomeScreen() {
     ? clampEnergy(baseEnergyYield - passiveDecay - completedNormalQuestCount * questEnergyCost + mandatoryRecoveryBoost)
     : 0;
 
-  const hoursSlept = latestCheckIn?.hours ? Number(latestCheckIn.hours) : null;
-  const shouldSuggestNap =
-    hasEnergyData &&
-    hoursSlept !== null &&
-    !Number.isNaN(hoursSlept) &&
-    hoursSlept < 7;
-
   const todayName = getWeekdayName();
-  const lowercaseTodayName = todayName.toLowerCase() as LowercaseWeekdayName;
-  const todayGoal = dayPlan.todayGoal?.trim() || "";
-  const todayRole =
-    dayPlan[todayName]?.trim() ||
-    dayPlan[lowercaseTodayName]?.trim() ||
-    "";
-  const todayPlanText = todayGoal || todayRole;
 
   const flameState = useMemo(() => getFireAssetForEnergy(energyYield), [energyYield]);
   const flameLabel = hasEnergyData ? flameState.label : "Check-in needed";
@@ -739,80 +717,26 @@ export default function HomeScreen() {
         mode: "BALANCED MODE",
       };
 
-  function getCategoryQuests(category: string, modeType: "Recovery" | "Progress"): Quest[] {
-    const normalized = category || "Purpose";
+  function generateQuests(): Quest[] {
+    const mandatoryQuest = getMandatoryQuest();
 
-    const map: Record<string, { Recovery: string[]; Progress: string[] }> = {
-      Health: {
-        Progress: ["Do 15 minutes of movement", "Choose one better nutrition action", "Protect your sleep window tonight"],
-        Recovery: ["Stretch for 5 calm minutes", "Choose one easy healthy meal", "Rest and protect sleep tonight"],
-      },
-      Money: {
-        Progress: ["Research one income opportunity", "Spend 15 minutes building a useful skill", "Track one spending or saving decision"],
-        Recovery: ["Write one small money step for tomorrow", "Review your goal without pressure", "Protect sleep so you can act with more energy"],
-      },
-      Mind: {
-        Progress: ["Journal one honest page", "Notice one thought pattern today", "Pause before one reaction"],
-        Recovery: ["Write a gentle brain-dump", "Name one feeling without judging it", "Take 3 deep breaths before your next task"],
-      },
-      "Friends / Connection": {
-        Progress: ["Send one message to someone", "Start one small conversation", "Plan one social step"],
-        Recovery: ["Reflect on one person you want to reconnect with", "Send a low-pressure message if it feels realistic", "Journal about what makes connection hard"],
-      },
-      "School / Work": {
-        Progress: ["Complete one focus block", "Plan your top assignment early", "Clear one unfinished task"],
-        Recovery: ["Pick one simple work/school priority", "Set up materials for tomorrow", "Rest so your focus can recover"],
-      },
-      Confidence: {
-        Progress: ["Keep one promise to yourself", "Do one uncomfortable but safe action", "Write down one small win"],
-        Recovery: ["Choose one tiny promise you can keep", "Speak kindly to yourself once today", "Reflect on a moment you handled well"],
-      },
-      Creativity: {
-        Progress: ["Work on one creative project", "Capture and save one idea", "Make 20 minutes for creative practice"],
-        Recovery: ["Open your project for 5 minutes", "Collect one inspiration", "Rest so your creativity can recharge"],
-      },
-      Sleep: {
-        Progress: ["Keep a consistent sleep target", "Reduce phone use before bed", "Plan a calm wind-down tonight"],
-        Recovery: ["Take one short rest break", "Use a low-stimulation wind-down", "Protect your bedtime tonight"],
-      },
-      "Phone Use": {
-        Progress: ["Notice one screen-time trigger", "Replace one scroll with a useful action", "Create one phone-free focus block"],
-        Recovery: ["Use one short phone break", "Move distracting apps out of reach", "Journal what pulls you into scrolling"],
-      },
-      Purpose: {
-        Progress: ["Define what progress means today", "Take one honest step daily", "Reflect on what feels meaningful"],
-        Recovery: ["Write one reason your path matters", "Choose one tiny step for tomorrow", "Rest and reconnect with your why"],
-      },
-    };
+    if (isNeutral) {
+      return [{ title: "Complete Morning Check-In", type: "Start", steps: 1 }];
+    }
 
-    const categorySet = map[normalized] ?? map.Purpose;
-    return categorySet[modeType].map((title) => ({ title, type: normalized, steps: 1 }));
-  }
+    const completedTitles = new Set(completedQuests.map((entry) => entry.title));
+    const missedTitles = new Set(missedQuests.map((entry) => entry.title));
+    const suggestedQuest = getActiveSuggestedQuest(
+      questContext,
+      isProgress ? "progress" : "recovery",
+      completedTitles,
+      missedTitles
+    );
 
-  function generateQuickThoughtQuests(): Quest[] {
-    const unique = new Set<string>();
-    const result: Quest[] = [];
-
-    queueItems.forEach((item) => {
-      const text =
-        item?.text?.trim() ||
-        item?.title?.trim() ||
-        item?.task?.trim() ||
-        item?.note?.trim();
-
-      if (!text || unique.has(text)) return;
-
-      unique.add(text);
-
-      result.push({
-        title: `Quick thought: ${text}`,
-        type: "Quick Thought",
-        steps: 1,
-        description: item?.type ? `Saved from Quick Thoughts (${item.type})` : "Saved from Quick Thoughts",
-      });
-    });
-
-    return result;
+    return [
+      ...(mandatoryQuest ? [mandatoryQuest] : []),
+      ...(suggestedQuest ? [suggestedQuest] : []),
+    ];
   }
 
   function getMandatoryQuest(): Quest | null {
@@ -850,103 +774,12 @@ export default function HomeScreen() {
     return null;
   }
 
-  function generateQuests(): Quest[] {
-    const napQuest: Quest = {
-      title: "Take a recovery nap",
-      type: "Recovery",
-      steps: 1,
-      description: "Aim for 30–60 minutes if your schedule allows.",
-    };
-
-    const dayPlanQuest: Quest | null = todayPlanText
-      ? {
-          title: `Today’s Quest: ${todayPlanText}`,
-          type: "Personal",
-          steps: 2,
-          description: "A personal quest from your Day Plan.",
-        }
-      : null;
-
-    const quickThoughtQuests = generateQuickThoughtQuests();
-    const mandatoryQuest = getMandatoryQuest();
-
-    if (isNeutral) {
-      const neutralBase: Quest[] = [
-        { title: "Complete Morning Check-In", type: "Start", steps: 1 },
-        { title: "Review your current path", type: "Direction", steps: 1 },
-        { title: "Choose one small action for today", type: "Plan", steps: 1 },
-      ];
-
-      return [
-        neutralBase[0],
-        ...(dayPlanQuest ? [dayPlanQuest] : []),
-        ...(shouldSuggestNap ? [napQuest] : []),
-        neutralBase[1],
-        neutralBase[2],
-        ...quickThoughtQuests,
-      ];
-    }
-
-    const category = profile?.dreamCategory?.trim() || "Purpose";
-
-    const resourceQuest: Quest = profile?.hasQuietSpace
-      ? { title: "Use your quiet space for one focus block", type: "Focus", steps: 1 }
-      : { title: "Create a simple focus corner for 10 minutes", type: "Focus", steps: 1 };
-
-    const movementQuest: Quest = profile?.hasGymAccess
-      ? { title: "Movement option: gym or structured workout", type: "Body", steps: 1 }
-      : { title: "Movement option: walk, stretch, or home workout", type: "Body", steps: 1 };
-
-    const transportQuest: Quest = profile?.hasTransportation
-      ? { title: "Plan one out-of-home step you can reach", type: "Logistics", steps: 1 }
-      : { title: "Plan one step you can do from home", type: "Logistics", steps: 1 };
-
-    let baseQuests: Quest[];
-
-    if (isProgress) {
-      // Progress mode: goal-anchored daily quests from the offline quest DB,
-      // personalized with the user's specific goal.
-      const progressQuests = generateProgressQuests({ category, specificGoal }, 5);
-      baseQuests = [...progressQuests, resourceQuest, movementQuest, transportQuest];
-    } else {
-      // Recovery mode (unchanged for now): gentle category quests + goal steps.
-      const categoryQuests = getCategoryQuests(category, "Recovery");
-      const goalQuests: Quest[] = [
-        { title: `Goal step: ${topGoal}`, type: "Goal", steps: 1 },
-        { title: `Goal step: ${secondGoal}`, type: "Goal", steps: 1 },
-        { title: `Goal step: ${thirdGoal}`, type: "Goal", steps: 1 },
-      ];
-      baseQuests = [
-        ...categoryQuests,
-        ...goalQuests,
-        resourceQuest,
-        movementQuest,
-        transportQuest,
-      ];
-    }
-
-    return [
-      ...(mandatoryQuest ? [mandatoryQuest] : []),
-      ...(dayPlanQuest ? [dayPlanQuest] : []),
-      ...(shouldSuggestNap ? [napQuest] : []),
-      ...baseQuests,
-      ...quickThoughtQuests,
-    ];
-  }
-
-  const quests = generateQuests();
-
   const todayKey = getTodayKey();
   const todayChecklist: RawChecklistItem[] = getChecklistItemsForDay(dayPlanRaw, todayName);
+  const quests = generateQuests();
   const calendarItems = collectTodayCalendarItems(dayPlanRaw, queueItems, todayKey);
   const completedIds = new Set(completedQuests.map((entry) => entry.id));
   const missedIds = new Set(missedQuests.map((entry) => entry.id));
-  const hasUserItems = hasUserCreatedQuestItems({
-    todayQuest: dayPlanRaw?.todayQuest ?? null,
-    checklist: todayChecklist,
-    quickThoughts: queueItems,
-    todayKey,
-  });
   const boardMode: "Progress" | "Recovery" = isRecovery ? "Recovery" : "Progress";
 
   const allHomeItems: HomeQuestItem[] =
@@ -964,7 +797,7 @@ export default function HomeScreen() {
       : [];
 
   const availableItems = allHomeItems.filter((item) => item.id !== activeItem?.id);
-  const boardCapacity = applyQuestBoardCapacity(availableItems, boardMode, hasUserItems);
+  const boardCapacity = applyQuestBoardCapacity(availableItems, boardMode);
   const visibleItems = boardCapacity.visibleItems;
   const extraItemCount = boardCapacity.hiddenCount;
   const capacityLabel = formatCapacityHeader(boardCapacity.plannedMinutes, boardMode);
@@ -1006,8 +839,8 @@ export default function HomeScreen() {
   if (!profileChecked) return null;
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={[styles.phoneStage, { width: frameWidth, height: frameHeight }]}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image
             source={currentBackground}
@@ -1018,7 +851,7 @@ export default function HomeScreen() {
         <View style={styles.worldOverlay}>
             <ScrollView
               style={styles.screenScroller}
-              contentContainerStyle={styles.hudContent}
+              contentContainerStyle={[styles.hudContent, { paddingBottom: mobile.scrollPaddingBottom }]}
               showsVerticalScrollIndicator={false}
               bounces={false}
             >
@@ -1226,12 +1059,10 @@ export default function HomeScreen() {
                   </View>
                 ) : (
                   <>
-                    {visibleItems.map((item) => {
-                      const isDone = completedQuests.some((entry) => entry.id === item.id);
-                      return (
+                    {visibleItems.map((item) => (
                       <TouchableOpacity
                         key={item.id}
-                        style={[styles.questRow, { borderColor: item.mandatory ? "#F87171" : "#2E3542" }, isDone && styles.questRowDone]}
+                        style={[styles.questRow, { borderColor: item.mandatory ? "#F87171" : "#2E3542" }]}
                         onPress={() => openQuestItem(item)}
                         activeOpacity={0.85}
                       >
@@ -1247,18 +1078,9 @@ export default function HomeScreen() {
                             <Text style={[styles.questSteps, { color: kindAccent(item.kind) }]}>+{item.steps}</Text>
                           </View>
                         </View>
-                        <TouchableOpacity
-                          style={[styles.checkBox, { borderColor: theme.accent }, isDone && styles.checkBoxDone]}
-                          onPress={(event) => {
-                            event.stopPropagation?.();
-                            void toggleQuestItemFromRow(item);
-                          }}
-                        >
-                          <Text style={styles.checkBoxText}>{isDone ? "✓" : ""}</Text>
-                        </TouchableOpacity>
                         <Text style={[styles.startChevron, { color: theme.accent }]}>▶</Text>
                       </TouchableOpacity>
-                    );})}
+                    ))}
                     {lockMessage ? <Text style={styles.lockMessage}>{lockMessage}</Text> : null}
                     {extraItemCount > 0 ? (
                       <Text style={styles.moreHint}>+{extraItemCount} more beyond today&apos;s capacity</Text>
@@ -1304,9 +1126,11 @@ export default function HomeScreen() {
                 <View style={[styles.modalPanel, { borderColor: theme.accent }]}>
                   <Text style={[styles.modalSource, { color: theme.accent }]}>QUEST BOARD HELP</Text>
                   <Text style={styles.modalTitle}>How the Quest Board works</Text>
-                  <Text style={styles.modalDescription}>
-                    The Quest Board keeps today focused. In Progress mode, MYLIT shows up to 8 planned hours. In Recovery mode, it shows up to 5. Your Day Plan, checklist items, Quick Thoughts, and app quests can all appear here. Start one timed quest at a time; the board locks until it ends. Complete gives steps. Missed? helps you reflect without losing your progress.
-                  </Text>
+                  <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false} bounces={false}>
+                    <Text style={styles.modalDescription}>
+                      Quest Board shows what to focus on now. It can include MYLIT quests, Day Plan items, checklist items, and Quick Thoughts. Start one timed item at a time; the board locks until it ends. Complete gives steps. Missed? helps you reflect without punishment. To protect energy, MYLIT limits long progress streaks — after about 2 hours, recovery comes before more work.
+                    </Text>
+                  </ScrollView>
                   <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowQuestHelp(false)}>
                     <Text style={styles.modalCancelText}>CLOSE</Text>
                   </TouchableOpacity>
@@ -1348,17 +1172,11 @@ export default function HomeScreen() {
                       <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setSelectedItem(null)}>
                         <Text style={styles.modalCancelText}>CLOSE</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.modalCompleteBtn}
-                        onPress={() => void completeQuestItem(selectedItem)}
-                      >
-                        <Text style={styles.modalCompleteText}>COMPLETE</Text>
-                      </TouchableOpacity>
-                    </View>
-                    <View style={styles.modalButtonRow}>
                       <TouchableOpacity style={styles.modalStartBtn} onPress={() => startTimedItem(selectedItem)}>
                         <Text style={styles.modalStartText}>START</Text>
                       </TouchableOpacity>
+                    </View>
+                    <View style={styles.modalButtonRow}>
                       <TouchableOpacity
                         style={styles.modalMissedBtn}
                         onPress={() => void missQuestItem(selectedItem)}
@@ -1371,32 +1189,7 @@ export default function HomeScreen() {
               </View>
             </Modal>
 
-            <View style={[styles.bottomNav, { borderColor: theme.accent }]}>
-              <TouchableOpacity style={[styles.navButton, styles.navButtonActive, { borderColor: theme.accent }]} onPress={lightHaptic}>
-                <Text style={styles.navTextActive}>🏠</Text>
-                <Text style={[styles.navLabelActive, { color: theme.glow }]}>HOME</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.navButton} onPress={() => navigateWithHaptic("/sleep")}>
-                <Text style={styles.navText}>🌙</Text>
-                <Text style={styles.navLabel}>SLEEP</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.navButton} onPress={() => navigateWithHaptic("/mind")}>
-                <Text style={styles.navText}>🧠</Text>
-                <Text style={styles.navLabel}>MIND</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.navButton} onPress={() => navigateWithHaptic("/path")}>
-                <Text style={styles.navText}>🌲</Text>
-                <Text style={styles.navLabel}>PATH</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.navButton} onPress={() => navigateWithHaptic("/calendar")}>
-                <Text style={styles.navText}>📅</Text>
-                <Text style={styles.navLabel}>CAL</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.navButton} onPress={() => navigateWithHaptic("/stats")}>
-                <Text style={styles.navText}>🎒</Text>
-                <Text style={styles.navLabel}>BAG</Text>
-              </TouchableOpacity>
-            </View>
+            <BottomNav activeRoute="home" bottomOffset={mobile.bottomNavOffset} />
         </View>
       </View>
     </View>
@@ -1406,8 +1199,6 @@ const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
     backgroundColor: "#02040A",
-    alignItems: "center",
-    justifyContent: "center",
   },
   phoneStage: {
     alignSelf: "center",
@@ -1420,6 +1211,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.85,
     shadowRadius: 0,
     shadowOffset: { width: 6, height: 6 },
+  },
+  phoneStageFullscreen: {
+    borderWidth: 0,
+    shadowOpacity: 0,
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -1436,11 +1231,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   hudContent: {
-    minHeight: "100%",
+    flexGrow: 1,
     paddingTop: 9,
     paddingHorizontal: 14,
     paddingBottom: 82,
-    justifyContent: "space-between",
   },
   topHud: {
     minHeight: 64,
@@ -2059,6 +1853,10 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 17,
     marginTop: 10,
+  },
+  modalScroll: {
+    maxHeight: 220,
+    marginTop: 4,
   },
   modalButtonRow: {
     flexDirection: "row",

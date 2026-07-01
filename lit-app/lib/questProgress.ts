@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+import { persistProgressKeys } from "./progressStore";
 import {
   collectDayPlanScheduledItems,
   collectQuickThoughtScheduledItems,
@@ -59,6 +60,8 @@ export type HomeQuestItem = {
   scheduledTime?: string;
   description?: string;
   mandatory?: boolean;
+  starter?: boolean;
+  suggested?: boolean;
 };
 
 type QuestLike = {
@@ -67,6 +70,9 @@ type QuestLike = {
   steps?: number;
   description?: string;
   mandatory?: boolean;
+  starter?: boolean;
+  suggested?: boolean;
+  durationMinutes?: number;
 };
 
 type RawChecklistItem = {
@@ -164,36 +170,143 @@ export function formatCapacityHeader(plannedMinutes: number, mode: "Progress" | 
   return `Planned ${formatPlannedDurationLabel(plannedMinutes)} / ${capHours}h`;
 }
 
+function scheduledItemKind(value: {
+  kind?: QuestKind | string;
+  classification?: string;
+  title?: string;
+  text?: string;
+}): QuestKind {
+  if (value.kind === "recovery" || value.classification === "recovery") return "recovery";
+  const title = value.title || value.text || "";
+  if (inferScheduledClassification(title) === "recovery") return "recovery";
+  return "progress";
+}
+
+function isActiveScheduledItem(status?: string, completedAt?: string): boolean {
+  if (completedAt) return false;
+  if (status === "completed" || status === "missed") return false;
+  return true;
+}
+
+/** User-scheduled quest minutes for a day (Quick Thoughts + Day Plan), all kinds combined. */
+export function computeUserScheduledMinutesForDay(input: {
+  dateKey: string;
+  weekday: WeekdayName;
+  quickThoughts: QueueItem[];
+  dayPlan: DayPlanRaw | null | undefined;
+}): number {
+  let total = 0;
+
+  for (const raw of input.quickThoughts) {
+    const itemDate = raw.date ?? raw.dateKey;
+    if (itemDate !== input.dateKey) continue;
+    if (!isActiveScheduledItem(raw.status, raw.completedAt)) continue;
+    total += parseDurationMinutes(raw.durationMinutes ?? raw.duration, 30);
+  }
+
+  const todayQuest = input.dayPlan?.todayQuest;
+  if (todayQuest?.title?.trim()) {
+    const questDate = todayQuest.date ?? input.dateKey;
+    if (questDate === input.dateKey) {
+      if (isActiveScheduledItem(todayQuest.status)) {
+        total += parseDurationMinutes(todayQuest.durationMinutes ?? todayQuest.duration, 60);
+      }
+    }
+  }
+
+  const checklist = getChecklistItemsForDay(input.dayPlan, input.weekday);
+  for (const raw of checklist) {
+    if (raw.checked || !isActiveScheduledItem(raw.status)) continue;
+    total += parseDurationMinutes(raw.durationMinutes ?? raw.duration, 30);
+  }
+
+  return total;
+}
+
+export function checkUserScheduledQuestCapacity(input: {
+  dateKey: string;
+  weekday: WeekdayName;
+  quickThoughts: QueueItem[];
+  dayPlan: DayPlanRaw | null | undefined;
+  additionalMinutes: number;
+  boardMode: "Progress" | "Recovery";
+}): { allowed: boolean; plannedMinutes: number; capacityMinutes: number; remainingMinutes: number; modeLabel: "Progress" | "Recovery" } {
+  const plannedMinutes = computeUserScheduledMinutesForDay(input);
+  const capacityMinutes = getQuestCapacityMinutes(input.boardMode);
+  const remainingMinutes = Math.max(0, capacityMinutes - plannedMinutes);
+  return {
+    allowed: plannedMinutes + input.additionalMinutes <= capacityMinutes,
+    plannedMinutes,
+    capacityMinutes,
+    remainingMinutes,
+    modeLabel: input.boardMode,
+  };
+}
+
 const DEFAULT_TODAY_QUEST_TITLES = new Set(["choose one honest quest for today"]);
 
+/** Day Plan today's quest or checklist habits scheduled for today. */
+export function hasUserDayPlanItems(input: {
+  todayQuest?: RawTodayQuest | null;
+  checklist: RawChecklistItem[];
+}): boolean {
+  const questTitle = input.todayQuest?.title?.trim().toLowerCase() ?? "";
+  if (questTitle && !DEFAULT_TODAY_QUEST_TITLES.has(questTitle)) return true;
+
+  return input.checklist.some((item) => (item.text || item.title || "").trim());
+}
+
+export function hasTodayQuickThoughts(input: { quickThoughts: QueueItem[]; todayKey: string }): boolean {
+  return input.quickThoughts.some((item) => {
+    const itemDate = item.date ?? item.dateKey ?? input.todayKey;
+    if (itemDate !== input.todayKey) return false;
+    if (item.status === "completed" || item.completedAt || String(item.status) === "missed") return false;
+    const title = (item.text || item.title || item.task || item.note || "").trim();
+    return Boolean(title);
+  });
+}
+
+/** Whether the user has added Day Plan or Quick Thought items for the board. */
 export function hasUserCreatedQuestItems(input: {
   todayQuest?: RawTodayQuest | null;
   checklist: RawChecklistItem[];
   quickThoughts: QueueItem[];
   todayKey: string;
 }): boolean {
-  const questTitle = input.todayQuest?.title?.trim().toLowerCase() ?? "";
-  if (questTitle && !DEFAULT_TODAY_QUEST_TITLES.has(questTitle)) return true;
-
-  if (input.checklist.some((item) => (item.text || item.title || "").trim())) return true;
-
-  return input.quickThoughts.some((item) => {
-    const itemDate = item.date ?? item.dateKey ?? input.todayKey;
-    if (itemDate !== input.todayKey) return false;
-    const title = (item.text || item.title || item.task || item.note || "").trim();
-    return Boolean(title);
-  });
+  return (
+    hasUserDayPlanItems(input) ||
+    hasTodayQuickThoughts({ quickThoughts: input.quickThoughts, todayKey: input.todayKey })
+  );
 }
 
-type QuestPriorityTier = 0 | 1 | 2 | 3 | 4 | 5;
+/** Starter + mandatory + app-suggested MYLIT quests, or items the user added via Day Plan / Quick Thoughts. */
+export function isQuestBoardItemAllowed(item: HomeQuestItem): boolean {
+  if (item.mandatory || item.starter || item.suggested) return true;
+  if (
+    item.source === "Today's Quest" ||
+    item.source === "Checklist" ||
+    item.source === "Quick Thought" ||
+    item.source === "Calendar"
+  ) {
+    return true;
+  }
+  return false;
+}
+
+export function filterQuestBoardItems(items: HomeQuestItem[]): HomeQuestItem[] {
+  return items.filter(isQuestBoardItemAllowed);
+}
+
+type QuestPriorityTier = 0 | 1 | 2 | 3 | 4 | 5 | 6;
 
 function getItemPriorityTier(item: HomeQuestItem): QuestPriorityTier {
   if (item.scheduledTime && parseTimeToMinutes(item.scheduledTime) !== null) return 0;
   if (item.mandatory) return 1;
-  if (item.source === "Today's Quest") return 2;
-  if (item.source === "Checklist") return 3;
-  if (item.source === "Quick Thought") return 4;
-  return 5;
+  if (item.starter || item.suggested) return 2;
+  if (item.source === "Today's Quest") return 3;
+  if (item.source === "Checklist") return 4;
+  if (item.source === "Quick Thought") return 5;
+  return 6;
 }
 
 export function sortQuestItemsByPriority(items: HomeQuestItem[]): HomeQuestItem[] {
@@ -207,23 +320,17 @@ export function sortQuestItemsByPriority(items: HomeQuestItem[]): HomeQuestItem[
   });
 }
 
-export function applyQuestBoardCapacity(items: HomeQuestItem[], mode: "Progress" | "Recovery", hasUserItems: boolean): {
+export function applyQuestBoardCapacity(
+  items: HomeQuestItem[],
+  mode: "Progress" | "Recovery"
+): {
   visibleItems: HomeQuestItem[];
   hiddenCount: number;
   plannedMinutes: number;
   capacityMinutes: number;
 } {
   const capacityMinutes = getQuestCapacityMinutes(mode);
-  let sorted = sortQuestItemsByPriority(items);
-
-  if (!hasUserItems) {
-    const firstRecommended =
-      sorted.find((item) => item.mandatory) ??
-      sorted.find((item) => item.source === "Quest") ??
-      sorted[0] ??
-      null;
-    sorted = firstRecommended ? [firstRecommended] : [];
-  }
+  const sorted = sortQuestItemsByPriority(filterQuestBoardItems(items));
 
   const visibleItems: HomeQuestItem[] = [];
   let plannedMinutes = 0;
@@ -478,9 +585,11 @@ export function normalizeQuestItems(input: {
       source: "Quest",
       kind,
       steps: quest.steps ?? 1,
-      durationMinutes: 30,
+      durationMinutes: quest.durationMinutes ?? (quest.starter || quest.suggested ? 10 : 30),
       description: quest.description || quest.type,
       mandatory: quest.mandatory,
+      starter: quest.starter,
+      suggested: quest.suggested,
     });
   });
 
@@ -585,8 +694,10 @@ export async function loadTodayCompletions(): Promise<CompletionEntry[]> {
   const savedDate = await AsyncStorage.getItem(TODAY_PROGRESS_DATE_KEY);
   const savedQuests = await AsyncStorage.getItem(COMPLETED_QUESTS_KEY);
   if (savedDate !== today) {
-    await AsyncStorage.setItem(TODAY_PROGRESS_DATE_KEY, today);
-    await AsyncStorage.setItem(COMPLETED_QUESTS_KEY, JSON.stringify([]));
+    await persistProgressKeys({
+      [TODAY_PROGRESS_DATE_KEY]: today,
+      [COMPLETED_QUESTS_KEY]: JSON.stringify([]),
+    });
     return [];
   }
   return parseCompletions(savedQuests, today);
@@ -594,8 +705,10 @@ export async function loadTodayCompletions(): Promise<CompletionEntry[]> {
 
 export async function saveTodayCompletions(entries: CompletionEntry[]): Promise<void> {
   const today = getTodayKey();
-  await AsyncStorage.setItem(TODAY_PROGRESS_DATE_KEY, today);
-  await AsyncStorage.setItem(COMPLETED_QUESTS_KEY, JSON.stringify(entries));
+  await persistProgressKeys({
+    [TODAY_PROGRESS_DATE_KEY]: today,
+    [COMPLETED_QUESTS_KEY]: JSON.stringify(entries),
+  });
 }
 
 export async function loadTodayMissed(): Promise<MissedEntry[]> {
@@ -608,7 +721,9 @@ export async function saveTodayMissed(entries: MissedEntry[]): Promise<void> {
   const today = getTodayKey();
   const raw = await AsyncStorage.getItem(MISSED_QUESTS_KEY);
   const existing = parseMissed(raw).filter((entry) => entry.dateKey !== today);
-  await AsyncStorage.setItem(MISSED_QUESTS_KEY, JSON.stringify([...existing, ...entries]));
+  await persistProgressKeys({
+    [MISSED_QUESTS_KEY]: JSON.stringify([...existing, ...entries]),
+  });
 }
 
 async function readJson<T>(key: string, fallback: T): Promise<T> {
@@ -628,7 +743,7 @@ async function syncSourceCompletion(item: HomeQuestItem): Promise<void> {
       const questTitle = String(quest.title ?? "");
       if (quest.id === item.id || questTitle === item.title) {
         plan.todayQuest = { ...quest, status: "completed", steps: item.steps };
-        await AsyncStorage.setItem(DAY_PLAN_KEY, JSON.stringify(plan));
+        await persistProgressKeys({ [DAY_PLAN_KEY]: JSON.stringify(plan) });
       }
     }
     return;
@@ -653,7 +768,9 @@ async function syncSourceCompletion(item: HomeQuestItem): Promise<void> {
       });
     }
     if (changed) {
-      await AsyncStorage.setItem(DAY_PLAN_KEY, JSON.stringify({ ...plan, weekdayChecklists: nextLists }));
+      await persistProgressKeys({
+        [DAY_PLAN_KEY]: JSON.stringify({ ...plan, weekdayChecklists: nextLists }),
+      });
     }
     return;
   }
@@ -668,7 +785,7 @@ async function syncSourceCompletion(item: HomeQuestItem): Promise<void> {
       }
       return entry;
     });
-    await AsyncStorage.setItem(TOMORROW_QUEUE_KEY, JSON.stringify(next));
+    await persistProgressKeys({ [TOMORROW_QUEUE_KEY]: JSON.stringify(next) });
   }
 }
 
@@ -680,7 +797,7 @@ async function syncSourceMissed(item: HomeQuestItem): Promise<void> {
       const questTitle = String(quest.title ?? "");
       if (quest.id === item.id || questTitle === item.title) {
         plan.todayQuest = { ...quest, status: "missed" };
-        await AsyncStorage.setItem(DAY_PLAN_KEY, JSON.stringify(plan));
+        await persistProgressKeys({ [DAY_PLAN_KEY]: JSON.stringify(plan) });
       }
     }
   }
@@ -704,7 +821,9 @@ async function syncSourceMissed(item: HomeQuestItem): Promise<void> {
       });
     }
     if (changed) {
-      await AsyncStorage.setItem(DAY_PLAN_KEY, JSON.stringify({ ...plan, weekdayChecklists: nextLists }));
+      await persistProgressKeys({
+        [DAY_PLAN_KEY]: JSON.stringify({ ...plan, weekdayChecklists: nextLists }),
+      });
     }
   }
 
@@ -718,7 +837,7 @@ async function syncSourceMissed(item: HomeQuestItem): Promise<void> {
       }
       return entry;
     });
-    await AsyncStorage.setItem(TOMORROW_QUEUE_KEY, JSON.stringify(next));
+    await persistProgressKeys({ [TOMORROW_QUEUE_KEY]: JSON.stringify(next) });
   }
 }
 

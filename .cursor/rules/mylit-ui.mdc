@@ -26,6 +26,8 @@ MYLIT is a mobile-first pixel/RPG productivity and sleep app.
 - Modify only files required for the task.
 - Do not redesign unrelated screens.
 - Preserve routes and AsyncStorage keys unless explicitly asked.
+- **Never reset user progress** — no clears, no empty-over-rich sync, no re-seeding
+  that overwrites saved data; new defaults only when a key has no saved value.
 - Avoid broad rewrites.
 - Use TypeScript safely.
 - Avoid implicit any.

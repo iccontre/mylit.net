@@ -28,3 +28,20 @@ repo root only holds workspace metadata.
   runs fine — do not "fix" them unless asked.
 - App state (onboarding, check-ins) persists via AsyncStorage (browser localStorage on
   web), so a hard reload keeps prior data; clear site data to start fresh.
+
+### Progress safety (never reset user data)
+
+**Every commit, deploy, and code change must preserve existing user progress.**
+
+- Do **not** call `AsyncStorage.clear()`, `multiRemove` on progress keys, or wipe
+  local storage on app boot, sign-in, sync, or version updates.
+- Do **not** overwrite non-empty local progress with empty cloud/default payloads.
+- Do **not** change default values in a way that replaces saved user data on load
+  (e.g. re-seed checklist items, reset steps/rank/completions).
+- New defaults apply only when **no saved value exists** for that key — existing
+  users keep what they already saved.
+- Before any cloud merge: back up local progress (`backupLocalProgressNow` /
+  `mergeCloudIntoLocalSafely` in `lit-app/lib/progressStore.ts`).
+- Deprecating a field: hide it in UI and ignore it in merge logic; do not delete
+  stored rows unless the user explicitly asks.
+- If a migration is required, merge forward — never destructive reset.
