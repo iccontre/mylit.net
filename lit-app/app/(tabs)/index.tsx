@@ -12,6 +12,7 @@ import {
 } from "../../lib/questGeneration";
 import { ANALYTICS_EVENTS, trackEvent } from "../../lib/analytics";
 import { syncQuestCompleted, syncQuestMissed, syncQuestStarted } from "../../lib/progressSync";
+import { clearProgressKey, persistProgressKeys } from "../../lib/progressStore";
 import {
   ACTIVE_TIMED_ITEM_KEY,
   applyQuestBoardCapacity,
@@ -527,12 +528,12 @@ export default function HomeScreen() {
 
   async function saveActiveItem(item: ActiveTimedItem) {
     setActiveItem(item);
-    await AsyncStorage.setItem(ACTIVE_TIMED_ITEM_KEY, JSON.stringify(item));
+    await persistProgressKeys({ [ACTIVE_TIMED_ITEM_KEY]: JSON.stringify(item) });
   }
 
   async function clearActiveItem() {
     setActiveItem(null);
-    await AsyncStorage.removeItem(ACTIVE_TIMED_ITEM_KEY);
+    await clearProgressKey(ACTIVE_TIMED_ITEM_KEY);
   }
 
   function showLockMessage() {

@@ -16,7 +16,8 @@ import { uiAssets } from "../constants/uiAssets";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { signOut } from "../lib/auth";
-import { computeItemStepsFromSources, computeTotalEarnedSteps, loadTodayCompletions } from "../lib/questProgress";
+import { computeItemStepsFromSources, computeTotalEarnedSteps, loadTodayCompletions, USER_STATS_KEY } from "../lib/questProgress";
+import { persistProgressKeys } from "../lib/progressStore";
 
 type ActivePanel = "weekly" | "rank" | "behavior" | null;
 type ActiveInfo = "stats" | "evie" | "weekly" | "rank" | "behavior" | "weeklyPopup" | "rankPopup" | "behaviorPopup" | null;
@@ -73,7 +74,6 @@ const MORNING_INTENTION_REFLECTIONS_KEY = "lit_morning_intention_reflections";
 const MEDITATIONS_KEY = "lit_awareness_checks";
 const REFLECTIONS_KEY = "lit_reflections";
 const SLEEP_CALENDAR_KEY = "lit_sleep_calendar";
-const USER_STATS_KEY = "lit_user_stats";
 const RANK_SIZE = 100;
 
 const pixelFont = Platform.select({ ios: "Menlo", android: "monospace", web: "monospace", default: "monospace" });
@@ -304,9 +304,12 @@ export default function StatsScreen() {
     const hasNewBonuses = awardedThresholds.some(t => !prevAwarded.includes(t));
 
     if (hasNewBonuses) {
-      await AsyncStorage.setItem(USER_STATS_KEY, JSON.stringify({
-        ...userStats, rankBonusesAwarded: awardedThresholds,
-      }));
+      await persistProgressKeys({
+        [USER_STATS_KEY]: JSON.stringify({
+          ...userStats,
+          rankBonusesAwarded: awardedThresholds,
+        }),
+      });
     }
 
     setStats({

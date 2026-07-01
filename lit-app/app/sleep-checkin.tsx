@@ -16,6 +16,8 @@ import { uiAssets } from "../constants/uiAssets";
 import { FormScreen } from "../components/FormScreen";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
+import { persistProgressKeys } from "../lib/progressStore";
+import { CHECKIN_HISTORY_KEY, LATEST_CHECKIN_KEY } from "../lib/storageKeys";
 import { syncDailySnapshot } from "../lib/progressSync";
 
 type CheckInMode = "Recovery" | "Progress";
@@ -38,9 +40,6 @@ type CheckIn = {
   mode: CheckInMode;
   createdAt: string;
 };
-
-const CHECKIN_KEY = "lit_latest_checkin";
-const CHECKIN_HISTORY_KEY = "lit_checkin_history";
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -118,7 +117,7 @@ export default function SleepCheckInScreen() {
   }, []);
 
   async function loadLatestCheckIn() {
-    const saved = await AsyncStorage.getItem(CHECKIN_KEY);
+    const saved = await AsyncStorage.getItem(LATEST_CHECKIN_KEY);
 
     if (!saved) return;
 
@@ -196,13 +195,14 @@ export default function SleepCheckInScreen() {
       createdAt: new Date().toISOString(),
     };
 
-    await AsyncStorage.setItem(CHECKIN_KEY, JSON.stringify(checkIn));
-
     const savedHistory = await AsyncStorage.getItem(CHECKIN_HISTORY_KEY);
     const history: CheckIn[] = savedHistory ? JSON.parse(savedHistory) : [];
     const nextHistory = [checkIn, ...history];
 
-    await AsyncStorage.setItem(CHECKIN_HISTORY_KEY, JSON.stringify(nextHistory));
+    await persistProgressKeys({
+      [LATEST_CHECKIN_KEY]: JSON.stringify(checkIn),
+      [CHECKIN_HISTORY_KEY]: JSON.stringify(nextHistory),
+    });
 
     await successHaptic();
 

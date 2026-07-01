@@ -6,6 +6,8 @@ import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View }
 import { GuideInfoModal } from "../components/GuideInfoModal";
 import { uiAssets } from "../constants/uiAssets";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
+import { persistProgressKeys } from "../lib/progressStore";
+import { LATEST_CHECKIN_KEY } from "../lib/storageKeys";
 
 const LUNA_SLEEP_GUIDE_BULLETS = [
   "The Sleep Guide suggests timing — not strict rules.",
@@ -37,7 +39,7 @@ type Suggestion = {
   value: string;
 };
 
-const CHECKIN_KEY = "lit_latest_checkin";
+const CHECKIN_KEY = LATEST_CHECKIN_KEY;
 const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
 const MAX_FRAME_WIDTH = 520;
 const MIN_SLEEP_HOURS = 9;
@@ -184,7 +186,7 @@ export default function SleepCalendarScreen() {
       createdAt: current.createdAt || new Date().toISOString(),
     };
 
-    await AsyncStorage.setItem(CHECKIN_KEY, JSON.stringify(next));
+    await persistProgressKeys({ [CHECKIN_KEY]: JSON.stringify(next) });
     setSavedMessage("Sleep guide saved.");
     void trackEvent(ANALYTICS_EVENTS.sleep_guide_saved);
   }

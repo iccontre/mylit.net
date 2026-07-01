@@ -8,12 +8,8 @@ import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { syncQuickThoughtItems } from "../lib/progressSync";
-import {
-  checkUserScheduledQuestCapacity,
-  computeUserScheduledMinutesForDay,
-  formatPlannedDurationLabel,
-  getQuestCapacityMinutes,
-} from "../lib/questProgress";
+import { TOMORROW_QUEUE_KEY, checkUserScheduledQuestCapacity, computeUserScheduledMinutesForDay, formatPlannedDurationLabel, getQuestCapacityMinutes } from "../lib/questProgress";
+import { persistProgressKeys } from "../lib/progressStore";
 import { formatDurationLabel, generateTimeSlots, getDateKey, getQuickThoughtSteps, inferScheduledClassification, parseDurationMinutes, shiftTimeSlot, type ScheduledClassification, type ScheduledStatus, type WeekdayName } from "../lib/scheduling";
 
 type QuestKind = "progress" | "recovery";
@@ -73,7 +69,7 @@ function parseTimeInput(raw: string): string {
 
 type QuestDay = { date: Date; dateKey: string; weekday: string; label: string; dayNumber: number };
 
-const STORAGE_KEY = "lit_tomorrow_queue";
+const STORAGE_KEY = TOMORROW_QUEUE_KEY;
 const DAY_PLAN_KEY = "lit_day_plan";
 const CHECKIN_KEY = "lit_latest_checkin";
 const TIME_SLOTS = generateTimeSlots(7, 22, 30);
@@ -202,7 +198,7 @@ export default function TomorrowQueueScreen() {
 
   async function saveQueue(nextItems: QueueItem[]) {
     setItems(nextItems);
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(nextItems));
+    await persistProgressKeys({ [STORAGE_KEY]: JSON.stringify(nextItems) });
   }
 
   async function addToQueue() {

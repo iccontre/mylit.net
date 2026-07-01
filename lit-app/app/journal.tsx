@@ -16,6 +16,8 @@ import { GuideInfoModal } from "../components/GuideInfoModal";
 import { formStyles } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
+import { persistProgressKeys } from "../lib/progressStore";
+import { JOURNAL_ENTRIES_KEY } from "../lib/storageKeys";
 
 const LUNA_JOURNAL_BULLETS = [
   "Journal is for honest notes and thought patterns — not perfection.",
@@ -38,7 +40,7 @@ type JournalEntry = {
   createdAt: string;
 };
 
-const STORAGE_KEY = "lit_journal_entries";
+const STORAGE_KEY = JOURNAL_ENTRIES_KEY;
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -70,7 +72,7 @@ export default function JournalScreen() {
 
   async function saveEntries(nextEntries: JournalEntry[]) {
     setEntries(nextEntries);
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(nextEntries));
+    await persistProgressKeys({ [STORAGE_KEY]: JSON.stringify(nextEntries) });
   }
 
   async function saveJournalEntry() {

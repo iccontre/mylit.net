@@ -17,6 +17,12 @@ import { GuideInfoModal } from "../components/GuideInfoModal";
 import { formStyles } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
+import { USER_STATS_KEY } from "../lib/questProgress";
+import { persistProgressKeys } from "../lib/progressStore";
+import {
+  LATEST_PRE_SLEEP_INTENTION_KEY,
+  MORNING_INTENTION_REFLECTIONS_KEY,
+} from "../lib/storageKeys";
 
 const EVIE_MORNING_BULLETS = [
   "Morning Reflection connects sleep, intention, and the day's energy.",
@@ -45,10 +51,6 @@ type MorningIntentionReflection = {
   morningSupport: string[];
   createdAt: string;
 };
-
-const LATEST_PRE_SLEEP_INTENTION_KEY = "lit_latest_pre_sleep_intention";
-const MORNING_INTENTION_REFLECTIONS_KEY = "lit_morning_intention_reflections";
-const USER_STATS_KEY = "lit_user_stats";
 
 const MORNING_SUPPORT_OPTIONS = [
   "Write in dream journal",
@@ -102,7 +104,9 @@ export default function MorningIntentionReflectionScreen() {
   async function earnSteps(count: number) {
     const saved = await AsyncStorage.getItem(USER_STATS_KEY);
     const current: Record<string, unknown> = saved ? JSON.parse(saved) : {};
-    await AsyncStorage.setItem(USER_STATS_KEY, JSON.stringify({ ...current, totalSteps: Number(current.totalSteps ?? 0) + count }));
+    await persistProgressKeys({
+      [USER_STATS_KEY]: JSON.stringify({ ...current, totalSteps: Number(current.totalSteps ?? 0) + count }),
+    });
   }
 
   async function saveReflection() {
@@ -117,7 +121,9 @@ export default function MorningIntentionReflectionScreen() {
 
     const saved = await AsyncStorage.getItem(MORNING_INTENTION_REFLECTIONS_KEY);
     const history: MorningIntentionReflection[] = saved ? JSON.parse(saved) : [];
-    await AsyncStorage.setItem(MORNING_INTENTION_REFLECTIONS_KEY, JSON.stringify([reflection, ...history]));
+    await persistProgressKeys({
+      [MORNING_INTENTION_REFLECTIONS_KEY]: JSON.stringify([reflection, ...history]),
+    });
 
     const steps = sleepHours === "8.5hrs" ? 2 : sleepHours === "7hrs" ? 1 : 0;
     if (steps > 0) await earnSteps(steps);

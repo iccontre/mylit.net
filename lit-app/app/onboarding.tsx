@@ -22,7 +22,8 @@ import {
 } from "../constants/goalMilestoneTemplates";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
-import { getOrCreateProfile, updateProfile } from "../lib/auth";
+import { LOCAL_PROFILE_KEY, getOrCreateProfile, updateProfile } from "../lib/auth";
+import { persistProgressKeys } from "../lib/progressStore";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { isSupabaseConfigured } from "../lib/supabase";
 import { logGoalFeedback } from "../lib/feedbackLog";
@@ -59,7 +60,7 @@ type UserProfile = {
   hasFoodControl: boolean;
 };
 
-const PROFILE_KEY = "lit_user_profile";
+const PROFILE_KEY = LOCAL_PROFILE_KEY;
 const pathBackground = require("../assets/ui/backgrounds/path-background.png");
 
 const pixelFont = Platform.select({
@@ -395,7 +396,7 @@ export default function OnboardingScreen() {
       hasFoodControl,
     };
 
-    await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+    await persistProgressKeys({ [PROFILE_KEY]: JSON.stringify(profile) });
 
     if (isSupabaseConfigured()) {
       void updateProfile({

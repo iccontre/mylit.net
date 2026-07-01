@@ -17,6 +17,12 @@ import { GuideInfoModal } from "../components/GuideInfoModal";
 import { formStyles } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
+import { persistProgressKeys } from "../lib/progressStore";
+import {
+  LATEST_PRE_SLEEP_INTENTION_KEY,
+  PRE_SLEEP_INTENTIONS_KEY,
+} from "../lib/storageKeys";
+import { USER_STATS_KEY } from "../lib/questProgress";
 
 const LUNA_PRE_SLEEP_BULLETS = [
   "Pre-Sleep Intention gives your mind one clear signal before bed.",
@@ -36,10 +42,6 @@ type PreSleepIntention = {
   support: string[];
   createdAt: string;
 };
-
-const PRE_SLEEP_INTENTIONS_KEY = "lit_pre_sleep_intentions";
-const LATEST_PRE_SLEEP_INTENTION_KEY = "lit_latest_pre_sleep_intention";
-const USER_STATS_KEY = "lit_user_stats";
 
 const FEELING_OPTIONS = ["Focused", "Energized", "Calm", "Grounded", "Rested", "Brave", "Gentle", "Steady"];
 const SUPPORT_OPTIONS = ["No screens", "Gratitude", "Breathe", "Let go", "Sleep early"];
@@ -77,7 +79,9 @@ export default function PreSleepIntentionScreen() {
   async function earnSteps(count: number) {
     const saved = await AsyncStorage.getItem(USER_STATS_KEY);
     const current: Record<string, unknown> = saved ? JSON.parse(saved) : {};
-    await AsyncStorage.setItem(USER_STATS_KEY, JSON.stringify({ ...current, totalSteps: Number(current.totalSteps ?? 0) + count }));
+    await persistProgressKeys({
+      [USER_STATS_KEY]: JSON.stringify({ ...current, totalSteps: Number(current.totalSteps ?? 0) + count }),
+    });
   }
 
   async function saveIntention() {
@@ -95,8 +99,10 @@ export default function PreSleepIntentionScreen() {
     const saved = await AsyncStorage.getItem(PRE_SLEEP_INTENTIONS_KEY);
     const history: PreSleepIntention[] = saved ? JSON.parse(saved) : [];
 
-    await AsyncStorage.setItem(PRE_SLEEP_INTENTIONS_KEY, JSON.stringify([entry, ...history]));
-    await AsyncStorage.setItem(LATEST_PRE_SLEEP_INTENTION_KEY, JSON.stringify(entry));
+    await persistProgressKeys({
+      [PRE_SLEEP_INTENTIONS_KEY]: JSON.stringify([entry, ...history]),
+      [LATEST_PRE_SLEEP_INTENTION_KEY]: JSON.stringify(entry),
+    });
     await earnSteps(1);
     await successHaptic();
 

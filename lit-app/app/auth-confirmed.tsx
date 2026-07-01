@@ -7,6 +7,7 @@ import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { getOrCreateProfile, getSession, isOnboardingComplete } from "../lib/auth";
 import { consumeAuthCallbackFromUrl } from "../lib/authEmailConfirm";
+import { mergeProgressWithCloud } from "../lib/progressStore";
 import {
   clearAuthAwaitingContinue,
   clearAuthPendingEmailConfirm,
@@ -67,10 +68,16 @@ export default function AuthConfirmedScreen() {
   }, []);
 
   async function handleContinueToMylit() {
-    await clearAuthAwaitingContinue();
-    const profile = await getOrCreateProfile();
-    const onboardingDone = await isOnboardingComplete(profile);
-    router.replace(onboardingDone ? "/(tabs)" : "/onboarding");
+    setLoading(true);
+    try {
+      await mergeProgressWithCloud();
+      await clearAuthAwaitingContinue();
+      const profile = await getOrCreateProfile();
+      const onboardingDone = await isOnboardingComplete(profile);
+      router.replace(onboardingDone ? "/(tabs)" : "/onboarding");
+    } finally {
+      setLoading(false);
+    }
   }
 
   function handleReturnToSignIn() {
@@ -104,7 +111,7 @@ export default function AuthConfirmedScreen() {
                 below to finish setup.
               </Text>
               <Text style={styles.hintText}>
-                Tip: open MYLIT from your Home Screen icon so your progress stays on this device.
+                Your progress syncs to your account so you can continue on any device.
               </Text>
               <TouchableOpacity style={styles.primaryButton} onPress={handleContinueToMylit}>
                 <Text style={styles.primaryButtonText}>CONTINUE TO MYLIT</Text>

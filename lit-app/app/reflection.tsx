@@ -16,6 +16,8 @@ import { GuideInfoModal } from "../components/GuideInfoModal";
 import { formStyles } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
+import { persistProgressKeys } from "../lib/progressStore";
+import { REFLECTIONS_KEY } from "../lib/storageKeys";
 
 const LUNA_REFLECTION_BULLETS = [
   "Reflection helps process missed or completed quests — it is not self-criticism.",
@@ -34,8 +36,6 @@ type ReflectionEntry = {
   nextTry: string;
   createdAt: string;
 };
-
-const REFLECTIONS_KEY = "lit_reflections";
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -72,7 +72,7 @@ export default function ReflectionScreen() {
     const parsed: ReflectionEntry[] = saved ? JSON.parse(saved) : [];
     const next = [newEntry, ...parsed];
 
-    await AsyncStorage.setItem(REFLECTIONS_KEY, JSON.stringify(next));
+    await persistProgressKeys({ [REFLECTIONS_KEY]: JSON.stringify(next) });
     router.push("/");
   }
 

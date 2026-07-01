@@ -2,7 +2,10 @@ import { usePathname, useRouter } from "expo-router";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
+import { getSession } from "../lib/auth";
 import { resolveRequiredRouteForPath } from "../lib/authFlow";
+import { mergeProgressWithCloud } from "../lib/progressStore";
+import { isSupabaseConfigured } from "../lib/supabase";
 
 type AuthBootstrapProps = {
   children: ReactNode;
@@ -14,12 +17,23 @@ export function AuthBootstrap({ children }: AuthBootstrapProps) {
   const [ready, setReady] = useState(false);
   const redirectingRef = useRef(false);
   const hasBootstrappedRef = useRef(false);
+  const hasSyncedProgressRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
 
+    async function syncProgressIfNeeded() {
+      if (!isSupabaseConfigured() || hasSyncedProgressRef.current) return;
+      const session = await getSession();
+      if (!session || cancelled) return;
+      hasSyncedProgressRef.current = true;
+      await mergeProgressWithCloud();
+    }
+
     async function enforceRoute() {
       if (redirectingRef.current) return;
+
+      await syncProgressIfNeeded();
 
       const redirectTo = await resolveRequiredRouteForPath(pathname || "/");
       if (cancelled) return;

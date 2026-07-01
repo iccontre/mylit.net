@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+import { persistProgressKeys } from "./progressStore";
 import {
   collectDayPlanScheduledItems,
   collectQuickThoughtScheduledItems,
@@ -693,8 +694,10 @@ export async function loadTodayCompletions(): Promise<CompletionEntry[]> {
   const savedDate = await AsyncStorage.getItem(TODAY_PROGRESS_DATE_KEY);
   const savedQuests = await AsyncStorage.getItem(COMPLETED_QUESTS_KEY);
   if (savedDate !== today) {
-    await AsyncStorage.setItem(TODAY_PROGRESS_DATE_KEY, today);
-    await AsyncStorage.setItem(COMPLETED_QUESTS_KEY, JSON.stringify([]));
+    await persistProgressKeys({
+      [TODAY_PROGRESS_DATE_KEY]: today,
+      [COMPLETED_QUESTS_KEY]: JSON.stringify([]),
+    });
     return [];
   }
   return parseCompletions(savedQuests, today);
@@ -702,8 +705,10 @@ export async function loadTodayCompletions(): Promise<CompletionEntry[]> {
 
 export async function saveTodayCompletions(entries: CompletionEntry[]): Promise<void> {
   const today = getTodayKey();
-  await AsyncStorage.setItem(TODAY_PROGRESS_DATE_KEY, today);
-  await AsyncStorage.setItem(COMPLETED_QUESTS_KEY, JSON.stringify(entries));
+  await persistProgressKeys({
+    [TODAY_PROGRESS_DATE_KEY]: today,
+    [COMPLETED_QUESTS_KEY]: JSON.stringify(entries),
+  });
 }
 
 export async function loadTodayMissed(): Promise<MissedEntry[]> {
@@ -716,7 +721,9 @@ export async function saveTodayMissed(entries: MissedEntry[]): Promise<void> {
   const today = getTodayKey();
   const raw = await AsyncStorage.getItem(MISSED_QUESTS_KEY);
   const existing = parseMissed(raw).filter((entry) => entry.dateKey !== today);
-  await AsyncStorage.setItem(MISSED_QUESTS_KEY, JSON.stringify([...existing, ...entries]));
+  await persistProgressKeys({
+    [MISSED_QUESTS_KEY]: JSON.stringify([...existing, ...entries]),
+  });
 }
 
 async function readJson<T>(key: string, fallback: T): Promise<T> {
@@ -736,7 +743,7 @@ async function syncSourceCompletion(item: HomeQuestItem): Promise<void> {
       const questTitle = String(quest.title ?? "");
       if (quest.id === item.id || questTitle === item.title) {
         plan.todayQuest = { ...quest, status: "completed", steps: item.steps };
-        await AsyncStorage.setItem(DAY_PLAN_KEY, JSON.stringify(plan));
+        await persistProgressKeys({ [DAY_PLAN_KEY]: JSON.stringify(plan) });
       }
     }
     return;
@@ -761,7 +768,9 @@ async function syncSourceCompletion(item: HomeQuestItem): Promise<void> {
       });
     }
     if (changed) {
-      await AsyncStorage.setItem(DAY_PLAN_KEY, JSON.stringify({ ...plan, weekdayChecklists: nextLists }));
+      await persistProgressKeys({
+        [DAY_PLAN_KEY]: JSON.stringify({ ...plan, weekdayChecklists: nextLists }),
+      });
     }
     return;
   }
@@ -776,7 +785,7 @@ async function syncSourceCompletion(item: HomeQuestItem): Promise<void> {
       }
       return entry;
     });
-    await AsyncStorage.setItem(TOMORROW_QUEUE_KEY, JSON.stringify(next));
+    await persistProgressKeys({ [TOMORROW_QUEUE_KEY]: JSON.stringify(next) });
   }
 }
 
@@ -788,7 +797,7 @@ async function syncSourceMissed(item: HomeQuestItem): Promise<void> {
       const questTitle = String(quest.title ?? "");
       if (quest.id === item.id || questTitle === item.title) {
         plan.todayQuest = { ...quest, status: "missed" };
-        await AsyncStorage.setItem(DAY_PLAN_KEY, JSON.stringify(plan));
+        await persistProgressKeys({ [DAY_PLAN_KEY]: JSON.stringify(plan) });
       }
     }
   }
@@ -812,7 +821,9 @@ async function syncSourceMissed(item: HomeQuestItem): Promise<void> {
       });
     }
     if (changed) {
-      await AsyncStorage.setItem(DAY_PLAN_KEY, JSON.stringify({ ...plan, weekdayChecklists: nextLists }));
+      await persistProgressKeys({
+        [DAY_PLAN_KEY]: JSON.stringify({ ...plan, weekdayChecklists: nextLists }),
+      });
     }
   }
 
@@ -826,7 +837,7 @@ async function syncSourceMissed(item: HomeQuestItem): Promise<void> {
       }
       return entry;
     });
-    await AsyncStorage.setItem(TOMORROW_QUEUE_KEY, JSON.stringify(next));
+    await persistProgressKeys({ [TOMORROW_QUEUE_KEY]: JSON.stringify(next) });
   }
 }
 

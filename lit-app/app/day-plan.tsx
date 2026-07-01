@@ -7,6 +7,8 @@ import { FormScreen } from "../components/FormScreen";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
+import { DAY_PLAN_KEY } from "../lib/questProgress";
+import { persistProgressKeys } from "../lib/progressStore";
 import { syncDayPlanScheduledItems } from "../lib/progressSync";
 import { formatDurationLabel, generateTimeSlots, getDateKey, inferScheduledClassification, parseDurationMinutes, shiftTimeSlot, type ScheduledClassification, type ScheduledStatus } from "../lib/scheduling";
 
@@ -49,7 +51,6 @@ type DayPlan = {
 
 type CheckIn = { mode?: string; energy?: number };
 
-const DAY_PLAN_KEY = "lit_day_plan";
 const CHECKIN_KEY = "lit_latest_checkin";
 const TIME_SLOTS = generateTimeSlots(7, 22, 30);
 const PROGRESS_DURATIONS = ["30 min", "45 min", "1 hr"];
@@ -267,7 +268,7 @@ export default function DayPlanScreen() {
 
   async function savePlan(nextPlan: DayPlan) {
     setDayPlan(nextPlan);
-    await AsyncStorage.setItem(DAY_PLAN_KEY, JSON.stringify(nextPlan));
+    await persistProgressKeys({ [DAY_PLAN_KEY]: JSON.stringify(nextPlan) });
     setSavedMessage("Day Plan saved to Calendar.");
     void trackEvent(ANALYTICS_EVENTS.day_plan_saved);
     void syncDayPlanScheduledItems();

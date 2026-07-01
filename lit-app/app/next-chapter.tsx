@@ -15,6 +15,8 @@ import {
 } from "react-native";
 
 import { uiAssets } from "../constants/uiAssets";
+import { LOCAL_PROFILE_KEY } from "../lib/auth";
+import { persistProgressKeys } from "../lib/progressStore";
 
 type DirectionChoice = "recovery" | "connection" | "future" | "stronger" | null;
 
@@ -37,7 +39,7 @@ type UserProfile = {
   hasFoodControl: boolean;
 };
 
-const PROFILE_KEY = "lit_user_profile";
+const PROFILE_KEY = LOCAL_PROFILE_KEY;
 const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
 const MAX_FRAME_WIDTH = 520;
 const pathBackground = require("../assets/ui/backgrounds/path-background.png");
@@ -123,7 +125,7 @@ export default function NextChapterScreen() {
       hasFoodControl,
     };
 
-    await AsyncStorage.setItem(PROFILE_KEY, JSON.stringify(updatedProfile));
+    await persistProgressKeys({ [PROFILE_KEY]: JSON.stringify(updatedProfile) });
     setProfile(updatedProfile);
     setChapterNote("");
   }

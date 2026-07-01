@@ -17,6 +17,8 @@ import { GuideInfoModal } from "../components/GuideInfoModal";
 import { formStyles } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
+import { persistProgressKeys } from "../lib/progressStore";
+import { AWARENESS_CHECKS_KEY } from "../lib/storageKeys";
 
 const LUNA_MEDITATIONS_BULLETS = [
   "Meditation/Awareness is for grounding and attention — not traditional seated meditation.",
@@ -35,8 +37,6 @@ type AwarenessCheck = {
   presentMoment: string;
   createdAt: string;
 };
-
-const AWARENESS_CHECKS_KEY = "lit_awareness_checks";
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -95,7 +95,7 @@ export default function AwarenessCheckScreen() {
     const nextChecks = [newCheck, ...checks];
 
     setChecks(nextChecks);
-    await AsyncStorage.setItem(AWARENESS_CHECKS_KEY, JSON.stringify(nextChecks));
+    await persistProgressKeys({ [AWARENESS_CHECKS_KEY]: JSON.stringify(nextChecks) });
 
     setAttentionFocus("");
     setAutomaticOrIntentional("Mixed");
@@ -107,7 +107,7 @@ export default function AwarenessCheckScreen() {
 
   async function clearChecks() {
     setChecks([]);
-    await AsyncStorage.setItem(AWARENESS_CHECKS_KEY, JSON.stringify([]));
+    await persistProgressKeys({ [AWARENESS_CHECKS_KEY]: JSON.stringify([]) });
   }
 
   const intentionOptions: AwarenessCheck["automaticOrIntentional"][] = [

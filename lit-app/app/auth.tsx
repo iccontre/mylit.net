@@ -24,6 +24,7 @@ import {
   signInWithEmail,
   signUpWithEmail,
 } from "../lib/auth";
+import { mergeProgressWithCloud } from "../lib/progressStore";
 import { getSupabaseConfigHelp, getSupabaseConfigIssue, getSupabaseClient } from "../lib/supabase";
 import {
   markWelcomeSeen,
@@ -112,10 +113,16 @@ export default function AuthScreen() {
   }, [router]);
 
   async function handleContinueToMylit() {
-    await clearAuthAwaitingContinue();
-    const profile = await getOrCreateProfile();
-    const onboardingDone = await isOnboardingComplete(profile);
-    router.replace(onboardingDone ? "/(tabs)" : "/onboarding");
+    setBusy(true);
+    try {
+      await mergeProgressWithCloud();
+      await clearAuthAwaitingContinue();
+      const profile = await getOrCreateProfile();
+      const onboardingDone = await isOnboardingComplete(profile);
+      router.replace(onboardingDone ? "/(tabs)" : "/onboarding");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleAuth(mode: "signUp" | "signIn") {
@@ -202,11 +209,19 @@ export default function AuthScreen() {
             <View style={styles.successPanel}>
               <Text style={styles.successTitle}>You're in.</Text>
               <Text style={styles.successText}>
-                Your account is connected. Your local progress stays on this device until you continue.
+                Your account is connected. Continue to sync your MYLIT progress across devices.
               </Text>
               {message ? <Text style={styles.messageText}>{message}</Text> : null}
-              <TouchableOpacity style={styles.primaryButton} onPress={handleContinueToMylit}>
-                <Text style={styles.primaryButtonText}>CONTINUE TO MYLIT</Text>
+              <TouchableOpacity
+                style={[styles.primaryButton, busy && styles.buttonDisabled]}
+                onPress={handleContinueToMylit}
+                disabled={busy}
+              >
+                {busy ? (
+                  <ActivityIndicator color="#FFF8E6" />
+                ) : (
+                  <Text style={styles.primaryButtonText}>CONTINUE TO MYLIT</Text>
+                )}
               </TouchableOpacity>
             </View>
           ) : awaitingEmailConfirm ? (
