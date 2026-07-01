@@ -1,4 +1,4 @@
-import { type ReactNode, useRef } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -36,6 +36,22 @@ export function FormScreen({
   const scrollRef = useRef<ScrollView>(null);
   const basePadding = resolvePaddingBottom(contentContainerStyle, scrollPaddingBottom);
   const bottomPadding = basePadding + keyboardInset;
+
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof document === "undefined") return;
+
+    const scrollFocusedField = (target: EventTarget | null) => {
+      if (!(target instanceof HTMLElement)) return;
+      if (target.tagName !== "INPUT" && target.tagName !== "TEXTAREA") return;
+      window.setTimeout(() => {
+        target.scrollIntoView({ block: "center", behavior: "smooth" });
+      }, 120);
+    };
+
+    const onFocusIn = (event: FocusEvent) => scrollFocusedField(event.target);
+    document.addEventListener("focusin", onFocusIn);
+    return () => document.removeEventListener("focusin", onFocusIn);
+  }, []);
 
   const contentStyle = [
     styles.content,

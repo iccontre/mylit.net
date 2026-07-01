@@ -17,24 +17,24 @@ import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import {
+  getOrCreateProfile,
   getSession,
   isLocalOnboardingComplete,
   isOnboardingComplete,
   isSupabaseConfigured,
-  prepareReturningUserAfterSync,
   signInWithEmail,
   signUpWithEmail,
 } from "../lib/auth";
-import { mergeCloudIntoLocalSafely } from "../lib/progressStore";
 import { getSupabaseConfigHelp, getSupabaseConfigIssue, getSupabaseClient } from "../lib/supabase";
 import {
-  markWelcomeSeen,
-  markAuthAwaitingContinue,
+  bootstrapSignedInSession,
   clearAuthAwaitingContinue,
-  isAuthAwaitingContinue,
-  markAuthPendingEmailConfirm,
   clearAuthPendingEmailConfirm,
   getAuthPendingEmailConfirm,
+  isAuthAwaitingContinue,
+  markAuthAwaitingContinue,
+  markAuthPendingEmailConfirm,
+  markWelcomeSeen,
 } from "../lib/authFlow";
 
 const pixelFont = Platform.select({
@@ -116,12 +116,9 @@ export default function AuthScreen() {
   async function handleContinueToMylit() {
     setBusy(true);
     try {
-      const mergeResult = await mergeCloudIntoLocalSafely();
-      if (!mergeResult.ok) {
-        setMessage("Signed in. Local progress kept — cloud sync will retry later.");
-      }
+      await bootstrapSignedInSession();
       await clearAuthAwaitingContinue();
-      const profile = await prepareReturningUserAfterSync();
+      const profile = await getOrCreateProfile();
       await markWelcomeSeen();
       const onboardingDone = await isOnboardingComplete(profile);
       router.replace(onboardingDone ? "/(tabs)" : "/onboarding");

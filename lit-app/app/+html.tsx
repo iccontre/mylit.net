@@ -61,6 +61,13 @@ export default function Root({ children }: PropsWithChildren) {
                 align-items: stretch;
               }
               @media (pointer: coarse) {
+                html, body, #root {
+                  width: 100% !important;
+                  max-width: 100% !important;
+                  height: var(--mylit-layout-height, 100svh) !important;
+                  min-height: var(--mylit-layout-height, 100svh) !important;
+                  max-height: var(--mylit-layout-height, 100svh) !important;
+                }
                 #root, #root > div {
                   width: 100% !important;
                   max-width: 100% !important;

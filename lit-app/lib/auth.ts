@@ -127,15 +127,89 @@ export async function saveLocalBetaProfile(profile: LocalBetaProfile): Promise<v
   await AsyncStorage.setItem(BETA_PROFILE_KEY, JSON.stringify(profile));
 }
 
-export async function isLocalOnboardingComplete(): Promise<boolean> {
+type LocalPathProfile = {
+  onboardingComplete?: boolean;
+  name?: string;
+  dreamCategory?: string;
+  specificGoal?: string;
+  shortTermGoal?: string;
+  midTermGoal?: string;
+  longTermGoal?: string;
+  goalsGeneratedAt?: string;
+};
+
+const PROGRESS_MARKERS = [
+  "lit_completed_quests",
+  "lit_user_stats",
+  "lit_day_plan",
+  "lit_journal_entries",
+  "lit_checkin_history",
+  "lit_latest_checkin",
+  "lit_dream_journal",
+  "lit_reflections",
+  "lit_tomorrow_queue",
+] as const;
+
+async function readLocalPathProfile(): Promise<LocalPathProfile | null> {
   const raw = await AsyncStorage.getItem(LOCAL_PROFILE_KEY);
-  if (!raw) return false;
+  if (!raw) return null;
   try {
-    const profile = JSON.parse(raw) as { onboardingComplete?: boolean };
-    return Boolean(profile.onboardingComplete);
+    return JSON.parse(raw) as LocalPathProfile;
   } catch {
-    return false;
+    return null;
   }
+}
+
+export async function hasCompletedPathProfile(): Promise<boolean> {
+  const profile = await readLocalPathProfile();
+  if (!profile) return false;
+  if (profile.onboardingComplete) return true;
+  if (!profile.dreamCategory?.trim()) return false;
+  if (profile.goalsGeneratedAt) return true;
+  if (profile.shortTermGoal?.trim() || profile.midTermGoal?.trim() || profile.longTermGoal?.trim()) {
+    return true;
+  }
+  if (profile.specificGoal?.trim() && profile.name?.trim()) return true;
+  return false;
+}
+
+async function hasMeaningfulSavedProgress(): Promise<boolean> {
+  for (const key of PROGRESS_MARKERS) {
+    const raw = await AsyncStorage.getItem(key);
+    if (!raw?.trim()) continue;
+    const trimmed = raw.trim();
+    if (trimmed === "{}" || trimmed === "[]" || trimmed === "null") continue;
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (Array.isArray(parsed) && parsed.length === 0) continue;
+      if (parsed && typeof parsed === "object" && Object.keys(parsed as object).length === 0) continue;
+      return true;
+    } catch {
+      return true;
+    }
+  }
+  return false;
+}
+
+export async function ensureLocalOnboardingFlag(): Promise<void> {
+  const raw = await AsyncStorage.getItem(LOCAL_PROFILE_KEY);
+  let localProfile: Record<string, unknown> = {};
+  if (raw) {
+    try {
+      localProfile = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      localProfile = {};
+    }
+  }
+  if (localProfile.onboardingComplete) return;
+  localProfile.onboardingComplete = true;
+  await AsyncStorage.setItem(LOCAL_PROFILE_KEY, JSON.stringify(localProfile));
+}
+
+export async function isLocalOnboardingComplete(): Promise<boolean> {
+  if (await hasCompletedPathProfile()) return true;
+  const profile = await readLocalPathProfile();
+  return Boolean(profile?.onboardingComplete);
 }
 
 export async function getOrCreateProfile(): Promise<BetaProfile | null> {
@@ -231,14 +305,19 @@ export async function isOnboardingComplete(profile?: BetaProfile | null): Promis
   const localDone = await isLocalOnboardingComplete();
   if (isSupabaseConfigured()) {
     const cloudDone = Boolean(profile?.onboarding_complete);
-    return localDone || cloudDone;
+    const hasProgress = await hasMeaningfulSavedProgress();
+    const pathComplete = await hasCompletedPathProfile();
+    const returningAccount =
+      Boolean(clean(profile?.display_name)) && (hasProgress || pathComplete || cloudDone);
+    return localDone || cloudDone || returningAccount;
   }
   return localDone;
 }
 
 /** After cloud merge, mirror profile.onboarding_complete into local storage when wiped (e.g. PWA reinstall). */
 export async function syncLocalOnboardingFromCloudProfile(profile: BetaProfile | null): Promise<void> {
-  if (!profile?.onboarding_complete) return;
+  const pathComplete = await hasCompletedPathProfile();
+  if (!profile?.onboarding_complete && !pathComplete) return;
 
   const raw = await AsyncStorage.getItem(LOCAL_PROFILE_KEY);
   let localProfile: Record<string, unknown> = {};
@@ -253,15 +332,31 @@ export async function syncLocalOnboardingFromCloudProfile(profile: BetaProfile |
   if (localProfile.onboardingComplete) return;
 
   localProfile.onboardingComplete = true;
-  if (!localProfile.name && profile.display_name) {
+  if (!localProfile.name && profile?.display_name) {
     localProfile.name = profile.display_name;
   }
   await AsyncStorage.setItem(LOCAL_PROFILE_KEY, JSON.stringify(localProfile));
 }
 
 export async function prepareReturningUserAfterSync(): Promise<BetaProfile | null> {
-  const profile = await getOrCreateProfile();
+  let profile = await getOrCreateProfile();
   await syncLocalOnboardingFromCloudProfile(profile);
+
+  const pathComplete = await hasCompletedPathProfile();
+  const hasProgress = await hasMeaningfulSavedProgress();
+  const shouldMarkComplete =
+    pathComplete || hasProgress || Boolean(profile?.onboarding_complete);
+
+  if (shouldMarkComplete) {
+    await ensureLocalOnboardingFlag();
+    if (profile && !profile.onboarding_complete) {
+      const repaired = await updateProfile({ onboarding_complete: true });
+      if (repaired.ok) {
+        profile = { ...profile, onboarding_complete: true };
+      }
+    }
+  }
+
   return profile;
 }
 

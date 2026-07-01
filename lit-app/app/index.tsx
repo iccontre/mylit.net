@@ -2,7 +2,7 @@ import { useRouter } from "expo-router";
 import { useEffect } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
-import { resolveInitialRoute } from "../lib/authFlow";
+import { bootstrapSignedInSession, resolveInitialRoute } from "../lib/authFlow";
 
 export default function IndexRedirect() {
   const router = useRouter();
@@ -11,6 +11,7 @@ export default function IndexRedirect() {
     let cancelled = false;
 
     async function go() {
+      await bootstrapSignedInSession();
       const route = await resolveInitialRoute();
       if (!cancelled) {
         router.replace(route);

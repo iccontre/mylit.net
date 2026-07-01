@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 
-import { getSession, updateProfile, LOCAL_PROFILE_KEY } from "./auth";
+import { getSession, updateProfile, LOCAL_PROFILE_KEY, hasCompletedPathProfile } from "./auth";
 import {
   ALL_SCANNABLE_PROGRESS_KEYS,
   ARRAY_MERGE_PROGRESS_KEYS,
@@ -20,6 +20,7 @@ import {
   MISSED_QUESTS_KEY,
 } from "./storageKeys";
 import { getDateKey } from "./scheduling";
+import { sanitizeDayPlanChecklists } from "./dayPlanChecklist";
 import { getSupabaseClient, isSupabaseConfigured } from "./supabase";
 
 type SyncMeta = Record<string, string>;
@@ -558,7 +559,17 @@ export async function mergeCloudIntoLocalSafely(): Promise<MergeResult> {
         }
 
         if (!localRaw || isPayloadEmpty(localRaw)) {
-          await AsyncStorage.setItem(key, cloud.payload);
+          let payload = cloud.payload;
+          if (key === DAY_PLAN_KEY) {
+            try {
+              const plan = JSON.parse(cloud.payload) as { weekdayChecklists?: Record<string, unknown[]> };
+              const cleaned = sanitizeDayPlanChecklists(plan.weekdayChecklists);
+              payload = JSON.stringify({ ...plan, weekdayChecklists: cleaned });
+            } catch {
+              payload = cloud.payload;
+            }
+          }
+          await AsyncStorage.setItem(key, payload);
           meta[key] = cloud.updated_at;
           debugLog("pull cloud → local", key);
           continue;
@@ -575,8 +586,8 @@ export async function mergeCloudIntoLocalSafely(): Promise<MergeResult> {
 
       const profileRaw = await AsyncStorage.getItem(LOCAL_PROFILE_KEY);
       const profile = parseJson<{ onboardingComplete?: boolean }>(profileRaw, {});
-      if (profile.onboardingComplete) {
-        void updateProfile({ onboarding_complete: true });
+      if (profile.onboardingComplete || (await hasCompletedPathProfile())) {
+        await updateProfile({ onboarding_complete: true });
       }
 
       await forceUploadLocalProgressToCloud();

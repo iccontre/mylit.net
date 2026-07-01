@@ -6,10 +6,10 @@ import { FormScreen } from "../components/FormScreen";
 import { formPageContent } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
-import { getSession, isOnboardingComplete, prepareReturningUserAfterSync } from "../lib/auth";
+import { getOrCreateProfile, getSession, isOnboardingComplete } from "../lib/auth";
 import { consumeAuthCallbackFromUrl } from "../lib/authEmailConfirm";
-import { mergeCloudIntoLocalSafely } from "../lib/progressStore";
 import {
+  bootstrapSignedInSession,
   clearAuthAwaitingContinue,
   clearAuthPendingEmailConfirm,
   isAuthAwaitingContinue,
@@ -71,9 +71,9 @@ export default function AuthConfirmedScreen() {
   async function handleContinueToMylit() {
     setLoading(true);
     try {
-      await mergeCloudIntoLocalSafely();
+      await bootstrapSignedInSession();
       await clearAuthAwaitingContinue();
-      const profile = await prepareReturningUserAfterSync();
+      const profile = await getOrCreateProfile();
       await markWelcomeSeen();
       const onboardingDone = await isOnboardingComplete(profile);
       router.replace(onboardingDone ? "/(tabs)" : "/onboarding");

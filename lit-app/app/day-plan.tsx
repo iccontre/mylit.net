@@ -10,6 +10,7 @@ import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { DAY_PLAN_KEY, getChecklistItemsForDay } from "../lib/questProgress";
+import { sanitizeDayPlanChecklists } from "../lib/dayPlanChecklist";
 import { persistProgressKeys } from "../lib/progressStore";
 import { syncDayPlanScheduledItems } from "../lib/progressSync";
 import { formatDurationLabel, generateTimeSlots, getDateKey, inferScheduledClassification, parseDurationMinutes, shiftTimeSlot, type ScheduledClassification, type ScheduledStatus } from "../lib/scheduling";
@@ -227,7 +228,8 @@ function normalizePlan(raw: Partial<DayPlan>): DayPlan {
     return acc;
   }, {} as Record<WeekdayName, string>);
   const checklists = WEEKDAYS.reduce((acc, day) => {
-    acc[day] = createChecklist(day, raw.weekdayChecklists?.[day] || []);
+    const saved = sanitizeDayPlanChecklists(raw.weekdayChecklists)[day] || [];
+    acc[day] = createChecklist(day, saved as Partial<ChecklistItem>[]);
     return acc;
   }, {} as Record<WeekdayName, ChecklistItem[]>);
   const quest = raw.todayQuest || fallback.todayQuest;
@@ -269,7 +271,18 @@ export default function DayPlanScreen() {
 
   async function loadDayPlan() {
     const saved = await readJson<Partial<DayPlan> | null>(DAY_PLAN_KEY, null);
-    if (saved) setDayPlan(normalizePlan(saved));
+    if (!saved) return;
+    const cleanedChecklists = sanitizeDayPlanChecklists(
+      saved.weekdayChecklists as Partial<Record<WeekdayName, Partial<ChecklistItem>[]>> | undefined
+    );
+    const normalized = normalizePlan({
+      ...saved,
+      weekdayChecklists: cleanedChecklists as DayPlan["weekdayChecklists"],
+    });
+    setDayPlan(normalized);
+    if (JSON.stringify(cleanedChecklists) !== JSON.stringify(saved.weekdayChecklists)) {
+      await persistProgressKeys({ [DAY_PLAN_KEY]: JSON.stringify(normalized) });
+    }
   }
 
   async function loadLatestCheckIn() {

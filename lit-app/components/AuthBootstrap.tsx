@@ -2,9 +2,8 @@ import { usePathname, useRouter } from "expo-router";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 
-import { getSession, prepareReturningUserAfterSync } from "../lib/auth";
-import { resolveRequiredRouteForPath } from "../lib/authFlow";
-import { mergeCloudIntoLocalSafely } from "../lib/progressStore";
+import { getSession } from "../lib/auth";
+import { bootstrapSignedInSession, resolveRequiredRouteForPath } from "../lib/authFlow";
 import { isSupabaseConfigured } from "../lib/supabase";
 
 type AuthBootstrapProps = {
@@ -27,8 +26,7 @@ export function AuthBootstrap({ children }: AuthBootstrapProps) {
       const session = await getSession();
       if (!session || cancelled) return;
       hasSyncedProgressRef.current = true;
-      await mergeCloudIntoLocalSafely();
-      await prepareReturningUserAfterSync();
+      await bootstrapSignedInSession();
     }
 
     async function enforceRoute() {

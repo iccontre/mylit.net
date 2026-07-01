@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Href } from "expo-router";
 
 import {
+  getOrCreateProfile,
   getSession,
   isLocalOnboardingComplete,
   isOnboardingComplete,
@@ -9,6 +10,7 @@ import {
   prepareReturningUserAfterSync,
   WELCOME_SEEN_KEY,
 } from "./auth";
+import { mergeCloudIntoLocalSafely } from "./progressStore";
 
 export const FLOW_ROUTES = new Set(["welcome", "auth", "profile-setup", "onboarding"]);
 export const AUTH_AWAITING_CONTINUE_KEY = "lit_auth_awaiting_continue";
@@ -71,8 +73,18 @@ export async function markWelcomeSeen(): Promise<void> {
   await AsyncStorage.setItem(WELCOME_SEEN_KEY, "true");
 }
 
+/** Pull cloud progress and repair onboarding flags before routing decisions. */
+export async function bootstrapSignedInSession(): Promise<void> {
+  if (!isSupabaseConfigured()) return;
+  const session = await getSession();
+  if (!session) return;
+  await mergeCloudIntoLocalSafely();
+  await prepareReturningUserAfterSync();
+}
+
 export async function resolvePostAuthRoute(): Promise<Href> {
-  const profile = await prepareReturningUserAfterSync();
+  await bootstrapSignedInSession();
+  const profile = await getOrCreateProfile();
   const onboardingDone = await isOnboardingComplete(profile);
   if (onboardingDone) {
     await markWelcomeSeen();
@@ -99,7 +111,8 @@ export async function resolveInitialRoute(): Promise<Href> {
     return "/auth";
   }
 
-  const profile = await prepareReturningUserAfterSync();
+  await bootstrapSignedInSession();
+  const profile = await getOrCreateProfile();
   const onboardingDone = await isOnboardingComplete(profile);
   if (onboardingDone) {
     await markWelcomeSeen();
@@ -116,7 +129,14 @@ export async function resolveRequiredRouteForPath(pathname: string): Promise<Hre
 
   if (segment === "auth" && (await isAuthAwaitingContinue())) return null;
   if (segment === "auth-confirmed") return null;
-  if (segment === "profile-setup") return "/onboarding";
+  if (segment === "profile-setup") {
+    await bootstrapSignedInSession();
+    const profile = await getOrCreateProfile();
+    if (await isOnboardingComplete(profile)) {
+      return "/(tabs)";
+    }
+    return null;
+  }
 
   const required = await resolveInitialRoute();
 

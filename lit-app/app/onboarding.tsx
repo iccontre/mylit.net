@@ -400,7 +400,7 @@ export default function OnboardingScreen() {
     await persistProgressKeys({ [PROFILE_KEY]: JSON.stringify(profile) });
 
     if (isSupabaseConfigured()) {
-      void updateProfile({
+      await updateProfile({
         display_name: trimmedName,
         onboarding_complete: true,
       });
