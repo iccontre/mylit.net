@@ -241,6 +241,42 @@ export function generateRecoveryQuests(context: QuestProfileContext, count = 3):
 /**
  * Progress-mode follow-up quests (after the starter). Uses specific goal anchor only.
  */
+/**
+ * One small optional quest sourced from the user's Supplementary Path category —
+ * kept separate from the Main Path quest chain above. Main Path still drives most
+ * quest generation; this just gives Supplementary Path a way to surface smaller
+ * day-to-day goals (e.g. Main = School/Work, Supplementary = Health).
+ */
+export function generateSupplementaryQuest(
+  supplementaryCategory: string | undefined,
+  mode: StarterMode,
+  goalPhrase: string = DEFAULT_GOAL_PHRASE
+): GeneratedQuest | null {
+  const trimmed = supplementaryCategory?.trim();
+  if (!trimmed) return null;
+
+  const category = normalizeQuestCategory(trimmed);
+  const entry = QUEST_DATABASE[category] ?? QUEST_DATABASE_FALLBACK;
+  const source =
+    mode === "progress"
+      ? entry.progress.length > 0
+        ? entry.progress
+        : QUEST_DATABASE_FALLBACK.progress
+      : RECOVERY_CATEGORY_QUESTS[category] ?? RECOVERY_FALLBACK;
+
+  const template = pickRotatingTemplate(source, `${getTodayKey()}-supplementary-${category}-${mode}`);
+  if (!template) return null;
+
+  return {
+    title: fillGoalSlot(template, goalPhrase),
+    type: category,
+    steps: 1,
+    durationMinutes: 15,
+    suggested: true,
+    description: `Supplementary Path (${category}) — a smaller goal alongside your Main Path.`,
+  };
+}
+
 export function generateProgressQuests(context: QuestProfileContext, count = 4): GeneratedQuest[] {
   const category = normalizeQuestCategory(context.category);
   const entry = QUEST_DATABASE[category] ?? QUEST_DATABASE_FALLBACK;

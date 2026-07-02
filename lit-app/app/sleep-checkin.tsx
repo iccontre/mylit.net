@@ -30,6 +30,8 @@ type CheckIn = {
   checkInType?: CheckInType;
   hours?: string;
   sleepQuality?: string;
+  wakeTime?: string;
+  dreamedTonight?: boolean;
   mood: string;
   stress: string;
   currentEnergyFeeling?: string;
@@ -112,6 +114,8 @@ export default function SleepCheckInScreen() {
   const [eatenSinceMorning, setEatenSinceMorning] = useState<"yes" | "no" | "">("");
   const [foodSinceMorning, setFoodSinceMorning] = useState("");
   const [currentEnergyFeeling, setCurrentEnergyFeeling] = useState("");
+  const [wakeTime, setWakeTime] = useState("");
+  const [dreamedTonight, setDreamedTonight] = useState<"yes" | "no" | "">("");
 
   useEffect(() => {
     loadLatestCheckIn();
@@ -184,6 +188,8 @@ export default function SleepCheckInScreen() {
       checkInType,
       hours: isAfternoon ? latestCheckIn?.hours : hours,
       sleepQuality: isAfternoon ? latestCheckIn?.sleepQuality : sleepQuality,
+      wakeTime: isAfternoon ? latestCheckIn?.wakeTime : wakeTime.trim() || undefined,
+      dreamedTonight: isAfternoon ? latestCheckIn?.dreamedTonight : dreamedTonight === "yes",
       mood,
       stress,
       currentEnergyFeeling: currentEnergyFeeling.trim() || undefined,
@@ -288,6 +294,22 @@ export default function SleepCheckInScreen() {
                   <TextInput style={styles.input} keyboardType="numeric" placeholder="Example: 7" placeholderTextColor="#64748B" value={sleepQuality} onChangeText={setSleepQuality} />
 
                   <Text style={styles.helperText}>Rate how restored your sleep felt, even if the number of hours looked okay.</Text>
+
+                  <Text style={styles.label}>Approximate wake-up time</Text>
+                  <TextInput style={styles.input} placeholder="Example: 7:00 AM" placeholderTextColor="#64748B" value={wakeTime} onChangeText={setWakeTime} />
+
+                  <Text style={styles.label}>Did you dream tonight?</Text>
+                  <View style={styles.choiceRow}>
+                    <TouchableOpacity style={[styles.choiceButton, dreamedTonight === "yes" && styles.choiceButtonActive, { borderColor: dreamedTonight === "yes" ? theme.accent : "#334155" }]} onPress={() => setDreamedTonight("yes")}>
+                      <Text style={styles.choiceText}>Yes</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.choiceButton, dreamedTonight === "no" && styles.choiceButtonActive, { borderColor: dreamedTonight === "no" ? theme.accent : "#334155" }]} onPress={() => setDreamedTonight("no")}>
+                      <Text style={styles.choiceText}>No</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <TouchableOpacity style={[styles.dreamJournalButton, { borderColor: theme.accent }]} onPress={() => router.push("/dream-journal")}>
+                    <Text style={[styles.dreamJournalButtonText, { color: theme.accent }]}>🌙 Open Dream Journal</Text>
+                  </TouchableOpacity>
                 </>
               )}
 
@@ -512,6 +534,19 @@ const styles = StyleSheet.create({
     color: "#94A3B8",
     marginTop: 8,
     fontWeight: "700",
+    fontFamily: pixelFont,
+  },
+  dreamJournalButton: {
+    marginTop: 10,
+    backgroundColor: "rgba(15, 23, 42, 0.96)",
+    borderRadius: 4,
+    borderWidth: 2,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  dreamJournalButtonText: {
+    fontSize: 13,
+    fontWeight: "900",
     fontFamily: pixelFont,
   },
   resultCard: {

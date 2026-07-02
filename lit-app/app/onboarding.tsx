@@ -40,6 +40,8 @@ type UserProfile = {
   name: string;
   longTermDream: string;
   dreamCategory: DreamCategory | "";
+  /** Optional second path — smaller day-to-day goals in a category besides your Main Path. */
+  supplementaryCategory?: DreamCategory | "";
   progressMeaning: string;
   // Phase 1 tiered goals
   specificGoal: string;
@@ -224,6 +226,7 @@ export default function OnboardingScreen() {
   const [name, setName] = useState("");
   const [longTermDream, setLongTermDream] = useState("");
   const [dreamCategory, setDreamCategory] = useState<DreamCategory | "">("");
+  const [supplementaryCategory, setSupplementaryCategory] = useState<DreamCategory | "">("");
   const [progressMeaning, setProgressMeaning] = useState("");
   const [specificGoal, setSpecificGoal] = useState("");
   const [shortTermGoal, setShortTermGoal] = useState("");
@@ -294,6 +297,12 @@ export default function OnboardingScreen() {
     setDreamCategory(category);
     setVariantIndex(0);
     setHasGenerated(false);
+    // Main and Supplementary can't be the same category.
+    if (supplementaryCategory === category) setSupplementaryCategory("");
+  }
+
+  function applySupplementaryCategory(category: DreamCategory | "") {
+    setSupplementaryCategory((current) => (current === category ? "" : category));
   }
 
   async function loadProfile() {
@@ -307,6 +316,8 @@ export default function OnboardingScreen() {
         setName(profile.name || "");
         setLongTermDream(profile.longTermDream || "");
         setDreamCategory(savedCategory);
+        const savedSupplementary = normalizeDreamCategory(profile.supplementaryCategory);
+        setSupplementaryCategory(savedSupplementary === savedCategory ? "" : savedSupplementary);
         setProgressMeaning(profile.progressMeaning || "");
         setSpecificGoal(profile.specificGoal || "");
 
@@ -380,6 +391,7 @@ export default function OnboardingScreen() {
       name: trimmedName,
       longTermDream: trimmedDream,
       dreamCategory,
+      supplementaryCategory: supplementaryCategory || "",
       progressMeaning: progressMeaning.trim(),
       specificGoal: specificGoal.trim(),
       shortTermGoal: finalMilestones.shortTerm,
@@ -454,6 +466,7 @@ export default function OnboardingScreen() {
                 "Path sets where MYLIT should focus — it does not reset your progress.",
                 "Short-term = around 2 weeks. Mid-term = around 1 month. Long-term = around 3 months.",
                 "Your category and resources shape future quests and checklist habits.",
+                "Supplementary Path is optional — a second category for smaller day-to-day goals alongside your Main Path.",
                 "Resources help MYLIT suggest realistic habits.",
                 "Obstacles help MYLIT avoid quests that ignore your real life.",
                 "Updating your path later is safe — your steps and history stay.",
@@ -529,7 +542,41 @@ export default function OnboardingScreen() {
             </View>
           </SectionShell>
 
-          <SectionShell number="3" title="WHAT IS YOUR SPECIFIC GOAL?">
+          <SectionShell number="3" title="SUPPLEMENTARY PATH (OPTIONAL)">
+            <Text style={styles.helperText}>
+              Your Main Path drives most quests and app suggestions. Add a Supplementary Path for a second area — MYLIT will
+              still occasionally suggest small quests to help you hit those smaller goals too.
+            </Text>
+            <View style={styles.categoryGrid}>
+              {DREAM_CATEGORIES.filter((category) => category !== dreamCategory).map((category) => {
+                const selected = supplementaryCategory === category;
+                return (
+                  <TouchableOpacity
+                    key={category}
+                    style={[styles.categoryButton, selected && styles.categoryButtonActive]}
+                    onPress={() => applySupplementaryCategory(category)}
+                  >
+                    <Text style={styles.categoryIcon}>{CATEGORY_ICONS[category]}</Text>
+                    <View style={styles.categoryCopy}>
+                      <Text style={[styles.categoryText, selected && styles.categoryTextActive]}>
+                        {category}
+                      </Text>
+                      <Text style={[styles.categoryMeaningText, selected && styles.categoryMeaningTextActive]}>
+                        {CATEGORY_MEANINGS[category]}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            {supplementaryCategory ? (
+              <TouchableOpacity style={styles.clearSupplementaryBtn} onPress={() => setSupplementaryCategory("")}>
+                <Text style={styles.clearSupplementaryText}>✕ Clear Supplementary Path</Text>
+              </TouchableOpacity>
+            ) : null}
+          </SectionShell>
+
+          <SectionShell number="4" title="WHAT IS YOUR SPECIFIC GOAL?">
             <TextInput
               style={styles.input}
               placeholder="Example: lose 15 lbs"
@@ -540,7 +587,7 @@ export default function OnboardingScreen() {
             <Text style={styles.helperText}>Be specific.</Text>
           </SectionShell>
 
-          <SectionShell number="4" title="YOUR PATH MILESTONES">
+          <SectionShell number="5" title="YOUR PATH MILESTONES">
             <Text style={styles.milestoneHint}>
               Write your own short-, mid-, and long-term goals below. In beta, your words matter most.
             </Text>
@@ -565,7 +612,7 @@ export default function OnboardingScreen() {
             </TouchableOpacity>
           </SectionShell>
 
-          <SectionShell number="5" title="WHAT DOES PROGRESS MEAN?">
+          <SectionShell number="6" title="WHAT DOES PROGRESS MEAN?">
             <TextInput
               style={styles.input}
               placeholder="Example: working on my app at least 1 hour a day"
@@ -576,7 +623,7 @@ export default function OnboardingScreen() {
             <Text style={styles.helperText}>How will you know you’re moving forward?</Text>
           </SectionShell>
 
-          <SectionShell number="6" title="YOUR RESOURCES">
+          <SectionShell number="7" title="YOUR RESOURCES">
             <View style={styles.resourceList}>
               <ToggleButton
                 label="I have work or school responsibilities"
@@ -606,7 +653,7 @@ export default function OnboardingScreen() {
             </View>
           </SectionShell>
 
-          <SectionShell number="7" title="WHAT IS GETTING IN YOUR WAY RIGHT NOW?">
+          <SectionShell number="8" title="WHAT IS GETTING IN YOUR WAY RIGHT NOW?">
             <TextInput
               style={[styles.input, styles.obstacleInput]}
               placeholder="Example: distractions, low energy, time, stress"
@@ -875,6 +922,19 @@ const styles = StyleSheet.create({
   },
   generateButtonDisabled: {
     opacity: 0.45,
+  },
+  clearSupplementaryBtn: {
+    alignSelf: "center",
+    marginTop: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  clearSupplementaryText: {
+    color: "#6B4A1A",
+    fontFamily: readableFont,
+    fontSize: 11,
+    fontWeight: "800",
+    textDecorationLine: "underline",
   },
   generateButtonSecondaryText: {
     color: "#4B2A0B",

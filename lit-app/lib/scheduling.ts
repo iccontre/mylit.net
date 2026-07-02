@@ -103,14 +103,13 @@ export function formatDurationLabel(value?: string | number | null, fallbackMinu
 
 /**
  * Unified step reward for every quest/checklist item, based only on duration:
- * 30 min and under → 1 step, 45 min → 2 steps, 1 hr → 3 steps. Beyond 1 hr
- * (only possible for app-generated quests — checklist items cap at 1 hr)
- * extends the same +1-per-15-min pattern.
+ * 15 min → +1 step, 30 min → +2 steps, 45 min → +3 steps, 1 hr → +4 steps.
+ * Beyond 1 hr (only possible for app-generated quests — checklist items cap
+ * at 1 hr) extends the same +1-per-15-min pattern.
  */
 export function getStepsForDuration(duration?: string | number | null): number {
   const minutes = parseDurationMinutes(duration, 30);
-  if (minutes <= 30) return 1;
-  return 1 + Math.ceil((minutes - 30) / 15);
+  return Math.max(1, Math.round(minutes / 15));
 }
 
 /** @deprecated Use getStepsForDuration — kept as an alias so existing imports keep working. */

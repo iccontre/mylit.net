@@ -94,7 +94,7 @@ type QuickThoughtLike = {
 
 const CHECKIN_KEY = "lit_latest_checkin";
 const TIME_SLOTS = generateTimeSlots(7, 22, 30);
-/** Checklist items build habits — one fixed set of durations regardless of Progress/Recovery. */
+/** Checklist items and Today's Quest share one fixed set of durations — 15/30/45/60 min → +1/+2/+3/+4 steps. */
 const CHECKLIST_DURATIONS = ["15 min", "30 min", "45 min", "1 hr"];
 const WEEKDAYS: WeekdayName[] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const DEFAULT_ROLES: Record<WeekdayName, string> = {
@@ -382,7 +382,11 @@ export default function DayPlanScreen() {
 
   function isTodayQuestDirty(): boolean {
     const committed = committedPlanRef.current.todayQuest;
-    return committed.title !== dayPlan.todayQuest.title || committed.startTime !== dayPlan.todayQuest.startTime;
+    return (
+      committed.title !== dayPlan.todayQuest.title ||
+      committed.startTime !== dayPlan.todayQuest.startTime ||
+      committed.durationMinutes !== dayPlan.todayQuest.durationMinutes
+    );
   }
 
   /** Every already-saved checklist item + Today's Quest, expanded one row per weekday it applies to. */
@@ -487,6 +491,7 @@ export default function DayPlanScreen() {
 
     committedPlanRef.current = nextCommitted;
     await persistProgressKeys({ [DAY_PLAN_KEY]: JSON.stringify(nextCommitted) });
+    setSavedMessage("Checklist item saved.");
     void trackEvent(ANALYTICS_EVENTS.day_plan_saved, { scope: "checklistItem" });
     void syncDayPlanScheduledItems();
   }
@@ -523,6 +528,7 @@ export default function DayPlanScreen() {
     };
     committedPlanRef.current = nextCommitted;
     await persistProgressKeys({ [DAY_PLAN_KEY]: JSON.stringify(nextCommitted) });
+    setSavedMessage("Today's Main Quest saved.");
     void trackEvent(ANALYTICS_EVENTS.day_plan_saved, { scope: "todayQuest" });
     void syncDayPlanScheduledItems();
   }
@@ -606,6 +612,19 @@ export default function DayPlanScreen() {
       setPendingRecoveryConfirmId(null);
     }
     setDayPlan((current: DayPlan) => ({ ...current, todayQuest: { ...current.todayQuest, startTime: next } }));
+  }
+
+  function updateTodayQuestDuration(duration: string) {
+    setSavedMessage("");
+    if (pendingRecoveryConfirmId === dayPlan.todayQuest.id) {
+      setRecoveryWarning("");
+      setPendingRecoveryConfirmId(null);
+    }
+    const durationMinutes = parseDurationMinutes(duration, 30);
+    setDayPlan((current: DayPlan) => ({
+      ...current,
+      todayQuest: { ...current.todayQuest, duration, durationMinutes, steps: getStepsForDuration(durationMinutes) },
+    }));
   }
 
   function updateChecklistItem(itemId: string, patch: Partial<ChecklistItem>) {
@@ -704,7 +723,7 @@ export default function DayPlanScreen() {
         id: `${selectedDay}-${Date.now()}`,
         text: "",
         checked: false,
-        steps: 1,
+        steps: getStepsForDuration(30),
         startTime: firstFreeStartTime(current, selectedDay),
         duration: "30 min",
         durationMinutes: 30,
@@ -841,10 +860,18 @@ export default function DayPlanScreen() {
             </View>
 
             <View style={dayPlan.todayQuest.kind === "recovery" ? styles.panelPurple : styles.panelGold}>
-              <Text style={styles.sectionTitle}>TODAY’S QUEST — QUEST BOARD • +{dayPlan.todayQuest.steps} STEPS</Text>
-              <Text style={styles.helperText}>This is the actual quest for today. It appears on Calendar and earns +{dayPlan.todayQuest.steps} steps only when completed.</Text>
+              <Text style={styles.sectionTitle}>SET TODAY’S MAIN QUEST • +{dayPlan.todayQuest.steps} STEPS</Text>
+              <Text style={styles.helperText}>This is the actual quest for today. It appears on Calendar and earns steps only when completed.</Text>
               <TextInput style={formStyles.input} value={dayPlan.todayQuest.title} onChangeText={updateTodayQuestTitle} placeholder="Finish profile page layout" placeholderTextColor="#94A3B8" />
               <TimeStepper value={dayPlan.todayQuest.startTime} onChange={updateTodayQuestStartTime} />
+              <View style={styles.durationRow}>
+                {CHECKLIST_DURATIONS.map((duration) => (
+                  <TouchableOpacity key={duration} style={[styles.durationButton, dayPlan.todayQuest.duration === duration && styles.durationButtonActive]} onPress={() => updateTodayQuestDuration(duration)}>
+                    <Text style={[styles.durationText, dayPlan.todayQuest.duration === duration && styles.optionTextActive]}>{duration}</Text>
+                  </TouchableOpacity>
+                ))}
+                <Text style={styles.stepsText}>+{dayPlan.todayQuest.steps} step{dayPlan.todayQuest.steps === 1 ? "" : "s"}</Text>
+              </View>
               {pendingRecoveryConfirmId === dayPlan.todayQuest.id && recoveryWarning ? <Text style={styles.recoveryWarning}>{recoveryWarning}</Text> : null}
               <TouchableOpacity
                 style={[styles.saveQuestButton, !isTodayQuestDirty() && styles.saveQuestButtonDisabled]}
@@ -852,7 +879,7 @@ export default function DayPlanScreen() {
                 onPress={saveTodayQuest}
               >
                 <Text style={styles.saveQuestButtonText}>
-                  {!isTodayQuestDirty() ? "SAVED ✓" : pendingRecoveryConfirmId === dayPlan.todayQuest.id ? "CONFIRM & SAVE" : "SAVE QUEST"}
+                  {!isTodayQuestDirty() ? "SAVED ✓" : pendingRecoveryConfirmId === dayPlan.todayQuest.id ? "CONFIRM & SAVE" : "SET TODAY’S MAIN QUEST"}
                 </Text>
               </TouchableOpacity>
               {dayPlan.todayQuest.status !== "completed" ? (
@@ -1019,7 +1046,7 @@ function InfoOverlay({ onClose }: { onClose: () => void }) {
         <Text style={styles.infoTitle}>DAY PLAN</Text>
         <ScrollView style={styles.infoScroll} showsVerticalScrollIndicator={false} bounces={false}>
           <Text style={styles.infoBody}>
-            Day Plan helps you choose what matters today. Weekly Habit is your recurring role for selected days. Checklist items build habits — pick a duration (15 min, 30 min, 45 min, or 1 hr) and up to 5 items per day, on whichever weekdays you choose. Steps are based on duration: 30 min and under earns +1, 45 min earns +2, 1 hr earns +3. If a time overlaps another scheduled item, MYLIT tells you what it interferes with so you can change it. Stack about 2 hours of back-to-back items and MYLIT adds a required 1-hour recovery block right after — the Quest Board locks during it. Your Day Plan shows on Home and Calendar.
+            Day Plan helps you choose what matters today. Weekly Habit is your recurring role for selected days. Checklist items build habits — pick a duration (15 min, 30 min, 45 min, or 1 hr) and up to 5 items per day, on whichever weekdays you choose. Steps are based on duration: 15 min earns +1, 30 min earns +2, 45 min earns +3, 1 hr earns +4. If a time overlaps another scheduled item, MYLIT tells you what it interferes with so you can change it. Stack about 2 hours of back-to-back items and MYLIT adds a required 1-hour recovery block right after — the Quest Board locks during it. Your Day Plan shows on Home and Calendar.
           </Text>
         </ScrollView>
         <TouchableOpacity style={styles.infoClose} onPress={onClose}>

@@ -26,6 +26,7 @@ import {
   getChecklistItemsForDay,
   getTodayKey,
   getWeekdayName,
+  isDefaultTodayQuestTitle,
   kindAccent,
   loadTodayCompletions,
   loadTodayMissed,
@@ -159,6 +160,7 @@ type UserProfile = {
   name: string;
   longTermDream?: string;
   dreamCategory?: string;
+  supplementaryCategory?: string;
   progressMeaning?: string;
   // Phase 1 tiered goals (preferred)
   specificGoal?: string;
@@ -856,6 +858,7 @@ export default function HomeScreen() {
   const remainingMs = activeItem ? Math.max(0, activeItem.endsAt - countdownNow) : 0;
   const timerFinished = activeItem !== null && remainingMs <= 0;
   const isBoardLocked = activeItem !== null;
+  const todayQuestUnset = isDefaultTodayQuestTitle(dayPlanRaw?.todayQuest?.title);
 
   const nowMinutes = timeNow.getHours() * 60 + timeNow.getMinutes();
   const timeTrackPosition = getCurrentTimeTrackPosition(timeNow);
@@ -1069,6 +1072,15 @@ export default function HomeScreen() {
                   </Text>
                 </View>
 
+                {!isNeutral && todayQuestUnset ? (
+                  <TouchableOpacity
+                    style={[styles.setMainQuestBtn, { borderColor: theme.accent }]}
+                    onPress={() => navigateWithHaptic("/day-plan")}
+                  >
+                    <Text style={[styles.setMainQuestBtnText, { color: theme.accent }]}>⚔ SET TODAY’S MAIN QUEST</Text>
+                  </TouchableOpacity>
+                ) : null}
+
                 {isNeutral ? (
                   <View style={styles.questLockedCard}>
                     <Text style={styles.questLockedTitle}>Quest Board Locked</Text>
@@ -1220,7 +1232,7 @@ export default function HomeScreen() {
                   <Text style={styles.modalTitle}>How the Quest Board works</Text>
                   <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false} bounces={false}>
                     <Text style={styles.modalDescription}>
-                      Quest Board shows what to focus on now. It can include MYLIT quests, Day Plan items, checklist items, and Quests you scheduled. Quests are timed — start one at a time and the board locks until it ends. Checklist items are just checked off. Steps are based on duration: 30 min and under earns +1, 45 min earns +2, 1 hr earns +3. Missed? helps you reflect without punishment. To protect energy, MYLIT limits long progress streaks — after 2 hours of back-to-back tasks, the board locks for a 1-hour recovery break before more work.
+                      Quest Board shows what to focus on now. It can include MYLIT quests, Day Plan items, checklist items, and Quests you scheduled. Quests are timed — start one at a time and the board locks until it ends. Checklist items are just checked off. Steps are based on duration: 15 min earns +1, 30 min earns +2, 45 min earns +3, 1 hr earns +4. Missed? helps you reflect without punishment. To protect energy, MYLIT limits long progress streaks — after 2 hours of back-to-back tasks, the board locks for a 1-hour recovery break before more work.
                     </Text>
                   </ScrollView>
                   <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowQuestHelp(false)}>
@@ -1717,6 +1729,18 @@ const styles = StyleSheet.create({
     color: "#F8F1D7",
     fontSize: 10,
     fontWeight: "900",
+  },
+  setMainQuestBtn: {
+    borderWidth: 2,
+    backgroundColor: "#111827",
+    paddingVertical: 9,
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  setMainQuestBtnText: {
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.4,
   },
   questRow: {
     minHeight: 39,

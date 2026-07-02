@@ -269,6 +269,12 @@ export function checkUserScheduledQuestCapacity(input: {
 
 const DEFAULT_TODAY_QUEST_TITLES = new Set(["choose one honest quest for today"]);
 
+/** True when Today's Quest is still the unset placeholder (or empty) — the user hasn't set one yet. */
+export function isDefaultTodayQuestTitle(title?: string | null): boolean {
+  const trimmed = (title ?? "").trim().toLowerCase();
+  return trimmed === "" || DEFAULT_TODAY_QUEST_TITLES.has(trimmed);
+}
+
 /** Day Plan today's quest or checklist habits scheduled for today. */
 export function hasUserDayPlanItems(input: {
   todayQuest?: RawTodayQuest | null;

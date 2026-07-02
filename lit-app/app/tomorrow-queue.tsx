@@ -23,7 +23,7 @@ import {
   parseCompletions,
   parseMissed,
 } from "../lib/questProgress";
-import { getActiveSuggestedQuest, type GeneratedQuest, type QuestProfileContext } from "../lib/questGeneration";
+import { generateSupplementaryQuest, getActiveSuggestedQuest, getQuestGoalAnchor, type GeneratedQuest, type QuestProfileContext } from "../lib/questGeneration";
 import { persistProgressKeys } from "../lib/progressStore";
 import {
   collectDayPlanScheduledItems,
@@ -102,7 +102,7 @@ type QuestDay = { date: Date; dateKey: string; weekday: string; label: string; d
 const STORAGE_KEY = TOMORROW_QUEUE_KEY;
 const CHECKIN_KEY = "lit_latest_checkin";
 const TIME_SLOTS = generateTimeSlots(7, 22, 30);
-const DURATIONS = ["30 min", "45 min", "1 hr"];
+const DURATIONS = ["15 min", "30 min", "45 min", "1 hr"];
 const WEEKDAY_LABELS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 const RECOVERY_LOCK_WARNING =
   "Adding this task will create 2 hours of straight work, meaning there has to be 1 hour of recovery time after — you won't be able to do any tasks during that time. Tap Save again to confirm.";
@@ -176,6 +176,7 @@ type CheckIn = {
 
 type LocalProfile = {
   dreamCategory?: string;
+  supplementaryCategory?: string;
   specificGoal?: string;
   progressMeaning?: string;
   shortTermGoal?: string;
@@ -208,6 +209,7 @@ export default function TomorrowQueueScreen() {
   const [timeInputDraft, setTimeInputDraft] = useState("9:00 AM");
   const [timeInputError, setTimeInputError] = useState("");
   const [suggestedQuest, setSuggestedQuest] = useState<GeneratedQuest | null>(null);
+  const [supplementaryQuest, setSupplementaryQuest] = useState<GeneratedQuest | null>(null);
 
   const selectedDay = weekDays.find((day: QuestDay) => day.dateKey === selectedDateKey) || todayInWeek;
   const selectedDayIsPast = isPastDateKey(selectedDay.dateKey);
@@ -268,7 +270,11 @@ export default function TomorrowQueueScreen() {
     };
     const completedTitles = new Set(parseCompletions(completedRaw).map((entry) => entry.title));
     const missedTitles = new Set(parseMissed(missedRaw).map((entry) => entry.title));
-    setSuggestedQuest(getActiveSuggestedQuest(context, mode === "Recovery" ? "recovery" : "progress", completedTitles, missedTitles));
+    const boardModeForSuggestions = mode === "Recovery" ? "recovery" : "progress";
+    setSuggestedQuest(getActiveSuggestedQuest(context, boardModeForSuggestions, completedTitles, missedTitles));
+    setSupplementaryQuest(
+      generateSupplementaryQuest(profileRaw?.supplementaryCategory, boardModeForSuggestions, getQuestGoalAnchor(context))
+    );
   }
 
   async function saveQueue(nextItems: QueueItem[]) {
@@ -438,7 +444,7 @@ export default function TomorrowQueueScreen() {
               <View style={styles.heroCopy}>
                 <Text style={styles.heroKicker}>QUEST SCHEDULER</Text>
                 <Text style={styles.title}>QUESTS</Text>
-                <Text style={styles.summary}>30 min and under earns +1 step, 45 min earns +2, 1 hr earns +3. Quests are timed — start them from the Home Quest Board.</Text>
+                <Text style={styles.summary}>15 min earns +1 step, 30 min earns +2, 45 min earns +3, 1 hr earns +4. Quests are timed — start them from the Home Quest Board.</Text>
               </View>
             </View>
 
@@ -468,6 +474,15 @@ export default function TomorrowQueueScreen() {
               ) : (
                 <Text style={styles.emptyPreviewText}>No app quest suggested right now — check Home after your next check-in.</Text>
               )}
+              {supplementaryQuest ? (
+                <View style={[styles.appQuestCard, styles.supplementaryQuestCard]}>
+                  <Text style={styles.supplementaryQuestLabel}>SUPPLEMENTARY PATH</Text>
+                  <Text style={styles.appQuestTitle}>{supplementaryQuest.title}</Text>
+                  <Text style={styles.appQuestMeta}>
+                    {formatDurationLabel(supplementaryQuest.durationMinutes ?? 15)} • +{supplementaryQuest.steps} step{supplementaryQuest.steps === 1 ? "" : "s"} • a smaller goal alongside your Main Path
+                  </Text>
+                </View>
+              ) : null}
             </View>
 
             <View style={styles.creationPanel}>
@@ -631,6 +646,8 @@ const styles = StyleSheet.create({
   appQuestCard: { borderWidth: 2, borderColor: "#67E8F9", backgroundColor: "rgba(2,6,23,0.8)", borderRadius: 6, padding: 10 },
   appQuestTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900", marginBottom: 4 },
   appQuestMeta: { color: "#67E8F9", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
+  supplementaryQuestCard: { marginTop: 8, borderColor: "#86EFAC" },
+  supplementaryQuestLabel: { color: "#86EFAC", fontFamily: pixelFont, fontSize: 10, fontWeight: "900", letterSpacing: 0.8, marginBottom: 4 },
   emptyPreviewText: { color: "#94A3B8", fontSize: 12, lineHeight: 17, fontWeight: "700", fontStyle: "italic" },
   creationPanel: { backgroundColor: "rgba(8, 13, 24, 0.95)", borderRadius: 8, padding: 12, marginBottom: 14, borderWidth: 3, borderColor: "#334155" },
   rowBetween: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
