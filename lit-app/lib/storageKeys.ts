@@ -44,7 +44,9 @@ export const SYNCABLE_PROGRESS_KEYS = [
   COMPLETED_QUESTS_KEY,
   TODAY_PROGRESS_DATE_KEY,
   MISSED_QUESTS_KEY,
-  ACTIVE_TIMED_ITEM_KEY,
+  // NOTE: ACTIVE_TIMED_ITEM_KEY is intentionally NOT synced. The active quest timer is
+  // ephemeral, device-local session state; cloud merges were resurrecting stale timers or
+  // wiping a freshly-started one (Study Room showing "No active quest", Home "restarting").
   DAY_PLAN_KEY,
   TOMORROW_QUEUE_KEY,
   USER_STATS_KEY,

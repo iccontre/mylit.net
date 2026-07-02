@@ -16,7 +16,6 @@ import {
   USER_STATS_KEY,
   type SyncableProgressKey,
   DAY_PLAN_KEY,
-  ACTIVE_TIMED_ITEM_KEY,
   MISSED_QUESTS_KEY,
   WAITING_ROOM_BOOSTS_KEY,
 } from "./storageKeys";
@@ -64,7 +63,6 @@ export type MergeResult = {
 const OBJECT_MERGE_PROGRESS_KEYS = new Set<SyncableProgressKey>([
   LOCAL_PROFILE_KEY,
   DAY_PLAN_KEY,
-  ACTIVE_TIMED_ITEM_KEY,
   WAITING_ROOM_BOOSTS_KEY,
 ]);
 

@@ -438,6 +438,9 @@ export function parseCompletions(raw: unknown, todayKey = getTodayKey()): Comple
           dateKey: String(record.dateKey ?? todayKey),
           completedAt: String(record.completedAt ?? new Date().toISOString()),
           durationMinutes: typeof record.durationMinutes === "number" ? record.durationMinutes : undefined,
+          // Preserve kind so recovery completions RESTORE energy on reload instead of
+          // being treated as progress (which subtracts energy) — that was the bug.
+          kind: record.kind === "recovery" || record.kind === "progress" ? record.kind : undefined,
         };
       })
       .filter((entry): entry is CompletionEntry => entry !== null);

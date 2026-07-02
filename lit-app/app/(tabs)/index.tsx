@@ -13,7 +13,7 @@ import {
 } from "../../lib/questGeneration";
 import { ANALYTICS_EVENTS, trackEvent } from "../../lib/analytics";
 import { setChecklistItemChecked, syncQuestCompleted, syncQuestMissed, syncQuestStarted } from "../../lib/progressSync";
-import { clearProgressKey, persistProgressKeys } from "../../lib/progressStore";
+import { persistProgressKeys } from "../../lib/progressStore";
 import { syncAndGetStepRank, type StepRank } from "../../lib/stepRank";
 import {
   ACTIVE_TIMED_ITEM_KEY,
@@ -193,7 +193,9 @@ const PASSIVE_DECAY_INTERVAL_HOURS = 2;
 // Luna's mandatory recovery quest, triggered when energy runs low (see getMandatoryQuest).
 const MANDATORY_QUEST_TITLE = "Eat or rest to restore energy";
 const MANDATORY_QUEST_DURATION_MINUTES = 20;
-const MANDATORY_QUEST_RESTORE_ENERGY = 15;
+const MANDATORY_QUEST_RESTORE_ENERGY = 5;
+// Energy restored once a Luna-enforced recovery window has been served today.
+const RECOVERY_TIME_RESTORE_ENERGY = 5;
 // Progress mode triggers the recovery quest earlier than Recovery mode.
 const MANDATORY_QUEST_PROGRESS_THRESHOLD = 60;
 const MANDATORY_QUEST_RECOVERY_THRESHOLD = 30;
@@ -565,7 +567,8 @@ export default function HomeScreen() {
 
   async function clearActiveItem() {
     setActiveItem(null);
-    await clearProgressKey(ACTIVE_TIMED_ITEM_KEY);
+    // Active timer is local-only (not cloud-synced), so clear it straight from AsyncStorage.
+    await AsyncStorage.removeItem(ACTIVE_TIMED_ITEM_KEY);
   }
 
   function showLockMessage() {
@@ -738,8 +741,27 @@ export default function HomeScreen() {
         ) * PASSIVE_DECAY_POINTS
       : 0;
   const mandatoryRecoveryBoost = completedMandatoryEntries.length * MANDATORY_QUEST_RESTORE_ENERGY;
+  // Once a Luna-enforced recovery window has been fully served today, restore +5 energy.
+  // (Computed here so it factors into the flame before generateQuests/getMandatoryQuest run.)
+  const energyTodayKey = getTodayKey();
+  const energyNowMinutes = timeNow.getHours() * 60 + timeNow.getMinutes();
+  const energyRecoveryItems = collectTodayCalendarItems(dayPlanRaw, queueItems, energyTodayKey);
+  const energyTodayQuestForRecovery = dayPlanRaw?.todayQuest?.title?.trim()
+    ? [{
+        id: dayPlanRaw.todayQuest.id ?? `today-quest-${energyTodayKey}`,
+        date: energyTodayKey,
+        startTime: dayPlanRaw.todayQuest.startTime ?? "9:00 AM",
+        durationMinutes: dayPlanRaw.todayQuest.durationMinutes ?? TODAY_QUEST_DURATION_MINUTES,
+      }]
+    : [];
+  const energyRecoveryBlock = getRequiredRecoveryBlockForDate([...energyRecoveryItems, ...energyTodayQuestForRecovery], energyTodayKey);
+  const energyRecoveryStart = energyRecoveryBlock ? parseTimeToMinutes(energyRecoveryBlock.startTime ?? null) : null;
+  const recoveryTimeRestore =
+    energyRecoveryBlock !== null && energyRecoveryStart !== null && energyNowMinutes >= energyRecoveryStart + 60
+      ? RECOVERY_TIME_RESTORE_ENERGY
+      : 0;
   const energyYield = hasEnergyData
-    ? clampEnergy(baseEnergyYield - passiveDecay - questEnergySpent + questEnergyRestored + mandatoryRecoveryBoost)
+    ? clampEnergy(baseEnergyYield - passiveDecay - questEnergySpent + questEnergyRestored + mandatoryRecoveryBoost + recoveryTimeRestore)
     : 0;
 
   const todayName = getWeekdayName();

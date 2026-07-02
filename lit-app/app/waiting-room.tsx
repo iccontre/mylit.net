@@ -28,7 +28,7 @@ import {
   type QuestSource,
 } from "../lib/questProgress";
 import { syncQuestCompleted, syncQuestMissed } from "../lib/progressSync";
-import { clearProgressKey, persistProgressKeys } from "../lib/progressStore";
+import { persistProgressKeys } from "../lib/progressStore";
 import {
   ACTIVE_TIMED_ITEM_KEY,
   COMPLETED_QUESTS_KEY,
@@ -39,7 +39,7 @@ import {
   USER_STATS_KEY,
   WAITING_ROOM_BOOSTS_KEY,
 } from "../lib/storageKeys";
-import { formatDurationLabel } from "../lib/scheduling";
+import { formatDurationLabel, getRequiredRecoveryBlockForDate, parseTimeToMinutes, TODAY_QUEST_DURATION_MINUTES } from "../lib/scheduling";
 
 type ActiveTimedItem = {
   id: string;
@@ -155,6 +155,7 @@ export default function WaitingRoomScreen() {
   const [loaded, setLoaded] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [nextItem, setNextItem] = useState<HomeQuestItem | null>(null);
+  const [recoveryEndsMs, setRecoveryEndsMs] = useState<number | null>(null);
   const [checkInMode, setCheckInMode] = useState<"Recovery" | "Progress" | null>(null);
   const [completedQuests, setCompletedQuests] = useState<CompletionEntry[]>([]);
   const [missedQuests, setMissedQuests] = useState<MissedEntry[]>([]);
@@ -220,8 +221,32 @@ export default function WaitingRoomScreen() {
       const now = new Date();
       const nowMinutes = now.getHours() * 60 + now.getMinutes();
       setNextItem(findNextScheduledItem(available, parsedActive.id, nowMinutes));
+      setRecoveryEndsMs(null);
     } else {
       setNextItem(null);
+      // No active quest — but if Luna's 2-hour recovery lock is in effect, show a
+      // recovery countdown here too (so there is always a timer during recovery time).
+      const todayKey = getTodayKey();
+      const plan = dayPlan as { todayQuest?: { id?: string; title?: string; startTime?: string; durationMinutes?: number } } | null;
+      const calItems = collectTodayCalendarItems(dayPlan, queueItems, todayKey);
+      const todayQuestForRecovery = plan?.todayQuest?.title?.trim()
+        ? [{
+            id: plan.todayQuest.id ?? `today-quest-${todayKey}`,
+            date: todayKey,
+            startTime: plan.todayQuest.startTime ?? "9:00 AM",
+            durationMinutes: plan.todayQuest.durationMinutes ?? TODAY_QUEST_DURATION_MINUTES,
+          }]
+        : [];
+      const recBlock = getRequiredRecoveryBlockForDate([...calItems, ...todayQuestForRecovery], todayKey);
+      const recStart = recBlock ? parseTimeToMinutes(recBlock.startTime ?? null) : null;
+      const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
+      if (recBlock && recStart !== null && nowMinutes >= recStart && nowMinutes < recStart + 60) {
+        const midnight = new Date();
+        midnight.setHours(0, 0, 0, 0);
+        setRecoveryEndsMs(midnight.getTime() + (recStart + 60) * 60 * 1000);
+      } else {
+        setRecoveryEndsMs(null);
+      }
     }
 
     setLoaded(true);
@@ -246,7 +271,9 @@ export default function WaitingRoomScreen() {
 
   const remainingMs = activeItem ? Math.max(0, activeItem.endsAt - nowMs) : 0;
   const timerFinished = activeItem !== null && remainingMs <= 0;
-  const isRecoveryMode = activeItem ? activeItem.kind === "recovery" : checkInMode === "Recovery";
+  const inRecoveryTime = !activeItem && recoveryEndsMs !== null && recoveryEndsMs > nowMs;
+  const recoveryRemainingMs = recoveryEndsMs !== null ? Math.max(0, recoveryEndsMs - nowMs) : 0;
+  const isRecoveryMode = activeItem ? activeItem.kind === "recovery" : inRecoveryTime || checkInMode === "Recovery";
   const guideName = isRecoveryMode ? "Luna" : "Evie";
   const guideAvatar = isRecoveryMode ? uiAssets.guides.luna : uiAssets.guides.evie;
   const guideMessage = isRecoveryMode
@@ -297,7 +324,7 @@ export default function WaitingRoomScreen() {
       }
       const nextCompleted = await markItemComplete(homeItem, completedQuests);
       setCompletedQuests(nextCompleted);
-      await clearProgressKey(ACTIVE_TIMED_ITEM_KEY);
+      await AsyncStorage.removeItem(ACTIVE_TIMED_ITEM_KEY);
       setActiveItem(null);
       void trackEvent(ANALYTICS_EVENTS.quest_completed, { id: homeItem.id, title: homeItem.title, steps: homeItem.steps });
       void trackEvent(ANALYTICS_EVENTS.waiting_room_completed, { id: homeItem.id, boost: boosted });
@@ -315,7 +342,7 @@ export default function WaitingRoomScreen() {
       const homeItem = toHomeQuestItem(activeItem);
       const nextMissed = await markItemMissed(homeItem, missedQuests, activeItem.id);
       setMissedQuests(nextMissed);
-      await clearProgressKey(ACTIVE_TIMED_ITEM_KEY);
+      await AsyncStorage.removeItem(ACTIVE_TIMED_ITEM_KEY);
       setActiveItem(null);
       void trackEvent(ANALYTICS_EVENTS.quest_missed, { id: homeItem.id, title: homeItem.title });
       void trackEvent(ANALYTICS_EVENTS.waiting_room_missed, { id: homeItem.id });
@@ -371,6 +398,26 @@ export default function WaitingRoomScreen() {
                   <Text style={styles.returnHomeBtnText}>RETURN HOME</Text>
                 </TouchableOpacity>
               </View>
+            ) : inRecoveryTime ? (
+              <>
+                <View style={[styles.guideCard, { borderColor: accent }]}>
+                  <Image source={guideAvatar} style={[styles.guideAvatar, { borderColor: accent }]} resizeMode="contain" />
+                  <View style={styles.guideCopy}>
+                    <Text style={[styles.guideName, { color: accent }]}>{guideName}</Text>
+                    <Text style={styles.guideMessage}>{guideMessage}</Text>
+                    <Text style={styles.guideTip}>💡 {tip}</Text>
+                  </View>
+                </View>
+                <View style={[styles.card, { borderColor: accent }]}>
+                  <Text style={[styles.guideName, { color: accent }]}>RECOVERY TIME</Text>
+                  <Text style={styles.questMeta}>That was 2 hours of straight tasks — the board is resting.</Text>
+                  <Text style={[styles.countdown, { color: accent }]}>{formatCountdown(recoveryRemainingMs)}</Text>
+                  <Text style={styles.questMeta}>Back on the board when the timer ends. Recovering restores +5 energy.</Text>
+                  <TouchableOpacity style={styles.returnHomeBtn} onPress={() => router.push("/")}>
+                    <Text style={styles.returnHomeBtnText}>RETURN HOME</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
             ) : !activeItem ? (
               <View style={styles.card}>
                 <Text style={styles.emptyTitle}>No active quest right now.</Text>
