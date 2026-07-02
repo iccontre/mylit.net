@@ -39,7 +39,7 @@ import {
   type MissedEntry,
   type QuestKind,
 } from "../../lib/questProgress";
-import { formatDurationLabel, formatMinutesAsTime, getRequiredRecoveryBlockForDate, inferScheduledClassification, parseTimeToMinutes } from "../../lib/scheduling";
+import { formatDurationLabel, formatMinutesAsTime, getEnergyCostForDuration, getRequiredRecoveryBlockForDate, inferScheduledClassification, parseTimeToMinutes } from "../../lib/scheduling";
 import { LATEST_PRE_SLEEP_INTENTION_KEY } from "../../lib/storageKeys";
 
 const mylitLogo = uiAssets.logo.mylit;
@@ -185,10 +185,16 @@ const CHECKIN_KEY = "lit_latest_checkin";
 const TOMORROW_QUEUE_KEY = "lit_tomorrow_queue";
 const DAY_PLAN_KEY = "lit_day_plan";
 const USER_STATS_KEY = "lit_user_stats";
-const PROGRESS_QUEST_ENERGY_COST = 8;
-const RECOVERY_QUEST_ENERGY_COST = 6;
 const PASSIVE_DECAY_POINTS = 5;
 const PASSIVE_DECAY_INTERVAL_HOURS = 2;
+
+// Luna's mandatory recovery quest, triggered when energy runs low (see getMandatoryQuest).
+const MANDATORY_QUEST_TITLE = "Eat or rest to restore energy";
+const MANDATORY_QUEST_DURATION_MINUTES = 20;
+const MANDATORY_QUEST_RESTORE_ENERGY = 15;
+// Progress mode triggers the recovery quest earlier than Recovery mode.
+const MANDATORY_QUEST_PROGRESS_THRESHOLD = 60;
+const MANDATORY_QUEST_RECOVERY_THRESHOLD = 30;
 
 function clampEnergy(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
@@ -705,11 +711,15 @@ export default function HomeScreen() {
     longTermBenchmark: profile?.longTermGoal?.trim() || profile?.goalThree?.trim() || "",
   };
 
-  const completedMandatoryTitles = completedQuests.filter(
-    (entry) => entry.title === "Eat to restore energy" || entry.title === "Relax for 30 minutes"
+  const completedMandatoryEntries = completedQuests.filter((entry) => entry.title === MANDATORY_QUEST_TITLE);
+  const completedNormalEntries = completedQuests.filter((entry) => entry.title !== MANDATORY_QUEST_TITLE);
+  // Energy spent scales with each completed quest's duration (30m=2, 45m=4, 1h=6).
+  // Legacy completions without a stored duration fall back to steps × 2 (same mapping).
+  const questEnergySpent = completedNormalEntries.reduce(
+    (sum, entry) =>
+      sum + (entry.durationMinutes != null ? getEnergyCostForDuration(entry.durationMinutes) : entry.steps * 2),
+    0
   );
-  const completedNormalQuestCount = completedQuests.length - completedMandatoryTitles.length;
-  const questEnergyCost = isProgress ? PROGRESS_QUEST_ENERGY_COST : RECOVERY_QUEST_ENERGY_COST;
   const passiveDecay =
     hasEnergyData && latestCheckIn?.createdAt
       ? Math.floor(
@@ -717,12 +727,9 @@ export default function HomeScreen() {
             (PASSIVE_DECAY_INTERVAL_HOURS * 60 * 60 * 1000)
         ) * PASSIVE_DECAY_POINTS
       : 0;
-  const mandatoryRecoveryBoost = completedMandatoryTitles.reduce(
-    (sum, entry) => sum + (entry.title === "Eat to restore energy" ? 15 : 10),
-    0
-  );
+  const mandatoryRecoveryBoost = completedMandatoryEntries.length * MANDATORY_QUEST_RESTORE_ENERGY;
   const energyYield = hasEnergyData
-    ? clampEnergy(baseEnergyYield - passiveDecay - completedNormalQuestCount * questEnergyCost + mandatoryRecoveryBoost)
+    ? clampEnergy(baseEnergyYield - passiveDecay - questEnergySpent + mandatoryRecoveryBoost)
     : 0;
 
   const todayName = getWeekdayName();
@@ -800,36 +807,22 @@ export default function HomeScreen() {
   function getMandatoryQuest(): Quest | null {
     if (!hasEnergyData || isNeutral) return null;
 
-    const threshold = isProgress ? 50 : 40;
+    // Progress mode dips into recovery earlier (below 60); Recovery mode below 30.
+    const threshold = isProgress ? MANDATORY_QUEST_PROGRESS_THRESHOLD : MANDATORY_QUEST_RECOVERY_THRESHOLD;
     if (energyYield >= threshold) return null;
 
-    const eatQuestDone = completedQuests.some((entry) => entry.title === "Eat to restore energy");
-    const relaxQuestDone = completedQuests.some((entry) => entry.title === "Relax for 30 minutes");
-    const hasEaten = latestCheckIn?.eatenSinceMorning === true || eatQuestDone;
+    const alreadyDone = completedQuests.some((entry) => entry.title === MANDATORY_QUEST_TITLE);
+    if (alreadyDone) return null;
 
-    if (!hasEaten && !eatQuestDone) {
-      return {
-        title: "Eat to restore energy",
-        type: "Mandatory",
-        steps: 0,
-        restoreEnergy: 15,
-        mandatory: true,
-        description: "Have a meal or snack so your energy can recover.",
-      };
-    }
-
-    if (!relaxQuestDone) {
-      return {
-        title: "Relax for 30 minutes",
-        type: "Mandatory",
-        steps: 0,
-        restoreEnergy: 10,
-        mandatory: true,
-        description: "Pause and recover before spending more energy.",
-      };
-    }
-
-    return null;
+    return {
+      title: MANDATORY_QUEST_TITLE,
+      type: "Mandatory",
+      steps: 1,
+      durationMinutes: MANDATORY_QUEST_DURATION_MINUTES,
+      restoreEnergy: MANDATORY_QUEST_RESTORE_ENERGY,
+      mandatory: true,
+      description: "Luna's orders: take 20 minutes to eat or rest so your energy can recover.",
+    };
   }
 
   const todayKey = getTodayKey();

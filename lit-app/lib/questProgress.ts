@@ -49,6 +49,8 @@ export type CompletionEntry = {
   source: QuestSource;
   dateKey: string;
   completedAt: string;
+  /** Minutes the item took — drives duration-scaled energy cost on the Home flame. */
+  durationMinutes?: number;
 };
 
 export type MissedEntry = {
@@ -411,6 +413,7 @@ export function parseCompletions(raw: unknown, todayKey = getTodayKey()): Comple
           source: (record.source as QuestSource) || "Quest",
           dateKey: String(record.dateKey ?? todayKey),
           completedAt: String(record.completedAt ?? new Date().toISOString()),
+          durationMinutes: typeof record.durationMinutes === "number" ? record.durationMinutes : undefined,
         };
       })
       .filter((entry): entry is CompletionEntry => entry !== null);
@@ -897,6 +900,7 @@ export async function markItemComplete(item: HomeQuestItem, existing: Completion
     source: item.source,
     dateKey: getTodayKey(),
     completedAt: new Date().toISOString(),
+    durationMinutes: item.durationMinutes,
   };
 
   await syncSourceCompletion(item);

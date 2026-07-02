@@ -118,6 +118,16 @@ export function getQuickThoughtSteps(duration?: string | number | null): number 
   return getStepsForDuration(duration);
 }
 
+/**
+ * Energy a quest/checklist item costs when completed, scaled by its duration.
+ * Beta rule: 30 min = 2, 45 min = 4, 1 hr = 6 (and +2 per extra 15 min beyond).
+ */
+export function getEnergyCostForDuration(duration?: string | number | null): number {
+  const minutes = parseDurationMinutes(duration, 30);
+  if (minutes <= 30) return 2;
+  return 2 + Math.ceil((minutes - 30) / 15) * 2;
+}
+
 export function inferScheduledClassification(item: Partial<ScheduledQuestLike> | string | null | undefined): ScheduledClassification {
   if (typeof item !== "string") {
     if (item?.classification === "sleepGuide" || item?.kind === "sleepGuide") return "sleepGuide";

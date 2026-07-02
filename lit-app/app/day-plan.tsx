@@ -286,8 +286,10 @@ function normalizePlan(raw: Partial<DayPlan>): DayPlan {
     todayQuest: {
       id: quest.id || `today-quest-${getDateKey()}`,
       title: questTitle,
-      date: quest.date || getDateKey(),
-      weekday: quest.weekday || todayWeekday(),
+      // Today's Quest always belongs to the current day, so re-anchor its date/weekday
+      // on load — otherwise a quest saved on a prior day lands on the wrong Calendar cell.
+      date: getDateKey(),
+      weekday: todayWeekday(),
       startTime: quest.startTime || "9:00 AM",
       duration: quest.duration || "1 hr",
       durationMinutes: parseDurationMinutes(quest.durationMinutes ?? quest.duration, 60),

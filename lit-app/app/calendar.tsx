@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { BottomNav } from "../components/BottomNav";
@@ -202,8 +202,15 @@ export default function CalendarScreen() {
 
   useEffect(() => {
     void trackEvent(ANALYTICS_EVENTS.calendar_opened);
-    loadCalendarData();
   }, []);
+
+  // Reload on every focus so a Today's Quest (or checklist item) saved elsewhere
+  // appears here immediately instead of showing a stale snapshot.
+  useFocusEffect(
+    useCallback(() => {
+      loadCalendarData();
+    }, [])
+  );
 
   async function loadCalendarData() {
     const [queue, plan, checkIn] = await Promise.all([
