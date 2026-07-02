@@ -184,6 +184,11 @@ export default function SleepCheckInScreen() {
     if (!hasAllInputs) return;
 
     const checkIn: CheckIn = {
+      // Spread the previous check-in first so Sleep Guide fields (desired sleep/wake
+      // time, cutoff suggestions, etc. — saved under this same storage key from the
+      // Sleep Guide screen) survive every morning/afternoon check-in for the week,
+      // instead of being wiped out by this object replacing the whole record.
+      ...latestCheckIn,
       id: String(Date.now()),
       checkInType,
       hours: isAfternoon ? latestCheckIn?.hours : hours,

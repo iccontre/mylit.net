@@ -33,6 +33,9 @@ import {
   parseDurationMinutes,
   parseTimeToMinutes,
   shiftTimeSlot,
+  TODAY_QUEST_DURATION_LABEL,
+  TODAY_QUEST_DURATION_MINUTES,
+  TODAY_QUEST_STEPS,
   wouldTriggerRecoveryLock,
   type ScheduledClassification,
   type ScheduledQuestLike,
@@ -250,9 +253,9 @@ function createDefaultPlan(): DayPlan {
       date: getDateKey(),
       weekday: day,
       startTime: "9:00 AM",
-      duration: "1 hr",
-      durationMinutes: 60,
-      steps: getStepsForDuration(60),
+      duration: TODAY_QUEST_DURATION_LABEL,
+      durationMinutes: TODAY_QUEST_DURATION_MINUTES,
+      steps: TODAY_QUEST_STEPS,
       status: "scheduled",
       kind: "progress",
       source: "todayQuest",
@@ -295,9 +298,10 @@ function normalizePlan(raw: Partial<DayPlan>): DayPlan {
       date: getDateKey(),
       weekday: todayWeekday(),
       startTime: quest.startTime || "9:00 AM",
-      duration: quest.duration || "1 hr",
-      durationMinutes: parseDurationMinutes(quest.durationMinutes ?? quest.duration, 60),
-      steps: getStepsForDuration(parseDurationMinutes(quest.durationMinutes ?? quest.duration, 60)),
+      // Today's Quest is a fixed 1-hour / +5-step slot — not user-adjustable duration.
+      duration: TODAY_QUEST_DURATION_LABEL,
+      durationMinutes: TODAY_QUEST_DURATION_MINUTES,
+      steps: TODAY_QUEST_STEPS,
       status: quest.status || "scheduled",
       kind: quest.kind || normalizeKind(inferScheduledClassification(questTitle)),
       source: "todayQuest",
@@ -382,11 +386,7 @@ export default function DayPlanScreen() {
 
   function isTodayQuestDirty(): boolean {
     const committed = committedPlanRef.current.todayQuest;
-    return (
-      committed.title !== dayPlan.todayQuest.title ||
-      committed.startTime !== dayPlan.todayQuest.startTime ||
-      committed.durationMinutes !== dayPlan.todayQuest.durationMinutes
-    );
+    return committed.title !== dayPlan.todayQuest.title || committed.startTime !== dayPlan.todayQuest.startTime;
   }
 
   /** Every already-saved checklist item + Today's Quest, expanded one row per weekday it applies to. */
@@ -612,19 +612,6 @@ export default function DayPlanScreen() {
       setPendingRecoveryConfirmId(null);
     }
     setDayPlan((current: DayPlan) => ({ ...current, todayQuest: { ...current.todayQuest, startTime: next } }));
-  }
-
-  function updateTodayQuestDuration(duration: string) {
-    setSavedMessage("");
-    if (pendingRecoveryConfirmId === dayPlan.todayQuest.id) {
-      setRecoveryWarning("");
-      setPendingRecoveryConfirmId(null);
-    }
-    const durationMinutes = parseDurationMinutes(duration, 30);
-    setDayPlan((current: DayPlan) => ({
-      ...current,
-      todayQuest: { ...current.todayQuest, duration, durationMinutes, steps: getStepsForDuration(durationMinutes) },
-    }));
   }
 
   function updateChecklistItem(itemId: string, patch: Partial<ChecklistItem>) {
@@ -860,18 +847,10 @@ export default function DayPlanScreen() {
             </View>
 
             <View style={dayPlan.todayQuest.kind === "recovery" ? styles.panelPurple : styles.panelGold}>
-              <Text style={styles.sectionTitle}>SET TODAY’S MAIN QUEST • +{dayPlan.todayQuest.steps} STEPS</Text>
-              <Text style={styles.helperText}>This is the actual quest for today. It appears on Calendar and earns steps only when completed.</Text>
+              <Text style={styles.sectionTitle}>SET TODAY’S MAIN QUEST • 1 HR • +{dayPlan.todayQuest.steps} STEPS</Text>
+              <Text style={styles.helperText}>This is the actual quest for today — always a fixed 1-hour slot. It appears on Calendar and earns +{dayPlan.todayQuest.steps} steps only when completed.</Text>
               <TextInput style={formStyles.input} value={dayPlan.todayQuest.title} onChangeText={updateTodayQuestTitle} placeholder="Finish profile page layout" placeholderTextColor="#94A3B8" />
               <TimeStepper value={dayPlan.todayQuest.startTime} onChange={updateTodayQuestStartTime} />
-              <View style={styles.durationRow}>
-                {CHECKLIST_DURATIONS.map((duration) => (
-                  <TouchableOpacity key={duration} style={[styles.durationButton, dayPlan.todayQuest.duration === duration && styles.durationButtonActive]} onPress={() => updateTodayQuestDuration(duration)}>
-                    <Text style={[styles.durationText, dayPlan.todayQuest.duration === duration && styles.optionTextActive]}>{duration}</Text>
-                  </TouchableOpacity>
-                ))}
-                <Text style={styles.stepsText}>+{dayPlan.todayQuest.steps} step{dayPlan.todayQuest.steps === 1 ? "" : "s"}</Text>
-              </View>
               {pendingRecoveryConfirmId === dayPlan.todayQuest.id && recoveryWarning ? <Text style={styles.recoveryWarning}>{recoveryWarning}</Text> : null}
               <TouchableOpacity
                 style={[styles.saveQuestButton, !isTodayQuestDirty() && styles.saveQuestButtonDisabled]}
@@ -1078,8 +1057,8 @@ const styles = StyleSheet.create({
   panelPurple: { backgroundColor: "rgba(31, 18, 56, 0.95)", borderRadius: 8, padding: 12, marginBottom: 12, borderWidth: 3, borderColor: "#A78BFA" },
   sectionTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 0.5, lineHeight: 17, marginBottom: 8 },
   helperText: { color: "#CBD5E1", fontSize: 12, lineHeight: 18, marginBottom: 8, fontWeight: "700" },
-  helperPill: { color: "#67E8F9", fontFamily: pixelFont, fontSize: 10, fontWeight: "900" },
-  remainingTimeText: { color: "#67E8F9", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", marginTop: 6, marginBottom: 8 },
+  helperPill: { color: "#FBBF24", fontFamily: pixelFont, fontSize: 10, fontWeight: "900" },
+  remainingTimeText: { color: "#FBBF24", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", marginTop: 6, marginBottom: 8 },
   capMessage: { color: "#FDE68A", fontSize: 12, lineHeight: 17, fontWeight: "700", marginTop: 8 },
   recoveryWarning: { color: "#FDBA74", fontSize: 12, lineHeight: 17, fontWeight: "700", marginTop: 8 },
   input: { backgroundColor: "rgba(2, 6, 23, 0.95)", borderRadius: 5, padding: 12, fontSize: 15, color: "#F9FAFB", borderWidth: 2, borderColor: "#475569", fontWeight: "800" },
@@ -1107,21 +1086,21 @@ const styles = StyleSheet.create({
   recoveryBorder: { borderColor: "#A78BFA" },
   checkToggle: { color: "#F8FAFC", fontSize: 24, marginRight: 8 },
   kindSwitchRow: { flexDirection: "row", gap: 6 },
-  kindMiniButton: { borderWidth: 1, borderColor: "#475569", paddingVertical: 5, paddingHorizontal: 7, backgroundColor: "rgba(2,6,23,0.7)" },
+  kindMiniButton: { borderWidth: 1, borderColor: "#475569", paddingVertical: 5, paddingHorizontal: 7, backgroundColor: "rgba(30, 41, 59, 0.82)" },
   kindProgressActive: { borderColor: "#FBBF24", backgroundColor: "rgba(113,63,18,0.8)" },
   kindRecoveryActive: { borderColor: "#A78BFA", backgroundColor: "rgba(88,28,135,0.8)" },
   kindMiniText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 9, fontWeight: "900" },
   deleteButton: { width: 34, height: 30, borderWidth: 1, borderColor: "#FCA5A5", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(127,29,29,0.45)" },
   deleteButtonText: { fontSize: 14 },
   durationRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 8 },
-  durationButton: { borderWidth: 2, borderColor: "#334155", paddingVertical: 7, paddingHorizontal: 10, backgroundColor: "rgba(2,6,23,0.8)" },
+  durationButton: { borderWidth: 2, borderColor: "#334155", paddingVertical: 7, paddingHorizontal: 10, backgroundColor: "rgba(30, 41, 59, 0.88)" },
   durationButtonActive: { borderColor: "#FBBF24", backgroundColor: "rgba(69,43,8,0.65)" },
   durationText: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
   optionTextActive: { color: "#FDE68A" },
   stepsText: { color: "#86EFAC", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
   weekdayLabel: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 10, fontWeight: "900", marginTop: 8, marginBottom: 4 },
   weekdayToggleRow: { gap: 6, paddingBottom: 4 },
-  weekdayToggle: { borderWidth: 1, borderColor: "#475569", paddingVertical: 5, paddingHorizontal: 8, backgroundColor: "rgba(2,6,23,0.7)" },
+  weekdayToggle: { borderWidth: 1, borderColor: "#475569", paddingVertical: 5, paddingHorizontal: 8, backgroundColor: "rgba(30, 41, 59, 0.82)" },
   weekdayToggleActive: { borderColor: "#FBBF24", backgroundColor: "rgba(113,63,18,0.8)" },
   weekdayToggleText: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 10, fontWeight: "900" },
   weekdayToggleTextActive: { color: "#FDE68A" },
@@ -1130,7 +1109,7 @@ const styles = StyleSheet.create({
   addRecoveryButton: { flex: 1, borderWidth: 2, borderColor: "#A78BFA", padding: 11, alignItems: "center", backgroundColor: "rgba(88,28,135,0.65)" },
   addButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
   addButtonDisabled: { opacity: 0.4 },
-  previewPanel: { backgroundColor: "rgba(4, 18, 30, 0.94)", borderRadius: 8, padding: 12, marginBottom: 12, borderWidth: 3, borderColor: "#38BDF8" },
+  previewPanel: { backgroundColor: "rgba(4, 18, 30, 0.94)", borderRadius: 8, padding: 12, marginBottom: 12, borderWidth: 3, borderColor: "#FBBF24" },
   previewFocus: { color: "#86EFAC", fontSize: 13, fontWeight: "800", marginBottom: 6 },
   previewQuest: { color: "#FDE68A", fontSize: 13, fontWeight: "900", marginBottom: 6 },
   previewProgress: { color: "#FDE68A", fontSize: 12, lineHeight: 18, fontWeight: "800" },

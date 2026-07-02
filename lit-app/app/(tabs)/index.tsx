@@ -40,7 +40,7 @@ import {
   type MissedEntry,
   type QuestKind,
 } from "../../lib/questProgress";
-import { formatDurationLabel, formatMinutesAsTime, getEnergyCostForDuration, getRequiredRecoveryBlockForDate, inferScheduledClassification, parseTimeToMinutes } from "../../lib/scheduling";
+import { formatDurationLabel, formatMinutesAsTime, getEnergyCostForDuration, getEnergyRestoreForDuration, getRequiredRecoveryBlockForDate, inferScheduledClassification, parseTimeToMinutes, TODAY_QUEST_DURATION_MINUTES } from "../../lib/scheduling";
 import { LATEST_PRE_SLEEP_INTENTION_KEY } from "../../lib/storageKeys";
 
 const mylitLogo = uiAssets.logo.mylit;
@@ -609,6 +609,10 @@ export default function HomeScreen() {
   async function completeChecklistItem(item: HomeQuestItem) {
     const ok = await setChecklistItemChecked(item.id, true);
     if (!ok) return;
+    // Also record a completion entry so this checklist item's duration/kind feeds
+    // into today's energy math (progress spends energy, recovery restores it).
+    const nextCompleted = await markItemComplete(item, completedQuests);
+    setCompletedQuests(nextCompleted);
     await successHaptic();
     setSelectedItem(null);
     await loadDayPlan();
@@ -715,12 +719,16 @@ export default function HomeScreen() {
 
   const completedMandatoryEntries = completedQuests.filter((entry) => entry.title === MANDATORY_QUEST_TITLE);
   const completedNormalEntries = completedQuests.filter((entry) => entry.title !== MANDATORY_QUEST_TITLE);
-  // Energy spent scales with each completed quest's duration (15m=2, 30m=3, 45m=4, 1h=5).
-  // Completions without a stored duration fall back to the 30-min default cost.
-  const questEnergySpent = completedNormalEntries.reduce(
-    (sum, entry) => sum + getEnergyCostForDuration(entry.durationMinutes),
-    0
-  );
+  // Progress completions spend energy, scaled by duration (15m=2, 30m=3, 45m=4, 1h=5).
+  // Recovery completions RESTORE energy instead, scaled by duration (15m=1, 30m=2, 45m=3, 1h=4)
+  // — recovery is meant to bring energy back up, not drain it further. Legacy completions saved
+  // before `kind` was tracked default to "progress" so historical energy math doesn't change.
+  const questEnergySpent = completedNormalEntries
+    .filter((entry) => entry.kind !== "recovery")
+    .reduce((sum, entry) => sum + getEnergyCostForDuration(entry.durationMinutes), 0);
+  const questEnergyRestored = completedNormalEntries
+    .filter((entry) => entry.kind === "recovery")
+    .reduce((sum, entry) => sum + getEnergyRestoreForDuration(entry.durationMinutes), 0);
   const passiveDecay =
     hasEnergyData && latestCheckIn?.createdAt
       ? Math.floor(
@@ -730,7 +738,7 @@ export default function HomeScreen() {
       : 0;
   const mandatoryRecoveryBoost = completedMandatoryEntries.length * MANDATORY_QUEST_RESTORE_ENERGY;
   const energyYield = hasEnergyData
-    ? clampEnergy(baseEnergyYield - passiveDecay - questEnergySpent + mandatoryRecoveryBoost)
+    ? clampEnergy(baseEnergyYield - passiveDecay - questEnergySpent + questEnergyRestored + mandatoryRecoveryBoost)
     : 0;
 
   const todayName = getWeekdayName();
@@ -870,7 +878,7 @@ export default function HomeScreen() {
         id: dayPlanRaw.todayQuest.id ?? `today-quest-${todayKey}`,
         date: todayKey,
         startTime: dayPlanRaw.todayQuest.startTime ?? "9:00 AM",
-        durationMinutes: dayPlanRaw.todayQuest.durationMinutes ?? 60,
+        durationMinutes: dayPlanRaw.todayQuest.durationMinutes ?? TODAY_QUEST_DURATION_MINUTES,
       }]
     : [];
   const requiredRecoveryToday = getRequiredRecoveryBlockForDate([...calendarItems, ...todayQuestForRecovery], todayKey);

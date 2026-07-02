@@ -19,6 +19,8 @@ import {
   inferScheduledClassification,
   parseDurationMinutes,
   parseTimeToMinutes,
+  TODAY_QUEST_DURATION_MINUTES,
+  TODAY_QUEST_STEPS,
   type ScheduledQuestLike,
   type WeekdayName,
 } from "./scheduling";
@@ -63,8 +65,10 @@ export type CompletionEntry = {
   source: QuestSource;
   dateKey: string;
   completedAt: string;
-  /** Minutes the item took — drives duration-scaled energy cost on the Home flame. */
+  /** Minutes the item took — drives duration-scaled energy cost/restore on the Home flame. */
   durationMinutes?: number;
+  /** Progress spends energy, recovery restores it. Missing on legacy entries — treated as "progress". */
+  kind?: QuestKind;
 };
 
 export type MissedEntry = {
@@ -544,7 +548,7 @@ export function normalizeQuestItems(input: {
 
   const todayQuest = input.todayQuest;
   if (todayQuest?.title?.trim() && todayQuest.status !== "completed" && String(todayQuest.status) !== "missed") {
-    const durationMinutes = parseDurationMinutes(todayQuest.durationMinutes ?? todayQuest.duration, 60);
+    const durationMinutes = parseDurationMinutes(todayQuest.durationMinutes ?? todayQuest.duration, TODAY_QUEST_DURATION_MINUTES);
     const kind: QuestKind =
       todayQuest.kind === "recovery" ? "recovery" : inferScheduledClassification(todayQuest.title) === "recovery" ? "recovery" : "progress";
     pushItem({
@@ -552,7 +556,7 @@ export function normalizeQuestItems(input: {
       title: todayQuest.title.trim(),
       source: "Today's Quest",
       kind,
-      steps: typeof todayQuest.steps === "number" ? todayQuest.steps : getStepsForDuration(durationMinutes),
+      steps: typeof todayQuest.steps === "number" ? todayQuest.steps : TODAY_QUEST_STEPS,
       durationMinutes,
       scheduledTime: todayQuest.startTime,
       description: "Your main quest from today's Day Plan.",
@@ -666,7 +670,7 @@ export function computeItemStepsFromSources(dayPlan: unknown, quickThoughts: unk
     const id = quest.id ? String(quest.id) : null;
     if (quest.status === "completed" && id && !seenIds.has(id)) {
       seenIds.add(id);
-      total += safeNumber(quest.steps, 2);
+      total += safeNumber(quest.steps, TODAY_QUEST_STEPS);
     }
   }
 
@@ -921,6 +925,7 @@ export async function markItemComplete(item: HomeQuestItem, existing: Completion
     dateKey: getTodayKey(),
     completedAt: new Date().toISOString(),
     durationMinutes: item.durationMinutes,
+    kind: item.kind,
   };
 
   await syncSourceCompletion(item);

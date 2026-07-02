@@ -70,6 +70,12 @@ function getTodayKey() {
   return new Date().toLocaleDateString("en-CA");
 }
 
+function getYesterdayKey() {
+  const date = new Date();
+  date.setDate(date.getDate() - 1);
+  return date.toLocaleDateString("en-CA");
+}
+
 const theme = { accent: "#FBBF24", glow: "#FEF3C7", panel: "rgba(18, 16, 12, 0.94)", soft: "#FDE68A", active: "rgba(58, 42, 10, 0.94)" };
 
 // Morning Reflection is a start-of-day ritual — it stays locked until 7:00 AM local time.
@@ -103,7 +109,18 @@ export default function MorningIntentionReflectionScreen() {
 
   async function loadLatestIntention() {
     const saved = await AsyncStorage.getItem(LATEST_PRE_SLEEP_INTENTION_KEY);
-    setLatestIntention(saved ? JSON.parse(saved) : null);
+    if (!saved) {
+      setLatestIntention(null);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(saved) as PreSleepIntention;
+      // Only surface an intention set last night — an older, stale intention
+      // should not keep showing up on later mornings.
+      setLatestIntention(parsed.date === getYesterdayKey() ? parsed : null);
+    } catch {
+      setLatestIntention(null);
+    }
   }
 
   async function successHaptic() {

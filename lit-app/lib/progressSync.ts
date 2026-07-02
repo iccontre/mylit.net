@@ -12,7 +12,7 @@ import {
   type MissedEntry,
 } from "./questProgress";
 import { persistProgressKeys } from "./progressStore";
-import { getDateKey } from "./scheduling";
+import { getDateKey, TODAY_QUEST_DURATION_MINUTES } from "./scheduling";
 import { getSupabaseClient, isSupabaseConfigured } from "./supabase";
 
 type QuestEventStatus = "scheduled" | "started" | "completed" | "missed";
@@ -222,7 +222,7 @@ export async function syncDayPlanScheduledItems(): Promise<void> {
         source: "Today's Quest",
         kind: typeof todayQuest.kind === "string" ? todayQuest.kind : null,
         steps: safeNumber(todayQuest.steps),
-        duration_minutes: safeNumber(todayQuest.durationMinutes, 30),
+        duration_minutes: safeNumber(todayQuest.durationMinutes, TODAY_QUEST_DURATION_MINUTES),
         scheduled_for: todayKey,
         scheduled_time: typeof todayQuest.startTime === "string" ? todayQuest.startTime : null,
         status: typeof todayQuest.status === "string" ? todayQuest.status : "scheduled",

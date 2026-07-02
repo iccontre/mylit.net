@@ -26,6 +26,7 @@ import {
   USER_STATS_KEY,
 } from "../lib/questProgress";
 import { forceUploadLocalProgressToCloud, persistProgressKeys } from "../lib/progressStore";
+import { TODAY_QUEST_STEPS } from "../lib/scheduling";
 import { syncAndGetStepRank, type StepRank } from "../lib/stepRank";
 import { ProgressRecoveryModal } from "../components/ProgressRecoveryModal";
 import { BottomNav } from "../components/BottomNav";
@@ -250,7 +251,7 @@ function getWeeklySteps(quickThoughts: unknown, dayPlan: unknown): number {
   const plan = dayPlan as Record<string, unknown> | null;
   if (plan?.todayQuest) {
     const quest = plan.todayQuest as Record<string, unknown>;
-    if (quest.status === "completed") total += safeNumber(quest.steps, 2);
+    if (quest.status === "completed") total += safeNumber(quest.steps, TODAY_QUEST_STEPS);
   }
   return total;
 }

@@ -118,14 +118,31 @@ export function getQuickThoughtSteps(duration?: string | number | null): number 
 }
 
 /**
- * Energy a quest/checklist item costs when completed, scaled by its duration.
+ * Energy a completed PROGRESS quest/checklist item costs, scaled by its duration.
  * Beta rule: 15 min = 2, 30 min = 3, 45 min = 4, 1 hr = 5 (+1 per extra 15 min beyond).
+ * Recovery items never cost energy — see getEnergyRestoreForDuration.
  */
 export function getEnergyCostForDuration(duration?: string | number | null): number {
   const minutes = parseDurationMinutes(duration, 30);
   if (minutes <= 15) return 2;
   return 2 + Math.ceil((minutes - 15) / 15);
 }
+
+/**
+ * Energy a completed RECOVERY quest/checklist item restores, scaled by its duration:
+ * 15 min → +1, 30 min → +2, 45 min → +3, 1 hr → +4 (+1 per extra 15 min beyond).
+ * Recovery items restore energy instead of costing it — progress tasks still spend
+ * energy via getEnergyCostForDuration.
+ */
+export function getEnergyRestoreForDuration(duration?: string | number | null): number {
+  const minutes = parseDurationMinutes(duration, 30);
+  return Math.max(1, Math.round(minutes / 15));
+}
+
+/** Today's Quest is a fixed 1-hour slot worth a flat +5 steps — not part of the 15/30/45/60 picker. */
+export const TODAY_QUEST_DURATION_MINUTES = 60;
+export const TODAY_QUEST_DURATION_LABEL = "1 hr";
+export const TODAY_QUEST_STEPS = 5;
 
 export function inferScheduledClassification(item: Partial<ScheduledQuestLike> | string | null | undefined): ScheduledClassification {
   if (typeof item !== "string") {

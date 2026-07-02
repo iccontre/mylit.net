@@ -20,6 +20,8 @@ import {
   parseDurationMinutes,
   parseSleepGuideTime,
   parseTimeToMinutes,
+  TODAY_QUEST_DURATION_MINUTES,
+  TODAY_QUEST_STEPS,
   type ScheduledClassification,
   type ScheduledQuestLike,
 } from "../lib/scheduling";
@@ -252,8 +254,10 @@ export default function CalendarScreen() {
     events.push(...sleepGuideEvents(latestCheckIn, date));
 
     const todayQuest = dayPlan?.todayQuest;
-    const todayQuestDurationMinutes = todayQuest ? parseDurationMinutes(todayQuest.durationMinutes ?? todayQuest.duration, 60) : 60;
-    const todayQuestSteps = todayQuest?.steps ?? getStepsForDuration(todayQuestDurationMinutes);
+    const todayQuestDurationMinutes = todayQuest
+      ? parseDurationMinutes(todayQuest.durationMinutes ?? todayQuest.duration, TODAY_QUEST_DURATION_MINUTES)
+      : TODAY_QUEST_DURATION_MINUTES;
+    const todayQuestSteps = todayQuest?.steps ?? TODAY_QUEST_STEPS;
     if (todayQuest && (todayQuest.date || getDateKey()) === dateKey && todayQuest.title?.trim()) {
       const classification = normalizeClassification(todayQuest.kind);
       events.push({
@@ -375,7 +379,20 @@ export default function CalendarScreen() {
   const todayKey = getDateKey(today);
   const todayEvents = eventsByDay.flat().filter((event: CalendarEvent) => event.date === todayKey);
   const todayQuestTitle = todayEvents.find((event: CalendarEvent) => event.source.includes("Quest Board"))?.title || "Not set yet";
-  const nextQuickThought = quickThoughtItems[0]?.title || quickThoughtItems[0]?.text || "Not set yet";
+  // Next Quest = the earliest not-yet-completed actionable item on today's schedule
+  // (Today's Quest, checklist items, quests) — not just "the first Quick Thought saved".
+  // Once completed, the next item in the day's schedule takes its place.
+  const todayActionableEvents = todayEvents.filter(
+    (event: CalendarEvent) =>
+      event.classification !== "focus" && event.classification !== "sleepGuide" && event.status !== "recoveryRequired"
+  );
+  const nextQuestEvent = todayActionableEvents
+    .filter((event: CalendarEvent) => event.status !== "completed" && String(event.status) !== "missed")
+    .sort(
+      (a: CalendarEvent, b: CalendarEvent) =>
+        (parseTimeToMinutes(a.startTime) ?? 0) - (parseTimeToMinutes(b.startTime) ?? 0)
+    )[0];
+  const nextQuickThought = nextQuestEvent?.title ?? (todayActionableEvents.length > 0 ? "All done for today" : "Not set yet");
   const expectedSleep = latestCheckIn?.estimatedSleepWindow || (latestCheckIn?.desiredSleepTime && latestCheckIn?.desiredWakeTime ? `${latestCheckIn.desiredSleepTime} – ${latestCheckIn.desiredWakeTime}` : latestCheckIn?.desiredSleepTime) || "Not set";
 
   function goToPreviousWeek() {
