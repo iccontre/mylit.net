@@ -2,6 +2,15 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { persistProgressKeys } from "./progressStore";
 import {
+  ACTIVE_TIMED_ITEM_KEY,
+  COMPLETED_QUESTS_KEY,
+  DAY_PLAN_KEY,
+  MISSED_QUESTS_KEY,
+  TODAY_PROGRESS_DATE_KEY,
+  TOMORROW_QUEUE_KEY,
+  USER_STATS_KEY,
+} from "./storageKeys";
+import {
   collectDayPlanScheduledItems,
   collectQuickThoughtScheduledItems,
   formatDurationLabel,
@@ -14,13 +23,18 @@ import {
   type WeekdayName,
 } from "./scheduling";
 
-export const COMPLETED_QUESTS_KEY = "lit_completed_quests";
-export const TODAY_PROGRESS_DATE_KEY = "lit_today_progress_date";
-export const MISSED_QUESTS_KEY = "mylit_missed_quests";
-export const ACTIVE_TIMED_ITEM_KEY = "mylit_active_timed_item";
-export const DAY_PLAN_KEY = "lit_day_plan";
-export const TOMORROW_QUEUE_KEY = "lit_tomorrow_queue";
-export const USER_STATS_KEY = "lit_user_stats";
+// These keys are defined in storageKeys.ts (a near-leaf module) and re-exported here
+// to keep existing `import { ... } from "./questProgress"` call sites working while
+// avoiding the questProgress -> progressStore -> storageKeys -> questProgress cycle.
+export {
+  ACTIVE_TIMED_ITEM_KEY,
+  COMPLETED_QUESTS_KEY,
+  DAY_PLAN_KEY,
+  MISSED_QUESTS_KEY,
+  TODAY_PROGRESS_DATE_KEY,
+  TOMORROW_QUEUE_KEY,
+  USER_STATS_KEY,
+};
 
 /** Progress mode allows up to 8 planned hours; Recovery mode allows up to 5. */
 export const PROGRESS_CAPACITY_MINUTES = 8 * 60;

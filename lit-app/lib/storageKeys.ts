@@ -1,13 +1,15 @@
 import { LOCAL_PROFILE_KEY } from "./auth";
-import {
-  ACTIVE_TIMED_ITEM_KEY,
-  COMPLETED_QUESTS_KEY,
-  DAY_PLAN_KEY,
-  MISSED_QUESTS_KEY,
-  TODAY_PROGRESS_DATE_KEY,
-  TOMORROW_QUEUE_KEY,
-  USER_STATS_KEY,
-} from "./questProgress";
+
+// Core progress storage keys live here (a near-leaf module) so questProgress.ts can
+// import them without forming the questProgress -> progressStore -> storageKeys ->
+// questProgress require cycle, which previously crashed module init with a TDZ error.
+export const COMPLETED_QUESTS_KEY = "lit_completed_quests";
+export const TODAY_PROGRESS_DATE_KEY = "lit_today_progress_date";
+export const MISSED_QUESTS_KEY = "mylit_missed_quests";
+export const ACTIVE_TIMED_ITEM_KEY = "mylit_active_timed_item";
+export const DAY_PLAN_KEY = "lit_day_plan";
+export const TOMORROW_QUEUE_KEY = "lit_tomorrow_queue";
+export const USER_STATS_KEY = "lit_user_stats";
 
 /** Local metadata for last-write timestamps per synced storage key. */
 export const PROGRESS_SYNC_META_KEY = "lit_progress_sync_meta";
@@ -81,13 +83,3 @@ export const ALL_SCANNABLE_PROGRESS_KEYS = [
   ...SYNCABLE_PROGRESS_KEYS,
   ...LEGACY_PROGRESS_KEYS,
 ] as const;
-
-export {
-  ACTIVE_TIMED_ITEM_KEY,
-  COMPLETED_QUESTS_KEY,
-  DAY_PLAN_KEY,
-  MISSED_QUESTS_KEY,
-  TODAY_PROGRESS_DATE_KEY,
-  TOMORROW_QUEUE_KEY,
-  USER_STATS_KEY,
-} from "./questProgress";
