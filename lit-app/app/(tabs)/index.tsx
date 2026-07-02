@@ -1106,6 +1106,13 @@ export default function HomeScreen() {
                       {questSourceLabel(activeItem.source)} · {formatDurationLabel(activeItem.durationMinutes)} · +{activeItem.steps} steps
                     </Text>
 
+                    <TouchableOpacity
+                      style={[styles.waitingRoomBtn, { borderColor: theme.accent }]}
+                      onPress={() => router.push("/waiting-room")}
+                    >
+                      <Text style={[styles.waitingRoomBtnText, { color: theme.accent }]}>🕯️ Wait in Study Room</Text>
+                    </TouchableOpacity>
+
                     {!timerFinished ? (
                       <>
                         {nextItem ? (
@@ -1865,6 +1872,19 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "800",
     marginTop: 1,
+  },
+  waitingRoomBtn: {
+    borderWidth: 2,
+    borderRadius: 4,
+    paddingVertical: 8,
+    alignItems: "center",
+    marginTop: 8,
+    backgroundColor: "rgba(15, 23, 42, 0.6)",
+  },
+  waitingRoomBtnText: {
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.4,
   },
   nextRow: {
     marginTop: 8,

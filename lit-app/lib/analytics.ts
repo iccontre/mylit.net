@@ -15,6 +15,10 @@ export const ANALYTICS_EVENTS = {
   stats_opened: "stats_opened",
   calendar_opened: "calendar_opened",
   feedback_submitted: "feedback_submitted",
+  waiting_room_opened: "waiting_room_opened",
+  waiting_room_boost_used: "waiting_room_boost_used",
+  waiting_room_completed: "waiting_room_completed",
+  waiting_room_missed: "waiting_room_missed",
 } as const;
 
 export type AnalyticsEventName = (typeof ANALYTICS_EVENTS)[keyof typeof ANALYTICS_EVENTS];

@@ -31,6 +31,8 @@ export const MORNING_INTENTION_REFLECTIONS_KEY = "lit_morning_intention_reflecti
 export const AWARENESS_CHECKS_KEY = "lit_awareness_checks";
 export const REFLECTIONS_KEY = "lit_reflections";
 export const GOAL_FEEDBACK_LOG_KEY = "lit_goal_feedback_log";
+/** One-time Waiting Room boost usage, keyed by `${activeItemId}:${startedAt}` -> ISO timestamp used. */
+export const WAITING_ROOM_BOOSTS_KEY = "lit_waiting_room_boosts";
 
 /** AsyncStorage keys mirrored to the signed-in user's cloud profile. */
 export const SYNCABLE_PROGRESS_KEYS = [
@@ -52,6 +54,7 @@ export const SYNCABLE_PROGRESS_KEYS = [
   AWARENESS_CHECKS_KEY,
   REFLECTIONS_KEY,
   GOAL_FEEDBACK_LOG_KEY,
+  WAITING_ROOM_BOOSTS_KEY,
 ] as const;
 
 export type SyncableProgressKey = (typeof SYNCABLE_PROGRESS_KEYS)[number];

@@ -18,6 +18,7 @@ import {
   DAY_PLAN_KEY,
   ACTIVE_TIMED_ITEM_KEY,
   MISSED_QUESTS_KEY,
+  WAITING_ROOM_BOOSTS_KEY,
 } from "./storageKeys";
 import { getDateKey } from "./scheduling";
 import { sanitizeDayPlanChecklists } from "./dayPlanChecklist";
@@ -64,6 +65,7 @@ const OBJECT_MERGE_PROGRESS_KEYS = new Set<SyncableProgressKey>([
   LOCAL_PROFILE_KEY,
   DAY_PLAN_KEY,
   ACTIVE_TIMED_ITEM_KEY,
+  WAITING_ROOM_BOOSTS_KEY,
 ]);
 
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
