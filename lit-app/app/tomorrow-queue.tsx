@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 import { FormScreen } from "../components/FormScreen";
@@ -210,6 +210,7 @@ export default function TomorrowQueueScreen() {
   const [timeInputError, setTimeInputError] = useState("");
   const [suggestedQuest, setSuggestedQuest] = useState<GeneratedQuest | null>(null);
   const [supplementaryQuest, setSupplementaryQuest] = useState<GeneratedQuest | null>(null);
+  const hasInitializedTime = useRef(false);
 
   const selectedDay = weekDays.find((day: QuestDay) => day.dateKey === selectedDateKey) || todayInWeek;
   const selectedDayIsPast = isPastDateKey(selectedDay.dateKey);
@@ -255,10 +256,18 @@ export default function TomorrowQueueScreen() {
       readJson<unknown>(COMPLETED_QUESTS_KEY, []),
       readJson<unknown>(MISSED_QUESTS_KEY, []),
     ]);
-    setItems(Array.isArray(saved) ? saved.map(normalizeQueueItem) : []);
+    const mappedItems = Array.isArray(saved) ? saved.map(normalizeQueueItem) : [];
+    setItems(mappedItems);
     setDayPlan(plan);
     const mode: "Progress" | "Recovery" = checkIn?.mode === "Recovery" ? "Recovery" : "Progress";
     setBoardMode(mode);
+
+    // On first open, default the start time to the first free slot for today so a new
+    // quest doesn't collide with an existing item at the default time and silently fail.
+    if (!hasInitializedTime.current) {
+      hasInitializedTime.current = true;
+      applyDefaultStartTime(todayInWeek.dateKey, mappedItems, plan);
+    }
 
     const context: QuestProfileContext = {
       category: profileRaw?.dreamCategory?.trim() || "Purpose",
@@ -289,6 +298,33 @@ export default function TomorrowQueueScreen() {
       .filter((item) => item.id !== excludeId)
       .map((item) => ({ id: item.id, title: item.title, date: item.date, startTime: item.startTime, durationMinutes: item.durationMinutes }));
     return [...dayPlanItems, ...questItems];
+  }
+
+  /** First TIME_SLOT on `dateKey` that doesn't overlap an existing quest/Day Plan item, so a newly
+   *  created quest doesn't silently collide with the default 9:00 AM slot (and fail to save). */
+  function computeFreeStartTime(
+    itemsList: QueueItem[],
+    planArg: Record<string, unknown> | null,
+    dateKey: string,
+    durationMinutes: number,
+    excludeId: string
+  ): string {
+    const dayPlanItems = collectDayPlanScheduledItems(planArg, resolveDateForWeekday);
+    const questItems = itemsList
+      .filter((item) => item.id !== excludeId)
+      .map((item) => ({ id: item.id, title: item.title, date: item.date, startTime: item.startTime, durationMinutes: item.durationMinutes }));
+    const existing = [...dayPlanItems, ...questItems];
+    for (const slot of TIME_SLOTS) {
+      const candidate = { id: "__probe__", date: dateKey, startTime: slot, durationMinutes };
+      if (!findScheduleOverlap(candidate, existing, "__probe__")) return slot;
+    }
+    return TIME_SLOTS[0] ?? "9:00 AM";
+  }
+
+  function applyDefaultStartTime(dateKey: string, itemsList: QueueItem[], planArg: Record<string, unknown> | null) {
+    const free = computeFreeStartTime(itemsList, planArg, dateKey, parseDurationMinutes(selectedDuration, 30), "");
+    setSelectedTime(free);
+    setTimeInputDraft(free);
   }
 
   async function saveQuest() {
@@ -326,17 +362,28 @@ export default function TomorrowQueueScreen() {
     const existing = existingScheduledItemsExcluding(editingId ?? "");
     const candidate = { id: candidateId, date: selectedDay.dateKey, startTime: selectedTime, durationMinutes };
 
-    const conflict = findScheduleOverlap(candidate, existing, candidateId);
-    if (conflict) {
-      const conflictTitle = (conflict as { title?: string }).title || "another scheduled item";
-      setConflictMessage(`This time interferes with "${conflictTitle}" — change the time.`);
-      setRecoveryWarning("");
-      setPendingRecoveryConfirm(false);
-      return;
+    // Editing only the kind/title (same day/time/duration) must never be blocked by a
+    // conflict or recovery check — otherwise the edit silently fails and nothing updates.
+    const originalItem = editingId ? items.find((item) => item.id === editingId) : null;
+    const scheduleUnchanged =
+      !!originalItem &&
+      originalItem.date === selectedDay.dateKey &&
+      originalItem.startTime === selectedTime &&
+      originalItem.durationMinutes === durationMinutes;
+
+    if (!scheduleUnchanged) {
+      const conflict = findScheduleOverlap(candidate, existing, candidateId);
+      if (conflict) {
+        const conflictTitle = (conflict as { title?: string }).title || "another scheduled item";
+        setConflictMessage(`This time interferes with "${conflictTitle}" — change the time.`);
+        setRecoveryWarning("");
+        setPendingRecoveryConfirm(false);
+        return;
+      }
     }
     setConflictMessage("");
 
-    if (!pendingRecoveryConfirm && wouldTriggerRecoveryLock(candidate, existing, selectedDay.dateKey)) {
+    if (!scheduleUnchanged && !pendingRecoveryConfirm && wouldTriggerRecoveryLock(candidate, existing, selectedDay.dateKey)) {
       setRecoveryWarning(RECOVERY_LOCK_WARNING);
       setPendingRecoveryConfirm(true);
       return;
@@ -387,9 +434,13 @@ export default function TomorrowQueueScreen() {
         status: "scheduled",
         createdAt: new Date().toISOString(),
       };
-      await saveQueue([nextItem, ...items]);
+      const nextList = [nextItem, ...items];
+      await saveQueue(nextList);
       setMessage(`Saved ${selectedKind} quest to Calendar.`);
       void trackEvent(ANALYTICS_EVENTS.quick_thought_saved, { id: nextItem.id, kind: selectedKind });
+      // Advance the default time past the quest just added so the next new quest
+      // lands on a free slot instead of colliding at the same time.
+      applyDefaultStartTime(selectedDay.dateKey, nextList, dayPlan);
     }
 
     setRequest("");
@@ -509,7 +560,7 @@ export default function TomorrowQueueScreen() {
                   const selected = day.dateKey === selectedDateKey;
                   const isPast = isPastDateKey(day.dateKey);
                   return (
-                    <TouchableOpacity key={day.dateKey} style={[styles.dayButton, selected && !isPast && styles.dayButtonActive, isPast && styles.dayButtonDisabled]} disabled={isPast} onPress={() => { setSelectedDateKey(day.dateKey); setMessage(""); }}>
+                    <TouchableOpacity key={day.dateKey} style={[styles.dayButton, selected && !isPast && styles.dayButtonActive, isPast && styles.dayButtonDisabled]} disabled={isPast} onPress={() => { setSelectedDateKey(day.dateKey); setMessage(""); if (!editingId) applyDefaultStartTime(day.dateKey, items, dayPlan); }}>
                       <Text style={[styles.dayLabel, selected && styles.dayLabelActive, isPast && styles.dayTextDisabled]}>{day.label}</Text>
                       <Text style={[styles.dayNumber, selected && styles.dayLabelActive, isPast && styles.dayTextDisabled]}>{day.dayNumber}</Text>
                       {isPast ? <Text style={styles.pastDayLabel}>Past</Text> : null}

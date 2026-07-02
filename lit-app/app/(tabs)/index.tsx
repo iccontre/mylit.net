@@ -300,6 +300,7 @@ export default function HomeScreen() {
   const [showQuestHelp, setShowQuestHelp] = useState(false);
   const [timeNow, setTimeNow] = useState<Date>(() => new Date());
   const [countdownNow, setCountdownNow] = useState<number>(() => Date.now());
+  const [recoveryNow, setRecoveryNow] = useState<number>(() => Date.now());
   const lockMessageTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const latestCheckInDay = latestCheckIn?.createdAt
@@ -886,6 +887,22 @@ export default function HomeScreen() {
   const isRecoveryLocked =
     requiredRecoveryToday !== null && recoveryStartMinutes !== null && nowMinutes >= recoveryStartMinutes && nowMinutes < recoveryStartMinutes + 60;
 
+  // Countdown to when Luna's 1-hour recovery lock lifts, ticking every second while locked.
+  const recoveryEndsMs = (() => {
+    if (recoveryStartMinutes === null) return null;
+    const endOfLock = new Date();
+    endOfLock.setHours(0, 0, 0, 0);
+    return endOfLock.getTime() + (recoveryStartMinutes + 60) * 60 * 1000;
+  })();
+  const recoveryRemainingMs = recoveryEndsMs !== null ? Math.max(0, recoveryEndsMs - recoveryNow) : 0;
+
+  useEffect(() => {
+    if (!isRecoveryLocked) return;
+    setRecoveryNow(Date.now());
+    const id = setInterval(() => setRecoveryNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [isRecoveryLocked]);
+
   const currentBackground = isRecovery
     ? uiAssets.backgrounds.recovery
     : isProgress
@@ -1160,9 +1177,16 @@ export default function HomeScreen() {
                     <Text style={styles.recoveryLockText}>
                       That was 2 hours of straight tasks — nice work. The board locks for 1 hour so you can actually rest.
                     </Text>
+                    <Text style={[styles.countdownText, { color: "#C4A7FF" }]}>{formatCountdown(recoveryRemainingMs)}</Text>
                     <Text style={styles.recoveryLockHint}>
-                      Stretch, drink some water, step outside, or just breathe for a minute. You&apos;ll be back on the board after {recoveryStartMinutes !== null ? formatMinutesAsTime(recoveryStartMinutes + 60) : "a bit"}.
+                      Back on the board at {recoveryStartMinutes !== null ? formatMinutesAsTime(recoveryStartMinutes + 60) : "a bit"}. Stretch, drink some water, step outside, or just breathe.
                     </Text>
+                    <TouchableOpacity
+                      style={[styles.waitingRoomBtn, { borderColor: "#C4A7FF" }]}
+                      onPress={() => router.push("/waiting-room")}
+                    >
+                      <Text style={[styles.waitingRoomBtnText, { color: "#C4A7FF" }]}>🕯️ Wait in Study Room</Text>
+                    </TouchableOpacity>
                   </View>
                 ) : availableItems.length === 0 ? (
                   <View style={styles.questLockedCard}>
