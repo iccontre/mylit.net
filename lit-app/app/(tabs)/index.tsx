@@ -1306,13 +1306,13 @@ export default function HomeScreen() {
                 {selectedItem ? (
                   <View style={[styles.modalPanel, { borderColor: kindAccent(selectedItem.kind) }]}>
                     <Text style={[styles.modalSource, { color: kindAccent(selectedItem.kind) }]}>
-                      {selectedItem.source.toUpperCase()}
+                      {questSourceLabel(selectedItem.source).toUpperCase()}
                     </Text>
                     <Text style={styles.modalTitle}>{selectedItem.title}</Text>
 
                     <View style={styles.modalMetaGrid}>
                       <Text style={styles.modalMeta}>Type: {selectedItem.kind === "recovery" ? "Recovery" : "Progress"}</Text>
-                      <Text style={styles.modalMeta}>Source: {selectedItem.source}</Text>
+                      <Text style={styles.modalMeta}>Source: {questSourceLabel(selectedItem.source)}</Text>
                       <Text style={styles.modalMeta}>Duration: {formatDurationLabel(selectedItem.durationMinutes)}</Text>
                       <Text style={styles.modalMeta}>Steps possible: +{selectedItem.steps}</Text>
                       {selectedItem.scheduledTime ? (
