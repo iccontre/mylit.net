@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { AppState, Image, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { BottomNav } from "../../components/BottomNav";
 import { uiAssets } from "../../constants/uiAssets";
@@ -36,7 +36,7 @@ import {
   type MissedEntry,
   type QuestKind,
 } from "../../lib/questProgress";
-import { formatDurationLabel, inferScheduledClassification, parseTimeToMinutes } from "../../lib/scheduling";
+import { formatDurationLabel, getDateKey, inferScheduledClassification, parseTimeToMinutes } from "../../lib/scheduling";
 
 const mylitLogo = uiAssets.logo.mylit;
 const fireAssets = uiAssets.fires;
@@ -287,6 +287,9 @@ export default function HomeScreen() {
   const [timeNow, setTimeNow] = useState<Date>(() => new Date());
   const [countdownNow, setCountdownNow] = useState<number>(() => Date.now());
   const lockMessageTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const questBoardY = useRef(0);
+  const completingActive = useRef(false);
 
   const latestCheckInDay = latestCheckIn?.createdAt
     ? new Date(latestCheckIn.createdAt).toLocaleDateString("en-CA")
@@ -326,6 +329,7 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      setCountdownNow(Date.now());
       loadProgressState();
       loadLatestCheckIn();
       loadQuickThoughts();
@@ -350,12 +354,39 @@ export default function HomeScreen() {
   }, []);
 
   // Tick the active countdown once per second while a timed item is running.
+  // Also refresh immediately when the app/tab returns to the foreground.
   useEffect(() => {
     if (!activeItem) return;
-    setCountdownNow(Date.now());
-    const id = setInterval(() => setCountdownNow(Date.now()), 1000);
-    return () => clearInterval(id);
+    const refresh = () => setCountdownNow(Date.now());
+    refresh();
+    const id = setInterval(refresh, 1000);
+    const appStateSub = AppState.addEventListener("change", (state) => {
+      if (state === "active") refresh();
+    });
+
+    let removeVisibility: (() => void) | undefined;
+    if (Platform.OS === "web" && typeof document !== "undefined") {
+      const onVisibility = () => {
+        if (document.visibilityState === "visible") refresh();
+      };
+      document.addEventListener("visibilitychange", onVisibility);
+      removeVisibility = () => document.removeEventListener("visibilitychange", onVisibility);
+    }
+
+    return () => {
+      clearInterval(id);
+      appStateSub.remove();
+      removeVisibility?.();
+    };
   }, [activeItem]);
+
+  // Unlock the board if the active quest was already completed (e.g. sync or crash mid-flow).
+  useEffect(() => {
+    if (!activeItem) return;
+    if (completedQuests.some((entry) => entry.id === activeItem.id)) {
+      void clearActiveItem();
+    }
+  }, [activeItem, completedQuests]);
 
   useEffect(() => {
     return () => {
@@ -517,11 +548,28 @@ export default function HomeScreen() {
 
     try {
       const parsed = JSON.parse(saved) as ActiveTimedItem;
-      if (parsed && typeof parsed.title === "string" && typeof parsed.endsAt === "number") {
-        setActiveItem(parsed);
-      } else {
+      if (!parsed || typeof parsed.title !== "string" || typeof parsed.endsAt !== "number") {
         setActiveItem(null);
+        return;
       }
+
+      const todayKey = getTodayKey();
+      const startedDateKey = getDateKey(new Date(parsed.startedAt));
+      if (startedDateKey !== todayKey) {
+        await clearProgressKey(ACTIVE_TIMED_ITEM_KEY);
+        setActiveItem(null);
+        return;
+      }
+
+      const completions = await loadTodayCompletions();
+      if (completions.some((entry) => entry.id === parsed.id)) {
+        await clearProgressKey(ACTIVE_TIMED_ITEM_KEY);
+        setActiveItem(null);
+        return;
+      }
+
+      setActiveItem(parsed);
+      setCountdownNow(Date.now());
     } catch {
       setActiveItem(null);
     }
@@ -582,7 +630,13 @@ export default function HomeScreen() {
 
   // Completion is the ONLY place steps are awarded — never on Start.
   async function completeQuestItem(item: HomeQuestItem) {
-    if (completedQuests.some((entry) => entry.id === item.id)) return;
+    const alreadyCompleted = completedQuests.some((entry) => entry.id === item.id);
+    if (alreadyCompleted) {
+      if (activeItem?.id === item.id) {
+        await clearActiveItem();
+      }
+      return;
+    }
 
     const nextCompleted = await markItemComplete(item, completedQuests);
     await successHaptic();
@@ -598,17 +652,22 @@ export default function HomeScreen() {
   }
 
   async function completeActiveItem() {
-    if (!activeItem) return;
-    const boardItem: HomeQuestItem = {
-      id: activeItem.id,
-      title: activeItem.title,
-      source: activeItem.source,
-      kind: activeItem.kind,
-      steps: activeItem.steps,
-      durationMinutes: activeItem.durationMinutes,
-      scheduledTime: activeItem.scheduledTime,
-    };
-    await completeQuestItem(boardItem);
+    if (!activeItem || completingActive.current) return;
+    completingActive.current = true;
+    try {
+      const boardItem: HomeQuestItem = {
+        id: activeItem.id,
+        title: activeItem.title,
+        source: activeItem.source,
+        kind: activeItem.kind,
+        steps: activeItem.steps,
+        durationMinutes: activeItem.durationMinutes,
+        scheduledTime: activeItem.scheduledTime,
+      };
+      await completeQuestItem(boardItem);
+    } finally {
+      completingActive.current = false;
+    }
   }
 
   async function missQuestItem(item: HomeQuestItem) {
@@ -806,6 +865,14 @@ export default function HomeScreen() {
   const timerFinished = activeItem !== null && remainingMs <= 0;
   const isBoardLocked = activeItem !== null;
 
+  useEffect(() => {
+    if (!timerFinished) return;
+    const id = setTimeout(() => {
+      scrollRef.current?.scrollTo({ y: Math.max(0, questBoardY.current - 12), animated: true });
+    }, 120);
+    return () => clearTimeout(id);
+  }, [timerFinished]);
+
   const nowMinutes = timeNow.getHours() * 60 + timeNow.getMinutes();
   const timeTrackPosition = getCurrentTimeTrackPosition(timeNow);
   const nextItem = activeItem ? findNextScheduledItem(availableItems, activeItem.id, nowMinutes) : null;
@@ -850,10 +917,12 @@ export default function HomeScreen() {
         </View>
         <View style={styles.worldOverlay}>
             <ScrollView
+              ref={scrollRef}
               style={styles.screenScroller}
               contentContainerStyle={[styles.hudContent, { paddingBottom: mobile.scrollPaddingBottom }]}
               showsVerticalScrollIndicator={false}
               bounces={false}
+              keyboardShouldPersistTaps="handled"
             >
               <View style={styles.topHud}>
                 <Image source={mylitLogo} style={styles.heroLogo} resizeMode="contain" />
@@ -982,7 +1051,12 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               </View>
 
-              <View style={[styles.questBoard, { borderColor: isBoardLocked && activeItem ? kindAccent(activeItem.kind) : theme.accent }]}>
+              <View
+                style={[styles.questBoard, { borderColor: isBoardLocked && activeItem ? kindAccent(activeItem.kind) : theme.accent }]}
+                onLayout={(event) => {
+                  questBoardY.current = event.nativeEvent.layout.y;
+                }}
+              >
                 <View style={styles.questHeaderRow}>
                   <View style={styles.questTitleRow}>
                     <Text style={[styles.questTitle, { color: theme.accent }]}>{isRecovery ? "+ QUEST BOARD +" : "⚔ QUEST BOARD"}</Text>
@@ -1042,11 +1116,19 @@ export default function HomeScreen() {
                         {lockMessage ? <Text style={styles.lockMessage}>{lockMessage}</Text> : null}
                       </>
                     ) : (
-                      <View style={styles.completeRow}>
-                        <TouchableOpacity style={[styles.completeBtn]} onPress={completeActiveItem}>
+                      <View style={[styles.completeRow, styles.completeRowFinished]}>
+                        <TouchableOpacity
+                          style={styles.completeBtn}
+                          hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                          onPress={() => void completeActiveItem()}
+                        >
                           <Text style={styles.completeBtnText}>COMPLETE</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity style={[styles.reflectBtn, { borderColor: theme.accent }]} onPress={reflectActiveItem}>
+                        <TouchableOpacity
+                          style={[styles.reflectBtn, { borderColor: theme.accent }]}
+                          hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                          onPress={() => void reflectActiveItem()}
+                        >
                           <Text style={styles.reflectBtnText}>MISSED?</Text>
                         </TouchableOpacity>
                       </View>
@@ -1779,13 +1861,18 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 10,
   },
+  completeRowFinished: {
+    marginBottom: 8,
+  },
   completeBtn: {
     flex: 1,
     borderWidth: 2,
     borderColor: "#22C55E",
     backgroundColor: "#14532D",
-    paddingVertical: 9,
+    paddingVertical: 12,
+    minHeight: 44,
     alignItems: "center",
+    justifyContent: "center",
   },
   completeBtnText: {
     color: "#DCFCE7",
@@ -1797,8 +1884,10 @@ const styles = StyleSheet.create({
     flex: 1,
     borderWidth: 2,
     backgroundColor: "rgba(8, 13, 24, 0.94)",
-    paddingVertical: 9,
+    paddingVertical: 12,
+    minHeight: 44,
     alignItems: "center",
+    justifyContent: "center",
   },
   reflectBtnText: {
     color: "#F8F1D7",
