@@ -31,6 +31,7 @@ import {
   getStepsForDuration,
   inferScheduledClassification,
   parseDurationMinutes,
+  parseTimeToMinutes,
   shiftTimeSlot,
   wouldTriggerRecoveryLock,
   type ScheduledClassification,
@@ -107,6 +108,9 @@ const DEFAULT_ROLES: Record<WeekdayName, string> = {
 };
 
 const EMPTY_CHECKLIST_COPY = "No checklist items yet. Add one small habit when you're ready.";
+// The default placeholder Today's Quest is not a real user-scheduled item, so it must
+// not block checklist/quest saves via the time-conflict or recovery-lock checks.
+const DEFAULT_TODAY_QUEST_TITLE = "Choose one honest quest for today";
 const RECOVERY_LOCK_WARNING =
   "Adding this task will create 2 hours of straight work, meaning there has to be 1 hour of recovery time after — you won't be able to do any tasks during that time. Tap Save again to confirm.";
 
@@ -393,7 +397,8 @@ export default function DayPlanScreen() {
       }
     }
     const quest = committedPlanRef.current.todayQuest;
-    if (quest.id !== excludeId && quest.title.trim()) {
+    const questTitle = quest.title.trim();
+    if (quest.id !== excludeId && questTitle && questTitle.toLowerCase() !== DEFAULT_TODAY_QUEST_TITLE.toLowerCase()) {
       slots.push({ id: quest.id, title: quest.title, weekday: quest.weekday, startTime: quest.startTime, durationMinutes: quest.durationMinutes });
     }
     return slots;
@@ -621,7 +626,9 @@ export default function DayPlanScreen() {
                   ...item,
                   ...patch,
                   durationMinutes: patch.duration ? parseDurationMinutes(patch.duration, 30) : patch.durationMinutes ?? item.durationMinutes,
-                  kind: patch.text ? normalizeKind(inferScheduledClassification(patch.text)) : patch.kind ?? item.kind,
+                  // Kind only changes via the explicit PROGRESS/RECOVERY toggle (patch.kind).
+                  // Typing the title must NOT auto-flip the mode the user chose.
+                  kind: patch.kind ?? item.kind,
                   steps: patch.duration ? stepsForItem(patch.duration) : patch.steps ?? item.steps,
                   status: patch.checked !== undefined ? (patch.checked ? "completed" : "scheduled") : patch.status ?? item.status,
                 }
@@ -661,30 +668,58 @@ export default function DayPlanScreen() {
     });
   }
 
+  /** First 30-min TIME_SLOT on `day` that doesn't overlap an existing item, so newly
+   *  added checklist rows don't silently collide (and fail to save) at a shared default time. */
+  function firstFreeStartTime(plan: DayPlan, day: WeekdayName): string {
+    const occupied: { start: number; end: number }[] = [];
+    for (const bucketDay of WEEKDAYS) {
+      for (const entry of plan.weekdayChecklists[bucketDay] ?? []) {
+        if (!entry.weekdays.includes(day)) continue;
+        const start = parseTimeToMinutes(entry.startTime);
+        if (start === null) continue;
+        occupied.push({ start, end: start + (entry.durationMinutes || 30) });
+      }
+    }
+    const quest = plan.todayQuest;
+    if (quest.weekday === day && quest.title.trim() && quest.title.trim().toLowerCase() !== DEFAULT_TODAY_QUEST_TITLE.toLowerCase()) {
+      const start = parseTimeToMinutes(quest.startTime);
+      if (start !== null) occupied.push({ start, end: start + (quest.durationMinutes || 30) });
+    }
+    for (const slot of TIME_SLOTS) {
+      const start = parseTimeToMinutes(slot);
+      if (start === null) continue;
+      const end = start + 30;
+      if (!occupied.some((range) => start < range.end && range.start < end)) return slot;
+    }
+    return TIME_SLOTS[0] ?? "8:30 AM";
+  }
+
   function addChecklistItem(kind: "progress" | "recovery") {
     if (checklistCountForSelectedDay >= MAX_CHECKLIST_ITEMS_PER_DAY) {
       setSavedMessage(`${MAX_CHECKLIST_ITEMS_PER_DAY} checklist items is the daily max — that's enough to build the habit without overloading the day.`);
       return;
     }
-    const nextItem: ChecklistItem = {
-      id: `${selectedDay}-${Date.now()}`,
-      text: "",
-      checked: false,
-      steps: 1,
-      startTime: "8:30 AM",
-      duration: "30 min",
-      durationMinutes: 30,
-      status: "scheduled",
-      kind,
-      weekdays: [selectedDay],
-    };
-    setDayPlan((current: DayPlan) => ({
-      ...current,
-      weekdayChecklists: {
-        ...current.weekdayChecklists,
-        [selectedDay]: [...current.weekdayChecklists[selectedDay as WeekdayName], nextItem],
-      },
-    }));
+    setDayPlan((current: DayPlan) => {
+      const nextItem: ChecklistItem = {
+        id: `${selectedDay}-${Date.now()}`,
+        text: "",
+        checked: false,
+        steps: 1,
+        startTime: firstFreeStartTime(current, selectedDay),
+        duration: "30 min",
+        durationMinutes: 30,
+        status: "scheduled",
+        kind,
+        weekdays: [selectedDay],
+      };
+      return {
+        ...current,
+        weekdayChecklists: {
+          ...current.weekdayChecklists,
+          [selectedDay]: [...current.weekdayChecklists[selectedDay as WeekdayName], nextItem],
+        },
+      };
+    });
   }
 
 

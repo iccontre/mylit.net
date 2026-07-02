@@ -713,11 +713,10 @@ export default function HomeScreen() {
 
   const completedMandatoryEntries = completedQuests.filter((entry) => entry.title === MANDATORY_QUEST_TITLE);
   const completedNormalEntries = completedQuests.filter((entry) => entry.title !== MANDATORY_QUEST_TITLE);
-  // Energy spent scales with each completed quest's duration (30m=2, 45m=4, 1h=6).
-  // Legacy completions without a stored duration fall back to steps × 2 (same mapping).
+  // Energy spent scales with each completed quest's duration (15m=2, 30m=3, 45m=4, 1h=5).
+  // Completions without a stored duration fall back to the 30-min default cost.
   const questEnergySpent = completedNormalEntries.reduce(
-    (sum, entry) =>
-      sum + (entry.durationMinutes != null ? getEnergyCostForDuration(entry.durationMinutes) : entry.steps * 2),
+    (sum, entry) => sum + getEnergyCostForDuration(entry.durationMinutes),
     0
   );
   const passiveDecay =

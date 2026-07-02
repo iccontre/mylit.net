@@ -120,12 +120,12 @@ export function getQuickThoughtSteps(duration?: string | number | null): number 
 
 /**
  * Energy a quest/checklist item costs when completed, scaled by its duration.
- * Beta rule: 30 min = 2, 45 min = 4, 1 hr = 6 (and +2 per extra 15 min beyond).
+ * Beta rule: 15 min = 2, 30 min = 3, 45 min = 4, 1 hr = 5 (+1 per extra 15 min beyond).
  */
 export function getEnergyCostForDuration(duration?: string | number | null): number {
   const minutes = parseDurationMinutes(duration, 30);
-  if (minutes <= 30) return 2;
-  return 2 + Math.ceil((minutes - 30) / 15) * 2;
+  if (minutes <= 15) return 2;
+  return 2 + Math.ceil((minutes - 15) / 15);
 }
 
 export function inferScheduledClassification(item: Partial<ScheduledQuestLike> | string | null | undefined): ScheduledClassification {
@@ -373,8 +373,11 @@ export function collectDayPlanScheduledItems(plan: unknown, resolveDateForWeekda
 
         const title = getItemTitle(item);
         const id = String(item.id ?? `day-plan-${bucketDay}-${index}-${title}`);
-        if (seen.has(id)) return;
-        seen.add(id);
+        // Dedupe per (weekday, id) so a habit recurring on several weekdays shows on
+        // each of its days — a shared id-only set would drop it from all but one day.
+        const seenKey = `${weekday}-${id}`;
+        if (seen.has(seenKey)) return;
+        seen.add(seenKey);
 
         const durationMinutes = parseDurationMinutes(item.durationMinutes ?? item.duration, 30);
         const classification = inferScheduledClassification(item);
