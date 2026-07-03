@@ -31,6 +31,7 @@ type UserProfile = {
   name: string;
   longTermDream?: string;
   dreamCategory?: string;
+  supplementaryCategory?: string;
   progressMeaning: string;
   // Phase 1 tiered goals
   specificGoal?: string;
@@ -91,6 +92,7 @@ export default function PathScreen() {
 
   const longTermDream = profile?.longTermDream?.trim() || "Not set yet";
   const dreamCategory = profile?.dreamCategory?.trim() || "Not set yet";
+  const supplementaryCategory = profile?.supplementaryCategory?.trim() || "";
   const specificGoal = profile?.specificGoal?.trim() || "Not set yet";
   // Prefer the new tiered fields, fall back to legacy goalOne / Two / Three
   // for users whose profile was saved before the tiered flow existed.
@@ -104,7 +106,8 @@ export default function PathScreen() {
 
   const summaryCards: SummaryCard[] = [
     { label: "Long-Term Dream", value: longTermDream, icon: "📕" },
-    { label: "Dream Category", value: dreamCategory, icon: "🍃" },
+    { label: "Main Path", value: dreamCategory, icon: "🍃" },
+    ...(supplementaryCategory ? [{ label: "Supplementary Path", value: supplementaryCategory, icon: "🌱" }] : []),
     { label: "Specific Goal", value: specificGoal, icon: "🎯" },
   ];
 

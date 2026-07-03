@@ -33,7 +33,6 @@ type JournalEntry = {
   type: "Morning" | "Evening";
   mood: string;
   content: string;
-  gratitude: string;
   thoughtPattern: string;
   thoughtImpact: "Helpful" | "Harmful" | "Neutral";
   honestReframe: string;
@@ -57,7 +56,6 @@ export default function JournalScreen() {
   const [showInfo, setShowInfo] = useState(false);
   const [mood, setMood] = useState("");
   const [content, setContent] = useState("");
-  const [gratitude, setGratitude] = useState("");
   const [entries, setEntries] = useState<JournalEntry[]>([]);
 
   useEffect(() => {
@@ -77,7 +75,7 @@ export default function JournalScreen() {
   }
 
   async function saveJournalEntry() {
-    const hasEntry = content.trim() || gratitude.trim() || mood.trim();
+    const hasEntry = content.trim() || mood.trim();
 
     if (!hasEntry) return;
 
@@ -86,7 +84,6 @@ export default function JournalScreen() {
       type: entryType,
       mood,
       content: content.trim(),
-      gratitude: gratitude.trim(),
       thoughtPattern: "",
       thoughtImpact: "Neutral",
       honestReframe: "",
@@ -98,7 +95,6 @@ export default function JournalScreen() {
     await saveEntries(nextEntries);
 
     setContent("");
-    setGratitude("");
     setMood("");
   }
 
@@ -110,7 +106,7 @@ export default function JournalScreen() {
     <View style={[styles.pageRoot, mobile.pageRootStyle]}>
       <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
-          <Image source={uiAssets.backgrounds.journal} style={styles.backgroundImage} resizeMode="cover" />
+          <Image source={uiAssets.backgrounds.neutral} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
           <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.hudContent]}>
@@ -134,7 +130,7 @@ export default function JournalScreen() {
             </View>
 
             <View style={styles.panel}>
-              <Text style={styles.label}>Entry Type</Text>
+              <Text style={styles.pageLabel}>Entry Type</Text>
               <View style={styles.toggleRow}>
                 <TouchableOpacity
                   style={[styles.toggleButton, entryType === "Morning" && styles.activeToggle]}
@@ -155,7 +151,7 @@ export default function JournalScreen() {
                 </TouchableOpacity>
               </View>
 
-              <Text style={styles.label}>Mood (1–10)</Text>
+              <Text style={styles.pageLabel}>Mood (1–10)</Text>
               <TextInput
                 style={[formStyles.input, styles.input]}
                 keyboardType="numeric"
@@ -165,7 +161,7 @@ export default function JournalScreen() {
                 onChangeText={setMood}
               />
 
-              <Text style={styles.label}>What happened today?</Text>
+              <Text style={styles.pageLabel}>Be honest and write whatever is on your mind</Text>
               <TextInput
                 style={[formStyles.textArea, styles.largeTextArea]}
                 multiline
@@ -175,18 +171,6 @@ export default function JournalScreen() {
                 placeholderTextColor="#94A3B8"
                 value={content}
                 onChangeText={setContent}
-              />
-
-              <Text style={styles.label}>What do you want to remember?</Text>
-              <TextInput
-                style={[formStyles.textArea, styles.largeTextArea]}
-                multiline
-                scrollEnabled
-                textAlignVertical="top"
-                placeholder="One thing you learned, appreciated, or want to carry forward."
-                placeholderTextColor="#94A3B8"
-                value={gratitude}
-                onChangeText={setGratitude}
               />
             </View>
 
@@ -210,10 +194,6 @@ export default function JournalScreen() {
                   </Text>
 
                   {entry.content ? <Text style={styles.entryText}>{entry.content}</Text> : null}
-
-                  {entry.gratitude ? (
-                    <Text style={styles.gratitudeText}>Remember: {entry.gratitude}</Text>
-                  ) : null}
                 </View>
               ))
             )}
@@ -370,7 +350,7 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 16,
   },
-  label: {
+  pageLabel: {
     color: "#F9FAFB",
     fontFamily: pixelFont,
     fontSize: 12,
@@ -416,6 +396,8 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   largeTextArea: {
+    minHeight: 200,
+    maxHeight: 320,
     marginBottom: 4,
   },
   saveButton: {
@@ -487,14 +469,6 @@ const styles = StyleSheet.create({
   },
   entryText: {
     color: "#F8F1D7",
-    fontFamily: pixelFont,
-    fontSize: 12,
-    fontWeight: "700",
-    lineHeight: 18,
-    marginTop: 8,
-  },
-  gratitudeText: {
-    color: "#DDD6FE",
     fontFamily: pixelFont,
     fontSize: 12,
     fontWeight: "700",

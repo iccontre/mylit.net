@@ -12,31 +12,36 @@ import {
   type QuestProfileContext,
 } from "../../lib/questGeneration";
 import { ANALYTICS_EVENTS, trackEvent } from "../../lib/analytics";
-import { syncQuestCompleted, syncQuestMissed, syncQuestStarted } from "../../lib/progressSync";
-import { clearProgressKey, persistProgressKeys } from "../../lib/progressStore";
+import { setChecklistItemChecked, syncQuestCompleted, syncQuestMissed, syncQuestStarted } from "../../lib/progressSync";
+import { persistProgressKeys } from "../../lib/progressStore";
+import { syncAndGetStepRank, type StepRank } from "../../lib/stepRank";
 import {
   ACTIVE_TIMED_ITEM_KEY,
   applyQuestBoardCapacity,
   collectTodayCalendarItems,
+  computeFreshRankBonuses,
   computeTotalEarnedSteps,
   findNextScheduledItem,
   formatCapacityHeader,
   getChecklistItemsForDay,
   getTodayKey,
   getWeekdayName,
+  isDefaultTodayQuestTitle,
   kindAccent,
   loadTodayCompletions,
   loadTodayMissed,
   markItemComplete,
   markItemMissed,
   normalizeQuestItems,
+  questSourceLabel,
   sourceIcon,
   type CompletionEntry,
   type HomeQuestItem,
   type MissedEntry,
   type QuestKind,
 } from "../../lib/questProgress";
-import { formatDurationLabel, inferScheduledClassification, parseTimeToMinutes } from "../../lib/scheduling";
+import { formatDurationLabel, formatMinutesAsTime, getEnergyCostForDuration, getEnergyRestoreForDuration, getRequiredRecoveryBlockForDate, inferScheduledClassification, parseTimeToMinutes, TODAY_QUEST_DURATION_MINUTES } from "../../lib/scheduling";
+import { LATEST_PRE_SLEEP_INTENTION_KEY } from "../../lib/storageKeys";
 
 const mylitLogo = uiAssets.logo.mylit;
 const fireAssets = uiAssets.fires;
@@ -155,6 +160,7 @@ type UserProfile = {
   name: string;
   longTermDream?: string;
   dreamCategory?: string;
+  supplementaryCategory?: string;
   progressMeaning?: string;
   // Phase 1 tiered goals (preferred)
   specificGoal?: string;
@@ -181,10 +187,18 @@ const CHECKIN_KEY = "lit_latest_checkin";
 const TOMORROW_QUEUE_KEY = "lit_tomorrow_queue";
 const DAY_PLAN_KEY = "lit_day_plan";
 const USER_STATS_KEY = "lit_user_stats";
-const PROGRESS_QUEST_ENERGY_COST = 8;
-const RECOVERY_QUEST_ENERGY_COST = 6;
 const PASSIVE_DECAY_POINTS = 5;
 const PASSIVE_DECAY_INTERVAL_HOURS = 2;
+
+// Luna's mandatory recovery quest, triggered when energy runs low (see getMandatoryQuest).
+const MANDATORY_QUEST_TITLE = "Eat or rest to restore energy";
+const MANDATORY_QUEST_DURATION_MINUTES = 20;
+const MANDATORY_QUEST_RESTORE_ENERGY = 5;
+// Energy restored once a Luna-enforced recovery window has been served today.
+const RECOVERY_TIME_RESTORE_ENERGY = 5;
+// Progress mode triggers the recovery quest earlier than Recovery mode.
+const MANDATORY_QUEST_PROGRESS_THRESHOLD = 60;
+const MANDATORY_QUEST_RECOVERY_THRESHOLD = 30;
 
 function clampEnergy(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
@@ -278,14 +292,17 @@ export default function HomeScreen() {
   const [userStats, setUserStats] = useState<{ totalSteps?: number }>({});
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileChecked, setProfileChecked] = useState(false);
+  const [stepRank, setStepRank] = useState<StepRank | null>(null);
 
   const [dayPlanRaw, setDayPlanRaw] = useState<DayPlanRaw | null>(null);
+  const [preSleepDoneToday, setPreSleepDoneToday] = useState(false);
   const [activeItem, setActiveItem] = useState<ActiveTimedItem | null>(null);
   const [selectedItem, setSelectedItem] = useState<HomeQuestItem | null>(null);
   const [lockMessage, setLockMessage] = useState("");
   const [showQuestHelp, setShowQuestHelp] = useState(false);
   const [timeNow, setTimeNow] = useState<Date>(() => new Date());
   const [countdownNow, setCountdownNow] = useState<number>(() => Date.now());
+  const [recoveryNow, setRecoveryNow] = useState<number>(() => Date.now());
   const lockMessageTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const latestCheckInDay = latestCheckIn?.createdAt
@@ -331,6 +348,7 @@ export default function HomeScreen() {
       loadQuickThoughts();
       loadDayPlan();
       loadActiveItem();
+      loadPreSleepStatus();
     }, [])
   );
 
@@ -341,6 +359,7 @@ export default function HomeScreen() {
     loadQuickThoughts();
     loadDayPlan();
     loadActiveItem();
+    loadPreSleepStatus();
   }, []);
 
   // Keep the Day / Time Track marker on the real local time (refresh every 30s).
@@ -507,6 +526,20 @@ export default function HomeScreen() {
     }
   }
 
+  async function loadPreSleepStatus() {
+    const saved = await AsyncStorage.getItem(LATEST_PRE_SLEEP_INTENTION_KEY);
+    if (!saved) {
+      setPreSleepDoneToday(false);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(saved) as { date?: string };
+      setPreSleepDoneToday(parsed?.date === getTodayKey());
+    } catch {
+      setPreSleepDoneToday(false);
+    }
+  }
+
   async function loadActiveItem() {
     const saved = await AsyncStorage.getItem(ACTIVE_TIMED_ITEM_KEY);
 
@@ -534,7 +567,8 @@ export default function HomeScreen() {
 
   async function clearActiveItem() {
     setActiveItem(null);
-    await clearProgressKey(ACTIVE_TIMED_ITEM_KEY);
+    // Active timer is local-only (not cloud-synced), so clear it straight from AsyncStorage.
+    await AsyncStorage.removeItem(ACTIVE_TIMED_ITEM_KEY);
   }
 
   function showLockMessage() {
@@ -544,7 +578,30 @@ export default function HomeScreen() {
     lockMessageTimeout.current = setTimeout(() => setLockMessage(""), 2500);
   }
 
+  function showRecoveryLockMessage() {
+    mediumHaptic();
+    setLockMessage("Recovery time — the board unlocks again in a bit.");
+    if (lockMessageTimeout.current) clearTimeout(lockMessageTimeout.current);
+    lockMessageTimeout.current = setTimeout(() => setLockMessage(""), 2500);
+  }
+
   function openQuestItem(item: HomeQuestItem) {
+    if (item.source === "Sleep") {
+      lightHaptic();
+      router.push("/pre-sleep-intention");
+      return;
+    }
+    // Checklist items are a checkbox, not a timed quest — they can be reviewed/marked
+    // complete even while another timed quest is active or during a recovery lock.
+    if (item.source === "Checklist") {
+      lightHaptic();
+      setSelectedItem(item);
+      return;
+    }
+    if (isRecoveryLocked) {
+      showRecoveryLockMessage();
+      return;
+    }
     if (activeItem) {
       showLockMessage();
       return;
@@ -553,7 +610,24 @@ export default function HomeScreen() {
     setSelectedItem(item);
   }
 
+  async function completeChecklistItem(item: HomeQuestItem) {
+    const ok = await setChecklistItemChecked(item.id, true);
+    if (!ok) return;
+    // Also record a completion entry so this checklist item's duration/kind feeds
+    // into today's energy math (progress spends energy, recovery restores it).
+    const nextCompleted = await markItemComplete(item, completedQuests);
+    setCompletedQuests(nextCompleted);
+    await successHaptic();
+    setSelectedItem(null);
+    await loadDayPlan();
+    void trackEvent(ANALYTICS_EVENTS.quest_completed, { id: item.id, title: item.title, steps: item.steps, source: item.source });
+  }
+
   async function startTimedItem(item: HomeQuestItem) {
+    if (isRecoveryLocked) {
+      showRecoveryLockMessage();
+      return;
+    }
     if (activeItem) {
       showLockMessage();
       return;
@@ -647,11 +721,18 @@ export default function HomeScreen() {
     longTermBenchmark: profile?.longTermGoal?.trim() || profile?.goalThree?.trim() || "",
   };
 
-  const completedMandatoryTitles = completedQuests.filter(
-    (entry) => entry.title === "Eat to restore energy" || entry.title === "Relax for 30 minutes"
-  );
-  const completedNormalQuestCount = completedQuests.length - completedMandatoryTitles.length;
-  const questEnergyCost = isProgress ? PROGRESS_QUEST_ENERGY_COST : RECOVERY_QUEST_ENERGY_COST;
+  const completedMandatoryEntries = completedQuests.filter((entry) => entry.title === MANDATORY_QUEST_TITLE);
+  const completedNormalEntries = completedQuests.filter((entry) => entry.title !== MANDATORY_QUEST_TITLE);
+  // Progress completions spend energy, scaled by duration (15m=2, 30m=3, 45m=4, 1h=5).
+  // Recovery completions RESTORE energy instead, scaled by duration (15m=1, 30m=2, 45m=3, 1h=4)
+  // — recovery is meant to bring energy back up, not drain it further. Legacy completions saved
+  // before `kind` was tracked default to "progress" so historical energy math doesn't change.
+  const questEnergySpent = completedNormalEntries
+    .filter((entry) => entry.kind !== "recovery")
+    .reduce((sum, entry) => sum + getEnergyCostForDuration(entry.durationMinutes), 0);
+  const questEnergyRestored = completedNormalEntries
+    .filter((entry) => entry.kind === "recovery")
+    .reduce((sum, entry) => sum + getEnergyRestoreForDuration(entry.durationMinutes), 0);
   const passiveDecay =
     hasEnergyData && latestCheckIn?.createdAt
       ? Math.floor(
@@ -659,12 +740,28 @@ export default function HomeScreen() {
             (PASSIVE_DECAY_INTERVAL_HOURS * 60 * 60 * 1000)
         ) * PASSIVE_DECAY_POINTS
       : 0;
-  const mandatoryRecoveryBoost = completedMandatoryTitles.reduce(
-    (sum, entry) => sum + (entry.title === "Eat to restore energy" ? 15 : 10),
-    0
-  );
+  const mandatoryRecoveryBoost = completedMandatoryEntries.length * MANDATORY_QUEST_RESTORE_ENERGY;
+  // Once a Luna-enforced recovery window has been fully served today, restore +5 energy.
+  // (Computed here so it factors into the flame before generateQuests/getMandatoryQuest run.)
+  const energyTodayKey = getTodayKey();
+  const energyNowMinutes = timeNow.getHours() * 60 + timeNow.getMinutes();
+  const energyRecoveryItems = collectTodayCalendarItems(dayPlanRaw, queueItems, energyTodayKey);
+  const energyTodayQuestForRecovery = dayPlanRaw?.todayQuest?.title?.trim()
+    ? [{
+        id: dayPlanRaw.todayQuest.id ?? `today-quest-${energyTodayKey}`,
+        date: energyTodayKey,
+        startTime: dayPlanRaw.todayQuest.startTime ?? "9:00 AM",
+        durationMinutes: dayPlanRaw.todayQuest.durationMinutes ?? TODAY_QUEST_DURATION_MINUTES,
+      }]
+    : [];
+  const energyRecoveryBlock = getRequiredRecoveryBlockForDate([...energyRecoveryItems, ...energyTodayQuestForRecovery], energyTodayKey);
+  const energyRecoveryStart = energyRecoveryBlock ? parseTimeToMinutes(energyRecoveryBlock.startTime ?? null) : null;
+  const recoveryTimeRestore =
+    energyRecoveryBlock !== null && energyRecoveryStart !== null && energyNowMinutes >= energyRecoveryStart + 60
+      ? RECOVERY_TIME_RESTORE_ENERGY
+      : 0;
   const energyYield = hasEnergyData
-    ? clampEnergy(baseEnergyYield - passiveDecay - completedNormalQuestCount * questEnergyCost + mandatoryRecoveryBoost)
+    ? clampEnergy(baseEnergyYield - passiveDecay - questEnergySpent + questEnergyRestored + mandatoryRecoveryBoost + recoveryTimeRestore)
     : 0;
 
   const todayName = getWeekdayName();
@@ -742,36 +839,22 @@ export default function HomeScreen() {
   function getMandatoryQuest(): Quest | null {
     if (!hasEnergyData || isNeutral) return null;
 
-    const threshold = isProgress ? 50 : 40;
+    // Progress mode dips into recovery earlier (below 60); Recovery mode below 30.
+    const threshold = isProgress ? MANDATORY_QUEST_PROGRESS_THRESHOLD : MANDATORY_QUEST_RECOVERY_THRESHOLD;
     if (energyYield >= threshold) return null;
 
-    const eatQuestDone = completedQuests.some((entry) => entry.title === "Eat to restore energy");
-    const relaxQuestDone = completedQuests.some((entry) => entry.title === "Relax for 30 minutes");
-    const hasEaten = latestCheckIn?.eatenSinceMorning === true || eatQuestDone;
+    const alreadyDone = completedQuests.some((entry) => entry.title === MANDATORY_QUEST_TITLE);
+    if (alreadyDone) return null;
 
-    if (!hasEaten && !eatQuestDone) {
-      return {
-        title: "Eat to restore energy",
-        type: "Mandatory",
-        steps: 0,
-        restoreEnergy: 15,
-        mandatory: true,
-        description: "Have a meal or snack so your energy can recover.",
-      };
-    }
-
-    if (!relaxQuestDone) {
-      return {
-        title: "Relax for 30 minutes",
-        type: "Mandatory",
-        steps: 0,
-        restoreEnergy: 10,
-        mandatory: true,
-        description: "Pause and recover before spending more energy.",
-      };
-    }
-
-    return null;
+    return {
+      title: MANDATORY_QUEST_TITLE,
+      type: "Mandatory",
+      steps: 1,
+      durationMinutes: MANDATORY_QUEST_DURATION_MINUTES,
+      restoreEnergy: MANDATORY_QUEST_RESTORE_ENERGY,
+      mandatory: true,
+      description: "Luna's orders: take 20 minutes to eat or rest so your energy can recover.",
+    };
   }
 
   const todayKey = getTodayKey();
@@ -793,6 +876,7 @@ export default function HomeScreen() {
           todayKey,
           completedIds,
           missedIds,
+          preSleepIntentionDoneToday: preSleepDoneToday,
         })
       : [];
 
@@ -805,10 +889,41 @@ export default function HomeScreen() {
   const remainingMs = activeItem ? Math.max(0, activeItem.endsAt - countdownNow) : 0;
   const timerFinished = activeItem !== null && remainingMs <= 0;
   const isBoardLocked = activeItem !== null;
+  const todayQuestUnset = isDefaultTodayQuestTitle(dayPlanRaw?.todayQuest?.title);
 
   const nowMinutes = timeNow.getHours() * 60 + timeNow.getMinutes();
   const timeTrackPosition = getCurrentTimeTrackPosition(timeNow);
   const nextItem = activeItem ? findNextScheduledItem(availableItems, activeItem.id, nowMinutes) : null;
+
+  // 2 hours of back-to-back scheduled items today auto-locks the board for a 1-hour recovery window.
+  const todayQuestForRecovery = dayPlanRaw?.todayQuest?.title?.trim()
+    ? [{
+        id: dayPlanRaw.todayQuest.id ?? `today-quest-${todayKey}`,
+        date: todayKey,
+        startTime: dayPlanRaw.todayQuest.startTime ?? "9:00 AM",
+        durationMinutes: dayPlanRaw.todayQuest.durationMinutes ?? TODAY_QUEST_DURATION_MINUTES,
+      }]
+    : [];
+  const requiredRecoveryToday = getRequiredRecoveryBlockForDate([...calendarItems, ...todayQuestForRecovery], todayKey);
+  const recoveryStartMinutes = requiredRecoveryToday ? parseTimeToMinutes(requiredRecoveryToday.startTime ?? null) : null;
+  const isRecoveryLocked =
+    requiredRecoveryToday !== null && recoveryStartMinutes !== null && nowMinutes >= recoveryStartMinutes && nowMinutes < recoveryStartMinutes + 60;
+
+  // Countdown to when Luna's 1-hour recovery lock lifts, ticking every second while locked.
+  const recoveryEndsMs = (() => {
+    if (recoveryStartMinutes === null) return null;
+    const endOfLock = new Date();
+    endOfLock.setHours(0, 0, 0, 0);
+    return endOfLock.getTime() + (recoveryStartMinutes + 60) * 60 * 1000;
+  })();
+  const recoveryRemainingMs = recoveryEndsMs !== null ? Math.max(0, recoveryEndsMs - recoveryNow) : 0;
+
+  useEffect(() => {
+    if (!isRecoveryLocked) return;
+    setRecoveryNow(Date.now());
+    const id = setInterval(() => setRecoveryNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [isRecoveryLocked]);
 
   const currentBackground = isRecovery
     ? uiAssets.backgrounds.recovery
@@ -834,7 +949,14 @@ export default function HomeScreen() {
   });
   const completedCount = completedQuests.length;
   const totalCount = allHomeItems.length + completedCount;
-  const rank = totalEarnedSteps >= 100 ? "Consistent" : totalEarnedSteps >= 5 ? "Explorer" : "Beginner";
+  // Same bonus-inclusive total the Stats page ranks with, so Home and Stats agree.
+  const totalStepsForRank = totalEarnedSteps + computeFreshRankBonuses(totalEarnedSteps).rankBonusPool;
+  const rankDisplay = stepRank ? `#${stepRank.rank}` : "Unranked";
+
+  useEffect(() => {
+    if (!profileChecked) return;
+    void syncAndGetStepRank(totalStepsForRank).then(setStepRank);
+  }, [profileChecked, totalStepsForRank]);
 
   if (!profileChecked) return null;
 
@@ -982,7 +1104,7 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               </View>
 
-              <View style={[styles.questBoard, { borderColor: isBoardLocked && activeItem ? kindAccent(activeItem.kind) : theme.accent }]}>
+              <View style={[styles.questBoard, { borderColor: isBoardLocked && activeItem ? kindAccent(activeItem.kind) : isRecoveryLocked ? "#C4A7FF" : theme.accent }]}>
                 <View style={styles.questHeaderRow}>
                   <View style={styles.questTitleRow}>
                     <Text style={[styles.questTitle, { color: theme.accent }]}>{isRecovery ? "+ QUEST BOARD +" : "⚔ QUEST BOARD"}</Text>
@@ -993,9 +1115,18 @@ export default function HomeScreen() {
                     ) : null}
                   </View>
                   <Text style={[styles.questCount, { color: theme.accent }]}>
-                    {isNeutral ? "LOCKED" : isBoardLocked ? "LOCKED" : capacityLabel}
+                    {isNeutral ? "LOCKED" : isBoardLocked ? "LOCKED" : isRecoveryLocked ? "RECOVERY" : capacityLabel}
                   </Text>
                 </View>
+
+                {!isNeutral && todayQuestUnset ? (
+                  <TouchableOpacity
+                    style={[styles.setMainQuestBtn, { borderColor: theme.accent }]}
+                    onPress={() => navigateWithHaptic("/day-plan")}
+                  >
+                    <Text style={[styles.setMainQuestBtnText, { color: theme.accent }]}>⚔ SET TODAY’S MAIN QUEST</Text>
+                  </TouchableOpacity>
+                ) : null}
 
                 {isNeutral ? (
                   <View style={styles.questLockedCard}>
@@ -1023,8 +1154,15 @@ export default function HomeScreen() {
                       {formatCountdown(remainingMs)}
                     </Text>
                     <Text style={styles.activeMeta} numberOfLines={1}>
-                      {activeItem.source} · {formatDurationLabel(activeItem.durationMinutes)} · +{activeItem.steps} steps
+                      {questSourceLabel(activeItem.source)} · {formatDurationLabel(activeItem.durationMinutes)} · +{activeItem.steps} steps
                     </Text>
+
+                    <TouchableOpacity
+                      style={[styles.waitingRoomBtn, { borderColor: theme.accent }]}
+                      onPress={() => router.push("/waiting-room")}
+                    >
+                      <Text style={[styles.waitingRoomBtnText, { color: theme.accent }]}>🕯️ Wait in Study Room</Text>
+                    </TouchableOpacity>
 
                     {!timerFinished ? (
                       <>
@@ -1033,7 +1171,7 @@ export default function HomeScreen() {
                             <Text style={[styles.nextLabel, { color: theme.accent }]}>NEXT</Text>
                             <Text style={styles.nextTitle} numberOfLines={1}>{nextItem.title}</Text>
                             <Text style={styles.nextMeta} numberOfLines={1}>
-                              {nextItem.source}{nextItem.scheduledTime ? ` · ${nextItem.scheduledTime}` : ""} · {formatDurationLabel(nextItem.durationMinutes)}
+                              {questSourceLabel(nextItem.source)}{nextItem.scheduledTime ? ` · ${nextItem.scheduledTime}` : ""} · {formatDurationLabel(nextItem.durationMinutes)}
                             </Text>
                           </View>
                         ) : (
@@ -1052,10 +1190,30 @@ export default function HomeScreen() {
                       </View>
                     )}
                   </View>
+                ) : isRecoveryLocked ? (
+                  <View style={[styles.activeCard, { borderColor: "#C4A7FF" }]}>
+                    <View style={styles.recoveryHeaderRow}>
+                      <Image source={uiAssets.guides.luna} style={styles.recoveryLunaAvatar} resizeMode="contain" />
+                      <Text style={[styles.activeLockLabel, { color: "#C4A7FF" }]}>RECOVERY TIME</Text>
+                    </View>
+                    <Text style={styles.recoveryLockText}>
+                      That was 2 hours of straight tasks — nice work. The board locks for 1 hour so you can actually rest.
+                    </Text>
+                    <Text style={[styles.countdownText, { color: "#C4A7FF" }]}>{formatCountdown(recoveryRemainingMs)}</Text>
+                    <Text style={styles.recoveryLockHint}>
+                      Back on the board at {recoveryStartMinutes !== null ? formatMinutesAsTime(recoveryStartMinutes + 60) : "a bit"}. Stretch, drink some water, step outside, or just breathe.
+                    </Text>
+                    <TouchableOpacity
+                      style={[styles.waitingRoomBtn, { borderColor: "#C4A7FF" }]}
+                      onPress={() => router.push("/waiting-room")}
+                    >
+                      <Text style={[styles.waitingRoomBtnText, { color: "#C4A7FF" }]}>🕯️ Wait in Study Room</Text>
+                    </TouchableOpacity>
+                  </View>
                 ) : availableItems.length === 0 ? (
                   <View style={styles.questLockedCard}>
                     <Text style={styles.questLockedTitle}>No quests yet</Text>
-                    <Text style={styles.questLockedText} numberOfLines={2}>Add items in Day Plan or Quick Thoughts to fill your board.</Text>
+                    <Text style={styles.questLockedText} numberOfLines={2}>Add items in Day Plan or Quests to fill your board.</Text>
                   </View>
                 ) : (
                   <>
@@ -1073,7 +1231,7 @@ export default function HomeScreen() {
                           <Text style={styles.questText} numberOfLines={1}>{item.title}</Text>
                           <View style={styles.questMetaRow}>
                             <Text style={[styles.questMeta, { color: theme.soft }]} numberOfLines={1}>
-                              {item.source} · {formatDurationLabel(item.durationMinutes)}{item.scheduledTime ? ` · ${item.scheduledTime}` : ""}
+                              {questSourceLabel(item.source)} · {formatDurationLabel(item.durationMinutes)}{item.scheduledTime ? ` · ${item.scheduledTime}` : ""}
                             </Text>
                             <Text style={[styles.questSteps, { color: kindAccent(item.kind) }]}>+{item.steps}</Text>
                           </View>
@@ -1091,10 +1249,10 @@ export default function HomeScreen() {
 
               <View style={[styles.statsBar, { borderColor: theme.accent }]}>
                 <View style={styles.statCell}>
-                  <Text style={styles.statIcon}>🛡️</Text>
+                  <Text style={styles.statIcon}>🏆</Text>
                   <View>
                     <Text style={[styles.statLabel, { color: theme.accent }]}>RANK</Text>
-                    <Text style={styles.statValue}>{rank}</Text>
+                    <Text style={styles.statValue}>{rankDisplay}</Text>
                   </View>
                 </View>
                 <View style={styles.statDivider} />
@@ -1128,7 +1286,7 @@ export default function HomeScreen() {
                   <Text style={styles.modalTitle}>How the Quest Board works</Text>
                   <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false} bounces={false}>
                     <Text style={styles.modalDescription}>
-                      Quest Board shows what to focus on now. It can include MYLIT quests, Day Plan items, checklist items, and Quick Thoughts. Start one timed item at a time; the board locks until it ends. Complete gives steps. Missed? helps you reflect without punishment. To protect energy, MYLIT limits long progress streaks — after about 2 hours, recovery comes before more work.
+                      Quest Board shows what to focus on now. It can include MYLIT quests, Day Plan items, checklist items, and Quests you scheduled. Quests are timed — start one at a time and the board locks until it ends. Checklist items are just checked off. Steps are based on duration: 15 min earns +1, 30 min earns +2, 45 min earns +3, 1 hr earns +4. Missed? helps you reflect without punishment. To protect energy, MYLIT limits long progress streaks — after 2 hours of back-to-back tasks, the board locks for a 1-hour recovery break before more work.
                     </Text>
                   </ScrollView>
                   <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowQuestHelp(false)}>
@@ -1148,13 +1306,13 @@ export default function HomeScreen() {
                 {selectedItem ? (
                   <View style={[styles.modalPanel, { borderColor: kindAccent(selectedItem.kind) }]}>
                     <Text style={[styles.modalSource, { color: kindAccent(selectedItem.kind) }]}>
-                      {selectedItem.source.toUpperCase()}
+                      {questSourceLabel(selectedItem.source).toUpperCase()}
                     </Text>
                     <Text style={styles.modalTitle}>{selectedItem.title}</Text>
 
                     <View style={styles.modalMetaGrid}>
                       <Text style={styles.modalMeta}>Type: {selectedItem.kind === "recovery" ? "Recovery" : "Progress"}</Text>
-                      <Text style={styles.modalMeta}>Source: {selectedItem.source}</Text>
+                      <Text style={styles.modalMeta}>Source: {questSourceLabel(selectedItem.source)}</Text>
                       <Text style={styles.modalMeta}>Duration: {formatDurationLabel(selectedItem.durationMinutes)}</Text>
                       <Text style={styles.modalMeta}>Steps possible: +{selectedItem.steps}</Text>
                       {selectedItem.scheduledTime ? (
@@ -1172,9 +1330,15 @@ export default function HomeScreen() {
                       <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setSelectedItem(null)}>
                         <Text style={styles.modalCancelText}>CLOSE</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity style={styles.modalStartBtn} onPress={() => startTimedItem(selectedItem)}>
-                        <Text style={styles.modalStartText}>START</Text>
-                      </TouchableOpacity>
+                      {selectedItem.source === "Checklist" ? (
+                        <TouchableOpacity style={styles.modalStartBtn} onPress={() => void completeChecklistItem(selectedItem)}>
+                          <Text style={styles.modalStartText}>MARK COMPLETE</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <TouchableOpacity style={styles.modalStartBtn} onPress={() => startTimedItem(selectedItem)}>
+                          <Text style={styles.modalStartText}>START</Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                     <View style={styles.modalButtonRow}>
                       <TouchableOpacity
@@ -1620,6 +1784,18 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "900",
   },
+  setMainQuestBtn: {
+    borderWidth: 2,
+    backgroundColor: "#111827",
+    paddingVertical: 9,
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  setMainQuestBtnText: {
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.4,
+  },
   questRow: {
     minHeight: 39,
     backgroundColor: "rgba(15, 23, 42, 0.94)",
@@ -1712,6 +1888,30 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
     textTransform: "uppercase",
   },
+  recoveryHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  recoveryLunaAvatar: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+  },
+  recoveryLockText: {
+    color: "#F8F1D7",
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 18,
+    marginTop: 8,
+  },
+  recoveryLockHint: {
+    color: "#C4A7FF",
+    fontSize: 11,
+    fontWeight: "700",
+    lineHeight: 16,
+    marginTop: 6,
+  },
   kindPill: {
     borderWidth: 2,
     backgroundColor: "rgba(9, 14, 24, 0.95)",
@@ -1742,6 +1942,19 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "800",
     marginTop: 1,
+  },
+  waitingRoomBtn: {
+    borderWidth: 2,
+    borderRadius: 4,
+    paddingVertical: 8,
+    alignItems: "center",
+    marginTop: 8,
+    backgroundColor: "rgba(15, 23, 42, 0.6)",
+  },
+  waitingRoomBtnText: {
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.4,
   },
   nextRow: {
     marginTop: 8,

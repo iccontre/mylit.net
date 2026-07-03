@@ -22,21 +22,25 @@ import { persistProgressKeys } from "../lib/progressStore";
 import { AWARENESS_CHECKS_KEY } from "../lib/storageKeys";
 
 const LUNA_MEDITATIONS_BULLETS = [
-  "Meditation/Awareness is for grounding and attention — not traditional seated meditation.",
-  "Name where focus went, what pulled it away, and what helped you return.",
+  "Meditation/Awareness is for grounding and honesty — not traditional seated meditation.",
+  "Name your current mood, then say whatever is true for you right now.",
   "Honest answers are more useful than perfect ones.",
-  "Patterns in what pulls you away reveal important data about your environment.",
   "Use this after a work session, before bed, or any time you want clarity.",
 ];
 
+const MOOD_OPTIONS = ["Calm", "Tired", "Stressed", "Restless", "Hopeful", "Heavy", "Focused", "Unsure"];
+
 type AwarenessCheck = {
   id: string;
-  attentionFocus: string;
-  automaticOrIntentional: "Mostly automatic" | "Mixed" | "Mostly intentional";
-  pulledAway: string;
-  broughtBack: string;
-  presentMoment: string;
+  mood?: string;
+  truth?: string;
   createdAt: string;
+  // Legacy fields from the previous multi-question layout — kept only so old
+  // entries still render; never written by new saves.
+  attentionFocus?: string;
+  automaticOrIntentional?: string;
+  pulledAway?: string;
+  broughtBack?: string;
 };
 
 const pixelFont = Platform.select({
@@ -50,11 +54,8 @@ export default function AwarenessCheckScreen() {
   const router = useRouter();
   const mobile = useMobileFrame();
 
-  const [attentionFocus, setAttentionFocus] = useState("");
-  const [automaticOrIntentional, setAutomaticOrIntentional] =
-    useState<"Mostly automatic" | "Mixed" | "Mostly intentional">("Mixed");
-  const [pulledAway, setPulledAway] = useState("");
-  const [broughtBack, setBroughtBack] = useState("");
+  const [mood, setMood] = useState("");
+  const [truth, setTruth] = useState("");
   const [checks, setChecks] = useState<AwarenessCheck[]>([]);
   const [showInfo, setShowInfo] = useState(false);
 
@@ -79,17 +80,12 @@ export default function AwarenessCheckScreen() {
   }
 
   async function saveAwarenessCheck() {
-    const hasEntry = attentionFocus.trim() || pulledAway.trim() || broughtBack.trim();
-
-    if (!hasEntry) return;
+    if (!truth.trim()) return;
 
     const newCheck: AwarenessCheck = {
       id: String(Date.now()),
-      attentionFocus: attentionFocus.trim(),
-      automaticOrIntentional,
-      pulledAway: pulledAway.trim(),
-      broughtBack: broughtBack.trim(),
-      presentMoment: "",
+      mood,
+      truth: truth.trim(),
       createdAt: new Date().toLocaleString(),
     };
 
@@ -98,10 +94,8 @@ export default function AwarenessCheckScreen() {
     setChecks(nextChecks);
     await persistProgressKeys({ [AWARENESS_CHECKS_KEY]: JSON.stringify(nextChecks) });
 
-    setAttentionFocus("");
-    setAutomaticOrIntentional("Mixed");
-    setPulledAway("");
-    setBroughtBack("");
+    setMood("");
+    setTruth("");
 
     await successHaptic();
   }
@@ -110,12 +104,6 @@ export default function AwarenessCheckScreen() {
     setChecks([]);
     await persistProgressKeys({ [AWARENESS_CHECKS_KEY]: JSON.stringify([]) });
   }
-
-  const intentionOptions: AwarenessCheck["automaticOrIntentional"][] = [
-    "Mostly automatic",
-    "Mixed",
-    "Mostly intentional",
-  ];
 
   return (
     <View style={[styles.pageRoot, mobile.pageRootStyle]}>
@@ -145,27 +133,15 @@ export default function AwarenessCheckScreen() {
             </View>
 
             <View style={styles.card}>
-              <Text style={styles.label}>Where did your attention go today?</Text>
-              <TextInput
-                style={[formStyles.textArea, styles.largeTextArea]}
-                multiline
-                scrollEnabled
-                textAlignVertical="top"
-                placeholder="School, work, your phone, stress, a person, a goal, or just getting through the day."
-                placeholderTextColor="#94A3B8"
-                value={attentionFocus}
-                onChangeText={setAttentionFocus}
-              />
-
-              <Text style={styles.label}>How did it feel?</Text>
+              <Text style={styles.label}>Current mood:</Text>
               <View style={styles.optionRow}>
-                {intentionOptions.map((option) => {
-                  const isSelected = automaticOrIntentional === option;
+                {MOOD_OPTIONS.map((option) => {
+                  const isSelected = mood === option;
                   return (
                     <TouchableOpacity
                       key={option}
                       style={[styles.option, isSelected && styles.selectedOption]}
-                      onPress={() => setAutomaticOrIntentional(option)}
+                      onPress={() => setMood(isSelected ? "" : option)}
                     >
                       <Text style={isSelected ? styles.selectedOptionText : styles.optionText}>
                         {option}
@@ -175,31 +151,19 @@ export default function AwarenessCheckScreen() {
                 })}
               </View>
 
-              <Text style={styles.label}>What pulled you away?</Text>
+              <Text style={styles.label}>Be as honest as you want. Express your truth:</Text>
               <TextInput
                 style={[formStyles.textArea, styles.largeTextArea]}
                 multiline
                 scrollEnabled
                 textAlignVertical="top"
-                placeholder="Scrolling, stress, tiredness, comparison, overthinking, or not knowing where to start."
+                placeholder="Express your truth…"
                 placeholderTextColor="#94A3B8"
-                value={pulledAway}
-                onChangeText={setPulledAway}
+                value={truth}
+                onChangeText={setTruth}
               />
 
-              <Text style={styles.label}>What helped you come back?</Text>
-              <TextInput
-                style={[formStyles.textArea, styles.largeTextArea]}
-                multiline
-                scrollEnabled
-                textAlignVertical="top"
-                placeholder="A reminder, a person, music, journaling, a walk, or one small task."
-                placeholderTextColor="#94A3B8"
-                value={broughtBack}
-                onChangeText={setBroughtBack}
-              />
-
-              <TouchableOpacity style={styles.saveButton} onPress={saveAwarenessCheck}>
+              <TouchableOpacity style={[styles.saveButton, !truth.trim() && styles.saveButtonDisabled]} disabled={!truth.trim()} onPress={saveAwarenessCheck}>
                 <Text style={styles.saveButtonText}>Save Meditation</Text>
               </TouchableOpacity>
             </View>
@@ -213,20 +177,24 @@ export default function AwarenessCheckScreen() {
             ) : (
               checks.map((check) => (
                 <View key={check.id} style={styles.entryCard}>
-                  <Text style={styles.entryTitle}>{check.automaticOrIntentional}</Text>
+                  <Text style={styles.entryTitle}>{check.mood || check.automaticOrIntentional || "Meditation"}</Text>
                   <Text style={styles.entryDate}>{check.createdAt}</Text>
 
-                  {check.attentionFocus ? (
-                    <Text style={styles.entryText}>Attention: {check.attentionFocus}</Text>
-                  ) : null}
-
-                  {check.pulledAway ? (
-                    <Text style={styles.entryText}>Pulled away: {check.pulledAway}</Text>
-                  ) : null}
-
-                  {check.broughtBack ? (
-                    <Text style={styles.entryText}>Came back: {check.broughtBack}</Text>
-                  ) : null}
+                  {check.truth ? (
+                    <Text style={styles.entryText}>{check.truth}</Text>
+                  ) : (
+                    <>
+                      {check.attentionFocus ? (
+                        <Text style={styles.entryText}>Attention: {check.attentionFocus}</Text>
+                      ) : null}
+                      {check.pulledAway ? (
+                        <Text style={styles.entryText}>Pulled away: {check.pulledAway}</Text>
+                      ) : null}
+                      {check.broughtBack ? (
+                        <Text style={styles.entryText}>Came back: {check.broughtBack}</Text>
+                      ) : null}
+                    </>
+                  )}
                 </View>
               ))
             )}
@@ -398,7 +366,10 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   optionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: 8,
+    marginBottom: 4,
   },
   option: {
     backgroundColor: "rgba(15, 23, 42, 0.96)",
@@ -432,6 +403,10 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: "center",
     marginTop: 16,
+  },
+  saveButtonDisabled: {
+    backgroundColor: "#334155",
+    borderColor: "#475569",
   },
   saveButtonText: {
     color: "#0F172A",

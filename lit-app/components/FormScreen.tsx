@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef } from "react";
+import { type ReactNode, useRef } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -37,21 +37,10 @@ export function FormScreen({
   const basePadding = resolvePaddingBottom(contentContainerStyle, scrollPaddingBottom);
   const bottomPadding = basePadding + keyboardInset;
 
-  useEffect(() => {
-    if (Platform.OS !== "web" || typeof document === "undefined") return;
-
-    const scrollFocusedField = (target: EventTarget | null) => {
-      if (!(target instanceof HTMLElement)) return;
-      if (target.tagName !== "INPUT" && target.tagName !== "TEXTAREA") return;
-      window.setTimeout(() => {
-        target.scrollIntoView({ block: "center", behavior: "smooth" });
-      }, 120);
-    };
-
-    const onFocusIn = (event: FocusEvent) => scrollFocusedField(event.target);
-    document.addEventListener("focusin", onFocusIn);
-    return () => document.removeEventListener("focusin", onFocusIn);
-  }, []);
+  // No manual scrollIntoView here on purpose: a JS-driven scroll fired mid-animation
+  // while iOS is opening the keyboard fights the browser's own focus-scroll behavior
+  // and was closing the keyboard right after it opened. Bottom padding above is enough
+  // to keep the focused field clear of the keyboard/nav without a second scroll actor.
 
   const contentStyle = [
     styles.content,

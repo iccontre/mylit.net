@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Image,
   Platform,
@@ -70,7 +70,16 @@ function getTodayKey() {
   return new Date().toLocaleDateString("en-CA");
 }
 
+function getYesterdayKey() {
+  const date = new Date();
+  date.setDate(date.getDate() - 1);
+  return date.toLocaleDateString("en-CA");
+}
+
 const theme = { accent: "#FBBF24", glow: "#FEF3C7", panel: "rgba(18, 16, 12, 0.94)", soft: "#FDE68A", active: "rgba(58, 42, 10, 0.94)" };
+
+// Morning Reflection is a start-of-day ritual — it stays locked until 7:00 AM local time.
+const MORNING_UNLOCK_HOUR = 7;
 
 export default function MorningIntentionReflectionScreen() {
   const router = useRouter();
@@ -81,16 +90,37 @@ export default function MorningIntentionReflectionScreen() {
   const [sleepHours, setSleepHours] = useState<"none" | "7hrs" | "8.5hrs">("none");
   const [morningSupport, setMorningSupport] = useState<string[]>([]);
   const [showInfo, setShowInfo] = useState(false);
+  const [now, setNow] = useState<Date>(() => new Date());
+
+  const morningUnlocked = now.getHours() >= MORNING_UNLOCK_HOUR;
 
   useFocusEffect(
     useCallback(() => {
       loadLatestIntention();
+      setNow(new Date());
     }, [])
   );
 
+  // Re-check the time each minute so the page auto-unlocks at 7:00 AM without a reload.
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(id);
+  }, []);
+
   async function loadLatestIntention() {
     const saved = await AsyncStorage.getItem(LATEST_PRE_SLEEP_INTENTION_KEY);
-    setLatestIntention(saved ? JSON.parse(saved) : null);
+    if (!saved) {
+      setLatestIntention(null);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(saved) as PreSleepIntention;
+      // Only surface an intention set last night — an older, stale intention
+      // should not keep showing up on later mornings.
+      setLatestIntention(parsed.date === getYesterdayKey() ? parsed : null);
+    } catch {
+      setLatestIntention(null);
+    }
   }
 
   async function successHaptic() {
@@ -110,6 +140,7 @@ export default function MorningIntentionReflectionScreen() {
   }
 
   async function saveReflection() {
+    if (!morningUnlocked) return;
     const reflection: MorningIntentionReflection = {
       id: String(Date.now()),
       date: getTodayKey(),
@@ -183,62 +214,74 @@ export default function MorningIntentionReflectionScreen() {
               </View>
             )}
 
-            <View style={[styles.panel, { borderColor: theme.accent }]}>
-              <Text style={styles.label}>Morning reflection</Text>
-              <TextInput
-                style={[formStyles.textArea, styles.textArea]}
-                multiline
-                scrollEnabled
-                textAlignVertical="top"
-                placeholder="How are you feeling this morning? What is on your mind?"
-                placeholderTextColor="#94A3B8"
-                value={reflectionText}
-                onChangeText={setReflectionText}
-              />
-            </View>
-
-            <View style={[styles.panel, { borderColor: theme.accent }]}>
-              <Text style={styles.label}>How much did you sleep?</Text>
-              {(["none", "7hrs", "8.5hrs"] as const).map((option) => {
-                const labels: Record<string, string> = {
-                  none: "Less than 7 hrs",
-                  "7hrs": "At least 7 hrs · +1 step",
-                  "8.5hrs": "More than 8.5 hrs · +2 steps",
-                };
-                const selected = sleepHours === option;
-                return (
-                  <TouchableOpacity
-                    key={option}
-                    style={[styles.option, selected && { backgroundColor: theme.active, borderColor: theme.accent }]}
-                    onPress={() => setSleepHours(option)}
-                  >
-                    <Text style={selected ? [styles.optionSelectedText, { color: theme.glow }] : styles.optionText}>{labels[option]}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <View style={[styles.panel, { borderColor: theme.accent }]}>
-              <Text style={styles.label}>Morning support</Text>
-              <View style={styles.optionWrap}>
-                {MORNING_SUPPORT_OPTIONS.map((option) => {
-                  const selected = morningSupport.includes(option);
-                  return (
-                    <TouchableOpacity
-                      key={option}
-                      style={[styles.option, selected && { backgroundColor: theme.active, borderColor: theme.accent }]}
-                      onPress={() => toggleMorningSupport(option)}
-                    >
-                      <Text style={selected ? [styles.optionSelectedText, { color: theme.glow }] : styles.optionText}>{option}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
+            {!morningUnlocked ? (
+              <View style={[styles.lockedCard, { borderColor: theme.accent }]}>
+                <Text style={styles.lockedIcon}>🌙</Text>
+                <Text style={[styles.lockedTitle, { color: theme.glow }]}>MORNING REFLECTION LOCKED</Text>
+                <Text style={styles.lockedText}>
+                  This ritual opens at 7:00 AM. Rest a little longer, then return to reflect on your night and set the day.
+                </Text>
               </View>
-            </View>
+            ) : (
+              <>
+                <View style={[styles.panel, { borderColor: theme.accent }]}>
+                  <Text style={styles.label}>Morning reflection</Text>
+                  <TextInput
+                    style={[formStyles.textArea, styles.textArea]}
+                    multiline
+                    scrollEnabled
+                    textAlignVertical="top"
+                    placeholder="What do you need this morning?"
+                    placeholderTextColor="#94A3B8"
+                    value={reflectionText}
+                    onChangeText={setReflectionText}
+                  />
+                </View>
 
-            <TouchableOpacity style={[styles.saveButton, { borderColor: theme.accent }]} onPress={saveReflection}>
-              <Text style={styles.saveButtonText}>Save Reflection</Text>
-            </TouchableOpacity>
+                <View style={[styles.panel, { borderColor: theme.accent }]}>
+                  <Text style={styles.label}>How much did you sleep?</Text>
+                  {(["none", "7hrs", "8.5hrs"] as const).map((option) => {
+                    const labels: Record<string, string> = {
+                      none: "Less than 7 hrs",
+                      "7hrs": "At least 7 hrs · +1 step",
+                      "8.5hrs": "More than 8.5 hrs · +2 steps",
+                    };
+                    const selected = sleepHours === option;
+                    return (
+                      <TouchableOpacity
+                        key={option}
+                        style={[styles.option, selected && { backgroundColor: theme.active, borderColor: theme.accent }]}
+                        onPress={() => setSleepHours(option)}
+                      >
+                        <Text style={selected ? [styles.optionSelectedText, { color: theme.glow }] : styles.optionText}>{labels[option]}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+
+                <View style={[styles.panel, { borderColor: theme.accent }]}>
+                  <Text style={styles.label}>Morning support</Text>
+                  <View style={styles.optionWrap}>
+                    {MORNING_SUPPORT_OPTIONS.map((option) => {
+                      const selected = morningSupport.includes(option);
+                      return (
+                        <TouchableOpacity
+                          key={option}
+                          style={[styles.option, selected && { backgroundColor: theme.active, borderColor: theme.accent }]}
+                          onPress={() => toggleMorningSupport(option)}
+                        >
+                          <Text style={selected ? [styles.optionSelectedText, { color: theme.glow }] : styles.optionText}>{option}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                <TouchableOpacity style={[styles.saveButton, { borderColor: theme.accent }]} onPress={saveReflection}>
+                  <Text style={styles.saveButtonText}>Save Reflection</Text>
+                </TouchableOpacity>
+              </>
+            )}
 
             <TouchableOpacity style={styles.backButton} onPress={() => router.push("/sleep")}>
               <Text style={styles.backButtonText}>Back to Sleep Hub</Text>
@@ -401,6 +444,33 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     padding: 14,
     marginBottom: 10,
+  },
+  lockedCard: {
+    backgroundColor: "rgba(8, 13, 24, 0.96)",
+    borderRadius: 6,
+    borderWidth: 3,
+    padding: 18,
+    marginBottom: 10,
+    alignItems: "center",
+  },
+  lockedIcon: {
+    fontSize: 34,
+    marginBottom: 8,
+  },
+  lockedTitle: {
+    fontFamily: pixelFont,
+    fontSize: 15,
+    fontWeight: "900",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  lockedText: {
+    color: "#E2E8F0",
+    fontFamily: pixelFont,
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: "700",
+    textAlign: "center",
   },
   emptyTitle: {
     fontFamily: pixelFont,

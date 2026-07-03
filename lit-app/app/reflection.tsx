@@ -116,7 +116,7 @@ export default function ReflectionScreen() {
                 multiline
                 scrollEnabled
                 textAlignVertical="top"
-                placeholder="Energy, timing, stress, distraction, fear, or something else."
+                placeholder="What happened, and what can change?"
                 placeholderTextColor="#94A3B8"
                 value={whatGotInTheWay}
                 onChangeText={setWhatGotInTheWay}

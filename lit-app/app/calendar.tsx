@@ -1,13 +1,30 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { BottomNav } from "../components/BottomNav";
 import { uiAssets } from "../constants/uiAssets";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
-import { collectDayPlanScheduledItems, collectQuickThoughtScheduledItems, formatDurationLabel, getDateKey, getQuickThoughtSteps, inferScheduledClassification, parseDurationMinutes, parseSleepGuideTime, parseTimeToMinutes, type ScheduledClassification, type ScheduledQuestLike } from "../lib/scheduling";
+import { setChecklistItemChecked } from "../lib/progressSync";
+import {
+  collectDayPlanScheduledItems,
+  collectQuickThoughtScheduledItems,
+  formatDurationLabel,
+  getDateKey,
+  getQuickThoughtSteps,
+  getRequiredRecoveryBlockForDate,
+  getStepsForDuration,
+  inferScheduledClassification,
+  parseDurationMinutes,
+  parseSleepGuideTime,
+  parseTimeToMinutes,
+  TODAY_QUEST_DURATION_MINUTES,
+  TODAY_QUEST_STEPS,
+  type ScheduledClassification,
+  type ScheduledQuestLike,
+} from "../lib/scheduling";
 
 type WeekdayName = "Sunday" | "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "Saturday";
 type EventTone = "gold" | "purple" | "blue" | "green";
@@ -187,8 +204,15 @@ export default function CalendarScreen() {
 
   useEffect(() => {
     void trackEvent(ANALYTICS_EVENTS.calendar_opened);
-    loadCalendarData();
   }, []);
+
+  // Reload on every focus so a Today's Quest (or checklist item) saved elsewhere
+  // appears here immediately instead of showing a stale snapshot.
+  useFocusEffect(
+    useCallback(() => {
+      loadCalendarData();
+    }, [])
+  );
 
   async function loadCalendarData() {
     const [queue, plan, checkIn] = await Promise.all([
@@ -230,34 +254,39 @@ export default function CalendarScreen() {
     events.push(...sleepGuideEvents(latestCheckIn, date));
 
     const todayQuest = dayPlan?.todayQuest;
+    const todayQuestDurationMinutes = todayQuest
+      ? parseDurationMinutes(todayQuest.durationMinutes ?? todayQuest.duration, TODAY_QUEST_DURATION_MINUTES)
+      : TODAY_QUEST_DURATION_MINUTES;
+    const todayQuestSteps = todayQuest?.steps ?? TODAY_QUEST_STEPS;
     if (todayQuest && (todayQuest.date || getDateKey()) === dateKey && todayQuest.title?.trim()) {
       const classification = normalizeClassification(todayQuest.kind);
       events.push({
         id: todayQuest.id || `${dateKey}-today-quest`,
         title: todayQuest.title,
-        cellLabel: "Today Quest +2",
+        cellLabel: `Today Quest +${todayQuestSteps}`,
         source: "Day Plan / Quest Board",
         date: dateKey,
         dayLabel,
         startTime: todayQuest.startTime || "9:00 AM",
         duration: todayQuest.duration || "1 hr",
-        durationMinutes: parseDurationMinutes(todayQuest.durationMinutes ?? todayQuest.duration, 60),
-        steps: 2,
+        durationMinutes: todayQuestDurationMinutes,
+        steps: todayQuestSteps,
         classification,
         tone: eventTone(classification),
         status: todayQuest.status || "scheduled",
-        note: "This is the actual Day Plan quest. It appears on Quest Board and earns +2 steps.",
+        note: `This is the actual Day Plan quest. It appears on Quest Board and earns +${todayQuestSteps} steps.`,
         priority: 1,
       });
     }
 
-    quickThoughtItems.filter((item) => item.date === dateKey).forEach((item: ScheduledQuestLike) => {
+    const quickThoughtItemsForDay = quickThoughtItems.filter((item) => item.date === dateKey);
+    quickThoughtItemsForDay.forEach((item: ScheduledQuestLike) => {
       const classification = item.classification || inferScheduledClassification(item);
       events.push({
         id: item.id,
-        title: item.title || item.text || "Quick Thought Quest",
+        title: item.title || item.text || "Quest",
         cellLabel: item.classification === "recovery" ? "Recovery quest" : "Progress quest",
-        source: "Quick Thoughts",
+        source: "Quests",
         date: dateKey,
         dayLabel,
         startTime: item.startTime || item.time,
@@ -267,12 +296,13 @@ export default function CalendarScreen() {
         classification,
         tone: eventTone(classification),
         status: item.status,
-        note: item.note || "Scheduled future quest from Quick Thoughts.",
+        note: item.note || "Scheduled future quest from Quests.",
         priority: 2,
       });
     });
 
-    checklistItems.filter((item) => item.date === dateKey).forEach((item: ScheduledQuestLike) => {
+    const checklistItemsForDay = checklistItems.filter((item) => item.date === dateKey);
+    checklistItemsForDay.forEach((item: ScheduledQuestLike) => {
       const classification = item.classification || inferScheduledClassification(item);
       events.push({
         id: item.id,
@@ -284,7 +314,7 @@ export default function CalendarScreen() {
         startTime: item.startTime || item.time,
         duration: item.duration || formatDurationLabel(item.durationMinutes, 30),
         durationMinutes: item.durationMinutes,
-        steps: item.steps ?? 1,
+        steps: item.steps ?? getStepsForDuration(item.durationMinutes),
         classification,
         tone: eventTone(classification),
         status: item.status,
@@ -292,6 +322,34 @@ export default function CalendarScreen() {
         priority: 3,
       });
     });
+
+    const dayItemsForRecoveryCheck: Partial<ScheduledQuestLike>[] = [
+      ...(todayQuest && (todayQuest.date || getDateKey()) === dateKey && todayQuest.title?.trim()
+        ? [{ id: todayQuest.id || `${dateKey}-today-quest`, date: dateKey, startTime: todayQuest.startTime || "9:00 AM", durationMinutes: todayQuestDurationMinutes }]
+        : []),
+      ...quickThoughtItemsForDay,
+      ...checklistItemsForDay,
+    ];
+    const requiredRecovery = getRequiredRecoveryBlockForDate(dayItemsForRecoveryCheck, dateKey);
+    if (requiredRecovery) {
+      events.push({
+        id: requiredRecovery.id,
+        title: "Required Recovery",
+        cellLabel: "Recovery Required",
+        source: "MYLIT Recovery",
+        date: dateKey,
+        dayLabel,
+        startTime: requiredRecovery.startTime,
+        duration: "1 hr",
+        durationMinutes: 60,
+        steps: 0,
+        classification: "recovery",
+        tone: eventTone("recovery"),
+        status: "recoveryRequired",
+        note: "2 hours of back-to-back tasks reached — the Quest Board locks for 1 hour so you can rest.",
+        priority: 2.5,
+      });
+    }
 
     const role = getDayRole(dayPlan, dayName);
     if (role) {
@@ -321,7 +379,20 @@ export default function CalendarScreen() {
   const todayKey = getDateKey(today);
   const todayEvents = eventsByDay.flat().filter((event: CalendarEvent) => event.date === todayKey);
   const todayQuestTitle = todayEvents.find((event: CalendarEvent) => event.source.includes("Quest Board"))?.title || "Not set yet";
-  const nextQuickThought = quickThoughtItems[0]?.title || quickThoughtItems[0]?.text || "Not set yet";
+  // Next Quest = the earliest not-yet-completed actionable item on today's schedule
+  // (Today's Quest, checklist items, quests) — not just "the first Quick Thought saved".
+  // Once completed, the next item in the day's schedule takes its place.
+  const todayActionableEvents = todayEvents.filter(
+    (event: CalendarEvent) =>
+      event.classification !== "focus" && event.classification !== "sleepGuide" && event.status !== "recoveryRequired"
+  );
+  const nextQuestEvent = todayActionableEvents
+    .filter((event: CalendarEvent) => event.status !== "completed" && String(event.status) !== "missed")
+    .sort(
+      (a: CalendarEvent, b: CalendarEvent) =>
+        (parseTimeToMinutes(a.startTime) ?? 0) - (parseTimeToMinutes(b.startTime) ?? 0)
+    )[0];
+  const nextQuickThought = nextQuestEvent?.title ?? (todayActionableEvents.length > 0 ? "All done for today" : "Not set yet");
   const expectedSleep = latestCheckIn?.estimatedSleepWindow || (latestCheckIn?.desiredSleepTime && latestCheckIn?.desiredWakeTime ? `${latestCheckIn.desiredSleepTime} – ${latestCheckIn.desiredWakeTime}` : latestCheckIn?.desiredSleepTime) || "Not set";
 
   function goToPreviousWeek() {
@@ -356,14 +427,14 @@ export default function CalendarScreen() {
             </View>
 
             <View style={styles.summaryGrid}>
-              <SummaryCard icon="⭐" label="TODAY QUEST" value={todayQuestTitle} hint="Quest Board • +2 steps" />
-              <SummaryCard icon="💭" label="NEXT QUICK THOUGHT" value={nextQuickThought} hint="Future scheduled quest" />
+              <SummaryCard icon="⭐" label="TODAY QUEST" value={todayQuestTitle} hint="Quest Board • steps by duration" />
+              <SummaryCard icon="⏱️" label="NEXT QUEST" value={nextQuickThought} hint="Future scheduled quest" />
               <SummaryCard icon="🌙" label="SLEEP GUIDE" value={expectedSleep} hint="Blue timing guidance" />
               <SummaryCard icon="📜" label="WEEKLY HABIT" value={getDayRole(dayPlan, WEEKDAY_NAMES[today.getDay()] as WeekdayName) || "Not set"} hint="Theme only, no steps" />
             </View>
 
             <View style={styles.actionGrid}>
-              <ActionButton icon="💭" title="Quick Thoughts" subtitle="Schedule a future quest" onPress={() => router.push("/tomorrow-queue")} />
+              <ActionButton icon="⏱️" title="Quests" subtitle="Schedule a future quest" onPress={() => router.push("/tomorrow-queue")} />
               <ActionButton icon="📜" title="Day Plan" subtitle="Set today and weekly roles" onPress={() => router.push("/day-plan")} />
             </View>
 
@@ -423,7 +494,20 @@ export default function CalendarScreen() {
           </ScrollView>
           <BottomNav activeRoute="calendar" bottomOffset={mobile.bottomNavOffset} />
 
-          {selectedEvent ? <EventPopup event={selectedEvent} onClose={() => setSelectedEvent(null)} router={router} /> : null}
+          {selectedEvent ? (
+            <EventPopup
+              event={selectedEvent}
+              onClose={() => setSelectedEvent(null)}
+              router={router}
+              onMarkComplete={async () => {
+                const ok = await setChecklistItemChecked(selectedEvent.id, true);
+                if (ok) {
+                  setSelectedEvent(null);
+                  await loadCalendarData();
+                }
+              }}
+            />
+          ) : null}
           {showInfo ? <InfoOverlay onClose={() => setShowInfo(false)} /> : null}
         </View>
       </View>
@@ -452,9 +536,21 @@ function getEventToneStyle(tone: EventTone) {
   }
 }
 
-function EventPopup({ event, onClose, router }: { event: CalendarEvent; onClose: () => void; router: ReturnType<typeof useRouter> }) {
+function EventPopup({
+  event,
+  onClose,
+  router,
+  onMarkComplete,
+}: {
+  event: CalendarEvent;
+  onClose: () => void;
+  router: ReturnType<typeof useRouter>;
+  onMarkComplete: () => void;
+}) {
   const todayKey = getDateKey(new Date());
   const isMissed = event.date < todayKey && event.status !== "completed" && event.classification !== "focus" && event.classification !== "sleepGuide";
+  const isChecklistItem = event.source === "Day Plan Checklist";
+  const canMarkComplete = isChecklistItem && event.status !== "completed";
   return (
     <View style={styles.popupOverlay}>
       <View style={[styles.popupCard, getPopupBorder(event.tone)]}>
@@ -467,6 +563,11 @@ function EventPopup({ event, onClose, router }: { event: CalendarEvent; onClose:
         <PopupRow label="Type" value={event.classification === "sleepGuide" ? "Sleep guide — no steps" : event.classification === "focus" ? "Day focus — theme only" : event.classification} />
         {event.status ? <PopupRow label="Status" value={event.status} /> : null}
         {event.note ? <Text style={styles.popupNote}>{event.note}</Text> : null}
+        {canMarkComplete ? (
+          <TouchableOpacity style={styles.completeButton} onPress={onMarkComplete}>
+            <Text style={styles.completeButtonText}>MARK COMPLETE</Text>
+          </TouchableOpacity>
+        ) : null}
         {isMissed ? (
           <TouchableOpacity style={styles.reflectButton} onPress={() => { onClose(); router.push("/reflection"); }}>
             <Text style={styles.reflectButtonText}>REFLECT ON THIS</Text>
@@ -495,7 +596,7 @@ function InfoOverlay({ onClose }: { onClose: () => void }) {
       <View style={styles.infoCard}>
         <Text style={styles.infoTitle}>CALENDAR</Text>
         <ScrollView style={styles.infoScroll} showsVerticalScrollIndicator={false} bounces={false}>
-          <Text style={styles.infoBullet}>{"• Calendar shows sleep guides, quests, checklist habits, Quick Thoughts, recovery blocks, and day focus."}</Text>
+          <Text style={styles.infoBullet}>{"• Calendar shows sleep guides, quests, checklist habits, required recovery blocks, and day focus."}</Text>
           <Text style={styles.infoBullet}>{"• Blue = sleep guide / sleep timing. Gold = progress. Purple = recovery. Green = day focus / no-step focus."}</Text>
           <Text style={styles.infoBullet}>{"• Tap an item to inspect it when supported."}</Text>
           <Text style={styles.infoBullet}>{"• Completed items earn steps only when marked complete."}</Text>
@@ -555,6 +656,8 @@ const styles = StyleSheet.create({
   infoCloseText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900" },
   reflectButton: { backgroundColor: "rgba(88,28,135,0.7)", borderWidth: 2, borderColor: "#A78BFA", paddingVertical: 10, alignItems: "center", marginTop: 10 },
   reflectButtonText: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
+  completeButton: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", paddingVertical: 10, alignItems: "center", marginTop: 12 },
+  completeButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
   bottomNav: { position: "absolute", bottom: 8, left: 8, right: 8, height: 62, flexDirection: "row", justifyContent: "space-between", backgroundColor: "rgba(4,8,16,0.98)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 5, padding: 4 },
   navButton: { flex: 1, backgroundColor: "#111827", borderWidth: 2, borderColor: "#3A4558", borderRadius: 3, paddingVertical: 4, marginHorizontal: 2, alignItems: "center", justifyContent: "center" },
   navButtonActive: { backgroundColor: "#162314", borderColor: "#FBBF24" },

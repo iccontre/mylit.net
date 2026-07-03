@@ -55,9 +55,11 @@ export function startPwaUpdateChecks(): void {
 
   const onVisible = () => {
     if (document.visibilityState !== "visible") return;
-    void checkForPwaUpdate().then(() => {
-      if (pendingReload) applyPendingReload();
-    });
+    // Only check and flag here — never reload while the user is actively back
+    // in the app. Forcing a reload right as the app regains focus is exactly
+    // when a tap lands in a text box, which yanked users out of typing.
+    // The reload applies the next time the app is backgrounded (onHidden).
+    void checkForPwaUpdate();
   };
 
   const onHidden = () => {

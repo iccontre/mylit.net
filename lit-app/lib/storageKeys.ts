@@ -1,13 +1,15 @@
 import { LOCAL_PROFILE_KEY } from "./auth";
-import {
-  ACTIVE_TIMED_ITEM_KEY,
-  COMPLETED_QUESTS_KEY,
-  DAY_PLAN_KEY,
-  MISSED_QUESTS_KEY,
-  TODAY_PROGRESS_DATE_KEY,
-  TOMORROW_QUEUE_KEY,
-  USER_STATS_KEY,
-} from "./questProgress";
+
+// Core progress storage keys live here (a near-leaf module) so questProgress.ts can
+// import them without forming the questProgress -> progressStore -> storageKeys ->
+// questProgress require cycle, which previously crashed module init with a TDZ error.
+export const COMPLETED_QUESTS_KEY = "lit_completed_quests";
+export const TODAY_PROGRESS_DATE_KEY = "lit_today_progress_date";
+export const MISSED_QUESTS_KEY = "mylit_missed_quests";
+export const ACTIVE_TIMED_ITEM_KEY = "mylit_active_timed_item";
+export const DAY_PLAN_KEY = "lit_day_plan";
+export const TOMORROW_QUEUE_KEY = "lit_tomorrow_queue";
+export const USER_STATS_KEY = "lit_user_stats";
 
 /** Local metadata for last-write timestamps per synced storage key. */
 export const PROGRESS_SYNC_META_KEY = "lit_progress_sync_meta";
@@ -31,6 +33,8 @@ export const MORNING_INTENTION_REFLECTIONS_KEY = "lit_morning_intention_reflecti
 export const AWARENESS_CHECKS_KEY = "lit_awareness_checks";
 export const REFLECTIONS_KEY = "lit_reflections";
 export const GOAL_FEEDBACK_LOG_KEY = "lit_goal_feedback_log";
+/** One-time Waiting Room boost usage, keyed by `${activeItemId}:${startedAt}` -> ISO timestamp used. */
+export const WAITING_ROOM_BOOSTS_KEY = "lit_waiting_room_boosts";
 
 /** AsyncStorage keys mirrored to the signed-in user's cloud profile. */
 export const SYNCABLE_PROGRESS_KEYS = [
@@ -40,7 +44,9 @@ export const SYNCABLE_PROGRESS_KEYS = [
   COMPLETED_QUESTS_KEY,
   TODAY_PROGRESS_DATE_KEY,
   MISSED_QUESTS_KEY,
-  ACTIVE_TIMED_ITEM_KEY,
+  // NOTE: ACTIVE_TIMED_ITEM_KEY is intentionally NOT synced. The active quest timer is
+  // ephemeral, device-local session state; cloud merges were resurrecting stale timers or
+  // wiping a freshly-started one (Study Room showing "No active quest", Home "restarting").
   DAY_PLAN_KEY,
   TOMORROW_QUEUE_KEY,
   USER_STATS_KEY,
@@ -52,6 +58,7 @@ export const SYNCABLE_PROGRESS_KEYS = [
   AWARENESS_CHECKS_KEY,
   REFLECTIONS_KEY,
   GOAL_FEEDBACK_LOG_KEY,
+  WAITING_ROOM_BOOSTS_KEY,
 ] as const;
 
 export type SyncableProgressKey = (typeof SYNCABLE_PROGRESS_KEYS)[number];
@@ -78,13 +85,3 @@ export const ALL_SCANNABLE_PROGRESS_KEYS = [
   ...SYNCABLE_PROGRESS_KEYS,
   ...LEGACY_PROGRESS_KEYS,
 ] as const;
-
-export {
-  ACTIVE_TIMED_ITEM_KEY,
-  COMPLETED_QUESTS_KEY,
-  DAY_PLAN_KEY,
-  MISSED_QUESTS_KEY,
-  TODAY_PROGRESS_DATE_KEY,
-  TOMORROW_QUEUE_KEY,
-  USER_STATS_KEY,
-} from "./questProgress";

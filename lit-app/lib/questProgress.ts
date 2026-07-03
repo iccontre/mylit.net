@@ -2,25 +2,41 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { persistProgressKeys } from "./progressStore";
 import {
+  ACTIVE_TIMED_ITEM_KEY,
+  COMPLETED_QUESTS_KEY,
+  DAY_PLAN_KEY,
+  MISSED_QUESTS_KEY,
+  TODAY_PROGRESS_DATE_KEY,
+  TOMORROW_QUEUE_KEY,
+  USER_STATS_KEY,
+} from "./storageKeys";
+import {
   collectDayPlanScheduledItems,
   collectQuickThoughtScheduledItems,
   formatDurationLabel,
   getDateKey,
-  getQuickThoughtSteps,
+  getStepsForDuration,
   inferScheduledClassification,
   parseDurationMinutes,
   parseTimeToMinutes,
+  TODAY_QUEST_DURATION_MINUTES,
+  TODAY_QUEST_STEPS,
   type ScheduledQuestLike,
   type WeekdayName,
 } from "./scheduling";
 
-export const COMPLETED_QUESTS_KEY = "lit_completed_quests";
-export const TODAY_PROGRESS_DATE_KEY = "lit_today_progress_date";
-export const MISSED_QUESTS_KEY = "mylit_missed_quests";
-export const ACTIVE_TIMED_ITEM_KEY = "mylit_active_timed_item";
-export const DAY_PLAN_KEY = "lit_day_plan";
-export const TOMORROW_QUEUE_KEY = "lit_tomorrow_queue";
-export const USER_STATS_KEY = "lit_user_stats";
+// These keys are defined in storageKeys.ts (a near-leaf module) and re-exported here
+// to keep existing `import { ... } from "./questProgress"` call sites working while
+// avoiding the questProgress -> progressStore -> storageKeys -> questProgress cycle.
+export {
+  ACTIVE_TIMED_ITEM_KEY,
+  COMPLETED_QUESTS_KEY,
+  DAY_PLAN_KEY,
+  MISSED_QUESTS_KEY,
+  TODAY_PROGRESS_DATE_KEY,
+  TOMORROW_QUEUE_KEY,
+  USER_STATS_KEY,
+};
 
 /** Progress mode allows up to 8 planned hours; Recovery mode allows up to 5. */
 export const PROGRESS_CAPACITY_MINUTES = 8 * 60;
@@ -31,8 +47,16 @@ export const PROGRESS_QUEST_CAPACITY = 8;
 /** @deprecated Item-count capacity — use minute-based capacity helpers instead. */
 export const RECOVERY_QUEST_CAPACITY = 5;
 
-export type QuestSource = "Quest" | "Today's Quest" | "Checklist" | "Quick Thought" | "Calendar";
+/** Checklist items build habits, not a to-do dump — capped at 5 scheduled for any one day. */
+export const MAX_CHECKLIST_ITEMS_PER_DAY = 5;
+
+export type QuestSource = "Quest" | "Today's Quest" | "Checklist" | "Quick Thought" | "Calendar" | "Sleep";
 export type QuestKind = "progress" | "recovery";
+
+/** User-facing label for a quest source — "Quick Thought" displays as "Quest" everywhere in the UI. */
+export function questSourceLabel(source: QuestSource): string {
+  return source === "Quick Thought" ? "Quest" : source;
+}
 
 export type CompletionEntry = {
   id: string;
@@ -41,6 +65,10 @@ export type CompletionEntry = {
   source: QuestSource;
   dateKey: string;
   completedAt: string;
+  /** Minutes the item took — drives duration-scaled energy cost/restore on the Home flame. */
+  durationMinutes?: number;
+  /** Progress spends energy, recovery restores it. Missing on legacy entries — treated as "progress". */
+  kind?: QuestKind;
 };
 
 export type MissedEntry = {
@@ -245,6 +273,12 @@ export function checkUserScheduledQuestCapacity(input: {
 
 const DEFAULT_TODAY_QUEST_TITLES = new Set(["choose one honest quest for today"]);
 
+/** True when Today's Quest is still the unset placeholder (or empty) — the user hasn't set one yet. */
+export function isDefaultTodayQuestTitle(title?: string | null): boolean {
+  const trimmed = (title ?? "").trim().toLowerCase();
+  return trimmed === "" || DEFAULT_TODAY_QUEST_TITLES.has(trimmed);
+}
+
 /** Day Plan today's quest or checklist habits scheduled for today. */
 export function hasUserDayPlanItems(input: {
   todayQuest?: RawTodayQuest | null;
@@ -286,7 +320,8 @@ export function isQuestBoardItemAllowed(item: HomeQuestItem): boolean {
     item.source === "Today's Quest" ||
     item.source === "Checklist" ||
     item.source === "Quick Thought" ||
-    item.source === "Calendar"
+    item.source === "Calendar" ||
+    item.source === "Sleep"
   ) {
     return true;
   }
@@ -306,6 +341,7 @@ function getItemPriorityTier(item: HomeQuestItem): QuestPriorityTier {
   if (item.source === "Today's Quest") return 3;
   if (item.source === "Checklist") return 4;
   if (item.source === "Quick Thought") return 5;
+  if (item.source === "Sleep") return 5;
   return 6;
 }
 
@@ -401,6 +437,10 @@ export function parseCompletions(raw: unknown, todayKey = getTodayKey()): Comple
           source: (record.source as QuestSource) || "Quest",
           dateKey: String(record.dateKey ?? todayKey),
           completedAt: String(record.completedAt ?? new Date().toISOString()),
+          durationMinutes: typeof record.durationMinutes === "number" ? record.durationMinutes : undefined,
+          // Preserve kind so recovery completions RESTORE energy on reload instead of
+          // being treated as progress (which subtracts energy) — that was the bug.
+          kind: record.kind === "recovery" || record.kind === "progress" ? record.kind : undefined,
         };
       })
       .filter((entry): entry is CompletionEntry => entry !== null);
@@ -452,9 +492,10 @@ export function isItemMissed(item: Pick<HomeQuestItem, "id" | "title">, missed: 
   return missed.some((entry) => entry.dateKey === dateKey && (entry.id === item.id || entry.title === item.title));
 }
 
+/** Steps depend only on duration now — Progress and Recovery checklist items earn the same. */
 export function stepsForChecklistItem(kind: QuestKind, durationMinutes: number): number {
-  if (kind === "recovery") return durationMinutes >= 30 ? 1 : 0;
-  return durationMinutes >= 60 ? 2 : 1;
+  void kind;
+  return getStepsForDuration(durationMinutes);
 }
 
 export function getChecklistItemsForDay(plan: DayPlanRaw | null | undefined, day: WeekdayName): RawChecklistItem[] {
@@ -484,6 +525,8 @@ export function normalizeQuestItems(input: {
   todayKey: string;
   completedIds: Set<string>;
   missedIds: Set<string>;
+  /** True once today's Pre-Sleep Intention has been saved — hides the Sleep reminder for the rest of the day. */
+  preSleepIntentionDoneToday?: boolean;
 }): HomeQuestItem[] {
   const items: HomeQuestItem[] = [];
   const seenIds = new Set<string>();
@@ -494,9 +537,21 @@ export function normalizeQuestItems(input: {
     items.push(item);
   };
 
+  if (!input.preSleepIntentionDoneToday) {
+    pushItem({
+      id: buildStableItemId("Sleep", "Set Pre-Sleep Intention", { dateKey: input.todayKey }),
+      title: "Set Pre-Sleep Intention",
+      source: "Sleep",
+      kind: "recovery",
+      steps: 1,
+      durationMinutes: 10,
+      description: "Wind down and set tonight's intention before bed.",
+    });
+  }
+
   const todayQuest = input.todayQuest;
   if (todayQuest?.title?.trim() && todayQuest.status !== "completed" && String(todayQuest.status) !== "missed") {
-    const durationMinutes = parseDurationMinutes(todayQuest.durationMinutes ?? todayQuest.duration, 60);
+    const durationMinutes = parseDurationMinutes(todayQuest.durationMinutes ?? todayQuest.duration, TODAY_QUEST_DURATION_MINUTES);
     const kind: QuestKind =
       todayQuest.kind === "recovery" ? "recovery" : inferScheduledClassification(todayQuest.title) === "recovery" ? "recovery" : "progress";
     pushItem({
@@ -504,7 +559,7 @@ export function normalizeQuestItems(input: {
       title: todayQuest.title.trim(),
       source: "Today's Quest",
       kind,
-      steps: typeof todayQuest.steps === "number" ? todayQuest.steps : 2,
+      steps: typeof todayQuest.steps === "number" ? todayQuest.steps : TODAY_QUEST_STEPS,
       durationMinutes,
       scheduledTime: todayQuest.startTime,
       description: "Your main quest from today's Day Plan.",
@@ -543,10 +598,10 @@ export function normalizeQuestItems(input: {
       title,
       source: "Quick Thought",
       kind,
-      steps: typeof raw.steps === "number" ? raw.steps : getQuickThoughtSteps(durationMinutes),
+      steps: typeof raw.steps === "number" ? raw.steps : getStepsForDuration(durationMinutes),
       durationMinutes,
       scheduledTime: raw.time || raw.startTime,
-      description: raw.type ? `Saved from Quick Thoughts (${raw.type})` : "Saved from Quick Thoughts.",
+      description: raw.type ? `Saved from Quests (${raw.type})` : "Saved from Quests.",
     });
   });
 
@@ -569,7 +624,7 @@ export function normalizeQuestItems(input: {
       title,
       source,
       kind,
-      steps: typeof raw.steps === "number" ? raw.steps : source === "Today's Quest" ? 2 : getQuickThoughtSteps(durationMinutes),
+      steps: typeof raw.steps === "number" ? raw.steps : getStepsForDuration(durationMinutes),
       durationMinutes,
       scheduledTime: raw.startTime || raw.time,
       description: raw.note || "Scheduled on your Calendar.",
@@ -618,7 +673,7 @@ export function computeItemStepsFromSources(dayPlan: unknown, quickThoughts: unk
     const id = quest.id ? String(quest.id) : null;
     if (quest.status === "completed" && id && !seenIds.has(id)) {
       seenIds.add(id);
-      total += safeNumber(quest.steps, 2);
+      total += safeNumber(quest.steps, TODAY_QUEST_STEPS);
     }
   }
 
@@ -687,6 +742,27 @@ export function computeTotalEarnedSteps(input: {
   }
 
   return total + safeNumber(input.userStats?.totalSteps, 0);
+}
+
+/** Every SKILL_TIER_SIZE earned steps unlocks the next Skill tier. */
+export const SKILL_TIER_SIZE = 100;
+
+// Always compute fresh from earnedSteps — never trust stale storage values.
+// At 0 earned steps, display must be 0. Bonuses are only awarded after crossing a real threshold.
+// Shared by the Stats "Skill Progress" panel and the Home/Stats step-rank sync so both
+// screens compare players using the same bonus-inclusive step total.
+export function computeFreshRankBonuses(earnedSteps: number): { rankBonusPool: number; awardedThresholds: number[] } {
+  let display = earnedSteps;
+  const awardedThresholds: number[] = [];
+  for (let i = 1; i <= 50; i++) {
+    if (display >= i * SKILL_TIER_SIZE) {
+      awardedThresholds.push(i);
+      display += 10; // one-time +10 per skill tier unlock
+    } else {
+      break;
+    }
+  }
+  return { rankBonusPool: awardedThresholds.length * 10, awardedThresholds };
 }
 
 export async function loadTodayCompletions(): Promise<CompletionEntry[]> {
@@ -851,6 +927,8 @@ export async function markItemComplete(item: HomeQuestItem, existing: Completion
     source: item.source,
     dateKey: getTodayKey(),
     completedAt: new Date().toISOString(),
+    durationMinutes: item.durationMinutes,
+    kind: item.kind,
   };
 
   await syncSourceCompletion(item);
@@ -907,8 +985,9 @@ export function collectTodayCalendarItems(dayPlan: unknown, quickThoughts: unkno
 export function sourceIcon(source: QuestSource): string {
   if (source === "Today's Quest") return "⭐";
   if (source === "Checklist") return "📋";
-  if (source === "Quick Thought") return "💭";
+  if (source === "Quick Thought") return "⏱️";
   if (source === "Calendar") return "📅";
+  if (source === "Sleep") return "🌙";
   return "📜";
 }
 
