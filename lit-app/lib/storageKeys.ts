@@ -36,6 +36,22 @@ export const GOAL_FEEDBACK_LOG_KEY = "lit_goal_feedback_log";
 /** One-time Waiting Room boost usage, keyed by `${activeItemId}:${startedAt}` -> ISO timestamp used. */
 export const WAITING_ROOM_BOOSTS_KEY = "lit_waiting_room_boosts";
 
+/**
+ * Canonical synced keys that back the Log History screen. These are the SAME keys the
+ * entry pages already write to (via persistProgressKeys) and are already listed in
+ * SYNCABLE_PROGRESS_KEYS + ARRAY_MERGE_PROGRESS_KEYS, so every saved log is stored
+ * locally first, synced to the user's Supabase account, and merged by id across devices.
+ * We reuse them (rather than adding parallel *_logs keys) so there is no duplication,
+ * double-counting, or migration risk.
+ */
+export const LOG_HISTORY_KEYS = {
+  journal: JOURNAL_ENTRIES_KEY,
+  reflection: REFLECTIONS_KEY,
+  meditation: AWARENESS_CHECKS_KEY,
+  dream: DREAM_JOURNAL_KEY,
+  preSleepIntention: PRE_SLEEP_INTENTIONS_KEY,
+} as const;
+
 /** AsyncStorage keys mirrored to the signed-in user's cloud profile. */
 export const SYNCABLE_PROGRESS_KEYS = [
   LOCAL_PROFILE_KEY,

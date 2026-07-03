@@ -455,6 +455,7 @@ export default function StatsScreen() {
               <ChestCard accent="green" icon="🛡️" title="SKILL PROGRESS" subtitle="Steps, level, and next skill unlock." meta={`${computed.totalSteps} / ${computed.nextRankAt} · ${computed.percentToNext}%`} onPress={() => setActivePanel("skill")} onInfo={() => setActiveInfo("skill")} />
               <ChestCard accent="purple" icon="🏆" title="RANK" subtitle="Your steps vs other players." meta={stepRank ? `#${stepRank.rank} of ${stepRank.totalPlayers}` : "Sign in to rank"} onPress={() => setActivePanel("rank")} onInfo={() => setActiveInfo("rank")} />
               <ChestCard accent="gold" icon="📊" title="BEHAVIOR" subtitle="Routines, sleep & cognitive habits." meta={`${computed.progressDays} progress · ${computed.recoveryDays} recovery`} onPress={() => setActivePanel("behavior")} onInfo={() => setActiveInfo("behavior")} />
+              <ChestCard accent="purple" icon="📖" title="LOG HISTORY" subtitle="Journals, reflections, meditations, dreams & intentions." meta="Saved to your account · synced across devices" onPress={() => router.push("/log-history")} />
 
               <View style={styles.pageFooter}>
                 <View style={styles.pageFooterLine} />
@@ -568,7 +569,7 @@ export default function StatsScreen() {
   );
 }
 
-function ChestCard({ accent, icon, title, subtitle, meta, onPress, onInfo }: { accent: "gold" | "green" | "purple"; icon: string; title: string; subtitle: string; meta: string; onPress: () => void; onInfo: () => void }) {
+function ChestCard({ accent, icon, title, subtitle, meta, onPress, onInfo }: { accent: "gold" | "green" | "purple"; icon: string; title: string; subtitle: string; meta: string; onPress: () => void; onInfo?: () => void }) {
   const borderStyle = accent === "gold" ? styles.goldChest : accent === "green" ? styles.greenChest : styles.purpleChest;
   const glowStyle = accent === "gold" ? styles.goldGlow : accent === "green" ? styles.greenGlow : styles.purpleGlow;
   const textStyle = accent === "gold" ? styles.goldText : accent === "green" ? styles.greenText : styles.purpleText;
@@ -584,9 +585,11 @@ function ChestCard({ accent, icon, title, subtitle, meta, onPress, onInfo }: { a
         </View>
       </View>
       <View style={styles.chestRight}>
-        <TouchableOpacity style={styles.infoBtn} onPress={onInfo}>
-          <Text style={styles.infoBtnText}>?</Text>
-        </TouchableOpacity>
+        {onInfo ? (
+          <TouchableOpacity style={styles.infoBtn} onPress={onInfo}>
+            <Text style={styles.infoBtnText}>?</Text>
+          </TouchableOpacity>
+        ) : null}
         <Text style={[styles.openCue, textStyle]}>›</Text>
       </View>
     </TouchableOpacity>
