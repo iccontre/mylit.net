@@ -16,6 +16,7 @@ import {
   formatDurationLabel,
   getDateKey,
   getStepsForDuration,
+  getStepsForItem,
   inferScheduledClassification,
   parseDurationMinutes,
   parseTimeToMinutes,
@@ -101,6 +102,7 @@ type QuestLike = {
   starter?: boolean;
   suggested?: boolean;
   durationMinutes?: number;
+  kind?: QuestKind;
 };
 
 type RawChecklistItem = {
@@ -492,10 +494,9 @@ export function isItemMissed(item: Pick<HomeQuestItem, "id" | "title">, missed: 
   return missed.some((entry) => entry.dateKey === dateKey && (entry.id === item.id || entry.title === item.title));
 }
 
-/** Steps depend only on duration now — Progress and Recovery checklist items earn the same. */
+/** Progress items earn double steps; recovery items earn the base step reward. */
 export function stepsForChecklistItem(kind: QuestKind, durationMinutes: number): number {
-  void kind;
-  return getStepsForDuration(durationMinutes);
+  return getStepsForItem(durationMinutes, kind);
 }
 
 export function getChecklistItemsForDay(plan: DayPlanRaw | null | undefined, day: WeekdayName): RawChecklistItem[] {
@@ -598,7 +599,7 @@ export function normalizeQuestItems(input: {
       title,
       source: "Quick Thought",
       kind,
-      steps: typeof raw.steps === "number" ? raw.steps : getStepsForDuration(durationMinutes),
+      steps: typeof raw.steps === "number" ? raw.steps : getStepsForItem(durationMinutes, kind),
       durationMinutes,
       scheduledTime: raw.time || raw.startTime,
       description: raw.type ? `Saved from Quests (${raw.type})` : "Saved from Quests.",
@@ -624,7 +625,7 @@ export function normalizeQuestItems(input: {
       title,
       source,
       kind,
-      steps: typeof raw.steps === "number" ? raw.steps : getStepsForDuration(durationMinutes),
+      steps: typeof raw.steps === "number" ? raw.steps : getStepsForItem(durationMinutes, kind),
       durationMinutes,
       scheduledTime: raw.startTime || raw.time,
       description: raw.note || "Scheduled on your Calendar.",
@@ -633,14 +634,23 @@ export function normalizeQuestItems(input: {
 
   input.quests.forEach((quest) => {
     if (quest.type === "Personal" || quest.type === "Quick Thought") return;
-    const kind: QuestKind = quest.mandatory ? "recovery" : inferScheduledClassification(quest.title) === "recovery" ? "recovery" : "progress";
+    const kind: QuestKind =
+      quest.mandatory || quest.kind === "recovery"
+        ? "recovery"
+        : quest.kind === "progress"
+        ? "progress"
+        : inferScheduledClassification(quest.title) === "recovery"
+        ? "recovery"
+        : "progress";
+    // App quests run in 15-min increments and use the same step/energy system.
+    const durationMinutes = quest.durationMinutes ?? (quest.starter || quest.suggested ? 15 : 30);
     pushItem({
       id: buildStableItemId("Quest", quest.title, { dateKey: input.todayKey }),
       title: quest.title,
       source: "Quest",
       kind,
-      steps: quest.steps ?? 1,
-      durationMinutes: quest.durationMinutes ?? (quest.starter || quest.suggested ? 10 : 30),
+      steps: typeof quest.steps === "number" ? quest.steps : getStepsForItem(durationMinutes, kind),
+      durationMinutes,
       description: quest.description || quest.type,
       mandatory: quest.mandatory,
       starter: quest.starter,

@@ -34,7 +34,7 @@ import {
   getDateKey,
   getEnergyDelta,
   getNapEnergyRestore,
-  getQuickThoughtSteps,
+  getStepsForItem,
   inferScheduledClassification,
   parseDurationMinutes,
   shiftTimeSlot,
@@ -160,7 +160,7 @@ function normalizeQueueItem(raw: Partial<QueueItem>, index: number): QueueItem {
     startTime: raw.startTime || raw.time || "9:00 AM",
     duration: raw.duration || formatDurationLabel(durationMinutes),
     durationMinutes,
-    steps: raw.steps ?? getQuickThoughtSteps(durationMinutes),
+    steps: raw.steps ?? getStepsForItem(durationMinutes, classification),
     status: raw.status || (raw.completedAt ? "completed" : "scheduled"),
     createdAt: raw.createdAt || new Date().toISOString(),
     completedAt: raw.completedAt,
@@ -217,7 +217,7 @@ export default function TomorrowQueueScreen() {
 
   const selectedDay = weekDays.find((day: QuestDay) => day.dateKey === selectedDateKey) || todayInWeek;
   const selectedDayIsPast = isPastDateKey(selectedDay.dateKey);
-  const selectedSteps = getQuickThoughtSteps(selectedDuration);
+  const selectedSteps = getStepsForItem(selectedDuration, selectedKind);
   const selectedEnergyDelta = getEnergyDelta({ kind: selectedKind, durationMinutes: parseDurationMinutes(selectedDuration, 30) });
   const selectedDayPlannedMinutes = computeUserScheduledMinutesForDay({
     dateKey: selectedDay.dateKey,
@@ -395,7 +395,7 @@ export default function TomorrowQueueScreen() {
     setRecoveryWarning("");
     setPendingRecoveryConfirm(false);
 
-    const steps = getQuickThoughtSteps(durationMinutes);
+    const steps = getStepsForItem(durationMinutes, selectedKind);
 
     if (editingId) {
       const nextItems = items.map((item) =>
@@ -489,7 +489,7 @@ export default function TomorrowQueueScreen() {
       startTime,
       duration: durationLabel,
       durationMinutes: minutes,
-      steps: getQuickThoughtSteps(minutes),
+      steps: getStepsForItem(minutes, "recovery"),
       status: "scheduled",
       createdAt: new Date().toISOString(),
     };

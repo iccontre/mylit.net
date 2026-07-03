@@ -102,19 +102,32 @@ export function formatDurationLabel(value?: string | number | null, fallbackMinu
 }
 
 /**
- * Unified step reward for every quest/checklist item, based only on duration:
- * 15 min → +1 step, 30 min → +2 steps, 45 min → +3 steps, 1 hr → +4 steps.
- * Beyond 1 hr (only possible for app-generated quests — checklist items cap
- * at 1 hr) extends the same +1-per-15-min pattern.
+ * BASE step unit per duration: 15 min → 1, 30 min → 2, 45 min → 3, 1 hr → 4
+ * (+1 per extra 15 min). This is also the scale the energy formulas below build on,
+ * so it must stay fixed — kind-aware step rewards come from getStepsForItem.
  */
 export function getStepsForDuration(duration?: string | number | null): number {
   const minutes = parseDurationMinutes(duration, 30);
   return Math.max(1, Math.round(minutes / 15));
 }
 
-/** @deprecated Use getStepsForDuration — kept as an alias so existing imports keep working. */
+/**
+ * Step reward for a quest/checklist item, by duration AND kind:
+ * Progress → 15 min = +2, 30 = +4, 45 = +6, 1 hr = +8 (double the base).
+ * Recovery → 15 min = +1, 30 = +2, 45 = +3, 1 hr = +4 (base).
+ * Energy costs/restores are unchanged (they use getStepsForDuration directly).
+ */
+export function getStepsForItem(
+  duration?: string | number | null,
+  kind?: "progress" | "recovery" | string | null
+): number {
+  const base = getStepsForDuration(duration);
+  return kind === "recovery" ? base : base * 2;
+}
+
+/** @deprecated Prefer getStepsForItem(duration, kind). Defaults to the progress reward. */
 export function getQuickThoughtSteps(duration?: string | number | null): number {
-  return getStepsForDuration(duration);
+  return getStepsForItem(duration, "progress");
 }
 
 /**
@@ -172,7 +185,7 @@ export function formatEnergyDelta(delta: number): string {
 /** Today's Quest is a fixed 1-hour slot worth a flat +5 steps — not part of the 15/30/45/60 picker. */
 export const TODAY_QUEST_DURATION_MINUTES = 60;
 export const TODAY_QUEST_DURATION_LABEL = "1 hr";
-export const TODAY_QUEST_STEPS = 5;
+export const TODAY_QUEST_STEPS = 10;
 
 export function inferScheduledClassification(item: Partial<ScheduledQuestLike> | string | null | undefined): ScheduledClassification {
   if (typeof item !== "string") {

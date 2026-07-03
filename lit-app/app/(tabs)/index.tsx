@@ -9,6 +9,7 @@ import { uiAssets } from "../../constants/uiAssets";
 import { useMobileFrame } from "../../constants/mobileLayout";
 import {
   getActiveSuggestedQuest,
+  generateRecoveryStarterQuest,
   type QuestProfileContext,
 } from "../../lib/questGeneration";
 import { ANALYTICS_EVENTS, trackEvent } from "../../lib/analytics";
@@ -56,6 +57,7 @@ type Quest = {
   starter?: boolean;
   suggested?: boolean;
   durationMinutes?: number;
+  kind?: QuestKind;
 };
 
 type QueueItem = {
@@ -741,6 +743,10 @@ export default function HomeScreen() {
     (sum, entry) => sum + getEnergyDelta({ kind: entry.kind ?? "progress", durationMinutes: entry.durationMinutes, title: entry.title }),
     0
   );
+  // Minutes of PROGRESS work completed today — after 60, the app offers a recovery starter.
+  const progressMinutesToday = completedNormalEntries
+    .filter((entry) => entry.kind !== "recovery")
+    .reduce((sum, entry) => sum + (typeof entry.durationMinutes === "number" ? entry.durationMinutes : 0), 0);
   const passiveDecay =
     hasEnergyData && latestCheckIn?.createdAt
       ? Math.floor(
@@ -861,9 +867,17 @@ export default function HomeScreen() {
       missedTitles
     );
 
+    // After an hour of progress work today, offer a path-aligned recovery starter quest.
+    const recoveryStarter = progressMinutesToday >= 60 ? generateRecoveryStarterQuest(questContext) : null;
+    const recoveryStarterActive =
+      recoveryStarter && !completedTitles.has(recoveryStarter.title) && !missedTitles.has(recoveryStarter.title)
+        ? recoveryStarter
+        : null;
+
     return [
       ...(mandatoryQuest ? [mandatoryQuest] : []),
       ...(suggestedQuest ? [suggestedQuest] : []),
+      ...(recoveryStarterActive ? [recoveryStarterActive] : []),
     ];
   }
 

@@ -30,7 +30,7 @@ import {
   getDateKey,
   getEnergyDelta,
   getRequiredRecoveryBlockForDate,
-  getStepsForDuration,
+  getStepsForItem,
   inferScheduledClassification,
   parseDurationMinutes,
   parseTimeToMinutes,
@@ -186,8 +186,8 @@ function normalizeKind(value: ScheduledClassification): "progress" | "recovery" 
   return value === "recovery" ? "recovery" : "progress";
 }
 
-function stepsForItem(duration: string | number) {
-  return getStepsForDuration(duration);
+function stepsForItem(duration: string | number, kind: "progress" | "recovery") {
+  return getStepsForItem(duration, kind);
 }
 
 type Interval = { label: string; start: number; end: number };
@@ -221,6 +221,7 @@ function createChecklist(day: WeekdayName, saved: Partial<ChecklistItem>[] = [])
   return saved.map((item, index) => {
     const text = item.text?.trim() || "Habit action";
     const durationMinutes = parseDurationMinutes(item.durationMinutes ?? item.duration, 30);
+    const kind = item.kind || normalizeKind(inferScheduledClassification(text));
     const weekdays =
       Array.isArray(item.weekdays) && item.weekdays.length > 0
         ? item.weekdays
@@ -229,12 +230,12 @@ function createChecklist(day: WeekdayName, saved: Partial<ChecklistItem>[] = [])
       id: item.id || `${day}-${index}-${text}`,
       text,
       checked: Boolean(item.checked),
-      steps: item.steps ?? stepsForItem(durationMinutes),
+      steps: item.steps ?? stepsForItem(durationMinutes, kind),
       startTime: item.startTime || TIME_SLOTS[(index + 4) % TIME_SLOTS.length] || "9:00 AM",
       duration: item.duration || formatDurationLabel(durationMinutes),
       durationMinutes,
       status: item.status || (item.checked ? "completed" : "scheduled"),
-      kind: item.kind || normalizeKind(inferScheduledClassification(text)),
+      kind,
       weekdays,
     };
   });
@@ -637,7 +638,10 @@ export default function DayPlanScreen() {
                   // Kind only changes via the explicit PROGRESS/RECOVERY toggle (patch.kind).
                   // Typing the title must NOT auto-flip the mode the user chose.
                   kind: patch.kind ?? item.kind,
-                  steps: patch.duration ? stepsForItem(patch.duration) : patch.steps ?? item.steps,
+                  steps:
+                    patch.duration || patch.kind
+                      ? stepsForItem(patch.duration ?? item.durationMinutes, patch.kind ?? item.kind)
+                      : patch.steps ?? item.steps,
                   status: patch.checked !== undefined ? (patch.checked ? "completed" : "scheduled") : patch.status ?? item.status,
                 }
               : item
@@ -712,7 +716,7 @@ export default function DayPlanScreen() {
         id: `${selectedDay}-${Date.now()}`,
         text: "",
         checked: false,
-        steps: getStepsForDuration(30),
+        steps: stepsForItem(30, kind),
         startTime: firstFreeStartTime(current, selectedDay),
         duration: "30 min",
         durationMinutes: 30,

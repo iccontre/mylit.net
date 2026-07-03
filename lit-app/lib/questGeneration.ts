@@ -16,6 +16,7 @@ import {
   type StarterMode,
 } from "../constants/questStarters";
 import { getTodayKey } from "./questProgress";
+import { getStepsForItem } from "./scheduling";
 
 export type GeneratedQuest = {
   title: string;
@@ -25,7 +26,13 @@ export type GeneratedQuest = {
   starter?: boolean;
   suggested?: boolean;
   durationMinutes?: number;
+  kind?: "progress" | "recovery";
 };
+
+/** App quests run in 15-min increments; kind decides the step reward (progress doubles). */
+function questKindForMode(mode: StarterMode): "progress" | "recovery" {
+  return mode === "recovery" ? "recovery" : "progress";
+}
 
 export type QuestProfileContext = {
   category: string;
@@ -91,14 +98,16 @@ export function generateStarterQuest(
   const category = normalizeQuestCategory(context.category);
   const pool = STARTER_QUESTS[category]?.[mode] ?? STARTER_QUESTS_FALLBACK[mode];
   const title = pickRotatingTemplate(pool, `${getTodayKey()}-${category}-${mode}`);
+  const kind = questKindForMode(mode);
 
   return {
     title,
     type: "Starter",
-    steps: 1,
+    kind,
+    steps: getStepsForItem(15, kind),
     starter: true,
     suggested: true,
-    durationMinutes: 10,
+    durationMinutes: 15,
     description:
       benchmarkHint(context) ??
       "A small first step — milestones on your Path are benchmarks, not today's whole quest.",
@@ -112,6 +121,7 @@ function buildSuggestedStarterSequence(context: QuestProfileContext, mode: Start
     benchmarkHint(context) ??
     "Optional direction from MYLIT — milestones on your Path are benchmarks, not today's whole quest.";
   const firstTitle = pickRotatingTemplate(pool, `${getTodayKey()}-${category}-${mode}`);
+  const kind = questKindForMode(mode);
   const seen = new Set<string>();
   const quests: GeneratedQuest[] = [];
 
@@ -122,10 +132,11 @@ function buildSuggestedStarterSequence(context: QuestProfileContext, mode: Start
     quests.push({
       title: trimmed,
       type: "Starter",
-      steps: 1,
+      kind,
+      steps: getStepsForItem(15, kind),
       starter: quests.length === 0,
       suggested: true,
-      durationMinutes: 10,
+      durationMinutes: 15,
       description: hint,
     });
   };
@@ -232,10 +243,32 @@ export function generateRecoveryQuests(context: QuestProfileContext, count = 3):
   return source.slice(0, count).map((title) => ({
     title,
     type: category,
-    steps: 1,
-    durationMinutes: 20,
+    kind: "recovery" as const,
+    steps: getStepsForItem(30, "recovery"),
+    durationMinutes: 30,
     description: hint,
   }));
+}
+
+/**
+ * A path-aligned recovery "starter" quest that only surfaces after the user has already
+ * done an hour of progress work today (gated by the caller). Follows the 15-min increment
+ * and the recovery step/energy system.
+ */
+export function generateRecoveryStarterQuest(context: QuestProfileContext): GeneratedQuest {
+  const category = normalizeQuestCategory(context.category);
+  const pool = RECOVERY_CATEGORY_QUESTS[category] ?? RECOVERY_FALLBACK;
+  const title = pickRotatingTemplate(pool, `${getTodayKey()}-recovery-starter-${category}`);
+  return {
+    title,
+    type: category,
+    kind: "recovery",
+    steps: getStepsForItem(15, "recovery"),
+    durationMinutes: 15,
+    starter: true,
+    suggested: true,
+    description: "You've done an hour of progress — take a short recovery step to protect your flame.",
+  };
 }
 
 /**
@@ -267,10 +300,12 @@ export function generateSupplementaryQuest(
   const template = pickRotatingTemplate(source, `${getTodayKey()}-supplementary-${category}-${mode}`);
   if (!template) return null;
 
+  const kind = questKindForMode(mode);
   return {
     title: fillGoalSlot(template, goalPhrase),
     type: category,
-    steps: 1,
+    kind,
+    steps: getStepsForItem(15, kind),
     durationMinutes: 15,
     suggested: true,
     description: `Supplementary Path (${category}) — a smaller goal alongside your Main Path.`,
@@ -294,7 +329,8 @@ export function generateProgressQuests(context: QuestProfileContext, count = 4):
     quests.push({
       title,
       type: category,
-      steps: 1,
+      kind: "progress",
+      steps: getStepsForItem(30, "progress"),
       durationMinutes: 30,
       description: hint,
     });
