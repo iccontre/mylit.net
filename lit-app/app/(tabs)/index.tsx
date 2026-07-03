@@ -736,10 +736,21 @@ export default function HomeScreen() {
 
   const completedMandatoryEntries = completedQuests.filter((entry) => entry.title === MANDATORY_QUEST_TITLE);
   const completedNormalEntries = completedQuests.filter((entry) => entry.title !== MANDATORY_QUEST_TITLE);
+  // The flame is anchored to the latest check-in's energy. Only quests completed AFTER that
+  // check-in should move it — anything finished earlier in the day is already baked into the
+  // energy the user reported at check-in, so re-subtracting it double-counts and made a fresh
+  // check-in of e.g. 86 show up as 72 on Home.
+  const checkInAtMs = latestCheckIn?.createdAt ? new Date(latestCheckIn.createdAt).getTime() : 0;
+  const completedAfterCheckIn = (entry: CompletionEntry) => {
+    if (!checkInAtMs) return true;
+    const at = entry.completedAt ? new Date(entry.completedAt).getTime() : 0;
+    return at >= checkInAtMs;
+  };
+  const energyRelevantEntries = completedNormalEntries.filter(completedAfterCheckIn);
   // Every completed non-mandatory item applies its signed energy delta once:
   // progress spends (-1/-3/-5/-7), recovery restores (+2/+4/+6/+8), naps restore (+5/+10).
   // Legacy completions saved before `kind` was tracked default to "progress".
-  const questEnergyDelta = completedNormalEntries.reduce(
+  const questEnergyDelta = energyRelevantEntries.reduce(
     (sum, entry) => sum + getEnergyDelta({ kind: entry.kind ?? "progress", durationMinutes: entry.durationMinutes, title: entry.title }),
     0
   );
@@ -754,7 +765,8 @@ export default function HomeScreen() {
             (PASSIVE_DECAY_INTERVAL_HOURS * 60 * 60 * 1000)
         ) * PASSIVE_DECAY_POINTS
       : 0;
-  const mandatoryRecoveryBoost = completedMandatoryEntries.length * MANDATORY_QUEST_RESTORE_ENERGY;
+  const mandatoryRecoveryBoost =
+    completedMandatoryEntries.filter(completedAfterCheckIn).length * MANDATORY_QUEST_RESTORE_ENERGY;
   // Once a Luna-enforced recovery window has been fully served today, restore +5 energy.
   // (Computed here so it factors into the flame before generateQuests/getMandatoryQuest run.)
   const energyTodayKey = getTodayKey();
