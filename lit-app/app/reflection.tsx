@@ -19,6 +19,8 @@ import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { persistProgressKeys } from "../lib/progressStore";
 import { REFLECTIONS_KEY } from "../lib/storageKeys";
+import { HistoryModal } from "../components/HistoryModal";
+import { normalizeReflectionLogs } from "../lib/logHistory";
 
 const LUNA_REFLECTION_BULLETS = [
   "Reflection helps process missed or completed quests — it is not self-criticism.",
@@ -54,6 +56,7 @@ export default function ReflectionScreen() {
   const quest = rawQuest || "Open reflection";
 
   const [showInfo, setShowInfo] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [whatGotInTheWay, setWhatGotInTheWay] = useState("");
   const [whatWasOff, setWhatWasOff] = useState("");
   const [smallerVersion, setSmallerVersion] = useState("");
@@ -151,10 +154,23 @@ export default function ReflectionScreen() {
               <Text style={styles.primaryText}>Save Reflection</Text>
             </TouchableOpacity>
 
+            <TouchableOpacity style={[styles.secondaryBtn, { marginBottom: 8 }]} onPress={() => setShowHistory(true)}>
+              <Text style={styles.secondaryText}>🔍 Reflection History</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity style={styles.secondaryBtn} onPress={() => router.push("/mind")}>
               <Text style={styles.secondaryText}>← Back to Mind Hub</Text>
             </TouchableOpacity>
           </FormScreen>
+
+          <HistoryModal
+            visible={showHistory}
+            onClose={() => setShowHistory(false)}
+            title="Reflection History"
+            storageKey={REFLECTIONS_KEY}
+            normalize={normalizeReflectionLogs}
+            accent="#C4A7FF"
+          />
 
           <GuideInfoModal
             visible={showInfo}

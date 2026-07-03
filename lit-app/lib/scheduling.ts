@@ -118,25 +118,55 @@ export function getQuickThoughtSteps(duration?: string | number | null): number 
 }
 
 /**
- * Energy a completed PROGRESS quest/checklist item costs, scaled by its duration.
- * Beta rule: 15 min = 2, 30 min = 3, 45 min = 4, 1 hr = 5 (+1 per extra 15 min beyond).
- * Recovery items never cost energy — see getEnergyRestoreForDuration.
+ * Energy a completed PROGRESS quest/checklist item costs, scaled by its duration:
+ * 15 min → 1, 30 min → 3, 45 min → 5, 1 hr → 7 (+2 per extra 15 min beyond).
+ * Recovery/nap items never cost energy — they restore it.
  */
 export function getEnergyCostForDuration(duration?: string | number | null): number {
-  const minutes = parseDurationMinutes(duration, 30);
-  if (minutes <= 15) return 2;
-  return 2 + Math.ceil((minutes - 15) / 15);
+  return Math.max(1, getStepsForDuration(duration) * 2 - 1);
 }
 
 /**
  * Energy a completed RECOVERY quest/checklist item restores, scaled by its duration:
- * 15 min → +1, 30 min → +2, 45 min → +3, 1 hr → +4 (+1 per extra 15 min beyond).
- * Recovery items restore energy instead of costing it — progress tasks still spend
- * energy via getEnergyCostForDuration.
+ * 15 min → +2, 30 min → +4, 45 min → +6, 1 hr → +8 (+2 per extra 15 min beyond).
  */
 export function getEnergyRestoreForDuration(duration?: string | number | null): number {
+  return Math.max(2, getStepsForDuration(duration) * 2);
+}
+
+/** Energy a completed NAP quest restores: 30 min → +5, 1 hr → +10 (scales at ~1 per 6 min). */
+export function getNapEnergyRestore(duration?: string | number | null): number {
   const minutes = parseDurationMinutes(duration, 30);
-  return Math.max(1, Math.round(minutes / 15));
+  return Math.max(5, Math.round(minutes / 6));
+}
+
+/** Energy the mandatory eat/rest quest restores when completed. */
+export const MANDATORY_QUEST_RESTORE_ENERGY = 5;
+
+/** A nap quest's title always begins with "Nap" so completions can be identified from logs. */
+export function isNapTitle(title?: string | null): boolean {
+  return /(^|\b)nap\b/i.test(String(title ?? ""));
+}
+
+/**
+ * Signed energy change applied when an item is COMPLETED (never on save):
+ * mandatory → +5, nap → +5/+10, recovery → +2/+4/+6/+8, progress → -1/-3/-5/-7.
+ */
+export function getEnergyDelta(opts: {
+  kind?: ScheduledClassification | "progress" | "recovery" | string | null;
+  durationMinutes?: string | number | null;
+  title?: string | null;
+  mandatory?: boolean;
+}): number {
+  if (opts.mandatory) return MANDATORY_QUEST_RESTORE_ENERGY;
+  if (isNapTitle(opts.title)) return getNapEnergyRestore(opts.durationMinutes);
+  if (opts.kind === "recovery") return getEnergyRestoreForDuration(opts.durationMinutes);
+  return -getEnergyCostForDuration(opts.durationMinutes);
+}
+
+/** Concise, readable energy label, e.g. "Energy: +4" or "Energy: -3". */
+export function formatEnergyDelta(delta: number): string {
+  return `Energy: ${delta > 0 ? "+" : ""}${delta}`;
 }
 
 /** Today's Quest is a fixed 1-hour slot worth a flat +5 steps — not part of the 15/30/45/60 picker. */

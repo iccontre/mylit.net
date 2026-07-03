@@ -19,6 +19,8 @@ import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { persistProgressKeys } from "../lib/progressStore";
 import { JOURNAL_ENTRIES_KEY } from "../lib/storageKeys";
+import { HistoryModal } from "../components/HistoryModal";
+import { normalizeJournalLogs } from "../lib/logHistory";
 
 const LUNA_JOURNAL_BULLETS = [
   "Journal is for honest notes and thought patterns — not perfection.",
@@ -57,6 +59,7 @@ export default function JournalScreen() {
   const [mood, setMood] = useState("");
   const [content, setContent] = useState("");
   const [entries, setEntries] = useState<JournalEntry[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
     loadEntries();
@@ -178,6 +181,10 @@ export default function JournalScreen() {
               <Text style={styles.saveButtonText}>Save Journal Entry</Text>
             </TouchableOpacity>
 
+            <TouchableOpacity style={styles.backButton} onPress={() => setShowHistory(true)}>
+              <Text style={styles.backButtonText}>📖 Journal History</Text>
+            </TouchableOpacity>
+
             <Text style={styles.sectionTitle}>RECENT LOGS</Text>
 
             {entries.length === 0 ? (
@@ -217,6 +224,15 @@ export default function JournalScreen() {
             title="How Journal Works"
             bullets={LUNA_JOURNAL_BULLETS}
             accentColor="#C4A7FF"
+          />
+
+          <HistoryModal
+            visible={showHistory}
+            onClose={() => setShowHistory(false)}
+            title="Journal History"
+            storageKey={JOURNAL_ENTRIES_KEY}
+            normalize={normalizeJournalLogs}
+            accent="#C4A7FF"
           />
 
           <BottomNav activeRoute="mind" theme="purple" bottomOffset={mobile.bottomNavOffset} />

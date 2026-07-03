@@ -20,6 +20,8 @@ import { uiAssets } from "../constants/uiAssets";
 import { USER_STATS_KEY } from "../lib/questProgress";
 import { persistProgressKeys } from "../lib/progressStore";
 import { DREAM_JOURNAL_KEY } from "../lib/storageKeys";
+import { HistoryModal } from "../components/HistoryModal";
+import { normalizeDreamLogs } from "../lib/logHistory";
 
 const LUNA_DREAM_BULLETS = [
   "Dream Journal helps you capture dreams quickly after waking.",
@@ -86,6 +88,7 @@ export default function DreamJournalScreen() {
   const [summary, setSummary] = useState("");
   const [feeling, setFeeling] = useState("");
   const [showInfo, setShowInfo] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -258,10 +261,23 @@ export default function DreamJournalScreen() {
               )}
             </View>
 
+            <TouchableOpacity style={[styles.backButton, { marginBottom: 8 }]} onPress={() => setShowHistory(true)}>
+              <Text style={styles.backButtonText}>🌙 Dream History</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity style={styles.backButton} onPress={() => router.push("/")}>
               <Text style={styles.backButtonText}>Back to Today</Text>
             </TouchableOpacity>
           </FormScreen>
+
+          <HistoryModal
+            visible={showHistory}
+            onClose={() => setShowHistory(false)}
+            title="Dream History"
+            storageKey={DREAM_JOURNAL_KEY}
+            normalize={normalizeDreamLogs}
+            accent="#C4A7FF"
+          />
 
           <GuideInfoModal
             visible={showInfo}

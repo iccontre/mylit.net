@@ -25,8 +25,10 @@ import {
   collectQuickThoughtScheduledItems,
   findScheduleOverlap,
   formatDurationLabel,
+  formatEnergyDelta,
   generateTimeSlots,
   getDateKey,
+  getEnergyDelta,
   getRequiredRecoveryBlockForDate,
   getStepsForDuration,
   inferScheduledClassification,
@@ -900,6 +902,7 @@ export default function DayPlanScreen() {
                       </TouchableOpacity>
                     ))}
                     <Text style={styles.stepsText}>+{item.steps} step{item.steps === 1 ? "" : "s"}</Text>
+                    <Text style={styles.energyText}>{formatEnergyDelta(getEnergyDelta({ kind: item.kind, durationMinutes: item.durationMinutes, title: item.text }))}</Text>
                   </View>
                   <Text style={styles.weekdayLabel}>SHOW ON</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.weekdayToggleRow}>
@@ -1098,6 +1101,7 @@ const styles = StyleSheet.create({
   durationText: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
   optionTextActive: { color: "#FDE68A" },
   stepsText: { color: "#86EFAC", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
+  energyText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
   weekdayLabel: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 10, fontWeight: "900", marginTop: 8, marginBottom: 4 },
   weekdayToggleRow: { gap: 6, paddingBottom: 4 },
   weekdayToggle: { borderWidth: 1, borderColor: "#475569", paddingVertical: 5, paddingHorizontal: 8, backgroundColor: "rgba(30, 41, 59, 0.82)" },

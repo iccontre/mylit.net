@@ -29,8 +29,11 @@ import {
   collectDayPlanScheduledItems,
   findScheduleOverlap,
   formatDurationLabel,
+  formatEnergyDelta,
   generateTimeSlots,
   getDateKey,
+  getEnergyDelta,
+  getNapEnergyRestore,
   getQuickThoughtSteps,
   inferScheduledClassification,
   parseDurationMinutes,
@@ -215,6 +218,7 @@ export default function TomorrowQueueScreen() {
   const selectedDay = weekDays.find((day: QuestDay) => day.dateKey === selectedDateKey) || todayInWeek;
   const selectedDayIsPast = isPastDateKey(selectedDay.dateKey);
   const selectedSteps = getQuickThoughtSteps(selectedDuration);
+  const selectedEnergyDelta = getEnergyDelta({ kind: selectedKind, durationMinutes: parseDurationMinutes(selectedDuration, 30) });
   const selectedDayPlannedMinutes = computeUserScheduledMinutesForDay({
     dateKey: selectedDay.dateKey,
     weekday: selectedDay.weekday as WeekdayName,
@@ -448,6 +452,56 @@ export default function TomorrowQueueScreen() {
     void syncQuickThoughtItems();
   }
 
+  // A nap is a recovery quest that restores energy on completion (30 min = +5, 1 hr = +10).
+  // It saves like any other quest — appears on Calendar + Home Quest Board, completed via the
+  // timer flow. Saving does NOT restore energy; only completing it does.
+  async function addNap(minutes: number) {
+    if (selectedDayIsPast) {
+      setMessage("Past days can’t be edited.");
+      return;
+    }
+    const capacity = checkUserScheduledQuestCapacity({
+      dateKey: selectedDay.dateKey,
+      weekday: selectedDay.weekday as WeekdayName,
+      quickThoughts: items,
+      dayPlan,
+      additionalMinutes: minutes,
+      boardMode,
+    });
+    if (!capacity.allowed) {
+      const capLabel = formatPlannedDurationLabel(capacity.capacityMinutes);
+      setMessage(`Quest Board limit reached for this day — up to ${capLabel} of planned quests (${formatPlannedDurationLabel(capacity.remainingMinutes)} left).`);
+      return;
+    }
+    const durationLabel = minutes >= 60 ? "1 hr" : `${minutes} min`;
+    const startTime = computeFreeStartTime(items, dayPlan, selectedDay.dateKey, minutes, "");
+    const napItem: QueueItem = {
+      id: `nap-${Date.now()}`,
+      source: "quickThought",
+      text: `Nap (${durationLabel})`,
+      title: `Nap (${durationLabel})`,
+      type: "Nap",
+      classification: "recovery",
+      kind: "quickThought",
+      date: selectedDay.dateKey,
+      weekday: selectedDay.weekday as WeekdayName,
+      time: startTime,
+      startTime,
+      duration: durationLabel,
+      durationMinutes: minutes,
+      steps: getQuickThoughtSteps(minutes),
+      status: "scheduled",
+      createdAt: new Date().toISOString(),
+    };
+    setConflictMessage("");
+    setRecoveryWarning("");
+    setPendingRecoveryConfirm(false);
+    await saveQueue([napItem, ...items]);
+    setMessage(`Saved nap to Calendar. ${formatEnergyDelta(getNapEnergyRestore(minutes))} when completed.`);
+    void trackEvent(ANALYTICS_EVENTS.quick_thought_saved, { id: napItem.id, kind: "recovery" });
+    void syncQuickThoughtItems();
+  }
+
   function startEditItem(item: QueueItem) {
     setEditingId(item.id);
     setRequest(item.text);
@@ -594,6 +648,7 @@ export default function TomorrowQueueScreen() {
                   </TouchableOpacity>
                 ))}
                 <Text style={styles.stepsPreview}>+{selectedSteps} step{selectedSteps === 1 ? "" : "s"}</Text>
+                <Text style={styles.energyPreview}>{formatEnergyDelta(selectedEnergyDelta)}</Text>
               </View>
 
               {message ? <Text style={message.includes("deleted") || message.includes("Saved") || message.includes("updated") ? styles.statusMessage : styles.errorMessage}>{message}</Text> : null}
@@ -608,6 +663,31 @@ export default function TomorrowQueueScreen() {
                   {pendingRecoveryConfirm ? "CONFIRM & SAVE" : editingId ? "SAVE CHANGES" : "SAVE QUEST"} · +{selectedSteps} STEP{selectedSteps === 1 ? "" : "S"}
                 </Text>
               </TouchableOpacity>
+
+              {!editingId ? (
+                <View style={styles.napPanel}>
+                  <Text style={styles.napTitle}>😴 ADD NAP TIME</Text>
+                  <Text style={styles.napHelper}>A nap is a recovery quest. It restores energy when you complete it — not when you save it.</Text>
+                  <View style={styles.napRow}>
+                    <TouchableOpacity
+                      style={[styles.napButton, (selectedDayIsPast || selectedDayAtCapacity) && styles.saveButtonDisabled]}
+                      disabled={selectedDayIsPast || selectedDayAtCapacity}
+                      onPress={() => void addNap(30)}
+                    >
+                      <Text style={styles.napButtonText}>30 min nap</Text>
+                      <Text style={styles.napButtonEnergy}>Energy: +5</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.napButton, (selectedDayIsPast || selectedDayAtCapacity) && styles.saveButtonDisabled]}
+                      disabled={selectedDayIsPast || selectedDayAtCapacity}
+                      onPress={() => void addNap(60)}
+                    >
+                      <Text style={styles.napButtonText}>1 hr nap</Text>
+                      <Text style={styles.napButtonEnergy}>Energy: +10</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : null}
             </View>
 
             <View style={styles.savedHeaderRow}>
@@ -638,6 +718,7 @@ export default function TomorrowQueueScreen() {
                     </View>
                     <Text style={[styles.queueTitle, isCompleted && styles.queueTitleDone]}>{item.title}</Text>
                     <Text style={styles.queueDetail}>{formatSavedDate(item)} • {item.startTime} • {item.duration} • {item.classification}</Text>
+                    <Text style={styles.queueEnergy}>{formatEnergyDelta(getEnergyDelta({ kind: item.classification, durationMinutes: item.durationMinutes, title: item.title }))}</Text>
                     {isMissed ? (
                       <TouchableOpacity style={styles.reflectButton} onPress={() => router.push("/reflection")}>
                         <Text style={styles.reflectButtonText}>REFLECT ON THIS</Text>
@@ -734,6 +815,15 @@ const styles = StyleSheet.create({
   durationText: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
   optionTextActive: { color: "#FDE68A" },
   stepsPreview: { color: "#86EFAC", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
+  energyPreview: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
+  napPanel: { marginTop: 14, borderTopWidth: 2, borderTopColor: "#334155", paddingTop: 12 },
+  napTitle: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", letterSpacing: 0.5, marginBottom: 6 },
+  napHelper: { color: "#CBD5E1", fontSize: 11, lineHeight: 16, fontWeight: "700", marginBottom: 10 },
+  napRow: { flexDirection: "row", gap: 10 },
+  napButton: { flex: 1, borderWidth: 2, borderColor: "#A78BFA", backgroundColor: "rgba(88,28,135,0.45)", borderRadius: 6, paddingVertical: 11, alignItems: "center" },
+  napButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
+  napButtonEnergy: { color: "#86EFAC", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", marginTop: 3 },
+  queueEnergy: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", marginTop: 4 },
   statusMessage: { color: "#86EFAC", fontFamily: pixelFont, fontSize: 12, textAlign: "center", marginTop: 10, fontWeight: "900" },
   errorMessage: { color: "#FCA5A5", fontFamily: pixelFont, fontSize: 12, textAlign: "center", marginTop: 10, fontWeight: "900" },
   saveButton: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", paddingVertical: 13, alignItems: "center", marginTop: 12 },

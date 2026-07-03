@@ -39,7 +39,7 @@ import {
   USER_STATS_KEY,
   WAITING_ROOM_BOOSTS_KEY,
 } from "../lib/storageKeys";
-import { formatDurationLabel, getRequiredRecoveryBlockForDate, parseTimeToMinutes, TODAY_QUEST_DURATION_MINUTES } from "../lib/scheduling";
+import { formatDurationLabel, formatEnergyDelta, getEnergyDelta, getRequiredRecoveryBlockForDate, parseTimeToMinutes, TODAY_QUEST_DURATION_MINUTES } from "../lib/scheduling";
 
 type ActiveTimedItem = {
   id: string;
@@ -448,6 +448,9 @@ export default function WaitingRoomScreen() {
                   </Text>
                   <Text style={styles.questMeta}>
                     {formatDurationLabel(activeItem.durationMinutes)} · +{activeItem.steps} steps
+                  </Text>
+                  <Text style={[styles.questMeta, { color: accent, fontWeight: "900" }]}>
+                    {formatEnergyDelta(getEnergyDelta({ kind: activeItem.kind, durationMinutes: activeItem.durationMinutes, title: activeItem.title, mandatory: /eat or rest/i.test(activeItem.title) }))}
                   </Text>
 
                   <Text style={[styles.countdown, { color: timerFinished ? "#22C55E" : accent }]}>

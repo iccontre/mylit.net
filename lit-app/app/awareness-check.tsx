@@ -20,6 +20,8 @@ import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { persistProgressKeys } from "../lib/progressStore";
 import { AWARENESS_CHECKS_KEY } from "../lib/storageKeys";
+import { HistoryModal } from "../components/HistoryModal";
+import { normalizeMeditationLogs } from "../lib/logHistory";
 
 const LUNA_MEDITATIONS_BULLETS = [
   "Meditation/Awareness is for grounding and honesty — not traditional seated meditation.",
@@ -58,6 +60,7 @@ export default function AwarenessCheckScreen() {
   const [truth, setTruth] = useState("");
   const [checks, setChecks] = useState<AwarenessCheck[]>([]);
   const [showInfo, setShowInfo] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
     loadChecks();
@@ -205,10 +208,23 @@ export default function AwarenessCheckScreen() {
               </TouchableOpacity>
             )}
 
+            <TouchableOpacity style={[styles.homeButton, { marginBottom: 8 }]} onPress={() => setShowHistory(true)}>
+              <Text style={styles.homeButtonText}>🧘 Meditation History</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity style={styles.homeButton} onPress={() => router.push("/mind")}>
               <Text style={styles.homeButtonText}>← Back to Mind Hub</Text>
             </TouchableOpacity>
           </FormScreen>
+
+          <HistoryModal
+            visible={showHistory}
+            onClose={() => setShowHistory(false)}
+            title="Meditation History"
+            storageKey={AWARENESS_CHECKS_KEY}
+            normalize={normalizeMeditationLogs}
+            accent="#C4A7FF"
+          />
 
           <GuideInfoModal
             visible={showInfo}

@@ -40,7 +40,7 @@ import {
   type MissedEntry,
   type QuestKind,
 } from "../../lib/questProgress";
-import { formatDurationLabel, formatMinutesAsTime, getEnergyCostForDuration, getEnergyRestoreForDuration, getRequiredRecoveryBlockForDate, inferScheduledClassification, parseTimeToMinutes, TODAY_QUEST_DURATION_MINUTES } from "../../lib/scheduling";
+import { formatDurationLabel, formatEnergyDelta, formatMinutesAsTime, getEnergyDelta, getRequiredRecoveryBlockForDate, inferScheduledClassification, parseTimeToMinutes, TODAY_QUEST_DURATION_MINUTES } from "../../lib/scheduling";
 import { LATEST_PRE_SLEEP_INTENTION_KEY } from "../../lib/storageKeys";
 
 const mylitLogo = uiAssets.logo.mylit;
@@ -192,7 +192,7 @@ const PASSIVE_DECAY_INTERVAL_HOURS = 2;
 
 // Luna's mandatory recovery quest, triggered when energy runs low (see getMandatoryQuest).
 const MANDATORY_QUEST_TITLE = "Eat or rest to restore energy";
-const MANDATORY_QUEST_DURATION_MINUTES = 20;
+const MANDATORY_QUEST_DURATION_MINUTES = 30;
 const MANDATORY_QUEST_RESTORE_ENERGY = 5;
 // Energy restored once a Luna-enforced recovery window has been served today.
 const RECOVERY_TIME_RESTORE_ENERGY = 5;
@@ -327,17 +327,11 @@ export default function HomeScreen() {
 
   const hasEnergyData = hasRouteEnergy || hasSavedEnergyData;
 
-  const currentMode: ModeState = hasEnergyData
-    ? rawMode === "Recovery" || rawMode === "Progress"
-      ? rawMode
-      : hasSavedEnergyData
-      ? savedMode
-      : "Neutral"
-    : "Neutral";
-
-  const isRecovery = currentMode === "Recovery";
-  const isProgress = currentMode === "Progress";
-  const isNeutral = currentMode === "Neutral";
+  // The mode the user committed to at check-in. It sets the mandatory eat/rest floor
+  // (Progress must stay >= 60, Recovery >= 30). The DISPLAYED mode below is derived live
+  // from current energy so it updates the moment a completed quest changes the flame.
+  const checkInMode: "Recovery" | "Progress" =
+    rawMode === "Recovery" || rawMode === "Progress" ? rawMode : savedMode;
 
   const baseEnergyYield = hasRouteEnergy ? routeEnergyNumber : hasSavedEnergyData ? savedEnergy : 0;
 
@@ -585,10 +579,23 @@ export default function HomeScreen() {
     lockMessageTimeout.current = setTimeout(() => setLockMessage(""), 2500);
   }
 
+  function showMandatoryLockMessage() {
+    mediumHaptic();
+    setLockMessage("Your flame is low — finish the eat or rest quest first.");
+    if (lockMessageTimeout.current) clearTimeout(lockMessageTimeout.current);
+    lockMessageTimeout.current = setTimeout(() => setLockMessage(""), 2500);
+  }
+
   function openQuestItem(item: HomeQuestItem) {
     if (item.source === "Sleep") {
       lightHaptic();
       router.push("/pre-sleep-intention");
+      return;
+    }
+    // While the mandatory eat/rest quest is required, nothing else can start — not even
+    // progress checklist items (they must not bypass the lock).
+    if (mandatoryActive && !item.mandatory) {
+      showMandatoryLockMessage();
       return;
     }
     // Checklist items are a checkbox, not a timed quest — they can be reviewed/marked
@@ -624,6 +631,10 @@ export default function HomeScreen() {
   }
 
   async function startTimedItem(item: HomeQuestItem) {
+    if (mandatoryActive && !item.mandatory) {
+      showMandatoryLockMessage();
+      return;
+    }
     if (isRecoveryLocked) {
       showRecoveryLockMessage();
       return;
@@ -723,16 +734,13 @@ export default function HomeScreen() {
 
   const completedMandatoryEntries = completedQuests.filter((entry) => entry.title === MANDATORY_QUEST_TITLE);
   const completedNormalEntries = completedQuests.filter((entry) => entry.title !== MANDATORY_QUEST_TITLE);
-  // Progress completions spend energy, scaled by duration (15m=2, 30m=3, 45m=4, 1h=5).
-  // Recovery completions RESTORE energy instead, scaled by duration (15m=1, 30m=2, 45m=3, 1h=4)
-  // — recovery is meant to bring energy back up, not drain it further. Legacy completions saved
-  // before `kind` was tracked default to "progress" so historical energy math doesn't change.
-  const questEnergySpent = completedNormalEntries
-    .filter((entry) => entry.kind !== "recovery")
-    .reduce((sum, entry) => sum + getEnergyCostForDuration(entry.durationMinutes), 0);
-  const questEnergyRestored = completedNormalEntries
-    .filter((entry) => entry.kind === "recovery")
-    .reduce((sum, entry) => sum + getEnergyRestoreForDuration(entry.durationMinutes), 0);
+  // Every completed non-mandatory item applies its signed energy delta once:
+  // progress spends (-1/-3/-5/-7), recovery restores (+2/+4/+6/+8), naps restore (+5/+10).
+  // Legacy completions saved before `kind` was tracked default to "progress".
+  const questEnergyDelta = completedNormalEntries.reduce(
+    (sum, entry) => sum + getEnergyDelta({ kind: entry.kind ?? "progress", durationMinutes: entry.durationMinutes, title: entry.title }),
+    0
+  );
   const passiveDecay =
     hasEnergyData && latestCheckIn?.createdAt
       ? Math.floor(
@@ -761,8 +769,31 @@ export default function HomeScreen() {
       ? RECOVERY_TIME_RESTORE_ENERGY
       : 0;
   const energyYield = hasEnergyData
-    ? clampEnergy(baseEnergyYield - passiveDecay - questEnergySpent + questEnergyRestored + mandatoryRecoveryBoost + recoveryTimeRestore)
+    ? clampEnergy(baseEnergyYield - passiveDecay + questEnergyDelta + mandatoryRecoveryBoost + recoveryTimeRestore)
     : 0;
+
+  // CHANGE 3: mode is derived live from current energy so Home, Quest Board, guide text,
+  // and Stats all agree. Progress at >= 60, Recovery at <= 59, Neutral before check-in.
+  const currentMode: ModeState = !hasEnergyData ? "Neutral" : energyYield >= 60 ? "Progress" : "Recovery";
+  const isRecovery = currentMode === "Recovery";
+  const isProgress = currentMode === "Progress";
+  const isNeutral = currentMode === "Neutral";
+
+  // "Energy: +4" / "Energy: -3" label shown on quest cards, the detail modal, and the
+  // active timer, matching exactly the energy applied when the item is completed.
+  const energyLabelFor = (opts: { kind: QuestKind; durationMinutes: number; title: string; mandatory?: boolean }) =>
+    formatEnergyDelta(
+      getEnergyDelta({
+        kind: opts.kind,
+        durationMinutes: opts.durationMinutes,
+        title: opts.title,
+        mandatory: opts.mandatory || opts.title === MANDATORY_QUEST_TITLE,
+      })
+    );
+
+  // While a mandatory eat/rest quest is required (energy under the check-in floor and not yet
+  // done), the board locks every non-mandatory start until it's completed.
+  const mandatoryActive = getMandatoryQuest() !== null;
 
   const todayName = getWeekdayName();
 
@@ -837,10 +868,11 @@ export default function HomeScreen() {
   }
 
   function getMandatoryQuest(): Quest | null {
-    if (!hasEnergyData || isNeutral) return null;
+    if (!hasEnergyData) return null;
 
-    // Progress mode dips into recovery earlier (below 60); Recovery mode below 30.
-    const threshold = isProgress ? MANDATORY_QUEST_PROGRESS_THRESHOLD : MANDATORY_QUEST_RECOVERY_THRESHOLD;
+    // Floor depends on the mode the user committed to at check-in: a Progress day must
+    // stay >= 60, a Recovery day >= 30. Falling below the floor triggers the eat/rest quest.
+    const threshold = checkInMode === "Progress" ? MANDATORY_QUEST_PROGRESS_THRESHOLD : MANDATORY_QUEST_RECOVERY_THRESHOLD;
     if (energyYield >= threshold) return null;
 
     const alreadyDone = completedQuests.some((entry) => entry.title === MANDATORY_QUEST_TITLE);
@@ -853,7 +885,7 @@ export default function HomeScreen() {
       durationMinutes: MANDATORY_QUEST_DURATION_MINUTES,
       restoreEnergy: MANDATORY_QUEST_RESTORE_ENERGY,
       mandatory: true,
-      description: "Luna's orders: take 20 minutes to eat or rest so your energy can recover.",
+      description: "Your flame is low. Take 30 minutes to eat or rest before more quests.",
     };
   }
 
@@ -1074,6 +1106,13 @@ export default function HomeScreen() {
                 </View>
                 <Text style={[styles.flameMeterText, { color: theme.soft }]}>{hasEnergyData ? flameLabel : "CHECK-IN NEEDED"}</Text>
                 <Text style={styles.energyFooterText} numberOfLines={2}>{modeInstruction}</Text>
+                {hasEnergyData ? (
+                  <Text style={[styles.flameProtectText, { color: theme.accent }]} numberOfLines={2}>
+                    {isProgress
+                      ? "Protect your flame — don't let it drop below 60."
+                      : "Protect your flame — don't let it drop below 30."}
+                  </Text>
+                ) : null}
               </View>
 
               <View style={styles.checkInRow}>
@@ -1156,6 +1195,9 @@ export default function HomeScreen() {
                     <Text style={styles.activeMeta} numberOfLines={1}>
                       {questSourceLabel(activeItem.source)} · {formatDurationLabel(activeItem.durationMinutes)} · +{activeItem.steps} steps
                     </Text>
+                    <Text style={[styles.activeMeta, { color: kindAccent(activeItem.kind) }]} numberOfLines={1}>
+                      {energyLabelFor(activeItem)}
+                    </Text>
 
                     <TouchableOpacity
                       style={[styles.waitingRoomBtn, { borderColor: theme.accent }]}
@@ -1231,7 +1273,7 @@ export default function HomeScreen() {
                           <Text style={styles.questText} numberOfLines={1}>{item.title}</Text>
                           <View style={styles.questMetaRow}>
                             <Text style={[styles.questMeta, { color: theme.soft }]} numberOfLines={1}>
-                              {questSourceLabel(item.source)} · {formatDurationLabel(item.durationMinutes)}{item.scheduledTime ? ` · ${item.scheduledTime}` : ""}
+                              {questSourceLabel(item.source)} · {formatDurationLabel(item.durationMinutes)} · {energyLabelFor(item)}{item.scheduledTime ? ` · ${item.scheduledTime}` : ""}
                             </Text>
                             <Text style={[styles.questSteps, { color: kindAccent(item.kind) }]}>+{item.steps}</Text>
                           </View>
@@ -1315,6 +1357,7 @@ export default function HomeScreen() {
                       <Text style={styles.modalMeta}>Source: {questSourceLabel(selectedItem.source)}</Text>
                       <Text style={styles.modalMeta}>Duration: {formatDurationLabel(selectedItem.durationMinutes)}</Text>
                       <Text style={styles.modalMeta}>Steps possible: +{selectedItem.steps}</Text>
+                      <Text style={[styles.modalMeta, { color: kindAccent(selectedItem.kind), fontWeight: "900" }]}>{energyLabelFor(selectedItem)}</Text>
                       {selectedItem.scheduledTime ? (
                         <Text style={styles.modalMeta}>Scheduled: {selectedItem.scheduledTime}</Text>
                       ) : (
@@ -1659,6 +1702,13 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     textAlign: "center",
     marginTop: 4,
+  },
+  flameProtectText: {
+    fontSize: 10,
+    fontWeight: "900",
+    textAlign: "center",
+    marginTop: 6,
+    letterSpacing: 0.3,
   },
   checkInRow: {
     flexDirection: "row",

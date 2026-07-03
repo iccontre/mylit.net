@@ -22,6 +22,8 @@ import {
   LATEST_PRE_SLEEP_INTENTION_KEY,
   PRE_SLEEP_INTENTIONS_KEY,
 } from "../lib/storageKeys";
+import { HistoryModal } from "../components/HistoryModal";
+import { normalizePreSleepLogs } from "../lib/logHistory";
 import { USER_STATS_KEY } from "../lib/questProgress";
 
 const LUNA_PRE_SLEEP_BULLETS = [
@@ -70,6 +72,7 @@ export default function PreSleepIntentionScreen() {
   const [feeling, setFeeling] = useState("");
   const [support, setSupport] = useState<string[]>([]);
   const [showInfo, setShowInfo] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
 
   async function successHaptic() {
     try {
@@ -204,10 +207,23 @@ export default function PreSleepIntentionScreen() {
               </TouchableOpacity>
             </View>
 
+            <TouchableOpacity style={[styles.backButton, { marginBottom: 8 }]} onPress={() => setShowHistory(true)}>
+              <Text style={styles.backButtonText}>✨ Pre-Sleep History</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity style={styles.backButton} onPress={() => router.push("/sleep")}>
               <Text style={styles.backButtonText}>Back to Sleep Hub</Text>
             </TouchableOpacity>
           </FormScreen>
+
+          <HistoryModal
+            visible={showHistory}
+            onClose={() => setShowHistory(false)}
+            title="Pre-Sleep History"
+            storageKey={PRE_SLEEP_INTENTIONS_KEY}
+            normalize={normalizePreSleepLogs}
+            accent="#C4A7FF"
+          />
 
           <GuideInfoModal
             visible={showInfo}
