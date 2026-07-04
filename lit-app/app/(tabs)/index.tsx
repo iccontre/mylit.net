@@ -14,7 +14,7 @@ import {
 } from "../../lib/questGeneration";
 import { ANALYTICS_EVENTS, trackEvent } from "../../lib/analytics";
 import { setChecklistItemChecked, syncQuestCompleted, syncQuestMissed, syncQuestStarted } from "../../lib/progressSync";
-import { persistProgressKeys } from "../../lib/progressStore";
+import { clearProgressKey, persistProgressKeys } from "../../lib/progressStore";
 import { syncAndGetStepRank, type StepRank } from "../../lib/stepRank";
 import {
   ACTIVE_TIMED_ITEM_KEY,
@@ -201,11 +201,13 @@ const PASSIVE_DECAY_INTERVAL_HOURS = 2;
 
 // Luna's mandatory recovery quest, triggered when energy runs low (see getMandatoryQuest).
 const MANDATORY_QUEST_TITLE = "Eat or rest to restore energy";
-const MANDATORY_QUEST_DURATION_MINUTES = 30;
 const MANDATORY_QUEST_RESTORE_ENERGY = 5;
-// Progress mode triggers the recovery quest earlier than Recovery mode.
-const MANDATORY_QUEST_PROGRESS_THRESHOLD = 60;
-const MANDATORY_QUEST_RECOVERY_THRESHOLD = 30;
+// Below 60 energy: a short 15-min reset that only blocks starting new PROGRESS quests.
+const MANDATORY_MILD_THRESHOLD = 60;
+const MANDATORY_MILD_DURATION_MINUTES = 15;
+// Below 30 energy: a stronger 30-min requirement that locks the whole Quest Board.
+const MANDATORY_SEVERE_THRESHOLD = 30;
+const MANDATORY_SEVERE_DURATION_MINUTES = 30;
 
 function clampEnergy(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
@@ -334,12 +336,6 @@ export default function HomeScreen() {
     isSavedCheckInAfterPath;
 
   const hasEnergyData = hasRouteEnergy || hasSavedEnergyData;
-
-  // The mode the user committed to at check-in. It sets the mandatory eat/rest floor
-  // (Progress must stay >= 60, Recovery >= 30). The DISPLAYED mode below is derived live
-  // from current energy so it updates the moment a completed quest changes the flame.
-  const checkInMode: "Recovery" | "Progress" =
-    rawMode === "Recovery" || rawMode === "Progress" ? rawMode : savedMode;
 
   const baseEnergyYield = hasRouteEnergy ? routeEnergyNumber : hasSavedEnergyData ? savedEnergy : 0;
 
@@ -571,8 +567,8 @@ export default function HomeScreen() {
 
   async function clearActiveItem() {
     setActiveItem(null);
-    // Active timer is local-only (not cloud-synced), so clear it straight from AsyncStorage.
-    await AsyncStorage.removeItem(ACTIVE_TIMED_ITEM_KEY);
+    // Clears cloud too — otherwise a resolved timer could be "resurrected" by the next sign-in merge.
+    await clearProgressKey(ACTIVE_TIMED_ITEM_KEY);
   }
 
   function showLockMessage() {
@@ -602,9 +598,8 @@ export default function HomeScreen() {
       router.push("/pre-sleep-intention");
       return;
     }
-    // While the mandatory eat/rest quest is required, nothing else can start — not even
-    // progress checklist items (they must not bypass the lock).
-    if (mandatoryActive && !item.mandatory) {
+    // Mild mandatory (15 min) only blocks PROGRESS starts; severe (30 min) blocks everything.
+    if (mandatoryActive && !item.mandatory && (mandatoryLocksRecoveryToo || item.kind !== "recovery")) {
       showMandatoryLockMessage();
       return;
     }
@@ -642,7 +637,8 @@ export default function HomeScreen() {
   }
 
   async function startTimedItem(item: HomeQuestItem) {
-    if (mandatoryActive && !item.mandatory) {
+    // Mild mandatory (15 min) only blocks PROGRESS starts; severe (30 min) blocks everything.
+    if (mandatoryActive && !item.mandatory && (mandatoryLocksRecoveryToo || item.kind !== "recovery")) {
       showMandatoryLockMessage();
       return;
     }
@@ -803,9 +799,11 @@ export default function HomeScreen() {
       })
     );
 
-  // While a mandatory eat/rest quest is required (energy under the check-in floor and not yet
-  // done), the board locks every non-mandatory start until it's completed.
-  const mandatoryActive = getMandatoryQuest() !== null;
+  // Mild (15-min, energy 30-59) only blocks new PROGRESS starts — Recovery items still open.
+  // Severe (30-min, energy < 30) locks the whole board until the mandatory quest resolves.
+  const activeMandatoryQuest = getMandatoryQuest();
+  const mandatoryActive = activeMandatoryQuest !== null;
+  const mandatoryLocksRecoveryToo = activeMandatoryQuest?.durationMinutes === MANDATORY_SEVERE_DURATION_MINUTES;
 
   const todayName = getWeekdayName();
 
@@ -887,25 +885,30 @@ export default function HomeScreen() {
     ];
   }
 
+  /**
+   * Below 60 energy: mild 15-min mandatory reset (blocks new Progress starts only).
+   * Below 30 energy: severe 30-min mandatory reset (blocks the whole Quest Board).
+   * Only ever one mandatory quest at a time — the severe tier replaces the mild one,
+   * it never stacks a second mandatory quest alongside it.
+   */
   function getMandatoryQuest(): Quest | null {
     if (!hasEnergyData) return null;
-
-    // Floor depends on the mode the user committed to at check-in: a Progress day must
-    // stay >= 60, a Recovery day >= 30. Falling below the floor triggers the eat/rest quest.
-    const threshold = checkInMode === "Progress" ? MANDATORY_QUEST_PROGRESS_THRESHOLD : MANDATORY_QUEST_RECOVERY_THRESHOLD;
-    if (energyYield >= threshold) return null;
+    if (energyYield >= MANDATORY_MILD_THRESHOLD) return null;
 
     const alreadyDone = completedQuests.some((entry) => entry.title === MANDATORY_QUEST_TITLE);
     if (alreadyDone) return null;
 
+    const isSevere = energyYield < MANDATORY_SEVERE_THRESHOLD;
     return {
       title: MANDATORY_QUEST_TITLE,
       type: "Mandatory",
       steps: 1,
-      durationMinutes: MANDATORY_QUEST_DURATION_MINUTES,
+      durationMinutes: isSevere ? MANDATORY_SEVERE_DURATION_MINUTES : MANDATORY_MILD_DURATION_MINUTES,
       restoreEnergy: MANDATORY_QUEST_RESTORE_ENERGY,
       mandatory: true,
-      description: "Your flame is low. Take 30 minutes to eat or rest before more quests.",
+      description: isSevere
+        ? "Your flame is very low. Take 30 minutes to eat or rest before continuing."
+        : "Your flame dipped below 60. Take 15 minutes to eat or rest before more progress.",
     };
   }
 
@@ -1182,11 +1185,9 @@ export default function HomeScreen() {
                 </View>
 
                 {!isNeutral && todayQuestUnset ? (
-                  <TouchableOpacity
-                    style={[styles.setMainQuestBtn, { borderColor: theme.accent }]}
-                    onPress={() => navigateWithHaptic("/day-plan")}
-                  >
-                    <Text style={[styles.setMainQuestBtnText, { color: theme.accent }]}>⚔ SET TODAY’S MAIN QUEST</Text>
+                  <TouchableOpacity style={styles.setMainQuestBtn} onPress={() => navigateWithHaptic("/day-plan")}>
+                    <Text style={styles.setMainQuestBtnTitle}>SET TODAY’S QUEST</Text>
+                    <Text style={styles.setMainQuestBtnHint}>Choose your main quest for today.</Text>
                   </TouchableOpacity>
                 ) : null}
 
@@ -1866,17 +1867,28 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "900",
   },
+  // A setup PROMPT, not a quest — white border + bright title make it visually distinct
+  // from the gold/purple quest rows below it, so it reads as "do this first", not "a quest".
   setMainQuestBtn: {
     borderWidth: 2,
+    borderColor: "#FFFFFF",
+    borderStyle: "dashed",
     backgroundColor: "#111827",
-    paddingVertical: 9,
+    paddingVertical: 10,
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 10,
   },
-  setMainQuestBtnText: {
-    fontSize: 12,
+  setMainQuestBtnTitle: {
+    color: "#FFFFFF",
+    fontSize: 13,
     fontWeight: "900",
     letterSpacing: 0.4,
+  },
+  setMainQuestBtnHint: {
+    color: "#CBD5E1",
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 3,
   },
   questRow: {
     minHeight: 39,

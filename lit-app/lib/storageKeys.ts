@@ -62,9 +62,13 @@ export const SYNCABLE_PROGRESS_KEYS = [
   COMPLETED_QUESTS_KEY,
   TODAY_PROGRESS_DATE_KEY,
   MISSED_QUESTS_KEY,
-  // NOTE: ACTIVE_TIMED_ITEM_KEY is intentionally NOT synced. The active quest timer is
-  // ephemeral, device-local session state; cloud merges were resurrecting stale timers or
-  // wiping a freshly-started one (Study Room showing "No active quest", Home "restarting").
+  // Synced with a dedicated merge rule (mergeActiveTimedItem in progressStore.ts): whichever
+  // side is non-empty wins outright, and if BOTH sides have an active timer, the one with the
+  // later startedAt wins. Resolving a timer (complete/miss/cancel) must go through
+  // clearProgressKey so the cloud row is deleted too — otherwise a stale cloud copy could
+  // resurrect a timer the user already finished (the exact bug this key used to avoid by
+  // never syncing at all).
+  ACTIVE_TIMED_ITEM_KEY,
   DAY_PLAN_KEY,
   TOMORROW_QUEUE_KEY,
   USER_STATS_KEY,

@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { persistProgressKeys } from "./progressStore";
+import { clearProgressKey, persistProgressKeys } from "./progressStore";
 import {
   ACTIVE_TIMED_ITEM_KEY,
   COMPLETED_QUESTS_KEY,
@@ -564,10 +564,18 @@ export function normalizeQuestItems(input: {
   }
 
   const todayQuest = input.todayQuest;
-  if (todayQuest?.title?.trim() && todayQuest.status !== "completed" && String(todayQuest.status) !== "missed") {
+  // A status of "completed"/"missed" saved on a PRIOR day must not carry over — otherwise a
+  // freshly-saved Today's Quest would silently be filtered out as "already resolved".
+  const todayQuestStatus = !todayQuest?.date || todayQuest.date === input.todayKey ? todayQuest?.status : undefined;
+  if (
+    todayQuest?.title?.trim() &&
+    !isDefaultTodayQuestTitle(todayQuest.title) &&
+    todayQuestStatus !== "completed" &&
+    String(todayQuestStatus) !== "missed"
+  ) {
     const durationMinutes = parseDurationMinutes(todayQuest.durationMinutes ?? todayQuest.duration, TODAY_QUEST_DURATION_MINUTES);
-    const kind: QuestKind =
-      todayQuest.kind === "recovery" ? "recovery" : inferScheduledClassification(todayQuest.title) === "recovery" ? "recovery" : "progress";
+    // Kind comes only from the explicit toggle the user saved — never re-inferred from title text.
+    const kind: QuestKind = todayQuest.kind === "recovery" ? "recovery" : "progress";
     pushItem({
       id: buildStableItemId("Today's Quest", todayQuest.title, { rawId: todayQuest.id, dateKey: input.todayKey, scheduledTime: todayQuest.startTime }),
       title: todayQuest.title.trim(),
@@ -1089,7 +1097,8 @@ export async function markItemMissed(
 
   await syncSourceMissed(item);
   if (activeTimedId && activeTimedId === item.id) {
-    await AsyncStorage.removeItem(ACTIVE_TIMED_ITEM_KEY);
+    // Clears cloud too — otherwise a resolved timer could be "resurrected" by the next sign-in merge.
+    await clearProgressKey(ACTIVE_TIMED_ITEM_KEY);
   }
 
   const next = [...existingMissed, entry];

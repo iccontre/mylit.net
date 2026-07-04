@@ -30,7 +30,7 @@ import {
   type QuestSource,
 } from "../lib/questProgress";
 import { syncQuestCompleted, syncQuestMissed } from "../lib/progressSync";
-import { persistProgressKeys } from "../lib/progressStore";
+import { clearProgressKey, persistProgressKeys } from "../lib/progressStore";
 import {
   ACTIVE_TIMED_ITEM_KEY,
   COMPLETED_QUESTS_KEY,
@@ -311,7 +311,7 @@ export default function WaitingRoomScreen() {
       }
       const nextCompleted = await markItemComplete(homeItem, completedQuests);
       setCompletedQuests(nextCompleted);
-      await AsyncStorage.removeItem(ACTIVE_TIMED_ITEM_KEY);
+      await clearProgressKey(ACTIVE_TIMED_ITEM_KEY);
       setActiveItem(null);
       void trackEvent(ANALYTICS_EVENTS.quest_completed, { id: homeItem.id, title: homeItem.title, steps: homeItem.steps });
       void trackEvent(ANALYTICS_EVENTS.waiting_room_completed, { id: homeItem.id, boost: boosted });
@@ -329,7 +329,7 @@ export default function WaitingRoomScreen() {
       const homeItem = toHomeQuestItem(activeItem);
       const nextMissed = await markItemMissed(homeItem, missedQuests, activeItem.id);
       setMissedQuests(nextMissed);
-      await AsyncStorage.removeItem(ACTIVE_TIMED_ITEM_KEY);
+      await clearProgressKey(ACTIVE_TIMED_ITEM_KEY);
       setActiveItem(null);
       void trackEvent(ANALYTICS_EVENTS.quest_missed, { id: homeItem.id, title: homeItem.title });
       void trackEvent(ANALYTICS_EVENTS.waiting_room_missed, { id: homeItem.id });

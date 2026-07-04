@@ -3,6 +3,7 @@ import Constants from "expo-constants";
 
 import { getSession, updateProfile, LOCAL_PROFILE_KEY, hasCompletedPathProfile } from "./auth";
 import {
+  ACTIVE_TIMED_ITEM_KEY,
   ALL_SCANNABLE_PROGRESS_KEYS,
   ARRAY_MERGE_PROGRESS_KEYS,
   CHECKIN_HISTORY_KEY,
@@ -332,6 +333,21 @@ function mergeLatestCheckIn(localRaw: string, cloudRaw: string): string {
   return localAt >= cloudAt ? localRaw : cloudRaw;
 }
 
+/**
+ * Picks ONE side's whole active-timer object rather than merging fields (Frankensteining
+ * an id from one device with an endsAt from another would restore a broken timer). Whichever
+ * side is non-empty wins outright; if both have an active timer, the one started more
+ * recently wins — an older still-active timer on another device is assumed superseded.
+ */
+function mergeActiveTimedItem(localRaw: string, cloudRaw: string): string {
+  if (isPayloadEmpty(cloudRaw)) return localRaw;
+  if (isPayloadEmpty(localRaw)) return cloudRaw;
+
+  const local = parseJson<{ startedAt?: number }>(localRaw, {});
+  const cloud = parseJson<{ startedAt?: number }>(cloudRaw, {});
+  return safeNumber(cloud.startedAt) > safeNumber(local.startedAt) ? cloudRaw : localRaw;
+}
+
 function mergePayload(
   key: SyncableProgressKey,
   localRaw: string,
@@ -361,6 +377,12 @@ function mergePayload(
 
   if (key === LATEST_CHECKIN_KEY) {
     const payload = mergeLatestCheckIn(localRaw, cloudRaw);
+    const chosenAt = payload === localRaw ? localAt : cloudAt;
+    return { payload, updatedAt: new Date(Math.max(chosenAt, localAt, cloudAt)).toISOString() };
+  }
+
+  if (key === ACTIVE_TIMED_ITEM_KEY) {
+    const payload = mergeActiveTimedItem(localRaw, cloudRaw);
     const chosenAt = payload === localRaw ? localAt : cloudAt;
     return { payload, updatedAt: new Date(Math.max(chosenAt, localAt, cloudAt)).toISOString() };
   }

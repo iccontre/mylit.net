@@ -565,7 +565,7 @@ export default function TomorrowQueueScreen() {
             </View>
 
             <View style={styles.appQuestPanel}>
-              <Text style={styles.sectionTitle}>⏱️ APP QUESTS FOR YOUR PATH</Text>
+              <Text style={styles.bigSectionTitle}>⏱️ APP QUESTS FOR YOUR PATH</Text>
               <Text style={styles.helperText}>
                 For direction only — optional, not required in one day. Start and complete these from the Home Quest Board.
               </Text>
@@ -592,7 +592,7 @@ export default function TomorrowQueueScreen() {
 
             <View style={styles.creationPanel}>
               <View style={styles.rowBetween}>
-                <Text style={styles.panelHeading}>{editingId ? "EDIT QUEST" : "CREATE A QUEST"}</Text>
+                <Text style={[styles.panelHeading, styles.panelHeadingCentered]}>{editingId ? "EDIT QUEST" : "CREATE A QUEST"}</Text>
                 {editingId ? (
                   <TouchableOpacity onPress={cancelEdit}>
                     <Text style={styles.cancelEditText}>CANCEL</Text>
@@ -666,7 +666,7 @@ export default function TomorrowQueueScreen() {
 
               {!editingId ? (
                 <View style={styles.napPanel}>
-                  <Text style={styles.napTitle}>😴 ADD NAP TIME</Text>
+                  <Text style={[styles.napTitle, styles.napTitleCentered]}>😴 ADD NAP TIME</Text>
                   <Text style={styles.napHelper}>A nap is a recovery quest. It restores energy when you complete it — not when you save it.</Text>
                   <View style={styles.napRow}>
                     <TouchableOpacity
@@ -691,7 +691,7 @@ export default function TomorrowQueueScreen() {
             </View>
 
             <View style={styles.savedHeaderRow}>
-              <Text style={styles.savedTitle}>🎒 SAVED QUESTS</Text>
+              <Text style={[styles.savedTitle, styles.savedTitleCentered]}>🎒 SAVED QUESTS</Text>
               <Text style={styles.savedCount}>
                 {formatPlannedDurationLabel(selectedDayRemainingMinutes)} left · {boardMode} ({boardMode === "Recovery" ? "5h" : "8h"} limit)
               </Text>
@@ -784,6 +784,11 @@ const styles = StyleSheet.create({
   creationPanel: { backgroundColor: "rgba(8, 13, 24, 0.95)", borderRadius: 8, padding: 12, marginBottom: 14, borderWidth: 3, borderColor: "#334155" },
   rowBetween: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   panelHeading: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", letterSpacing: 0.5 },
+  // flex:1 lets the heading center in the space left of the CANCEL button (when editing).
+  panelHeadingCentered: { flex: 1, textAlign: "center" },
+  // Dedicated (not shared with the numbered field labels below) so bumping size/centering
+  // here doesn't also blow up "1. QUEST TITLE" etc. into oversized sub-labels.
+  bigSectionTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 16, fontWeight: "900", letterSpacing: 0.5, lineHeight: 20, marginBottom: 6, textAlign: "center" },
   cancelEditText: { color: "#FCA5A5", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
   sectionTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 0.5, lineHeight: 17, marginTop: 10, marginBottom: 8 },
   input: { backgroundColor: "rgba(2, 6, 23, 0.95)", borderRadius: 5, padding: 13, fontSize: 15, color: "#F9FAFB", borderWidth: 2, borderColor: "#475569", fontWeight: "800" },
@@ -817,7 +822,8 @@ const styles = StyleSheet.create({
   stepsPreview: { color: "#86EFAC", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
   energyPreview: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
   napPanel: { marginTop: 14, borderTopWidth: 2, borderTopColor: "#334155", paddingTop: 12 },
-  napTitle: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", letterSpacing: 0.5, marginBottom: 6 },
+  napTitle: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", letterSpacing: 0.5, marginBottom: 6 },
+  napTitleCentered: { textAlign: "center" },
   napHelper: { color: "#CBD5E1", fontSize: 11, lineHeight: 16, fontWeight: "700", marginBottom: 10 },
   napRow: { flexDirection: "row", gap: 10 },
   napButton: { flex: 1, borderWidth: 2, borderColor: "#A78BFA", backgroundColor: "rgba(88,28,135,0.45)", borderRadius: 6, paddingVertical: 11, alignItems: "center" },
@@ -831,7 +837,9 @@ const styles = StyleSheet.create({
   saveButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900", letterSpacing: 1 },
   recoveryWarning: { color: "#FDBA74", fontFamily: pixelFont, fontSize: 12, textAlign: "center", marginTop: 10, fontWeight: "800", lineHeight: 17 },
   savedHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
-  savedTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 14, fontWeight: "900" },
+  savedTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 15, fontWeight: "900" },
+  // flex:1 lets the heading center in the space left of the item-count chip.
+  savedTitleCentered: { flex: 1, textAlign: "center" },
   savedCount: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 10, fontWeight: "900" },
   emptyCard: { borderWidth: 2, borderColor: "#334155", backgroundColor: "rgba(8,13,24,0.9)", padding: 14, alignItems: "center", marginBottom: 12 },
   emptyIcon: { fontSize: 26 },

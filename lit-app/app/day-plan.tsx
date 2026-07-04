@@ -312,6 +312,9 @@ function normalizePlan(raw: Partial<DayPlan>): DayPlan {
   // 2 hr is Progress-only — clamp any legacy/invalid Recovery + 2 hr combo back to 1 hr.
   const durationMinutes = kind === "recovery" && rawDurationMinutes >= TODAY_QUEST_TWO_HOUR_MINUTES ? TODAY_QUEST_DURATION_MINUTES : rawDurationMinutes;
   const duration = durationMinutes === rawDurationMinutes ? quest.duration || formatDurationLabel(durationMinutes) : TODAY_QUEST_DURATION_LABEL;
+  // A completed/missed status from a PRIOR day must not carry into today — otherwise a quest
+  // saved today would silently be filtered out of the Quest Board as "already completed".
+  const isNewDay = quest.date !== getDateKey();
   return {
     todayFocus: roles[todayWeekday()],
     todayGoal: roles[todayWeekday()],
@@ -326,7 +329,7 @@ function normalizePlan(raw: Partial<DayPlan>): DayPlan {
       duration,
       durationMinutes,
       steps: typeof quest.steps === "number" ? quest.steps : stepsForTodayQuest(durationMinutes, kind),
-      status: quest.status || "scheduled",
+      status: isNewDay ? "scheduled" : quest.status || "scheduled",
       kind,
       source: "todayQuest",
     },
@@ -473,16 +476,6 @@ export default function DayPlanScreen() {
     });
   }
 
-  function todayQuestTriggersRecoveryLock(): boolean {
-    const existing = committedItemsAsScheduledLike(dayPlan.todayQuest.id);
-    const date = resolveDateForWeekday(dayPlan.todayQuest.weekday);
-    return wouldTriggerRecoveryLock(
-      { id: dayPlan.todayQuest.id, date, startTime: dayPlan.todayQuest.startTime, durationMinutes: dayPlan.todayQuest.durationMinutes },
-      existing,
-      date
-    );
-  }
-
   /** Persists exactly one checklist item into the committed plan without pulling in other unsaved drafts. */
   async function saveChecklistItem(itemId: string) {
     const bucketDay = findChecklistBucket(dayPlan, itemId);
@@ -543,14 +536,9 @@ export default function DayPlanScreen() {
     }
     setConflictMessage("");
 
-    if (pendingRecoveryConfirmId !== dayPlan.todayQuest.id && todayQuestTriggersRecoveryLock()) {
-      setRecoveryWarning(RECOVERY_LOCK_WARNING);
-      setPendingRecoveryConfirmId(dayPlan.todayQuest.id);
-      return;
-    }
-    setRecoveryWarning("");
-    setPendingRecoveryConfirmId(null);
-
+    // A 2 hr Today's Quest intentionally triggers Forced Recovery on COMPLETION — that's expected,
+    // not a scheduling accident, so saving it never needs the checklist items' extra confirm step
+    // (the small notice below the duration row already explains what happens on completion).
     const nextCommitted: DayPlan = {
       ...committedPlanRef.current,
       todayQuest: dayPlan.todayQuest,
@@ -925,11 +913,13 @@ export default function DayPlanScreen() {
                 ))}
               </ScrollView>
               <TextInput style={formStyles.input} value={dayPlan.weekdayRoles[selectedDay]} onChangeText={updateSelectedRole} placeholder="e.g. Coding Day" placeholderTextColor="#94A3B8" />
+              <TouchableOpacity style={styles.saveButton} onPress={saveWeeklyHabit}><Text style={styles.saveButtonText}>SAVE WEEKLY HABIT</Text></TouchableOpacity>
             </View>
 
             <View style={styles.todayQuestOuterBorder}>
             <View style={[dayPlan.todayQuest.kind === "recovery" ? styles.panelPurple : styles.panelGold, { marginBottom: 0 }]}>
-              <Text style={styles.sectionTitle}>SET TODAY’S MAIN QUEST • {dayPlan.todayQuest.duration} • +{dayPlan.todayQuest.steps} STEPS</Text>
+              <Text style={styles.sectionTitle}>TODAY’S QUEST</Text>
+              <Text style={styles.sectionMeta}>{dayPlan.todayQuest.duration} • +{dayPlan.todayQuest.steps} steps</Text>
               <Text style={styles.helperText}>This is the actual quest for today. It appears on Calendar and Quest Board and earns +{dayPlan.todayQuest.steps} steps only when completed.</Text>
               <TextInput style={formStyles.input} value={dayPlan.todayQuest.title} onChangeText={updateTodayQuestTitle} placeholder="Finish profile page layout" placeholderTextColor="#94A3B8" />
               <TimeStepper value={dayPlan.todayQuest.startTime} onChange={updateTodayQuestStartTime} />
@@ -947,16 +937,15 @@ export default function DayPlanScreen() {
                 <Text style={styles.energyText}>{formatEnergyDelta(getEnergyDelta({ kind: dayPlan.todayQuest.kind, durationMinutes: dayPlan.todayQuest.durationMinutes, title: dayPlan.todayQuest.title }))}</Text>
               </View>
               {dayPlan.todayQuest.durationMinutes >= TODAY_QUEST_TWO_HOUR_MINUTES && dayPlan.todayQuest.kind === "progress" ? (
-                <Text style={styles.recoveryWarning}>Completing this triggers 1 hr Forced Recovery after.</Text>
+                <Text style={styles.recoveryWarning}>2 hr focus quests trigger 1 hr recovery after completion.</Text>
               ) : null}
-              {pendingRecoveryConfirmId === dayPlan.todayQuest.id && recoveryWarning ? <Text style={styles.recoveryWarning}>{recoveryWarning}</Text> : null}
               <TouchableOpacity
                 style={[styles.saveQuestButton, !isTodayQuestDirty() && styles.saveQuestButtonDisabled]}
                 disabled={!isTodayQuestDirty() || !dayPlan.todayQuest.title.trim()}
                 onPress={saveTodayQuest}
               >
                 <Text style={styles.saveQuestButtonText}>
-                  {!isTodayQuestDirty() ? "SAVED ✓" : pendingRecoveryConfirmId === dayPlan.todayQuest.id ? "CONFIRM & SAVE" : "SET TODAY’S MAIN QUEST"}
+                  {!isTodayQuestDirty() ? "SAVED ✓" : "SET TODAY’S MAIN QUEST"}
                 </Text>
               </TouchableOpacity>
               {dayPlan.todayQuest.status !== "completed" ? (
@@ -969,7 +958,7 @@ export default function DayPlanScreen() {
 
             <View style={styles.panel}>
               <View style={styles.rowBetween}>
-                <Text style={styles.sectionTitle}>CHECKLIST ITEMS</Text>
+                <Text style={[styles.sectionTitle, styles.sectionTitleInRow]}>CHECKLIST ITEMS</Text>
                 <Text style={styles.helperPill}>{isLowEnergy ? "Recovery mode suggested" : "Optional"}</Text>
               </View>
               <Text style={styles.remainingTimeText}>
@@ -1051,7 +1040,8 @@ export default function DayPlanScreen() {
             </View>
 
             <View style={styles.previewPanel}>
-              <Text style={styles.sectionTitle}>CALENDAR PREVIEW • {currentInterval.label}</Text>
+              <Text style={styles.sectionTitle}>CALENDAR PREVIEW</Text>
+              <Text style={styles.sectionMeta}>{currentInterval.label}</Text>
               <Text style={styles.previewFocus}>
                 {selectedRole ? `Weekly Habit: ${selectedRole} — calendar marker only` : "No weekly habit set for this day."}
               </Text>
@@ -1069,7 +1059,6 @@ export default function DayPlanScreen() {
 
             {conflictMessage ? <Text style={styles.conflictMessage}>{conflictMessage}</Text> : null}
             {savedMessage ? <Text style={styles.savedMessage}>{savedMessage}</Text> : null}
-            <TouchableOpacity style={styles.saveButton} onPress={saveWeeklyHabit}><Text style={styles.saveButtonText}>SAVE WEEKLY HABIT</Text></TouchableOpacity>
             <TouchableOpacity style={styles.backButton} onPress={() => router.push("/calendar")}><Text style={styles.backButtonText}>BACK TO CALENDAR</Text></TouchableOpacity>
           </FormScreen>
           <BottomNav activeRoute="calendar" bottomOffset={mobile.bottomNavOffset} />
@@ -1157,7 +1146,10 @@ const styles = StyleSheet.create({
   panelPurple: { backgroundColor: "rgba(31, 18, 56, 0.95)", borderRadius: 8, padding: 12, marginBottom: 12, borderWidth: 3, borderColor: "#A78BFA" },
   // Today's Quest always keeps a white outer ring so it reads as "Today's Quest" regardless of its Progress/Recovery color.
   todayQuestOuterBorder: { borderWidth: 3, borderColor: "#FFFFFF", borderRadius: 10, padding: 3, marginBottom: 12 },
-  sectionTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 0.5, lineHeight: 17, marginBottom: 8 },
+  sectionTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", letterSpacing: 0.5, lineHeight: 19, marginBottom: 6, textAlign: "center" },
+  sectionMeta: { color: "#CBD5E1", fontSize: 11, fontWeight: "800", textAlign: "center", marginBottom: 8 },
+  // When a section title shares a row with a pill/button, flex:1 lets it actually center in the remaining space.
+  sectionTitleInRow: { flex: 1, marginBottom: 0 },
   helperText: { color: "#CBD5E1", fontSize: 12, lineHeight: 18, marginBottom: 8, fontWeight: "700" },
   helperPill: { color: "#FBBF24", fontFamily: pixelFont, fontSize: 10, fontWeight: "900" },
   remainingTimeText: { color: "#FBBF24", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", marginTop: 6, marginBottom: 8 },
