@@ -22,6 +22,7 @@ import {
   computeItemStepsFromSources,
   computeTotalEarnedSteps,
   loadTodayCompletions,
+  reconcileMonotonicTotalSteps,
   SKILL_TIER_SIZE,
   USER_STATS_KEY,
 } from "../lib/questProgress";
@@ -321,12 +322,16 @@ export default function StatsScreen() {
     // This guarantees: if earnedSteps === 0, displayTotal === 0. No bonus at Level 1.
     const earnedSteps = computeItemStepsFromSources(dayPlan, quickThoughts);
     const todayCompletions = await loadTodayCompletions();
-    const displayEarnedSteps = computeTotalEarnedSteps({
+    const freshEarnedSteps = computeTotalEarnedSteps({
       dayPlan,
       quickThoughts,
       todayCompletions,
       userStats,
     });
+    // Never show a total lower than the highest ever computed (shared floor with Home —
+    // see reconcileMonotonicTotalSteps) so a transient source computing lower never reads
+    // as "my steps went down."
+    const displayEarnedSteps = await reconcileMonotonicTotalSteps(freshEarnedSteps);
     const { rankBonusPool, awardedThresholds } = computeFreshRankBonuses(displayEarnedSteps);
     const prevAwarded = Array.isArray(userStats.rankBonusesAwarded) ? userStats.rankBonusesAwarded : [];
     const hasNewBonuses = awardedThresholds.some(t => !prevAwarded.includes(t));

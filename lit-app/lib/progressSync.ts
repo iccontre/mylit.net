@@ -280,7 +280,10 @@ export async function setChecklistItemChecked(itemId: string, checked: boolean):
         const row = entry as Record<string, unknown>;
         if (String(row.id ?? "") !== itemId) return row;
         found = true;
-        return { ...row, checked, status: checked ? "completed" : "scheduled" };
+        // checkedDate lets the Quest Board tell "checked today" apart from "checked on an
+        // earlier day" — `checked` itself never resets, so recurring habits need this to
+        // reappear the next day instead of staying hidden forever.
+        return { ...row, checked, checkedDate: checked ? getDateKey() : undefined, status: checked ? "completed" : "scheduled" };
       });
     }
     if (!found) return false;

@@ -15,6 +15,7 @@ import {
   PROGRESS_SYNC_META_KEY,
   SYNCABLE_PROGRESS_KEYS,
   USER_STATS_KEY,
+  TOTAL_STEPS_FLOOR_KEY,
   type SyncableProgressKey,
   DAY_PLAN_KEY,
   MISSED_QUESTS_KEY,
@@ -367,6 +368,12 @@ function mergePayload(
 
   if (key === USER_STATS_KEY) {
     const payload = mergeUserStats(localRaw, cloudRaw);
+    return { payload, updatedAt: new Date(Math.max(localAt, cloudAt, Date.now())).toISOString() };
+  }
+
+  if (key === TOTAL_STEPS_FLOOR_KEY) {
+    // A plain monotonic number — always keep the higher of the two sides.
+    const payload = String(Math.max(safeNumber(parseJson(localRaw, 0)), safeNumber(parseJson(cloudRaw, 0))));
     return { payload, updatedAt: new Date(Math.max(localAt, cloudAt, Date.now())).toISOString() };
   }
 

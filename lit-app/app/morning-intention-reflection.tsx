@@ -19,6 +19,7 @@ import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { USER_STATS_KEY } from "../lib/questProgress";
 import { persistProgressKeys } from "../lib/progressStore";
+import { parseTimeToMinutes } from "../lib/scheduling";
 import {
   LATEST_PRE_SLEEP_INTENTION_KEY,
   MORNING_INTENTION_REFLECTIONS_KEY,
@@ -28,11 +29,44 @@ const EVIE_MORNING_BULLETS = [
   "Morning Reflection connects sleep, intention, and the day's energy.",
   "Compare last night's intention with how you feel this morning.",
   "Write honestly — there is no wrong answer.",
-  "More than 8.5 hours of sleep earns +2 steps. At least 7 hours earns +1 step.",
+  "Enter sleep and wake times. MYLIT calculates your sleep bonus.",
+  "Check-in is always +1 step. Over 7 hrs adds +2, over 8 hrs adds +4, over 9 hrs adds +6.",
   "Morning Support helps you pick one concrete first action.",
   "Even if last night's intention did not carry through, noting that is still useful.",
   "This page should feel encouraging, not like a report card.",
 ];
+
+/** Sleep bonus tiers are exclusive — only the highest tier crossed applies. */
+function sleepBonusStepsForDuration(durationMinutes: number): number {
+  const hours = durationMinutes / 60;
+  if (hours > 9) return 6;
+  if (hours > 8) return 4;
+  if (hours > 7) return 2;
+  return 0;
+}
+
+/**
+ * Parses two free-typed times of day ("11:30 pm", "7:15AM", "23:30") into a sleep
+ * duration in minutes. Case-insensitive, spaces optional (see parseTimeToMinutes).
+ * If the wake time reads earlier than the sleep time, it's assumed to be the next day
+ * (cross-midnight sleep). Returns null for empty/unparseable/impossible input.
+ */
+function computeSleepDurationMinutes(sleptRaw: string, wokeRaw: string): number | null {
+  const sleptMinutes = parseTimeToMinutes(sleptRaw);
+  const wokeMinutesRaw = parseTimeToMinutes(wokeRaw);
+  if (sleptMinutes === null || wokeMinutesRaw === null) return null;
+  const wokeMinutes = wokeMinutesRaw <= sleptMinutes ? wokeMinutesRaw + 24 * 60 : wokeMinutesRaw;
+  const durationMinutes = wokeMinutes - sleptMinutes;
+  // Reject 0 (identical times) and anything longer than 16 hours as not a real night's sleep.
+  if (durationMinutes <= 0 || durationMinutes > 16 * 60) return null;
+  return durationMinutes;
+}
+
+function formatSleepDuration(durationMinutes: number): string {
+  const hours = Math.floor(durationMinutes / 60);
+  const minutes = durationMinutes % 60;
+  return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
+}
 
 type PreSleepIntention = {
   id: string;
@@ -47,7 +81,10 @@ type MorningIntentionReflection = {
   id: string;
   date: string;
   reflectionText: string;
-  sleepHours: string;
+  sleepTime?: string;
+  wakeTime?: string;
+  sleepDurationMinutes?: number;
+  sleepBonusSteps?: number;
   morningSupport: string[];
   createdAt: string;
 };
@@ -87,12 +124,18 @@ export default function MorningIntentionReflectionScreen() {
 
   const [latestIntention, setLatestIntention] = useState<PreSleepIntention | null>(null);
   const [reflectionText, setReflectionText] = useState("");
-  const [sleepHours, setSleepHours] = useState<"none" | "7hrs" | "8.5hrs">("none");
+  const [sleptTimeInput, setSleptTimeInput] = useState("");
+  const [wokeTimeInput, setWokeTimeInput] = useState("");
   const [morningSupport, setMorningSupport] = useState<string[]>([]);
   const [showInfo, setShowInfo] = useState(false);
   const [now, setNow] = useState<Date>(() => new Date());
 
   const morningUnlocked = now.getHours() >= MORNING_UNLOCK_HOUR;
+  const sleepTimesEntered = sleptTimeInput.trim() !== "" && wokeTimeInput.trim() !== "";
+  const sleepDurationMinutes = sleepTimesEntered ? computeSleepDurationMinutes(sleptTimeInput, wokeTimeInput) : null;
+  const sleepTimesInvalid = sleepTimesEntered && sleepDurationMinutes === null;
+  const sleepBonusSteps = sleepDurationMinutes !== null ? sleepBonusStepsForDuration(sleepDurationMinutes) : 0;
+  const canSaveReflection = morningUnlocked && sleepTimesEntered && sleepDurationMinutes !== null;
 
   useFocusEffect(
     useCallback(() => {
@@ -140,24 +183,35 @@ export default function MorningIntentionReflectionScreen() {
   }
 
   async function saveReflection() {
-    if (!morningUnlocked) return;
+    if (!canSaveReflection || sleepDurationMinutes === null) return;
+    const todayKey = getTodayKey();
+
+    const saved = await AsyncStorage.getItem(MORNING_INTENTION_REFLECTIONS_KEY);
+    const history: MorningIntentionReflection[] = saved ? JSON.parse(saved) : [];
+    // Award only once per day — editing/resaving today's reflection later updates the
+    // saved data but does not double-award the check-in + sleep bonus steps.
+    const alreadyAwardedToday = history.some((entry) => entry.date === todayKey);
+
     const reflection: MorningIntentionReflection = {
       id: String(Date.now()),
-      date: getTodayKey(),
+      date: todayKey,
       reflectionText: reflectionText.trim(),
-      sleepHours,
+      sleepTime: sleptTimeInput.trim(),
+      wakeTime: wokeTimeInput.trim(),
+      sleepDurationMinutes,
+      sleepBonusSteps,
       morningSupport,
       createdAt: new Date().toISOString(),
     };
 
-    const saved = await AsyncStorage.getItem(MORNING_INTENTION_REFLECTIONS_KEY);
-    const history: MorningIntentionReflection[] = saved ? JSON.parse(saved) : [];
     await persistProgressKeys({
       [MORNING_INTENTION_REFLECTIONS_KEY]: JSON.stringify([reflection, ...history]),
     });
 
-    const steps = sleepHours === "8.5hrs" ? 2 : sleepHours === "7hrs" ? 1 : 0;
-    if (steps > 0) await earnSteps(steps);
+    // +1 for completing check-in (always, once valid) plus the sleep-duration bonus tier.
+    if (!alreadyAwardedToday) {
+      await earnSteps(1 + sleepBonusSteps);
+    }
 
     await successHaptic();
     router.push("/");
@@ -239,24 +293,33 @@ export default function MorningIntentionReflectionScreen() {
                 </View>
 
                 <View style={[styles.panel, { borderColor: theme.accent }]}>
-                  <Text style={styles.label}>How much did you sleep?</Text>
-                  {(["none", "7hrs", "8.5hrs"] as const).map((option) => {
-                    const labels: Record<string, string> = {
-                      none: "Less than 7 hrs",
-                      "7hrs": "At least 7 hrs · +1 step",
-                      "8.5hrs": "More than 8.5 hrs · +2 steps",
-                    };
-                    const selected = sleepHours === option;
-                    return (
-                      <TouchableOpacity
-                        key={option}
-                        style={[styles.option, selected && { backgroundColor: theme.active, borderColor: theme.accent }]}
-                        onPress={() => setSleepHours(option)}
-                      >
-                        <Text style={selected ? [styles.optionSelectedText, { color: theme.glow }] : styles.optionText}>{labels[option]}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
+                  <Text style={styles.label}>Approximate time you slept last night</Text>
+                  <TextInput
+                    style={formStyles.input}
+                    placeholder="Example: 11:30 PM"
+                    placeholderTextColor="#94A3B8"
+                    autoCapitalize="characters"
+                    value={sleptTimeInput}
+                    onChangeText={setSleptTimeInput}
+                  />
+                  <Text style={styles.label}>Approximate time you woke up</Text>
+                  <TextInput
+                    style={formStyles.input}
+                    placeholder="Example: 7:15 AM"
+                    placeholderTextColor="#94A3B8"
+                    autoCapitalize="characters"
+                    value={wokeTimeInput}
+                    onChangeText={setWokeTimeInput}
+                  />
+                  {sleepTimesInvalid ? (
+                    <Text style={styles.sleepErrorText}>Enter valid times, like 11:30 PM and 7:15 AM.</Text>
+                  ) : sleepDurationMinutes !== null ? (
+                    <Text style={styles.sleepSummaryText}>
+                      {formatSleepDuration(sleepDurationMinutes)} of sleep · +{1 + sleepBonusSteps} step{1 + sleepBonusSteps === 1 ? "" : "s"} total
+                    </Text>
+                  ) : (
+                    <Text style={styles.sleepSummaryText}>MYLIT calculates your sleep bonus from these two times.</Text>
+                  )}
                 </View>
 
                 <View style={[styles.panel, { borderColor: theme.accent }]}>
@@ -277,8 +340,12 @@ export default function MorningIntentionReflectionScreen() {
                   </View>
                 </View>
 
-                <TouchableOpacity style={[styles.saveButton, { borderColor: theme.accent }]} onPress={saveReflection}>
-                  <Text style={styles.saveButtonText}>Save Reflection</Text>
+                <TouchableOpacity
+                  style={[styles.saveButton, { borderColor: theme.accent }, !canSaveReflection && styles.saveButtonDisabled]}
+                  disabled={!canSaveReflection}
+                  onPress={saveReflection}
+                >
+                  <Text style={styles.saveButtonText}>{canSaveReflection ? "Save Reflection" : "Enter Sleep & Wake Times"}</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -582,6 +649,23 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 3,
     marginBottom: 10,
+  },
+  saveButtonDisabled: {
+    opacity: 0.6,
+  },
+  sleepErrorText: {
+    color: "#FCA5A5",
+    fontFamily: pixelFont,
+    fontSize: 12,
+    fontWeight: "800",
+    marginTop: 8,
+  },
+  sleepSummaryText: {
+    color: "#FDE68A",
+    fontFamily: pixelFont,
+    fontSize: 12,
+    fontWeight: "800",
+    marginTop: 8,
   },
   saveButtonText: {
     color: "#F9FAFB",

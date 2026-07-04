@@ -20,6 +20,7 @@ import {
   ACTIVE_TIMED_ITEM_KEY,
   applyQuestBoardCapacity,
   buildForcedRecoveryItem,
+  collectExpiredUnresolvedQuickThoughts,
   collectTodayCalendarItems,
   computeFreshRankBonuses,
   computeTotalEarnedSteps,
@@ -40,6 +41,7 @@ import {
   markItemMissed,
   normalizeQuestItems,
   questSourceLabel,
+  reconcileMonotonicTotalSteps,
   sourceIcon,
   TODAY_QUEST_TWO_HOUR_MINUTES,
   type CompletionEntry,
@@ -303,6 +305,9 @@ export default function HomeScreen() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileChecked, setProfileChecked] = useState(false);
   const [stepRank, setStepRank] = useState<StepRank | null>(null);
+  // Monotonic high-water mark for total earned steps — never lets the displayed/ranked
+  // total drop below the highest value ever computed (see reconcileMonotonicTotalSteps).
+  const [stepsFloor, setStepsFloor] = useState(0);
 
   const [dayPlanRaw, setDayPlanRaw] = useState<DayPlanRaw | null>(null);
   const [preSleepDoneToday, setPreSleepDoneToday] = useState(false);
@@ -932,6 +937,7 @@ export default function HomeScreen() {
           completedIds,
           missedIds,
           preSleepIntentionDoneToday: preSleepDoneToday,
+          now: timeNow,
         })
       : [];
 
@@ -983,6 +989,30 @@ export default function HomeScreen() {
     };
   }, [forcedRecoveryTrigger?.id, forcedRecoveryResolved, recoveryNow, completedQuests]);
 
+  // 24-hour rollover: once a scheduled Quick Thought/Quest's window closes unresolved,
+  // record it as missed (kept in history, never deleted) so it stops cluttering the active
+  // board — mirrors the exclusion filter inside normalizeQuestItems (isScheduledItemExpired).
+  useEffect(() => {
+    const expired = collectExpiredUnresolvedQuickThoughts({ quickThoughts: queueItems, completedIds, missedIds });
+    if (expired.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      let nextMissed = missedQuests;
+      for (const candidate of expired) {
+        nextMissed = await markItemMissed(
+          { id: candidate.id, title: candidate.title, source: "Quick Thought", kind: "progress", steps: 0, durationMinutes: 30 },
+          nextMissed,
+          activeItem?.id ?? null
+        );
+      }
+      if (!cancelled) setMissedQuests(nextMissed);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queueItems, todayKey]);
+
   const currentBackground = isRecovery
     ? uiAssets.backgrounds.recovery
     : isProgress
@@ -1007,9 +1037,17 @@ export default function HomeScreen() {
   });
   const completedCount = completedQuests.length;
   const totalCount = allHomeItems.length + completedCount;
+  // Never show/rank a total lower than the highest ever computed — protects against a
+  // transient source (today's completions resetting for a new day, a stale cloud pull,
+  // an edited item) briefly computing a lower number than what the user already saw.
+  const displayedTotalSteps = Math.max(totalEarnedSteps, stepsFloor);
   // Same bonus-inclusive total the Stats page ranks with, so Home and Stats agree.
-  const totalStepsForRank = totalEarnedSteps + computeFreshRankBonuses(totalEarnedSteps).rankBonusPool;
+  const totalStepsForRank = displayedTotalSteps + computeFreshRankBonuses(displayedTotalSteps).rankBonusPool;
   const rankDisplay = stepRank ? `#${stepRank.rank}` : "Unranked";
+
+  useEffect(() => {
+    void reconcileMonotonicTotalSteps(totalEarnedSteps).then(setStepsFloor);
+  }, [totalEarnedSteps]);
 
   useEffect(() => {
     if (!profileChecked) return;
@@ -1329,7 +1367,7 @@ export default function HomeScreen() {
                   <Text style={styles.statIcon}>🥾</Text>
                   <View>
                     <Text style={[styles.statLabel, { color: theme.accent }]}>STEPS</Text>
-                    <Text style={styles.statValue}>{totalEarnedSteps}</Text>
+                    <Text style={styles.statValue}>{displayedTotalSteps}</Text>
                   </View>
                 </View>
                 <View style={styles.statDivider} />
@@ -1355,7 +1393,7 @@ export default function HomeScreen() {
                   <Text style={styles.modalTitle}>How the Quest Board works</Text>
                   <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false} bounces={false}>
                     <Text style={styles.modalDescription}>
-                      Quest Board shows what to focus on now. It can include MYLIT quests, Day Plan items, checklist items, and Quests you scheduled. Quests are timed — start one at a time and the board locks until it ends. Checklist items are just checked off. Steps are based on duration: 15 min earns +1, 30 min earns +2, 45 min earns +3, 1 hr earns +4. Missed? helps you reflect without punishment. To protect energy, MYLIT limits long progress streaks — after 2 hours of back-to-back tasks, the board locks for a 1-hour recovery break before more work.
+                      Quest Board shows what to focus on now. It can include MYLIT quests, Day Plan items, checklist items, and Quests you scheduled. Quests are timed — start one at a time and the board locks until it ends. Checklist items are just checked off. Steps are based on duration: 15 min earns +1, 30 min earns +2, 45 min earns +3, 1 hr earns +4. Quests stay active through the next 24 hours so you can complete or mark Missed? — after that they drop off the board but stay in your history. To protect energy, MYLIT limits long progress streaks — after 2 hours of back-to-back tasks, the board locks for a 1-hour recovery break before more work.
                     </Text>
                   </ScrollView>
                   <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowQuestHelp(false)}>

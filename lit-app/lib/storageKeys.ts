@@ -10,6 +10,15 @@ export const ACTIVE_TIMED_ITEM_KEY = "mylit_active_timed_item";
 export const DAY_PLAN_KEY = "lit_day_plan";
 export const TOMORROW_QUEUE_KEY = "lit_tomorrow_queue";
 export const USER_STATS_KEY = "lit_user_stats";
+/**
+ * Independent, monotonic "highest total earned steps ever computed" high-water mark.
+ * Deliberately NEVER fed back into computeTotalEarnedSteps's own sum (that would double
+ * count the live sources it re-derives from every call) — it exists purely so the
+ * DISPLAYED/ranked total can be clamped to never drop, even if a live source (today's
+ * completions resetting for a new day, an edited item, a stale cloud pull) temporarily
+ * computes lower. See reconcileMonotonicTotalSteps in questProgress.ts.
+ */
+export const TOTAL_STEPS_FLOOR_KEY = "lit_total_steps_floor";
 
 /** Local metadata for last-write timestamps per synced storage key. */
 export const PROGRESS_SYNC_META_KEY = "lit_progress_sync_meta";
@@ -72,6 +81,7 @@ export const SYNCABLE_PROGRESS_KEYS = [
   DAY_PLAN_KEY,
   TOMORROW_QUEUE_KEY,
   USER_STATS_KEY,
+  TOTAL_STEPS_FLOOR_KEY,
   JOURNAL_ENTRIES_KEY,
   DREAM_JOURNAL_KEY,
   PRE_SLEEP_INTENTIONS_KEY,

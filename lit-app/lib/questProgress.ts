@@ -10,6 +10,7 @@ import {
   TODAY_PROGRESS_DATE_KEY,
   TOMORROW_QUEUE_KEY,
   USER_STATS_KEY,
+  TOTAL_STEPS_FLOOR_KEY,
 } from "./storageKeys";
 import {
   collectDayPlanScheduledItems,
@@ -23,6 +24,7 @@ import {
   getStepsForDuration,
   getStepsForItem,
   inferScheduledClassification,
+  isScheduledItemExpired,
   parseDurationMinutes,
   parseTimeToMinutes,
   TODAY_QUEST_DURATION_MINUTES,
@@ -43,6 +45,7 @@ export {
   TODAY_PROGRESS_DATE_KEY,
   TOMORROW_QUEUE_KEY,
   USER_STATS_KEY,
+  TOTAL_STEPS_FLOOR_KEY,
 };
 export {
   FORCED_RECOVERY_DURATION_MINUTES,
@@ -61,8 +64,23 @@ export const PROGRESS_QUEST_CAPACITY = 8;
 /** @deprecated Item-count capacity — use minute-based capacity helpers instead. */
 export const RECOVERY_QUEST_CAPACITY = 5;
 
-/** Checklist items build habits, not a to-do dump — capped at 5 scheduled for any one day. */
+/** @deprecated Replaced by MAX_CHECKLIST_MINUTES_PER_DAY — the limit is now total scheduled time, not item count. */
 export const MAX_CHECKLIST_ITEMS_PER_DAY = 5;
+
+/** Checklist items build habits, not a to-do dump — capped at 2h30 (150 min) total scheduled time per day. */
+export const MAX_CHECKLIST_MINUTES_PER_DAY = 150;
+
+/** Total minutes of scheduled checklist items on a given weekday, optionally excluding one item (used to validate an edit to that same item before saving it). */
+export function computeChecklistMinutesForDay(plan: DayPlanRaw | null | undefined, day: WeekdayName, excludeId?: string): number {
+  return getChecklistItemsForDay(plan, day)
+    .filter((item) => item.id !== excludeId)
+    .reduce((sum, item) => sum + parseDurationMinutes(item.durationMinutes ?? item.duration, 30), 0);
+}
+
+/** "Checklist time: 1h 45m / 2h 30m" style label for the Day Plan header. */
+export function formatChecklistTimeLabel(plannedMinutes: number): string {
+  return `Checklist time: ${formatPlannedDurationLabel(plannedMinutes)} / ${formatPlannedDurationLabel(MAX_CHECKLIST_MINUTES_PER_DAY)}`;
+}
 
 export type QuestSource = "Quest" | "Today's Quest" | "Checklist" | "Quick Thought" | "Calendar" | "Sleep";
 export type QuestKind = "progress" | "recovery";
@@ -123,6 +141,9 @@ type RawChecklistItem = {
   text?: string;
   title?: string;
   checked?: boolean;
+  /** Date (YYYY-MM-DD) `checked` was last set true — lets the Quest Board tell "checked
+   *  today" apart from "checked on some earlier day," since `checked` itself never resets. */
+  checkedDate?: string;
   steps?: number;
   startTime?: string;
   time?: string;
@@ -530,6 +551,9 @@ export function getChecklistItemsForDay(plan: DayPlanRaw | null | undefined, day
   return Array.from(seen.values());
 }
 
+/** "Set Pre-Sleep Intention" only appears on the Quest Board at/after this local hour. */
+export const PRE_SLEEP_INTENTION_UNLOCK_HOUR = 21;
+
 export function normalizeQuestItems(input: {
   quests: QuestLike[];
   todayQuest?: RawTodayQuest | null;
@@ -541,9 +565,12 @@ export function normalizeQuestItems(input: {
   missedIds: Set<string>;
   /** True once today's Pre-Sleep Intention has been saved — hides the Sleep reminder for the rest of the day. */
   preSleepIntentionDoneToday?: boolean;
+  /** Defaults to the real current time — overridable in tests. */
+  now?: Date;
 }): HomeQuestItem[] {
   const items: HomeQuestItem[] = [];
   const seenIds = new Set<string>();
+  const now = input.now ?? new Date();
 
   const pushItem = (item: HomeQuestItem) => {
     if (!item.title.trim() || seenIds.has(item.id) || input.completedIds.has(item.id) || input.missedIds.has(item.id)) return;
@@ -551,7 +578,10 @@ export function normalizeQuestItems(input: {
     items.push(item);
   };
 
-  if (!input.preSleepIntentionDoneToday) {
+  // Only appears from 9:00 PM local time onward — it's a wind-down ritual, not an
+  // all-day reminder. It never restores or costs energy (it routes straight to
+  // /pre-sleep-intention instead of going through the generic complete/energy flow).
+  if (!input.preSleepIntentionDoneToday && now.getHours() >= PRE_SLEEP_INTENTION_UNLOCK_HOUR) {
     pushItem({
       id: buildStableItemId("Sleep", "Set Pre-Sleep Intention", { dateKey: input.todayKey }),
       title: "Set Pre-Sleep Intention",
@@ -559,7 +589,7 @@ export function normalizeQuestItems(input: {
       kind: "recovery",
       steps: 1,
       durationMinutes: 10,
-      description: "Wind down and set tonight's intention before bed.",
+      description: "Appears after 9 PM and helps you set your night direction. It does not change energy.",
     });
   }
 
@@ -567,11 +597,16 @@ export function normalizeQuestItems(input: {
   // A status of "completed"/"missed" saved on a PRIOR day must not carry over — otherwise a
   // freshly-saved Today's Quest would silently be filtered out as "already resolved".
   const todayQuestStatus = !todayQuest?.date || todayQuest.date === input.todayKey ? todayQuest?.status : undefined;
+  // 24-hour rollover: an unresolved Today's Quest stays actionable through the day after
+  // its scheduled start time, then drops off the active board (it still lives on in the
+  // saved Day Plan record — nothing is deleted, it just stops cluttering the board).
+  const todayQuestExpired = isScheduledItemExpired({ date: todayQuest?.date, startTime: todayQuest?.startTime });
   if (
     todayQuest?.title?.trim() &&
     !isDefaultTodayQuestTitle(todayQuest.title) &&
     todayQuestStatus !== "completed" &&
-    String(todayQuestStatus) !== "missed"
+    String(todayQuestStatus) !== "missed" &&
+    !todayQuestExpired
   ) {
     const durationMinutes = parseDurationMinutes(todayQuest.durationMinutes ?? todayQuest.duration, TODAY_QUEST_DURATION_MINUTES);
     // Kind comes only from the explicit toggle the user saved — never re-inferred from title text.
@@ -593,7 +628,12 @@ export function normalizeQuestItems(input: {
 
   input.checklist.forEach((raw, index) => {
     const title = (raw.text || raw.title || "").trim();
-    if (!title || raw.checked === true || raw.status === "completed" || String(raw.status) === "missed") return;
+    if (!title) return;
+    // Checklist habits recur every day they're scheduled for, so only TODAY's
+    // checked/missed state should hide them — `checked`/`status` alone never reset, so
+    // trusting them permanently was hiding recurring habits from every later day.
+    if (raw.checked === true && raw.checkedDate === input.todayKey) return;
+    if (String(raw.status) === "missed" && raw.checkedDate === input.todayKey) return;
     const durationMinutes = parseDurationMinutes(raw.durationMinutes ?? raw.duration, 30);
     const kind: QuestKind =
       raw.kind === "recovery" ? "recovery" : inferScheduledClassification(title) === "recovery" ? "recovery" : "progress";
@@ -615,6 +655,10 @@ export function normalizeQuestItems(input: {
     if (raw.status === "completed" || raw.completedAt || String(raw.status) === "missed") return;
     const title = (raw.text || raw.title || raw.task || raw.note || "").trim();
     if (!title) return;
+    // 24-hour rollover: an unresolved scheduled quest stays actionable through the day
+    // after its scheduled time, then drops off the active board (still kept in the saved
+    // Quests list/history — see isScheduledItemExpired for the exact window).
+    if (isScheduledItemExpired({ date: itemDate, startTime: raw.time || raw.startTime })) return;
     const durationMinutes = parseDurationMinutes(raw.durationMinutes ?? raw.duration, 30);
     const kind: QuestKind =
       raw.classification === "recovery" ? "recovery" : inferScheduledClassification(title) === "recovery" ? "recovery" : "progress";
@@ -636,6 +680,9 @@ export function normalizeQuestItems(input: {
     if (!title) return;
     const itemDate = raw.date ?? raw.dateKey;
     if (itemDate && itemDate !== input.todayKey) return;
+    // Same 24-hour rollover as the dedicated Quick Thought branch above — this branch
+    // mirrors those items under a "Calendar" source, so it needs the same expiry guard.
+    if (raw.source === "quickThought" && isScheduledItemExpired({ date: itemDate, startTime: raw.startTime || raw.time })) return;
     const durationMinutes = parseDurationMinutes(raw.durationMinutes ?? raw.duration, 30);
     const kind: QuestKind =
       raw.kind === "recovery" || raw.classification === "recovery"
@@ -683,6 +730,37 @@ export function normalizeQuestItems(input: {
   });
 
   return sortQuestItemsByPriority(items);
+}
+
+/**
+ * Quick Thought / scheduled Quest items whose 24-hour rollover window has just closed
+ * without being completed or missed. These use a stable id (their own saved `id`), so
+ * they're safe to auto-record as missed — that keeps them out of history/logs instead of
+ * silently vanishing with no trace once they age off the active Quest Board.
+ */
+export function collectExpiredUnresolvedQuickThoughts(input: {
+  quickThoughts: QueueItem[];
+  completedIds: Set<string>;
+  missedIds: Set<string>;
+}): { id: string; title: string }[] {
+  const results: { id: string; title: string }[] = [];
+  input.quickThoughts.forEach((raw, index) => {
+    if (raw.status === "completed" || raw.completedAt || String(raw.status) === "missed") return;
+    const title = (raw.text || raw.title || raw.task || raw.note || "").trim();
+    if (!title) return;
+    const itemDate = raw.date ?? raw.dateKey;
+    if (!itemDate) return;
+    const id = buildStableItemId("Quick Thought", title, {
+      rawId: raw.id ?? String(index),
+      dateKey: itemDate,
+      scheduledTime: raw.time || raw.startTime,
+    });
+    if (input.completedIds.has(id) || input.missedIds.has(id)) return;
+    if (isScheduledItemExpired({ date: itemDate, startTime: raw.time || raw.startTime })) {
+      results.push({ id, title });
+    }
+  });
+  return results;
 }
 
 export function findNextScheduledItem(items: HomeQuestItem[], activeId: string | null, nowMinutes: number): HomeQuestItem | null {
@@ -786,6 +864,30 @@ export function computeTotalEarnedSteps(input: {
   }
 
   return total + safeNumber(input.userStats?.totalSteps, 0);
+}
+
+/**
+ * Total earned steps must never decrease — not across days, refreshes, sign-in/out, or
+ * cloud merges. computeTotalEarnedSteps re-derives its total from live sources (Day Plan,
+ * Quick Thoughts, today's completions) on every call; if any of those sources ever shrinks
+ * (today's completions resetting for a new day, an item being edited/removed, etc.) the
+ * freshly computed number could dip below what the user already saw.
+ *
+ * This ratchets a SEPARATE high-water-mark key (TOTAL_STEPS_FLOOR_KEY) up whenever the
+ * fresh total exceeds it, and returns the higher of the two — never lower than what was
+ * already recorded. Deliberately NOT stored back into USER_STATS_KEY.totalSteps: that field
+ * is itself one of the inputs computeTotalEarnedSteps adds the live sources on top of, so
+ * writing the combined total back into it would double-count those live sources on every
+ * subsequent call.
+ */
+export async function reconcileMonotonicTotalSteps(freshTotal: number): Promise<number> {
+  const raw = await AsyncStorage.getItem(TOTAL_STEPS_FLOOR_KEY);
+  const storedFloor = safeNumber(raw ? JSON.parse(raw) : 0, 0);
+  const nextFloor = Math.max(Math.round(freshTotal), storedFloor);
+  if (nextFloor !== storedFloor) {
+    await persistProgressKeys({ [TOTAL_STEPS_FLOOR_KEY]: JSON.stringify(nextFloor) });
+  }
+  return nextFloor;
 }
 
 /** Every SKILL_TIER_SIZE earned steps unlocks the next Skill tier. */

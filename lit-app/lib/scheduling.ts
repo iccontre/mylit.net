@@ -392,6 +392,55 @@ export function wouldTriggerRecoveryLock(
   return after.startTime !== before.startTime;
 }
 
+/**
+ * Every user-scheduled quest/checklist item rolls over for exactly 24 hours past its
+ * intended completion time, staying actionable (and markable "Missed?") the whole time.
+ * Example: a quest scheduled Wednesday 5:00 PM expires Thursday 5:00 PM.
+ */
+export const QUEST_ROLLOVER_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The moment an item is "due": its scheduled date + time. When only a date is set (no
+ * exact time), the default rule is the end of that date — i.e. the item is due at
+ * midnight starting the NEXT day — so the 24-hour rollover window still has a concrete
+ * anchor to count from.
+ */
+export function getScheduledIntendedCompletionMs(item: {
+  date?: string;
+  dateKey?: string;
+  startTime?: string;
+  time?: string;
+}): number | null {
+  const dateStr = item.date ?? item.dateKey;
+  if (!dateStr) return null;
+  const base = new Date(`${dateStr}T00:00:00`);
+  if (Number.isNaN(base.getTime())) return null;
+
+  const time = item.startTime ?? item.time;
+  const minutes = time ? parseTimeToMinutes(time) : null;
+  if (minutes !== null) {
+    base.setMinutes(base.getMinutes() + minutes);
+  } else {
+    base.setDate(base.getDate() + 1);
+  }
+  return base.getTime();
+}
+
+/** Intended completion time + the 24-hour rollover window (see QUEST_ROLLOVER_WINDOW_MS). */
+export function getScheduledExpiryMs(item: { date?: string; dateKey?: string; startTime?: string; time?: string }): number | null {
+  const completion = getScheduledIntendedCompletionMs(item);
+  return completion === null ? null : completion + QUEST_ROLLOVER_WINDOW_MS;
+}
+
+/** True once an item's 24-hour rollover window has fully elapsed — it should no longer show as an active board item. */
+export function isScheduledItemExpired(
+  item: { date?: string; dateKey?: string; startTime?: string; time?: string },
+  nowMs: number = Date.now()
+): boolean {
+  const expiry = getScheduledExpiryMs(item);
+  return expiry !== null && nowMs >= expiry;
+}
+
 export function collectQuickThoughtScheduledItems(items: unknown[] = []): ScheduledQuestLike[] {
   if (!Array.isArray(items)) return [];
   return items.map((raw, index) => {

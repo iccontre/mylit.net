@@ -108,23 +108,85 @@ function buildDayLabel(date: Date) {
   return `${WEEKDAY_LABELS[date.getDay()]} ${formatShortDate(date)}`;
 }
 
-function calendarTimeRow(time?: string): string {
-  if (!time || time === "All day") return "7 AM";
-  const minutes = parseSleepGuideTime(time) ?? parseTimeToMinutes(time);
-  if (minutes === null) return "9 AM";
+/**
+ * Calendar grid geometry. Absolute time → pixel position, so items land in their real
+ * time slot instead of being bucketed into a shared hour cell (which pushed every later
+ * time slot down whenever an earlier cell grew tall from several stacked items).
+ */
+const HOUR_HEIGHT = 44;
+const GRID_START_HOUR = 7;
+const GRID_END_HOUR = 24;
+const GRID_HEIGHT = TIME_ROWS.length * HOUR_HEIGHT;
+const MIN_EVENT_HEIGHT = 26;
 
-  let bestRow = TIME_ROWS[0];
-  let bestDistance = Number.MAX_SAFE_INTEGER;
-  for (const row of TIME_ROWS) {
-    const rowMinutes = parseTimeToMinutes(row);
-    if (rowMinutes === null) continue;
-    const distance = Math.abs(minutes - rowMinutes);
-    if (distance < bestDistance) {
-      bestDistance = distance;
-      bestRow = row;
+function minutesForGridPlacement(time?: string): number {
+  const startOfGrid = GRID_START_HOUR * 60;
+  const endOfGrid = GRID_END_HOUR * 60;
+  if (!time || time === "All day") return startOfGrid;
+  const minutes = parseSleepGuideTime(time) ?? parseTimeToMinutes(time);
+  if (minutes === null) return startOfGrid;
+  if (minutes < startOfGrid) return startOfGrid;
+  if (minutes >= endOfGrid) return endOfGrid - 30;
+  return minutes;
+}
+
+type PositionedEvent = CalendarEvent & { topPx: number; heightPx: number; leftPct: number; widthPct: number };
+
+/**
+ * Lays out one day's events by real start/end time. Overlapping items are grouped into
+ * clusters and given side-by-side lanes (columns) within that cluster only — a task that
+ * genuinely conflicts with another sits compactly next to it, while non-overlapping tasks
+ * keep their own correct time slot and never get shoved down by an unrelated busy cell.
+ */
+function layoutDayEvents(events: CalendarEvent[]): PositionedEvent[] {
+  const startOfGrid = GRID_START_HOUR * 60;
+  const withRange = events
+    .map((event) => {
+      const start = minutesForGridPlacement(event.startTime);
+      const durationMinutes = Math.max(15, event.durationMinutes ?? 30);
+      return { event, start, end: start + durationMinutes };
+    })
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+
+  const positioned: PositionedEvent[] = [];
+  let clusterItems: typeof withRange = [];
+  let clusterEnd = -Infinity;
+
+  const flushCluster = () => {
+    if (clusterItems.length === 0) return;
+    const laneEnds: number[] = [];
+    const withLane = clusterItems.map((item) => {
+      let lane = laneEnds.findIndex((end) => end <= item.start);
+      if (lane === -1) {
+        lane = laneEnds.length;
+        laneEnds.push(item.end);
+      } else {
+        laneEnds[lane] = item.end;
+      }
+      return { ...item, lane };
+    });
+    const laneCount = laneEnds.length;
+    for (const item of withLane) {
+      const topPx = ((item.start - startOfGrid) / 60) * HOUR_HEIGHT;
+      const heightPx = Math.max(MIN_EVENT_HEIGHT, ((item.end - item.start) / 60) * HOUR_HEIGHT);
+      const widthPct = 100 / laneCount;
+      positioned.push({ ...item.event, topPx, heightPx, leftPct: item.lane * widthPct, widthPct });
     }
+    clusterItems = [];
+  };
+
+  for (const item of withRange) {
+    if (item.start >= clusterEnd) {
+      flushCluster();
+      clusterEnd = item.end;
+    } else {
+      clusterEnd = Math.max(clusterEnd, item.end);
+    }
+    clusterItems.push(item);
   }
-  return bestRow;
+  flushCluster();
+
+  return positioned;
 }
 
 function dedupeCalendarEvents(events: CalendarEvent[]): CalendarEvent[] {
@@ -473,35 +535,29 @@ export default function CalendarScreen() {
                         <Text style={styles.todayQuestTabText} numberOfLines={1}>Today Quest: {todayQuestEvent.title}</Text>
                       </TouchableOpacity>
                     ) : null}
-                    {TIME_ROWS.map((row) => {
-                      const rowEvents = events
-                        .filter(
-                          (event: CalendarEvent) =>
-                            event.classification !== "focus" &&
-                            event.id !== todayQuestEvent?.id &&
-                            calendarTimeRow(event.startTime) === row
+                    <View style={styles.dayGrid}>
+                      {TIME_ROWS.map((row) => (
+                        <View key={`${date.toISOString()}-bg-${row}`} style={styles.hourRowBg} />
+                      ))}
+                      {layoutDayEvents(
+                        events.filter(
+                          (event: CalendarEvent) => event.classification !== "focus" && event.id !== todayQuestEvent?.id
                         )
-                        .sort((a, b) => {
-                          if (a.classification === "sleepGuide" && b.classification !== "sleepGuide") return 1;
-                          if (b.classification === "sleepGuide" && a.classification !== "sleepGuide") return -1;
-                          return (parseSleepGuideTime(a.startTime) ?? parseTimeToMinutes(a.startTime) ?? 0) -
-                            (parseSleepGuideTime(b.startTime) ?? parseTimeToMinutes(b.startTime) ?? 0);
-                        });
-                      return (
-                        <View key={`${date.toISOString()}-${row}`} style={styles.hourCell}>
-                          {rowEvents.map((event) => (
-                            <TouchableOpacity
-                              key={event.classification === "sleepGuide" ? sleepGuideDedupeKey(event) : event.id}
-                              style={[styles.eventBlock, getEventToneStyle(event.tone)]}
-                              onPress={() => setSelectedEvent(event)}
-                            >
-                              <Text style={styles.eventTime} numberOfLines={1}>{event.startTime || "—"}</Text>
-                              <Text style={styles.eventText} numberOfLines={2}>{event.cellLabel}</Text>
-                            </TouchableOpacity>
-                          ))}
-                        </View>
-                      );
-                    })}
+                      ).map((event) => (
+                        <TouchableOpacity
+                          key={event.classification === "sleepGuide" ? sleepGuideDedupeKey(event) : event.id}
+                          style={[
+                            styles.eventBlockAbs,
+                            getEventToneStyle(event.tone),
+                            { top: event.topPx, height: event.heightPx, left: `${event.leftPct}%`, width: `${event.widthPct}%` },
+                          ]}
+                          onPress={() => setSelectedEvent(event)}
+                        >
+                          <Text style={styles.eventTime} numberOfLines={1}>{event.startTime || "—"}</Text>
+                          <Text style={styles.eventText} numberOfLines={2}>{event.cellLabel}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
                   </View>
                 );
               })}
@@ -652,7 +708,13 @@ const styles = StyleSheet.create({
   timeColumn: { width: 42, borderRightWidth: 1, borderRightColor: "#334155" }, gridCorner: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 8, textAlign: "center", paddingVertical: 8 }, timeCell: { color: "#64748B", fontSize: 8, minHeight: 44, textAlign: "center", paddingTop: 4 },
   dayColumn: { flex: 1, borderRightWidth: 1, borderRightColor: "#1F2937", padding: 3 },
   todayColumn: { backgroundColor: "rgba(34,197,94,0.08)", borderColor: "#86EFAC" }, dayHeader: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", textAlign: "center" }, dayHeaderToday: { color: "#FDE68A" }, dayNumber: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", textAlign: "center", marginBottom: 4 },
-  hourCell: { minHeight: 44, borderTopWidth: 1, borderTopColor: "rgba(51,65,85,0.55)", paddingTop: 2, paddingBottom: 2, gap: 2, justifyContent: "flex-start" }, focusTab: { minHeight: 24, borderWidth: 1, borderRadius: 4, padding: 2, marginBottom: 2 }, focusTabText: { color: "#F8FAFC", fontSize: 7, lineHeight: 9, fontWeight: "900" }, eventBlock: { borderWidth: 1, borderRadius: 3, paddingHorizontal: 2, paddingVertical: 2, minHeight: 26, marginBottom: 1 }, eventTime: { color: "#F8FAFC", fontSize: 7, fontWeight: "900" }, eventText: { color: "#F8FAFC", fontSize: 7, lineHeight: 9, fontWeight: "800" },
+  // dayGrid holds a static hour-line background plus absolutely positioned event blocks —
+  // items land at their real time offset instead of stacking inside a shared hour cell.
+  dayGrid: { position: "relative", height: GRID_HEIGHT },
+  hourRowBg: { height: HOUR_HEIGHT, borderTopWidth: 1, borderTopColor: "rgba(51,65,85,0.55)" },
+  focusTab: { minHeight: 24, borderWidth: 1, borderRadius: 4, padding: 2, marginBottom: 2 }, focusTabText: { color: "#F8FAFC", fontSize: 7, lineHeight: 9, fontWeight: "900" },
+  eventBlockAbs: { position: "absolute", borderWidth: 1, borderRadius: 3, paddingHorizontal: 2, paddingVertical: 2, overflow: "hidden" },
+  eventTime: { color: "#F8FAFC", fontSize: 7, fontWeight: "900" }, eventText: { color: "#F8FAFC", fontSize: 7, lineHeight: 9, fontWeight: "800" },
   // Today's Quest keeps a white border pinned below Habit, regardless of its Progress (gold) / Recovery (purple) color.
   todayQuestTab: { minHeight: 24, borderWidth: 2, borderColor: "#FFFFFF", borderRadius: 4, padding: 2, marginBottom: 2 },
   todayQuestTabText: { color: "#F8FAFC", fontSize: 7, lineHeight: 9, fontWeight: "900" },

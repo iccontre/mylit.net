@@ -11,9 +11,11 @@ import { uiAssets } from "../constants/uiAssets";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import {
   DAY_PLAN_KEY,
-  MAX_CHECKLIST_ITEMS_PER_DAY,
+  MAX_CHECKLIST_MINUTES_PER_DAY,
   TOMORROW_QUEUE_KEY,
+  computeChecklistMinutesForDay,
   computeUserScheduledMinutesForDay,
+  formatChecklistTimeLabel,
   formatPlannedDurationLabel,
   getChecklistItemsForDay,
   getQuestCapacityMinutes,
@@ -52,6 +54,8 @@ type ChecklistItem = {
   id: string;
   text: string;
   checked: boolean;
+  /** Date (YYYY-MM-DD) `checked` was last set true — see questProgress.ts RawChecklistItem. */
+  checkedDate?: string;
   steps: number;
   startTime: string;
   duration: string;
@@ -245,6 +249,7 @@ function createChecklist(day: WeekdayName, saved: Partial<ChecklistItem>[] = [])
       id: item.id || `${day}-${index}-${text}`,
       text,
       checked: Boolean(item.checked),
+      checkedDate: item.checkedDate,
       steps: item.steps ?? stepsForItem(durationMinutes, kind),
       startTime: item.startTime || TIME_SLOTS[(index + 4) % TIME_SLOTS.length] || "9:00 AM",
       duration: item.duration || formatDurationLabel(durationMinutes),
@@ -489,6 +494,22 @@ export default function DayPlanScreen() {
       setPendingRecoveryConfirmId(null);
       return;
     }
+
+    // 2h30/day checklist cap — validate EACH selected weekday separately against the
+    // committed plan (excluding this item's own prior save) and block the whole save if any
+    // one of them would go over. Older over-limit data is never touched — this only blocks
+    // NEW saves that would push a day further over.
+    for (const weekday of item.weekdays) {
+      const otherMinutes = computeChecklistMinutesForDay(committedPlanRef.current, weekday, itemId);
+      if (otherMinutes + item.durationMinutes > MAX_CHECKLIST_MINUTES_PER_DAY) {
+        setConflictMessage(
+          `${weekday} would have ${formatPlannedDurationLabel(otherMinutes + item.durationMinutes)} of checklist time — the max is ${formatPlannedDurationLabel(MAX_CHECKLIST_MINUTES_PER_DAY)}. Shorten this item or remove another.`
+        );
+        setRecoveryWarning("");
+        setPendingRecoveryConfirmId(null);
+        return;
+      }
+    }
     setConflictMessage("");
 
     if (pendingRecoveryConfirmId !== itemId && checklistItemTriggersRecoveryLock(item)) {
@@ -560,7 +581,11 @@ export default function DayPlanScreen() {
     if (!bucketDay || !item) return;
 
     const nextChecked = !item.checked;
-    const patch = { checked: nextChecked, status: (nextChecked ? "completed" : "scheduled") as ScheduledStatus };
+    const patch = {
+      checked: nextChecked,
+      checkedDate: nextChecked ? getDateKey() : undefined,
+      status: (nextChecked ? "completed" : "scheduled") as ScheduledStatus,
+    };
     updateChecklistItem(itemId, patch);
 
     const persisted = await setChecklistItemChecked(itemId, nextChecked);
@@ -725,12 +750,9 @@ export default function DayPlanScreen() {
     }
     setDayPlan((current: DayPlan) => {
       const bucketDay = findChecklistBucket(current, itemId) ?? selectedDay;
-      const currentItem = current.weekdayChecklists[bucketDay].find((entry) => entry.id === itemId);
-      const alreadyOnThatDay = currentItem?.weekdays.includes(weekday) ?? false;
-      if (!alreadyOnThatDay && getChecklistItemsForDay(current, weekday).length >= MAX_CHECKLIST_ITEMS_PER_DAY) {
-        setSavedMessage(`${weekday} already has ${MAX_CHECKLIST_ITEMS_PER_DAY} checklist items — the daily max.`);
-        return current;
-      }
+      // The 150-min/day cap is enforced authoritatively at Save (saveChecklistItem) against
+      // the COMMITTED plan, since duration/weekday edits can each push a day over the limit —
+      // drafting freely here and blocking only the invalid save keeps editing unsurprising.
       return {
         ...current,
         weekdayChecklists: {
@@ -773,8 +795,9 @@ export default function DayPlanScreen() {
   }
 
   function addChecklistItem(kind: "progress" | "recovery") {
-    if (checklistCountForSelectedDay >= MAX_CHECKLIST_ITEMS_PER_DAY) {
-      setSavedMessage(`${MAX_CHECKLIST_ITEMS_PER_DAY} checklist items is the daily max — that's enough to build the habit without overloading the day.`);
+    const committedMinutes = computeChecklistMinutesForDay(committedPlanRef.current, selectedDay);
+    if (committedMinutes + 30 > MAX_CHECKLIST_MINUTES_PER_DAY) {
+      setSavedMessage(`${selectedDay} is already at the ${formatPlannedDurationLabel(MAX_CHECKLIST_MINUTES_PER_DAY)} checklist limit — free up time before adding more.`);
       return;
     }
     setDayPlan((current: DayPlan) => {
@@ -852,7 +875,10 @@ export default function DayPlanScreen() {
   const committedTodayQuest = committedPlanRef.current.todayQuest;
   const questInInterval = !isTodayQuestDirty() && timeInInterval(committedTodayQuest.startTime, currentInterval);
 
-  const checklistCountForSelectedDay = visibleChecklist.length;
+  // Checklist limit is now total scheduled TIME per day (2h30 / 150 min), not item count —
+  // computed from the COMMITTED plan so it matches what's actually saved/shown elsewhere.
+  const selectedDayChecklistMinutes = computeChecklistMinutesForDay(committedPlanRef.current, selectedDay);
+  const selectedDayChecklistAtLimit = selectedDayChecklistMinutes >= MAX_CHECKLIST_MINUTES_PER_DAY;
   const selectedDayDateKey = useMemo(() => resolveDateForWeekday(selectedDay), [selectedDay]);
   const selectedDayPlannedMinutes = computeUserScheduledMinutesForDay({
     dateKey: selectedDayDateKey,
@@ -965,7 +991,7 @@ export default function DayPlanScreen() {
                 <Text style={styles.helperPill}>{isLowEnergy ? "Recovery mode suggested" : "Optional"}</Text>
               </View>
               <Text style={styles.remainingTimeText}>
-                {checklistCountForSelectedDay}/{MAX_CHECKLIST_ITEMS_PER_DAY} items · {formatPlannedDurationLabel(selectedDayRemainingMinutes)} left today · {boardMode} ({boardMode === "Recovery" ? "5h" : "8h"} limit)
+                {formatChecklistTimeLabel(selectedDayChecklistMinutes)} · {formatPlannedDurationLabel(selectedDayRemainingMinutes)} left today · {boardMode} ({boardMode === "Recovery" ? "5h" : "8h"} limit)
               </Text>
               {visibleChecklist.length === 0 ? (
                 <Text style={styles.emptyChecklist}>{EMPTY_CHECKLIST_COPY}</Text>
@@ -1023,22 +1049,22 @@ export default function DayPlanScreen() {
               ))}
               <View style={styles.addRow}>
                 <TouchableOpacity
-                  style={[styles.addProgressButton, checklistCountForSelectedDay >= MAX_CHECKLIST_ITEMS_PER_DAY && styles.addButtonDisabled]}
-                  disabled={checklistCountForSelectedDay >= MAX_CHECKLIST_ITEMS_PER_DAY}
+                  style={[styles.addProgressButton, selectedDayChecklistAtLimit && styles.addButtonDisabled]}
+                  disabled={selectedDayChecklistAtLimit}
                   onPress={() => addChecklistItem("progress")}
                 >
                   <Text style={styles.addButtonText}>+ Progress</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.addRecoveryButton, checklistCountForSelectedDay >= MAX_CHECKLIST_ITEMS_PER_DAY && styles.addButtonDisabled]}
-                  disabled={checklistCountForSelectedDay >= MAX_CHECKLIST_ITEMS_PER_DAY}
+                  style={[styles.addRecoveryButton, selectedDayChecklistAtLimit && styles.addButtonDisabled]}
+                  disabled={selectedDayChecklistAtLimit}
                   onPress={() => addChecklistItem("recovery")}
                 >
                   <Text style={styles.addButtonText}>+ Recovery</Text>
                 </TouchableOpacity>
               </View>
-              {checklistCountForSelectedDay >= MAX_CHECKLIST_ITEMS_PER_DAY ? (
-                <Text style={styles.capMessage}>{MAX_CHECKLIST_ITEMS_PER_DAY} checklist items is the daily max for {selectedDay} — that&apos;s enough to build the habit without overloading the day.</Text>
+              {selectedDayChecklistAtLimit ? (
+                <Text style={styles.capMessage}>{formatPlannedDurationLabel(MAX_CHECKLIST_MINUTES_PER_DAY)} of checklist time is the daily max for {selectedDay} — that&apos;s enough to build the habit without overloading the day.</Text>
               ) : null}
             </View>
 
@@ -1117,7 +1143,7 @@ function InfoOverlay({ onClose }: { onClose: () => void }) {
         <Text style={styles.infoTitle}>DAY PLAN</Text>
         <ScrollView style={styles.infoScroll} showsVerticalScrollIndicator={false} bounces={false}>
           <Text style={styles.infoBody}>
-            Day Plan helps you choose what matters today. Weekly Habit is your recurring role for selected days. Checklist items build habits — pick a duration (15 min, 30 min, 45 min, or 1 hr) and up to 5 items per day, on whichever weekdays you choose. Steps are based on duration: 15 min earns +1, 30 min earns +2, 45 min earns +3, 1 hr earns +4. If a time overlaps another scheduled item, MYLIT tells you what it interferes with so you can change it. Stack about 2 hours of back-to-back items and MYLIT adds a required 1-hour recovery block right after — the Quest Board locks during it. Your Day Plan shows on Home and Calendar.
+            Day Plan helps you choose what matters today. Weekly Habit is your recurring role for selected days. Checklist items build habits — pick a duration (15 min, 30 min, 45 min, or 1 hr) on whichever weekdays you choose. You can plan up to 2h 30m of checklist time per day. Steps are based on duration: 15 min earns +1, 30 min earns +2, 45 min earns +3, 1 hr earns +4. If a time overlaps another scheduled item, MYLIT tells you what it interferes with so you can change it. Stack about 2 hours of back-to-back items and MYLIT adds a required 1-hour recovery block right after — the Quest Board locks during it. Your Day Plan shows on Home and Calendar.
           </Text>
         </ScrollView>
         <TouchableOpacity style={styles.infoClose} onPress={onClose}>
