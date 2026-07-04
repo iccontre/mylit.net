@@ -111,17 +111,26 @@ export function getStepsForDuration(duration?: string | number | null): number {
   return Math.max(1, Math.round(minutes / 15));
 }
 
+/** A 2-hour duration is only offered for Today's Quest — it's worth a flat +20 steps. */
+export const TODAY_QUEST_TWO_HOUR_MINUTES = 120;
+export const TODAY_QUEST_TWO_HOUR_STEPS = 20;
+/** A completed 2-hour Progress Today's Quest costs a flat -12 energy (not the generic duration formula). */
+export const TODAY_QUEST_TWO_HOUR_ENERGY_COST = 12;
+
 /**
  * Step reward for a quest/checklist item, by duration AND kind:
  * Progress → 15 min = +2, 30 = +4, 45 = +6, 1 hr = +8 (double the base).
  * Recovery → 15 min = +1, 30 = +2, 45 = +3, 1 hr = +4 (base).
+ * 2 hr (Today's Quest only) → flat +20, regardless of kind.
  * Energy costs/restores are unchanged (they use getStepsForDuration directly).
  */
 export function getStepsForItem(
   duration?: string | number | null,
   kind?: "progress" | "recovery" | string | null
 ): number {
-  const base = getStepsForDuration(duration);
+  const minutes = parseDurationMinutes(duration, 30);
+  if (minutes >= TODAY_QUEST_TWO_HOUR_MINUTES) return TODAY_QUEST_TWO_HOUR_STEPS;
+  const base = getStepsForDuration(minutes);
   return kind === "recovery" ? base : base * 2;
 }
 
@@ -161,9 +170,18 @@ export function isNapTitle(title?: string | null): boolean {
   return /(^|\b)nap\b/i.test(String(title ?? ""));
 }
 
+/** Luna's completed-focus-block lock — title is stable so completions can be identified from logs. */
+export const FORCED_RECOVERY_TITLE = "Forced Recovery";
+export const FORCED_RECOVERY_DURATION_MINUTES = 60;
+/** Completing Forced Recovery restores +10 energy exactly once. */
+export const FORCED_RECOVERY_RESTORE_ENERGY = 10;
+export const FORCED_RECOVERY_MESSAGE =
+  "Luna noticed you completed a 2-hour focus block. Take 1 hour to recover and protect your flame.";
+
 /**
  * Signed energy change applied when an item is COMPLETED (never on save):
- * mandatory → +5, nap → +5/+10, recovery → +2/+4/+6/+8, progress → -1/-3/-5/-7.
+ * mandatory → +5, nap → +5/+10, Forced Recovery → +10, recovery → +2/+4/+6/+8,
+ * progress → -1/-3/-5/-7, 2 hr Progress Today's Quest → flat -12.
  */
 export function getEnergyDelta(opts: {
   kind?: ScheduledClassification | "progress" | "recovery" | string | null;
@@ -172,9 +190,12 @@ export function getEnergyDelta(opts: {
   mandatory?: boolean;
 }): number {
   if (opts.mandatory) return MANDATORY_QUEST_RESTORE_ENERGY;
+  if (opts.title === FORCED_RECOVERY_TITLE) return FORCED_RECOVERY_RESTORE_ENERGY;
   if (isNapTitle(opts.title)) return getNapEnergyRestore(opts.durationMinutes);
-  if (opts.kind === "recovery") return getEnergyRestoreForDuration(opts.durationMinutes);
-  return -getEnergyCostForDuration(opts.durationMinutes);
+  const minutes = parseDurationMinutes(opts.durationMinutes, 30);
+  if (opts.kind !== "recovery" && minutes >= TODAY_QUEST_TWO_HOUR_MINUTES) return -TODAY_QUEST_TWO_HOUR_ENERGY_COST;
+  if (opts.kind === "recovery") return getEnergyRestoreForDuration(minutes);
+  return -getEnergyCostForDuration(minutes);
 }
 
 /** Concise, readable energy label, e.g. "Energy: +4" or "Energy: -3". */

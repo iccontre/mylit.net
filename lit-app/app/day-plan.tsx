@@ -38,6 +38,8 @@ import {
   TODAY_QUEST_DURATION_LABEL,
   TODAY_QUEST_DURATION_MINUTES,
   TODAY_QUEST_STEPS,
+  TODAY_QUEST_TWO_HOUR_MINUTES,
+  TODAY_QUEST_TWO_HOUR_STEPS,
   wouldTriggerRecoveryLock,
   type ScheduledClassification,
   type ScheduledQuestLike,
@@ -99,8 +101,10 @@ type QuickThoughtLike = {
 
 const CHECKIN_KEY = "lit_latest_checkin";
 const TIME_SLOTS = generateTimeSlots(7, 22, 30);
-/** Checklist items and Today's Quest share one fixed set of durations — 15/30/45/60 min → +1/+2/+3/+4 steps. */
+/** Checklist items use 15/30/45/60 min durations. */
 const CHECKLIST_DURATIONS = ["15 min", "30 min", "45 min", "1 hr"];
+/** Today's Quest additionally offers a 2 hr option — not available to checklist/quick-thought items. */
+const TODAY_QUEST_DURATIONS = ["15 min", "30 min", "45 min", "1 hr", "2 hr"];
 const WEEKDAYS: WeekdayName[] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const DEFAULT_ROLES: Record<WeekdayName, string> = {
   Monday: "",
@@ -190,6 +194,17 @@ function stepsForItem(duration: string | number, kind: "progress" | "recovery") 
   return getStepsForItem(duration, kind);
 }
 
+/**
+ * Today's Quest step reward: 2 hr is a flat +20 (Today's Quest only), 1 hr preserves the
+ * existing flat +10 (unchanged from before duration became adjustable), and 15/30/45 min
+ * use the same duration-based formula as checklist items.
+ */
+function stepsForTodayQuest(durationMinutes: number, kind: "progress" | "recovery") {
+  if (durationMinutes >= TODAY_QUEST_TWO_HOUR_MINUTES) return TODAY_QUEST_TWO_HOUR_STEPS;
+  if (durationMinutes >= TODAY_QUEST_DURATION_MINUTES) return TODAY_QUEST_STEPS;
+  return getStepsForItem(durationMinutes, kind);
+}
+
 type Interval = { label: string; start: number; end: number };
 
 function getCurrentInterval(now = new Date()): Interval {
@@ -258,7 +273,7 @@ function createDefaultPlan(): DayPlan {
       startTime: "9:00 AM",
       duration: TODAY_QUEST_DURATION_LABEL,
       durationMinutes: TODAY_QUEST_DURATION_MINUTES,
-      steps: TODAY_QUEST_STEPS,
+      steps: stepsForTodayQuest(TODAY_QUEST_DURATION_MINUTES, "progress"),
       status: "scheduled",
       kind: "progress",
       source: "todayQuest",
@@ -290,6 +305,13 @@ function normalizePlan(raw: Partial<DayPlan>): DayPlan {
   }, {} as Record<WeekdayName, ChecklistItem[]>);
   const quest = raw.todayQuest || fallback.todayQuest;
   const questTitle = quest.title?.trim() || raw.todayGoal?.trim() || fallback.todayQuest.title;
+  // Kind only comes from the explicit PROGRESS/RECOVERY toggle (persisted on quest.kind).
+  // Legacy plans saved before that toggle existed fall back to a one-time title inference.
+  const kind = quest.kind || normalizeKind(inferScheduledClassification(questTitle));
+  const rawDurationMinutes = parseDurationMinutes(quest.durationMinutes ?? quest.duration, TODAY_QUEST_DURATION_MINUTES);
+  // 2 hr is Progress-only — clamp any legacy/invalid Recovery + 2 hr combo back to 1 hr.
+  const durationMinutes = kind === "recovery" && rawDurationMinutes >= TODAY_QUEST_TWO_HOUR_MINUTES ? TODAY_QUEST_DURATION_MINUTES : rawDurationMinutes;
+  const duration = durationMinutes === rawDurationMinutes ? quest.duration || formatDurationLabel(durationMinutes) : TODAY_QUEST_DURATION_LABEL;
   return {
     todayFocus: roles[todayWeekday()],
     todayGoal: roles[todayWeekday()],
@@ -301,12 +323,11 @@ function normalizePlan(raw: Partial<DayPlan>): DayPlan {
       date: getDateKey(),
       weekday: todayWeekday(),
       startTime: quest.startTime || "9:00 AM",
-      // Today's Quest is a fixed 1-hour / +5-step slot — not user-adjustable duration.
-      duration: TODAY_QUEST_DURATION_LABEL,
-      durationMinutes: TODAY_QUEST_DURATION_MINUTES,
-      steps: TODAY_QUEST_STEPS,
+      duration,
+      durationMinutes,
+      steps: typeof quest.steps === "number" ? quest.steps : stepsForTodayQuest(durationMinutes, kind),
       status: quest.status || "scheduled",
-      kind: quest.kind || normalizeKind(inferScheduledClassification(questTitle)),
+      kind,
       source: "todayQuest",
     },
     weekdayRoles: roles,
@@ -389,7 +410,12 @@ export default function DayPlanScreen() {
 
   function isTodayQuestDirty(): boolean {
     const committed = committedPlanRef.current.todayQuest;
-    return committed.title !== dayPlan.todayQuest.title || committed.startTime !== dayPlan.todayQuest.startTime;
+    return (
+      committed.title !== dayPlan.todayQuest.title ||
+      committed.startTime !== dayPlan.todayQuest.startTime ||
+      committed.duration !== dayPlan.todayQuest.duration ||
+      committed.kind !== dayPlan.todayQuest.kind
+    );
   }
 
   /** Every already-saved checklist item + Today's Quest, expanded one row per weekday it applies to. */
@@ -603,9 +629,11 @@ export default function DayPlanScreen() {
       setRecoveryWarning("");
       setPendingRecoveryConfirmId(null);
     }
+    // Kind only changes via the explicit PROGRESS/RECOVERY toggle (updateTodayQuestKind).
+    // Typing the title must NOT auto-flip the mode the user chose — that was the purple-color bug.
     setDayPlan((current: DayPlan) => ({
       ...current,
-      todayQuest: { ...current.todayQuest, title: value, kind: normalizeKind(inferScheduledClassification(value)) },
+      todayQuest: { ...current.todayQuest, title: value },
     }));
   }
 
@@ -615,6 +643,53 @@ export default function DayPlanScreen() {
       setPendingRecoveryConfirmId(null);
     }
     setDayPlan((current: DayPlan) => ({ ...current, todayQuest: { ...current.todayQuest, startTime: next } }));
+  }
+
+  function updateTodayQuestKind(kind: "progress" | "recovery") {
+    setSavedMessage("");
+    if (pendingRecoveryConfirmId === dayPlan.todayQuest.id) {
+      setRecoveryWarning("");
+      setPendingRecoveryConfirmId(null);
+    }
+    setDayPlan((current: DayPlan) => {
+      // 2 hr is Progress-only (it triggers Forced Recovery) — switching to Recovery
+      // while 2 hr is selected clamps back to 1 hr instead of allowing an invalid combo.
+      const durationMinutes =
+        kind === "recovery" && current.todayQuest.durationMinutes >= TODAY_QUEST_TWO_HOUR_MINUTES
+          ? TODAY_QUEST_DURATION_MINUTES
+          : current.todayQuest.durationMinutes;
+      const duration = durationMinutes === current.todayQuest.durationMinutes ? current.todayQuest.duration : TODAY_QUEST_DURATION_LABEL;
+      return {
+        ...current,
+        todayQuest: {
+          ...current.todayQuest,
+          kind,
+          duration,
+          durationMinutes,
+          steps: stepsForTodayQuest(durationMinutes, kind),
+        },
+      };
+    });
+  }
+
+  function updateTodayQuestDuration(duration: string) {
+    setSavedMessage("");
+    if (pendingRecoveryConfirmId === dayPlan.todayQuest.id) {
+      setRecoveryWarning("");
+      setPendingRecoveryConfirmId(null);
+    }
+    setDayPlan((current: DayPlan) => {
+      const durationMinutes = parseDurationMinutes(duration, TODAY_QUEST_DURATION_MINUTES);
+      return {
+        ...current,
+        todayQuest: {
+          ...current.todayQuest,
+          duration,
+          durationMinutes,
+          steps: stepsForTodayQuest(durationMinutes, current.todayQuest.kind),
+        },
+      };
+    });
   }
 
   function updateChecklistItem(itemId: string, patch: Partial<ChecklistItem>) {
@@ -852,11 +927,28 @@ export default function DayPlanScreen() {
               <TextInput style={formStyles.input} value={dayPlan.weekdayRoles[selectedDay]} onChangeText={updateSelectedRole} placeholder="e.g. Coding Day" placeholderTextColor="#94A3B8" />
             </View>
 
-            <View style={dayPlan.todayQuest.kind === "recovery" ? styles.panelPurple : styles.panelGold}>
-              <Text style={styles.sectionTitle}>SET TODAY’S MAIN QUEST • 1 HR • +{dayPlan.todayQuest.steps} STEPS</Text>
-              <Text style={styles.helperText}>This is the actual quest for today — always a fixed 1-hour slot. It appears on Calendar and earns +{dayPlan.todayQuest.steps} steps only when completed.</Text>
+            <View style={styles.todayQuestOuterBorder}>
+            <View style={[dayPlan.todayQuest.kind === "recovery" ? styles.panelPurple : styles.panelGold, { marginBottom: 0 }]}>
+              <Text style={styles.sectionTitle}>SET TODAY’S MAIN QUEST • {dayPlan.todayQuest.duration} • +{dayPlan.todayQuest.steps} STEPS</Text>
+              <Text style={styles.helperText}>This is the actual quest for today. It appears on Calendar and Quest Board and earns +{dayPlan.todayQuest.steps} steps only when completed.</Text>
               <TextInput style={formStyles.input} value={dayPlan.todayQuest.title} onChangeText={updateTodayQuestTitle} placeholder="Finish profile page layout" placeholderTextColor="#94A3B8" />
               <TimeStepper value={dayPlan.todayQuest.startTime} onChange={updateTodayQuestStartTime} />
+              <View style={styles.kindSwitchRow}>
+                <TouchableOpacity style={[styles.kindMiniButton, dayPlan.todayQuest.kind === "progress" && styles.kindProgressActive]} onPress={() => updateTodayQuestKind("progress")}><Text style={styles.kindMiniText}>PROGRESS</Text></TouchableOpacity>
+                <TouchableOpacity style={[styles.kindMiniButton, dayPlan.todayQuest.kind === "recovery" && styles.kindRecoveryActive]} onPress={() => updateTodayQuestKind("recovery")}><Text style={styles.kindMiniText}>RECOVERY</Text></TouchableOpacity>
+              </View>
+              <View style={styles.durationRow}>
+                {TODAY_QUEST_DURATIONS.filter((duration) => duration !== "2 hr" || dayPlan.todayQuest.kind === "progress").map((duration) => (
+                  <TouchableOpacity key={duration} style={[styles.durationButton, dayPlan.todayQuest.duration === duration && styles.durationButtonActive]} onPress={() => updateTodayQuestDuration(duration)}>
+                    <Text style={[styles.durationText, dayPlan.todayQuest.duration === duration && styles.optionTextActive]}>{duration}</Text>
+                  </TouchableOpacity>
+                ))}
+                <Text style={styles.stepsText}>+{dayPlan.todayQuest.steps} step{dayPlan.todayQuest.steps === 1 ? "" : "s"}</Text>
+                <Text style={styles.energyText}>{formatEnergyDelta(getEnergyDelta({ kind: dayPlan.todayQuest.kind, durationMinutes: dayPlan.todayQuest.durationMinutes, title: dayPlan.todayQuest.title }))}</Text>
+              </View>
+              {dayPlan.todayQuest.durationMinutes >= TODAY_QUEST_TWO_HOUR_MINUTES && dayPlan.todayQuest.kind === "progress" ? (
+                <Text style={styles.recoveryWarning}>Completing this triggers 1 hr Forced Recovery after.</Text>
+              ) : null}
               {pendingRecoveryConfirmId === dayPlan.todayQuest.id && recoveryWarning ? <Text style={styles.recoveryWarning}>{recoveryWarning}</Text> : null}
               <TouchableOpacity
                 style={[styles.saveQuestButton, !isTodayQuestDirty() && styles.saveQuestButtonDisabled]}
@@ -872,6 +964,7 @@ export default function DayPlanScreen() {
                   <Text style={styles.reflectButtonText}>REFLECT ON TODAY’S QUEST</Text>
                 </TouchableOpacity>
               ) : null}
+            </View>
             </View>
 
             <View style={styles.panel}>
@@ -1062,6 +1155,8 @@ const styles = StyleSheet.create({
   panel: { backgroundColor: "rgba(8, 13, 24, 0.95)", borderRadius: 8, padding: 12, marginBottom: 12, borderWidth: 3, borderColor: "#334155" },
   panelGold: { backgroundColor: "rgba(8, 13, 24, 0.95)", borderRadius: 8, padding: 12, marginBottom: 12, borderWidth: 3, borderColor: "#FBBF24" },
   panelPurple: { backgroundColor: "rgba(31, 18, 56, 0.95)", borderRadius: 8, padding: 12, marginBottom: 12, borderWidth: 3, borderColor: "#A78BFA" },
+  // Today's Quest always keeps a white outer ring so it reads as "Today's Quest" regardless of its Progress/Recovery color.
+  todayQuestOuterBorder: { borderWidth: 3, borderColor: "#FFFFFF", borderRadius: 10, padding: 3, marginBottom: 12 },
   sectionTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 0.5, lineHeight: 17, marginBottom: 8 },
   helperText: { color: "#CBD5E1", fontSize: 12, lineHeight: 18, marginBottom: 8, fontWeight: "700" },
   helperPill: { color: "#FBBF24", fontFamily: pixelFont, fontSize: 10, fontWeight: "900" },

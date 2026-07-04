@@ -453,6 +453,9 @@ export default function CalendarScreen() {
                 const isToday = getDateKey(date) === todayKey;
                 const events = eventsByDay[index];
                 const focusEvent = events.find((event: CalendarEvent) => event.classification === "focus");
+                // Today's Quest is pinned directly below Habit (or top, if there's no Habit)
+                // instead of sitting in its scheduled time slot, so it's always visible and never mixed in with checklist/quick-thought items.
+                const todayQuestEvent = events.find((event: CalendarEvent) => event.source === "Day Plan / Quest Board");
                 return (
                   <View key={date.toISOString()} style={[styles.dayColumn, isToday && styles.todayColumn]}>
                     <Text style={[styles.dayHeader, isToday && styles.dayHeaderToday]}>{WEEKDAY_LABELS[date.getDay()]}</Text>
@@ -462,9 +465,22 @@ export default function CalendarScreen() {
                         <Text style={styles.focusTabText} numberOfLines={1}>Habit: {focusEvent.title}</Text>
                       </TouchableOpacity>
                     ) : null}
+                    {todayQuestEvent ? (
+                      <TouchableOpacity
+                        style={[getEventToneStyle(todayQuestEvent.tone), styles.todayQuestTab]}
+                        onPress={() => setSelectedEvent(todayQuestEvent)}
+                      >
+                        <Text style={styles.todayQuestTabText} numberOfLines={1}>Today Quest: {todayQuestEvent.title}</Text>
+                      </TouchableOpacity>
+                    ) : null}
                     {TIME_ROWS.map((row) => {
                       const rowEvents = events
-                        .filter((event: CalendarEvent) => event.classification !== "focus" && calendarTimeRow(event.startTime) === row)
+                        .filter(
+                          (event: CalendarEvent) =>
+                            event.classification !== "focus" &&
+                            event.id !== todayQuestEvent?.id &&
+                            calendarTimeRow(event.startTime) === row
+                        )
                         .sort((a, b) => {
                           if (a.classification === "sleepGuide" && b.classification !== "sleepGuide") return 1;
                           if (b.classification === "sleepGuide" && a.classification !== "sleepGuide") return -1;
@@ -637,6 +653,9 @@ const styles = StyleSheet.create({
   dayColumn: { flex: 1, borderRightWidth: 1, borderRightColor: "#1F2937", padding: 3 },
   todayColumn: { backgroundColor: "rgba(34,197,94,0.08)", borderColor: "#86EFAC" }, dayHeader: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", textAlign: "center" }, dayHeaderToday: { color: "#FDE68A" }, dayNumber: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", textAlign: "center", marginBottom: 4 },
   hourCell: { minHeight: 44, borderTopWidth: 1, borderTopColor: "rgba(51,65,85,0.55)", paddingTop: 2, paddingBottom: 2, gap: 2, justifyContent: "flex-start" }, focusTab: { minHeight: 24, borderWidth: 1, borderRadius: 4, padding: 2, marginBottom: 2 }, focusTabText: { color: "#F8FAFC", fontSize: 7, lineHeight: 9, fontWeight: "900" }, eventBlock: { borderWidth: 1, borderRadius: 3, paddingHorizontal: 2, paddingVertical: 2, minHeight: 26, marginBottom: 1 }, eventTime: { color: "#F8FAFC", fontSize: 7, fontWeight: "900" }, eventText: { color: "#F8FAFC", fontSize: 7, lineHeight: 9, fontWeight: "800" },
+  // Today's Quest keeps a white border pinned below Habit, regardless of its Progress (gold) / Recovery (purple) color.
+  todayQuestTab: { minHeight: 24, borderWidth: 2, borderColor: "#FFFFFF", borderRadius: 4, padding: 2, marginBottom: 2 },
+  todayQuestTabText: { color: "#F8FAFC", fontSize: 7, lineHeight: 9, fontWeight: "900" },
   eventGold: { backgroundColor: "rgba(113,63,18,0.85)", borderColor: "#FBBF24" }, eventPurple: { backgroundColor: "rgba(88,28,135,0.85)", borderColor: "#A78BFA" }, eventBlue: { backgroundColor: "rgba(14,116,144,0.85)", borderColor: "#67E8F9" }, eventGreen: { backgroundColor: "rgba(20,83,45,0.65)", borderColor: "#86EFAC" },
   popupOverlay: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "center", padding: 18, zIndex: 10 }, popupCard: { backgroundColor: "rgba(8,13,24,0.98)", borderWidth: 3, borderRadius: 12, padding: 16 }, popupGold: { borderColor: "#FBBF24" }, popupPurple: { borderColor: "#A78BFA" }, popupBlue: { borderColor: "#67E8F9" }, popupGreen: { borderColor: "#86EFAC" }, popupTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 20, fontWeight: "900", marginBottom: 4 }, popupSource: { color: "#FDE047", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", marginBottom: 12 }, popupRow: { flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: "#1F2937", paddingVertical: 6 }, popupLabel: { color: "#94A3B8", fontSize: 12, fontWeight: "800" }, popupValue: { color: "#F8FAFC", fontSize: 12, fontWeight: "900", maxWidth: "60%", textAlign: "right" }, popupNote: { color: "#CBD5E1", fontSize: 13, lineHeight: 19, marginTop: 12 }, popupButton: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", paddingVertical: 12, alignItems: "center", marginTop: 14 }, popupButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900" },
   eviePanel: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(8,13,24,0.95)", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, padding: 10, marginBottom: 10 },

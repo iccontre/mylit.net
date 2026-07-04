@@ -19,16 +19,21 @@ import { syncAndGetStepRank, type StepRank } from "../../lib/stepRank";
 import {
   ACTIVE_TIMED_ITEM_KEY,
   applyQuestBoardCapacity,
+  buildForcedRecoveryItem,
   collectTodayCalendarItems,
   computeFreshRankBonuses,
   computeTotalEarnedSteps,
   findNextScheduledItem,
+  FORCED_RECOVERY_MESSAGE,
+  FORCED_RECOVERY_RESTORE_ENERGY,
   formatCapacityHeader,
   getChecklistItemsForDay,
+  getForcedRecoveryTrigger,
   getTodayKey,
   getWeekdayName,
   isDefaultTodayQuestTitle,
   kindAccent,
+  loadFocusBlockLog,
   loadTodayCompletions,
   loadTodayMissed,
   markItemComplete,
@@ -36,12 +41,14 @@ import {
   normalizeQuestItems,
   questSourceLabel,
   sourceIcon,
+  TODAY_QUEST_TWO_HOUR_MINUTES,
   type CompletionEntry,
+  type FocusBlockLogEntry,
   type HomeQuestItem,
   type MissedEntry,
   type QuestKind,
 } from "../../lib/questProgress";
-import { formatDurationLabel, formatEnergyDelta, formatMinutesAsTime, getEnergyDelta, getRequiredRecoveryBlockForDate, inferScheduledClassification, parseTimeToMinutes, TODAY_QUEST_DURATION_MINUTES } from "../../lib/scheduling";
+import { formatDurationLabel, formatEnergyDelta, getEnergyDelta } from "../../lib/scheduling";
 import { LATEST_PRE_SLEEP_INTENTION_KEY } from "../../lib/storageKeys";
 
 const mylitLogo = uiAssets.logo.mylit;
@@ -196,8 +203,6 @@ const PASSIVE_DECAY_INTERVAL_HOURS = 2;
 const MANDATORY_QUEST_TITLE = "Eat or rest to restore energy";
 const MANDATORY_QUEST_DURATION_MINUTES = 30;
 const MANDATORY_QUEST_RESTORE_ENERGY = 5;
-// Energy restored once a Luna-enforced recovery window has been served today.
-const RECOVERY_TIME_RESTORE_ENERGY = 5;
 // Progress mode triggers the recovery quest earlier than Recovery mode.
 const MANDATORY_QUEST_PROGRESS_THRESHOLD = 60;
 const MANDATORY_QUEST_RECOVERY_THRESHOLD = 30;
@@ -291,6 +296,7 @@ export default function HomeScreen() {
 
   const [completedQuests, setCompletedQuests] = useState<CompletionEntry[]>([]);
   const [missedQuests, setMissedQuests] = useState<MissedEntry[]>([]);
+  const [focusLog, setFocusLog] = useState<FocusBlockLogEntry[]>([]);
   const [userStats, setUserStats] = useState<{ totalSteps?: number }>({});
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileChecked, setProfileChecked] = useState(false);
@@ -481,13 +487,15 @@ export default function HomeScreen() {
   }
 
   async function loadProgressState() {
-    const [completions, missed, stats] = await Promise.all([
+    const [completions, missed, stats, focusLogEntries] = await Promise.all([
       loadTodayCompletions(),
       loadTodayMissed(),
       AsyncStorage.getItem(USER_STATS_KEY),
+      loadFocusBlockLog(),
     ]);
     setCompletedQuests(completions);
     setMissedQuests(missed);
+    setFocusLog(focusLogEntries);
     if (stats) {
       try {
         setUserStats(JSON.parse(stats));
@@ -626,6 +634,7 @@ export default function HomeScreen() {
     // into today's energy math (progress spends energy, recovery restores it).
     const nextCompleted = await markItemComplete(item, completedQuests);
     setCompletedQuests(nextCompleted);
+    setFocusLog(await loadFocusBlockLog());
     await successHaptic();
     setSelectedItem(null);
     await loadDayPlan();
@@ -674,6 +683,7 @@ export default function HomeScreen() {
     const nextCompleted = await markItemComplete(item, completedQuests);
     await successHaptic();
     setCompletedQuests(nextCompleted);
+    setFocusLog(await loadFocusBlockLog());
     setSelectedItem(null);
     await loadDayPlan();
     await loadQuickThoughts();
@@ -767,27 +777,11 @@ export default function HomeScreen() {
       : 0;
   const mandatoryRecoveryBoost =
     completedMandatoryEntries.filter(completedAfterCheckIn).length * MANDATORY_QUEST_RESTORE_ENERGY;
-  // Once a Luna-enforced recovery window has been fully served today, restore +5 energy.
-  // (Computed here so it factors into the flame before generateQuests/getMandatoryQuest run.)
-  const energyTodayKey = getTodayKey();
-  const energyNowMinutes = timeNow.getHours() * 60 + timeNow.getMinutes();
-  const energyRecoveryItems = collectTodayCalendarItems(dayPlanRaw, queueItems, energyTodayKey);
-  const energyTodayQuestForRecovery = dayPlanRaw?.todayQuest?.title?.trim()
-    ? [{
-        id: dayPlanRaw.todayQuest.id ?? `today-quest-${energyTodayKey}`,
-        date: energyTodayKey,
-        startTime: dayPlanRaw.todayQuest.startTime ?? "9:00 AM",
-        durationMinutes: dayPlanRaw.todayQuest.durationMinutes ?? TODAY_QUEST_DURATION_MINUTES,
-      }]
-    : [];
-  const energyRecoveryBlock = getRequiredRecoveryBlockForDate([...energyRecoveryItems, ...energyTodayQuestForRecovery], energyTodayKey);
-  const energyRecoveryStart = energyRecoveryBlock ? parseTimeToMinutes(energyRecoveryBlock.startTime ?? null) : null;
-  const recoveryTimeRestore =
-    energyRecoveryBlock !== null && energyRecoveryStart !== null && energyNowMinutes >= energyRecoveryStart + 60
-      ? RECOVERY_TIME_RESTORE_ENERGY
-      : 0;
+  // Forced Recovery's +10 energy restore is applied through questEnergyDelta above like any
+  // other completion (see getForcedRecoveryTrigger/buildForcedRecoveryItem below) — no separate
+  // schedule-based restore needed here.
   const energyYield = hasEnergyData
-    ? clampEnergy(baseEnergyYield - passiveDecay + questEnergyDelta + mandatoryRecoveryBoost + recoveryTimeRestore)
+    ? clampEnergy(baseEnergyYield - passiveDecay + questEnergyDelta + mandatoryRecoveryBoost)
     : 0;
 
   // CHANGE 3: mode is derived live from current energy so Home, Quest Board, guide text,
@@ -953,35 +947,38 @@ export default function HomeScreen() {
   const timeTrackPosition = getCurrentTimeTrackPosition(timeNow);
   const nextItem = activeItem ? findNextScheduledItem(availableItems, activeItem.id, nowMinutes) : null;
 
-  // 2 hours of back-to-back scheduled items today auto-locks the board for a 1-hour recovery window.
-  const todayQuestForRecovery = dayPlanRaw?.todayQuest?.title?.trim()
-    ? [{
-        id: dayPlanRaw.todayQuest.id ?? `today-quest-${todayKey}`,
-        date: todayKey,
-        startTime: dayPlanRaw.todayQuest.startTime ?? "9:00 AM",
-        durationMinutes: dayPlanRaw.todayQuest.durationMinutes ?? TODAY_QUEST_DURATION_MINUTES,
-      }]
-    : [];
-  const requiredRecoveryToday = getRequiredRecoveryBlockForDate([...calendarItems, ...todayQuestForRecovery], todayKey);
-  const recoveryStartMinutes = requiredRecoveryToday ? parseTimeToMinutes(requiredRecoveryToday.startTime ?? null) : null;
-  const isRecoveryLocked =
-    requiredRecoveryToday !== null && recoveryStartMinutes !== null && nowMinutes >= recoveryStartMinutes && nowMinutes < recoveryStartMinutes + 60;
+  // Luna's Forced Recovery is derived purely from COMPLETED Progress work today (never from
+  // scheduled/planned items) — 120 minutes of contiguous completed Progress triggers it.
+  const forcedRecoveryTrigger = getForcedRecoveryTrigger(focusLog, todayKey);
+  const forcedRecoveryResolved = forcedRecoveryTrigger
+    ? completedQuests.some((entry) => entry.id === forcedRecoveryTrigger.id)
+    : false;
+  const isRecoveryLocked = forcedRecoveryTrigger !== null && !forcedRecoveryResolved;
+  const recoveryRemainingMs = forcedRecoveryTrigger ? Math.max(0, forcedRecoveryTrigger.endsAtMs - recoveryNow) : 0;
 
-  // Countdown to when Luna's 1-hour recovery lock lifts, ticking every second while locked.
-  const recoveryEndsMs = (() => {
-    if (recoveryStartMinutes === null) return null;
-    const endOfLock = new Date();
-    endOfLock.setHours(0, 0, 0, 0);
-    return endOfLock.getTime() + (recoveryStartMinutes + 60) * 60 * 1000;
-  })();
-  const recoveryRemainingMs = recoveryEndsMs !== null ? Math.max(0, recoveryEndsMs - recoveryNow) : 0;
-
+  // Ticks recoveryNow every second while locked, and once the 1-hour window elapses,
+  // completes Forced Recovery exactly once (awards +10 energy via markItemComplete/getEnergyDelta).
   useEffect(() => {
-    if (!isRecoveryLocked) return;
+    if (!isRecoveryLocked || !forcedRecoveryTrigger) return;
     setRecoveryNow(Date.now());
     const id = setInterval(() => setRecoveryNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [isRecoveryLocked]);
+  }, [isRecoveryLocked, forcedRecoveryTrigger?.id]);
+
+  useEffect(() => {
+    if (!forcedRecoveryTrigger || forcedRecoveryResolved) return;
+    if (recoveryNow < forcedRecoveryTrigger.endsAtMs) return;
+    let cancelled = false;
+    (async () => {
+      const nextCompleted = await markItemComplete(buildForcedRecoveryItem(forcedRecoveryTrigger), completedQuests);
+      if (cancelled) return;
+      setCompletedQuests(nextCompleted);
+      setFocusLog(await loadFocusBlockLog());
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [forcedRecoveryTrigger?.id, forcedRecoveryResolved, recoveryNow, completedQuests]);
 
   const currentBackground = isRecovery
     ? uiAssets.backgrounds.recovery
@@ -1262,14 +1259,12 @@ export default function HomeScreen() {
                   <View style={[styles.activeCard, { borderColor: "#C4A7FF" }]}>
                     <View style={styles.recoveryHeaderRow}>
                       <Image source={uiAssets.guides.luna} style={styles.recoveryLunaAvatar} resizeMode="contain" />
-                      <Text style={[styles.activeLockLabel, { color: "#C4A7FF" }]}>RECOVERY TIME</Text>
+                      <Text style={[styles.activeLockLabel, { color: "#C4A7FF" }]}>FORCED RECOVERY</Text>
                     </View>
-                    <Text style={styles.recoveryLockText}>
-                      That was 2 hours of straight tasks — nice work. The board locks for 1 hour so you can actually rest.
-                    </Text>
+                    <Text style={styles.recoveryLockText}>{FORCED_RECOVERY_MESSAGE}</Text>
                     <Text style={[styles.countdownText, { color: "#C4A7FF" }]}>{formatCountdown(recoveryRemainingMs)}</Text>
                     <Text style={styles.recoveryLockHint}>
-                      Back on the board at {recoveryStartMinutes !== null ? formatMinutesAsTime(recoveryStartMinutes + 60) : "a bit"}. Stretch, drink some water, step outside, or just breathe.
+                      1 hr • Energy: +{FORCED_RECOVERY_RESTORE_ENERGY} once it resolves. Stretch, drink some water, step outside, or just breathe.
                     </Text>
                     <TouchableOpacity
                       style={[styles.waitingRoomBtn, { borderColor: "#C4A7FF" }]}
@@ -1288,7 +1283,12 @@ export default function HomeScreen() {
                     {visibleItems.map((item) => (
                       <TouchableOpacity
                         key={item.id}
-                        style={[styles.questRow, { borderColor: item.mandatory ? "#F87171" : "#2E3542" }]}
+                        style={[
+                          styles.questRow,
+                          item.source === "Today's Quest"
+                            ? styles.questRowTodayQuest
+                            : { borderColor: item.mandatory ? "#F87171" : "#2E3542" },
+                        ]}
                         onPress={() => openQuestItem(item)}
                         activeOpacity={0.85}
                       >
@@ -1390,6 +1390,12 @@ export default function HomeScreen() {
                         <Text style={styles.modalMeta}>Scheduled: Anytime today</Text>
                       )}
                     </View>
+
+                    {selectedItem.source === "Today's Quest" &&
+                    selectedItem.kind === "progress" &&
+                    selectedItem.durationMinutes >= TODAY_QUEST_TWO_HOUR_MINUTES ? (
+                      <Text style={styles.recoveryTriggerNote}>Triggers 1 hr recovery after completion.</Text>
+                    ) : null}
 
                     {selectedItem.description ? (
                       <Text style={styles.modalDescription}>{selectedItem.description}</Text>
@@ -1886,6 +1892,11 @@ const styles = StyleSheet.create({
     borderColor: "#22C55E",
     backgroundColor: "rgba(20, 83, 45, 0.72)",
   },
+  // Today's Quest always keeps a white border so it reads as "Today's Quest" regardless of its Progress/Recovery color.
+  questRowTodayQuest: {
+    borderColor: "#FFFFFF",
+    borderWidth: 2,
+  },
   questIconSlot: {
     height: 28,
     width: 28,
@@ -2142,6 +2153,12 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     lineHeight: 17,
     marginTop: 10,
+  },
+  recoveryTriggerNote: {
+    color: "#C4A7FF",
+    fontSize: 12,
+    fontWeight: "900",
+    marginTop: 8,
   },
   modalScroll: {
     maxHeight: 220,

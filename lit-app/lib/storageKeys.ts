@@ -35,6 +35,8 @@ export const REFLECTIONS_KEY = "lit_reflections";
 export const GOAL_FEEDBACK_LOG_KEY = "lit_goal_feedback_log";
 /** One-time Waiting Room boost usage, keyed by `${activeItemId}:${startedAt}` -> ISO timestamp used. */
 export const WAITING_ROOM_BOOSTS_KEY = "lit_waiting_room_boosts";
+/** Log of completed Progress/Recovery work (id, title, kind, duration, completedAt) that Forced Recovery is computed from. */
+export const FOCUS_BLOCK_HISTORY_KEY = "lit_focus_block_history";
 
 /**
  * Canonical synced keys that back the Log History screen. These are the SAME keys the
@@ -75,6 +77,7 @@ export const SYNCABLE_PROGRESS_KEYS = [
   REFLECTIONS_KEY,
   GOAL_FEEDBACK_LOG_KEY,
   WAITING_ROOM_BOOSTS_KEY,
+  FOCUS_BLOCK_HISTORY_KEY,
 ] as const;
 
 export type SyncableProgressKey = (typeof SYNCABLE_PROGRESS_KEYS)[number];
@@ -90,6 +93,7 @@ export const ARRAY_MERGE_PROGRESS_KEYS = new Set<SyncableProgressKey>([
   AWARENESS_CHECKS_KEY,
   REFLECTIONS_KEY,
   GOAL_FEEDBACK_LOG_KEY,
+  FOCUS_BLOCK_HISTORY_KEY,
 ]);
 
 export function isSyncableProgressKey(key: string): key is SyncableProgressKey {

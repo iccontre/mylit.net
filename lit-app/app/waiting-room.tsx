@@ -12,8 +12,10 @@ import {
   collectTodayCalendarItems,
   findNextScheduledItem,
   getChecklistItemsForDay,
+  getForcedRecoveryTrigger,
   getTodayKey,
   getWeekdayName,
+  loadFocusBlockLog,
   markItemComplete,
   markItemMissed,
   normalizeQuestItems,
@@ -39,7 +41,7 @@ import {
   USER_STATS_KEY,
   WAITING_ROOM_BOOSTS_KEY,
 } from "../lib/storageKeys";
-import { formatDurationLabel, formatEnergyDelta, getEnergyDelta, getRequiredRecoveryBlockForDate, parseTimeToMinutes, TODAY_QUEST_DURATION_MINUTES } from "../lib/scheduling";
+import { formatDurationLabel, formatEnergyDelta, getEnergyDelta } from "../lib/scheduling";
 
 type ActiveTimedItem = {
   id: string;
@@ -224,29 +226,14 @@ export default function WaitingRoomScreen() {
       setRecoveryEndsMs(null);
     } else {
       setNextItem(null);
-      // No active quest — but if Luna's 2-hour recovery lock is in effect, show a
+      // No active quest — but if Luna's Forced Recovery lock is in effect, show a
       // recovery countdown here too (so there is always a timer during recovery time).
+      // Derived from COMPLETED Progress work only, matching Home — never from schedule.
       const todayKey = getTodayKey();
-      const plan = dayPlan as { todayQuest?: { id?: string; title?: string; startTime?: string; durationMinutes?: number } } | null;
-      const calItems = collectTodayCalendarItems(dayPlan, queueItems, todayKey);
-      const todayQuestForRecovery = plan?.todayQuest?.title?.trim()
-        ? [{
-            id: plan.todayQuest.id ?? `today-quest-${todayKey}`,
-            date: todayKey,
-            startTime: plan.todayQuest.startTime ?? "9:00 AM",
-            durationMinutes: plan.todayQuest.durationMinutes ?? TODAY_QUEST_DURATION_MINUTES,
-          }]
-        : [];
-      const recBlock = getRequiredRecoveryBlockForDate([...calItems, ...todayQuestForRecovery], todayKey);
-      const recStart = recBlock ? parseTimeToMinutes(recBlock.startTime ?? null) : null;
-      const nowMinutes = new Date().getHours() * 60 + new Date().getMinutes();
-      if (recBlock && recStart !== null && nowMinutes >= recStart && nowMinutes < recStart + 60) {
-        const midnight = new Date();
-        midnight.setHours(0, 0, 0, 0);
-        setRecoveryEndsMs(midnight.getTime() + (recStart + 60) * 60 * 1000);
-      } else {
-        setRecoveryEndsMs(null);
-      }
+      const focusLog = await loadFocusBlockLog();
+      const trigger = getForcedRecoveryTrigger(focusLog, todayKey);
+      const resolved = trigger ? completed.some((entry) => entry.id === trigger.id) : false;
+      setRecoveryEndsMs(trigger && !resolved ? trigger.endsAtMs : null);
     }
 
     setLoaded(true);

@@ -5,6 +5,7 @@ import {
   ACTIVE_TIMED_ITEM_KEY,
   COMPLETED_QUESTS_KEY,
   DAY_PLAN_KEY,
+  FOCUS_BLOCK_HISTORY_KEY,
   MISSED_QUESTS_KEY,
   TODAY_PROGRESS_DATE_KEY,
   TOMORROW_QUEUE_KEY,
@@ -13,6 +14,10 @@ import {
 import {
   collectDayPlanScheduledItems,
   collectQuickThoughtScheduledItems,
+  FORCED_RECOVERY_DURATION_MINUTES,
+  FORCED_RECOVERY_MESSAGE,
+  FORCED_RECOVERY_RESTORE_ENERGY,
+  FORCED_RECOVERY_TITLE,
   formatDurationLabel,
   getDateKey,
   getStepsForDuration,
@@ -33,11 +38,19 @@ export {
   ACTIVE_TIMED_ITEM_KEY,
   COMPLETED_QUESTS_KEY,
   DAY_PLAN_KEY,
+  FOCUS_BLOCK_HISTORY_KEY,
   MISSED_QUESTS_KEY,
   TODAY_PROGRESS_DATE_KEY,
   TOMORROW_QUEUE_KEY,
   USER_STATS_KEY,
 };
+export {
+  FORCED_RECOVERY_DURATION_MINUTES,
+  FORCED_RECOVERY_MESSAGE,
+  FORCED_RECOVERY_RESTORE_ENERGY,
+  FORCED_RECOVERY_TITLE,
+  TODAY_QUEST_TWO_HOUR_MINUTES,
+} from "./scheduling";
 
 /** Progress mode allows up to 8 planned hours; Recovery mode allows up to 5. */
 export const PROGRESS_CAPACITY_MINUTES = 8 * 60;
@@ -930,13 +943,14 @@ async function syncSourceMissed(item: HomeQuestItem): Promise<void> {
 export async function markItemComplete(item: HomeQuestItem, existing: CompletionEntry[]): Promise<CompletionEntry[]> {
   if (existing.some((entry) => entry.id === item.id)) return existing;
 
+  const completedAt = new Date().toISOString();
   const entry: CompletionEntry = {
     id: item.id,
     title: item.title,
     steps: item.steps,
     source: item.source,
     dateKey: getTodayKey(),
-    completedAt: new Date().toISOString(),
+    completedAt,
     durationMinutes: item.durationMinutes,
     kind: item.kind,
   };
@@ -944,7 +958,119 @@ export async function markItemComplete(item: HomeQuestItem, existing: Completion
   await syncSourceCompletion(item);
   const next = [...existing, entry];
   await saveTodayCompletions(next);
+  await appendFocusBlockLogEntry({
+    id: item.id,
+    title: item.title,
+    kind: item.kind,
+    durationMinutes: item.durationMinutes,
+    scheduledStart: item.scheduledTime,
+    completedAt,
+    source: item.source,
+  });
   return next;
+}
+
+/** One completed item, used to derive Forced Recovery from real completed work (never from a schedule). */
+export type FocusBlockLogEntry = {
+  id: string;
+  title: string;
+  kind: QuestKind;
+  durationMinutes: number;
+  scheduledStart?: string;
+  completedAt: string;
+  source: QuestSource;
+  dateKey: string;
+};
+
+export async function loadFocusBlockLog(): Promise<FocusBlockLogEntry[]> {
+  try {
+    const raw = await AsyncStorage.getItem(FOCUS_BLOCK_HISTORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as FocusBlockLogEntry[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+async function appendFocusBlockLogEntry(entry: Omit<FocusBlockLogEntry, "dateKey"> & { dateKey?: string }): Promise<void> {
+  const existing = await loadFocusBlockLog();
+  if (existing.some((e) => e.id === entry.id)) return;
+  const next = [...existing, { ...entry, dateKey: entry.dateKey ?? getTodayKey() }];
+  await persistProgressKeys({ [FOCUS_BLOCK_HISTORY_KEY]: JSON.stringify(next) });
+}
+
+/** A gap this small between two completions is treated as "tapping complete", not a real break. */
+const FOCUS_STREAK_GRACE_MS = 10 * 60 * 1000;
+/** Minutes of contiguous completed Progress work that trigger Forced Recovery. */
+const FOCUS_STREAK_TARGET_MINUTES = 120;
+
+export type ForcedRecoveryTrigger = {
+  /** Stable across renders/refreshes — the same 2-hour block always produces the same id. */
+  id: string;
+  startAtMs: number;
+  endsAtMs: number;
+};
+
+/**
+ * Derives Luna's Forced Recovery purely from COMPLETED Progress work today (never from
+ * scheduled/planned items). Walks the day's focus log in completion order, summing
+ * contiguous Progress durations (inferring each item's start as completedAt - duration)
+ * and resetting the streak whenever a Recovery-kind item (including Forced Recovery
+ * itself) completes. The first moment the streak reaches 120 minutes is the trigger.
+ */
+export function getForcedRecoveryTrigger(log: FocusBlockLogEntry[], todayKey = getTodayKey()): ForcedRecoveryTrigger | null {
+  const dayEntries = log
+    .filter((entry) => entry.dateKey === todayKey)
+    .slice()
+    .sort((a, b) => new Date(a.completedAt).getTime() - new Date(b.completedAt).getTime());
+
+  let streakMinutes = 0;
+  let cursorEndMs: number | null = null;
+
+  for (const entry of dayEntries) {
+    const completedAtMs = new Date(entry.completedAt).getTime();
+    if (!Number.isFinite(completedAtMs)) continue;
+
+    if (entry.kind === "recovery" || entry.title === FORCED_RECOVERY_TITLE) {
+      streakMinutes = 0;
+      cursorEndMs = completedAtMs;
+      continue;
+    }
+
+    const durationMinutes = Math.max(0, entry.durationMinutes || 0);
+    const inferredStartMs = completedAtMs - durationMinutes * 60 * 1000;
+
+    if (cursorEndMs === null || inferredStartMs > cursorEndMs + FOCUS_STREAK_GRACE_MS) {
+      streakMinutes = durationMinutes;
+    } else {
+      streakMinutes += durationMinutes;
+    }
+    cursorEndMs = completedAtMs;
+
+    if (streakMinutes >= FOCUS_STREAK_TARGET_MINUTES) {
+      return {
+        id: `forced-recovery-${entry.id}`,
+        startAtMs: completedAtMs,
+        endsAtMs: completedAtMs + FORCED_RECOVERY_DURATION_MINUTES * 60 * 1000,
+      };
+    }
+  }
+
+  return null;
+}
+
+/** A HomeQuestItem-shaped stand-in used only to run Forced Recovery through the existing markItemComplete/energy pipeline. */
+export function buildForcedRecoveryItem(trigger: ForcedRecoveryTrigger): HomeQuestItem {
+  return {
+    id: trigger.id,
+    title: FORCED_RECOVERY_TITLE,
+    source: "Quest",
+    kind: "recovery",
+    steps: 0,
+    durationMinutes: FORCED_RECOVERY_DURATION_MINUTES,
+    description: FORCED_RECOVERY_MESSAGE,
+  };
 }
 
 export async function markItemMissed(
