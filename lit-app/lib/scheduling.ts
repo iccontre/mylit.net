@@ -111,9 +111,9 @@ export function getStepsForDuration(duration?: string | number | null): number {
   return Math.max(1, Math.round(minutes / 15));
 }
 
-/** A 2-hour duration is only offered for Today's Quest — it's worth a flat +20 steps. */
+/** A 2-hour duration is only offered for Today's Quest — it's worth a flat +15 steps. */
 export const TODAY_QUEST_TWO_HOUR_MINUTES = 120;
-export const TODAY_QUEST_TWO_HOUR_STEPS = 20;
+export const TODAY_QUEST_TWO_HOUR_STEPS = 15;
 /** A completed 2-hour Progress Today's Quest costs a flat -12 energy (not the generic duration formula). */
 export const TODAY_QUEST_TWO_HOUR_ENERGY_COST = 12;
 
@@ -121,7 +121,7 @@ export const TODAY_QUEST_TWO_HOUR_ENERGY_COST = 12;
  * Step reward for a quest/checklist item, by duration AND kind:
  * Progress → 15 min = +2, 30 = +4, 45 = +6, 1 hr = +8 (double the base).
  * Recovery → 15 min = +1, 30 = +2, 45 = +3, 1 hr = +4 (base).
- * 2 hr (Today's Quest only) → flat +20, regardless of kind.
+ * 2 hr (Today's Quest only) → flat +15, regardless of kind.
  * Energy costs/restores are unchanged (they use getStepsForDuration directly).
  */
 export function getStepsForItem(

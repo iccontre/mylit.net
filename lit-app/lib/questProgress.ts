@@ -577,7 +577,10 @@ export function normalizeQuestItems(input: {
     // Kind comes only from the explicit toggle the user saved — never re-inferred from title text.
     const kind: QuestKind = todayQuest.kind === "recovery" ? "recovery" : "progress";
     pushItem({
-      id: buildStableItemId("Today's Quest", todayQuest.title, { rawId: todayQuest.id, dateKey: input.todayKey, scheduledTime: todayQuest.startTime }),
+      // Deliberately NOT keyed on todayQuest.id (that stays the same all day) — it's keyed on the
+      // title/time instead, so setting a NEW quest after completing the old one under the same
+      // day-plan slot produces a fresh id, not one still stuck in today's completedIds/missedIds.
+      id: buildStableItemId("Today's Quest", todayQuest.title, { dateKey: input.todayKey, scheduledTime: todayQuest.startTime }),
       title: todayQuest.title.trim(),
       source: "Today's Quest",
       kind,
@@ -748,7 +751,17 @@ export function computeTotalEarnedSteps(input: {
   const plan = input.dayPlan as Record<string, unknown> | null;
   if (plan?.todayQuest) {
     const quest = plan.todayQuest as Record<string, unknown>;
-    if (quest.id) seen.add(String(quest.id));
+    // Today's Quest completions are keyed by title/time (not quest.id — that id stays the same
+    // all day even after the user sets a new quest), so recompute the SAME id used when the
+    // completion was recorded, rather than reusing the raw stored quest.id.
+    if (quest.status === "completed" && typeof quest.title === "string" && quest.title.trim()) {
+      seen.add(
+        buildStableItemId("Today's Quest", quest.title, {
+          dateKey: getTodayKey(),
+          scheduledTime: typeof quest.startTime === "string" ? quest.startTime : undefined,
+        })
+      );
+    }
   }
   if (plan?.weekdayChecklists && typeof plan.weekdayChecklists === "object") {
     for (const dayItems of Object.values(plan.weekdayChecklists as Record<string, unknown>)) {

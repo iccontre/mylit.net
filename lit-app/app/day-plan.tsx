@@ -195,7 +195,7 @@ function stepsForItem(duration: string | number, kind: "progress" | "recovery") 
 }
 
 /**
- * Today's Quest step reward: 2 hr is a flat +20 (Today's Quest only), 1 hr preserves the
+ * Today's Quest step reward: 2 hr is a flat +15 (Today's Quest only), 1 hr preserves the
  * existing flat +10 (unchanged from before duration became adjustable), and 15/30/45 min
  * use the same duration-based formula as checklist items.
  */
@@ -541,7 +541,10 @@ export default function DayPlanScreen() {
     // (the small notice below the duration row already explains what happens on completion).
     const nextCommitted: DayPlan = {
       ...committedPlanRef.current,
-      todayQuest: dayPlan.todayQuest,
+      // Save always means "commit this as today's quest" — reset status to "scheduled" even if the
+      // PREVIOUS quest under this slot was already completed, otherwise the freshly saved quest
+      // would silently be filtered out of the Quest Board as "already resolved".
+      todayQuest: { ...dayPlan.todayQuest, status: "scheduled" },
     };
     committedPlanRef.current = nextCommitted;
     await persistProgressKeys({ [DAY_PLAN_KEY]: JSON.stringify(nextCommitted) });
