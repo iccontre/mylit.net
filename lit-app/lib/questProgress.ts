@@ -1131,10 +1131,19 @@ export type ForcedRecoveryTrigger = {
 
 /**
  * Derives Luna's Forced Recovery purely from COMPLETED Progress work today (never from
- * scheduled/planned items). Walks the day's focus log in completion order, summing
- * contiguous Progress durations (inferring each item's start as completedAt - duration)
- * and resetting the streak whenever a Recovery-kind item (including Forced Recovery
- * itself) completes. The first moment the streak reaches 120 minutes is the trigger.
+ * scheduled/planned items, and never at quest-creation time). Walks the day's focus log in
+ * completion order, summing contiguous Progress durations (inferring each item's start as
+ * completedAt - duration) and resetting the streak whenever a Recovery-kind item (including
+ * Forced Recovery itself) completes. The first moment the streak reaches 120 minutes is the
+ * trigger.
+ *
+ * `entry.kind` is the item's EXPLICIT saved mode/kind (checklist/quest/Today's Quest all
+ * write their own toggle here via markItemComplete → HomeQuestItem.kind) — it is never
+ * re-inferred from the app's current Progress/Recovery mode. Two invariants this depends on:
+ *   - Recovery items do not contribute to progress streaks (any duration resets it to 0).
+ *   - Mixed Progress + Recovery does not trigger forced recovery — only 2 full contiguous
+ *     hours of Progress-kind completions do (e.g. 1h Progress + 1h Recovery, or 1h Recovery
+ *     + 1h Progress, both max out at a 60-minute streak, never reaching the 120-min target).
  */
 export function getForcedRecoveryTrigger(log: FocusBlockLogEntry[], todayKey = getTodayKey()): ForcedRecoveryTrigger | null {
   const dayEntries = log
@@ -1149,6 +1158,7 @@ export function getForcedRecoveryTrigger(log: FocusBlockLogEntry[], todayKey = g
     const completedAtMs = new Date(entry.completedAt).getTime();
     if (!Number.isFinite(completedAtMs)) continue;
 
+    // Recovery items do not contribute to progress streaks — reset unconditionally.
     if (entry.kind === "recovery" || entry.title === FORCED_RECOVERY_TITLE) {
       streakMinutes = 0;
       cursorEndMs = completedAtMs;

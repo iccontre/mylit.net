@@ -106,6 +106,8 @@ const STORAGE_KEY = TOMORROW_QUEUE_KEY;
 const CHECKIN_KEY = "lit_latest_checkin";
 const TIME_SLOTS = generateTimeSlots(7, 22, 30);
 const DURATIONS = ["15 min", "30 min", "45 min", "1 hr"];
+/** Nap is a special Recovery subtype with its own energy tiers — see getNapEnergyRestore. */
+const NAP_DURATION_OPTIONS = [15, 30, 45, 60] as const;
 const WEEKDAY_LABELS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
 const RECOVERY_LOCK_WARNING =
   "Adding this task will create 2 hours of straight work, meaning there has to be 1 hour of recovery time after — you won't be able to do any tasks during that time. Tap Save again to confirm.";
@@ -452,9 +454,11 @@ export default function TomorrowQueueScreen() {
     void syncQuickThoughtItems();
   }
 
-  // A nap is a recovery quest that restores energy on completion (30 min = +5, 1 hr = +10).
-  // It saves like any other quest — appears on Calendar + Home Quest Board, completed via the
-  // timer flow. Saving does NOT restore energy; only completing it does.
+  // A nap is a recovery quest that restores energy on completion: 15 min → +3, 30 min → +6,
+  // 45 min → +9, 60 min → +12 (see getNapEnergyRestore — a special Recovery subtype with its
+  // own tiers, distinct from generic Recovery quest/checklist values). It saves like any other
+  // quest — appears on Calendar + Home Quest Board, completed via the timer flow. Saving does
+  // NOT restore energy; only completing it does.
   async function addNap(minutes: number) {
     if (selectedDayIsPast) {
       setMessage("Past days can’t be edited.");
@@ -667,24 +671,19 @@ export default function TomorrowQueueScreen() {
               {!editingId ? (
                 <View style={styles.napPanel}>
                   <Text style={[styles.napTitle, styles.napTitleCentered]}>😴 ADD NAP TIME</Text>
-                  <Text style={styles.napHelper}>A nap is a recovery quest. It restores energy when you complete it — not when you save it.</Text>
+                  <Text style={styles.napHelper}>Nap quests restore energy when completed — not when you save it.</Text>
                   <View style={styles.napRow}>
-                    <TouchableOpacity
-                      style={[styles.napButton, (selectedDayIsPast || selectedDayAtCapacity) && styles.saveButtonDisabled]}
-                      disabled={selectedDayIsPast || selectedDayAtCapacity}
-                      onPress={() => void addNap(30)}
-                    >
-                      <Text style={styles.napButtonText}>30 min nap</Text>
-                      <Text style={styles.napButtonEnergy}>Energy: +5</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.napButton, (selectedDayIsPast || selectedDayAtCapacity) && styles.saveButtonDisabled]}
-                      disabled={selectedDayIsPast || selectedDayAtCapacity}
-                      onPress={() => void addNap(60)}
-                    >
-                      <Text style={styles.napButtonText}>1 hr nap</Text>
-                      <Text style={styles.napButtonEnergy}>Energy: +10</Text>
-                    </TouchableOpacity>
+                    {NAP_DURATION_OPTIONS.map((minutes) => (
+                      <TouchableOpacity
+                        key={minutes}
+                        style={[styles.napButton, (selectedDayIsPast || selectedDayAtCapacity) && styles.saveButtonDisabled]}
+                        disabled={selectedDayIsPast || selectedDayAtCapacity}
+                        onPress={() => void addNap(minutes)}
+                      >
+                        <Text style={styles.napButtonText}>{minutes >= 60 ? "1 hr" : `${minutes} min`} nap</Text>
+                        <Text style={styles.napButtonEnergy}>Energy: +{getNapEnergyRestore(minutes)}</Text>
+                      </TouchableOpacity>
+                    ))}
                   </View>
                 </View>
               ) : null}
@@ -825,8 +824,8 @@ const styles = StyleSheet.create({
   napTitle: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", letterSpacing: 0.5, marginBottom: 6 },
   napTitleCentered: { textAlign: "center" },
   napHelper: { color: "#CBD5E1", fontSize: 11, lineHeight: 16, fontWeight: "700", marginBottom: 10 },
-  napRow: { flexDirection: "row", gap: 10 },
-  napButton: { flex: 1, borderWidth: 2, borderColor: "#A78BFA", backgroundColor: "rgba(88,28,135,0.45)", borderRadius: 6, paddingVertical: 11, alignItems: "center" },
+  napRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  napButton: { width: "47%", borderWidth: 2, borderColor: "#A78BFA", backgroundColor: "rgba(88,28,135,0.45)", borderRadius: 6, paddingVertical: 11, alignItems: "center" },
   napButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
   napButtonEnergy: { color: "#86EFAC", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", marginTop: 3 },
   queueEnergy: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", marginTop: 4 },

@@ -29,8 +29,8 @@ const EVIE_MORNING_BULLETS = [
   "Morning Reflection connects sleep, intention, and the day's energy.",
   "Compare last night's intention with how you feel this morning.",
   "Write honestly — there is no wrong answer.",
-  "Enter sleep and wake times. MYLIT calculates your sleep bonus.",
-  "Check-in is always +1 step. Over 7 hrs adds +2, over 8 hrs adds +4, over 9 hrs adds +6.",
+  "Enter when you fell asleep and woke up. If your sleep was interrupted, MYLIT adjusts your energy estimate.",
+  "Check-in is always +1 step. Over 7 hrs adds +2, over 8 hrs adds +4, over 9 hrs adds +6 (based on effective sleep).",
   "Morning Support helps you pick one concrete first action.",
   "Even if last night's intention did not carry through, noting that is still useful.",
   "This page should feel encouraging, not like a report card.",
@@ -46,20 +46,58 @@ function sleepBonusStepsForDuration(durationMinutes: number): number {
 }
 
 /**
- * Parses two free-typed times of day ("11:30 pm", "7:15AM", "23:30") into a sleep
- * duration in minutes. Case-insensitive, spaces optional (see parseTimeToMinutes).
- * If the wake time reads earlier than the sleep time, it's assumed to be the next day
- * (cross-midnight sleep). Returns null for empty/unparseable/impossible input.
+ * Parses two free-typed times of day ("11:30 pm", "7:15AM", "23:30") into a duration in
+ * minutes, where `endRaw` is assumed to be on the day after `startRaw` if it reads as
+ * chronologically earlier (cross-midnight support). Case-insensitive, spaces optional (see
+ * parseTimeToMinutes). Returns null for empty/unparseable/impossible input.
  */
-function computeSleepDurationMinutes(sleptRaw: string, wokeRaw: string): number | null {
-  const sleptMinutes = parseTimeToMinutes(sleptRaw);
-  const wokeMinutesRaw = parseTimeToMinutes(wokeRaw);
-  if (sleptMinutes === null || wokeMinutesRaw === null) return null;
-  const wokeMinutes = wokeMinutesRaw <= sleptMinutes ? wokeMinutesRaw + 24 * 60 : wokeMinutesRaw;
-  const durationMinutes = wokeMinutes - sleptMinutes;
-  // Reject 0 (identical times) and anything longer than 16 hours as not a real night's sleep.
-  if (durationMinutes <= 0 || durationMinutes > 16 * 60) return null;
+function computeDurationMinutes(startRaw: string, endRaw: string, maxHours = 16): number | null {
+  const startMinutes = parseTimeToMinutes(startRaw);
+  const endMinutesRaw = parseTimeToMinutes(endRaw);
+  if (startMinutes === null || endMinutesRaw === null) return null;
+  const endMinutes = endMinutesRaw <= startMinutes ? endMinutesRaw + 24 * 60 : endMinutesRaw;
+  const durationMinutes = endMinutes - startMinutes;
+  if (durationMinutes <= 0 || durationMinutes > maxHours * 60) return null;
   return durationMinutes;
+}
+
+/** Same parsing as computeDurationMinutes, kept as a named alias for the plain sleep/wake case. */
+function computeSleepDurationMinutes(sleptRaw: string, wokeRaw: string): number | null {
+  return computeDurationMinutes(sleptRaw, wokeRaw, 16);
+}
+
+/**
+ * Places a raw parsed clock time (0–1439) onto the same "day-relative" timeline as
+ * `rangeStart`/`rangeEnd` (which may exceed 1439 when the sleep window crosses midnight) by
+ * trying +0/+24h/+48h offsets. Used to validate that an interruption's wake/fall-asleep-again
+ * time genuinely falls inside the night's sleep window before trusting it.
+ */
+function normalizeIntoRange(rawMinutes: number, rangeStart: number, rangeEnd: number): number | null {
+  for (const offset of [0, 24 * 60, 48 * 60]) {
+    const candidate = rawMinutes + offset;
+    if (candidate >= rangeStart && candidate <= rangeEnd) return candidate;
+  }
+  return null;
+}
+
+/** Fragmentation penalty applied to the sleep-quality score for a sleep that was interrupted. */
+function interruptionPenalty(interruptionDurationMinutes: number): number {
+  if (interruptionDurationMinutes >= 45) return 12;
+  if (interruptionDurationMinutes >= 20) return 8;
+  return 5;
+}
+
+/**
+ * Sleep-quality score (0–100) shown on this screen. Baseline is effective sleep time
+ * relative to an 8-hour night (8h = 100, scaled linearly, capped at 100 for longer sleep),
+ * then an additional fragmentation penalty is subtracted when sleep was interrupted —
+ * interrupted sleep is lower quality even if the effective duration is the same as an
+ * unbroken night. Always clamped to 0–100.
+ */
+function computeSleepQualityScore(effectiveSleepMinutes: number, interruptionDurationMinutes: number | null): number {
+  const baseline = Math.round((effectiveSleepMinutes / (8 * 60)) * 100);
+  const penalty = interruptionDurationMinutes !== null ? interruptionPenalty(interruptionDurationMinutes) : 0;
+  return Math.max(0, Math.min(100, baseline - penalty));
 }
 
 function formatSleepDuration(durationMinutes: number): string {
@@ -83,8 +121,15 @@ type MorningIntentionReflection = {
   reflectionText: string;
   sleepTime?: string;
   wakeTime?: string;
+  finalWakeTime?: string;
   sleepDurationMinutes?: number;
   sleepBonusSteps?: number;
+  interrupted: boolean;
+  interruptionWakeTime?: string;
+  interruptionSleepTime?: string;
+  interruptionDurationMinutes?: number;
+  effectiveSleepMinutes?: number;
+  sleepQualityScore?: number;
   morningSupport: string[];
   createdAt: string;
 };
@@ -126,16 +171,73 @@ export default function MorningIntentionReflectionScreen() {
   const [reflectionText, setReflectionText] = useState("");
   const [sleptTimeInput, setSleptTimeInput] = useState("");
   const [wokeTimeInput, setWokeTimeInput] = useState("");
+  const [sleepInterrupted, setSleepInterrupted] = useState<"yes" | "no" | "">("");
+  const [interruptionWakeInput, setInterruptionWakeInput] = useState("");
+  const [interruptionSleepAgainInput, setInterruptionSleepAgainInput] = useState("");
   const [morningSupport, setMorningSupport] = useState<string[]>([]);
   const [showInfo, setShowInfo] = useState(false);
   const [now, setNow] = useState<Date>(() => new Date());
 
   const morningUnlocked = now.getHours() >= MORNING_UNLOCK_HOUR;
   const sleepTimesEntered = sleptTimeInput.trim() !== "" && wokeTimeInput.trim() !== "";
-  const sleepDurationMinutes = sleepTimesEntered ? computeSleepDurationMinutes(sleptTimeInput, wokeTimeInput) : null;
-  const sleepTimesInvalid = sleepTimesEntered && sleepDurationMinutes === null;
-  const sleepBonusSteps = sleepDurationMinutes !== null ? sleepBonusStepsForDuration(sleepDurationMinutes) : 0;
-  const canSaveReflection = morningUnlocked && sleepTimesEntered && sleepDurationMinutes !== null;
+  const totalInBedMinutes = sleepTimesEntered ? computeSleepDurationMinutes(sleptTimeInput, wokeTimeInput) : null;
+  const sleepTimesInvalid = sleepTimesEntered && totalInBedMinutes === null;
+
+  const interruptionAnswered = sleepInterrupted !== "";
+  const interruptionTimesEntered = interruptionWakeInput.trim() !== "" && interruptionSleepAgainInput.trim() !== "";
+
+  // Interruption duration is resolved against the actual sleep window (sleptTime..wokeTime)
+  // so a mistyped time that doesn't fall within that night gets caught as invalid, rather
+  // than silently producing a nonsensical effective sleep duration.
+  let interruptionDurationMinutes: number | null = null;
+  let interruptionInvalid = false;
+  if (sleepInterrupted === "yes" && totalInBedMinutes !== null) {
+    if (!interruptionTimesEntered) {
+      interruptionInvalid = false; // not yet fully entered — treated as incomplete, not invalid
+    } else {
+      const sleptMinutes = parseTimeToMinutes(sleptTimeInput);
+      const wokeRaw = parseTimeToMinutes(wokeTimeInput);
+      const finalWakeMinutes = sleptMinutes !== null && wokeRaw !== null ? (wokeRaw <= sleptMinutes ? wokeRaw + 24 * 60 : wokeRaw) : null;
+      const interruptionWakeRaw = parseTimeToMinutes(interruptionWakeInput);
+      const interruptionSleepAgainRaw = parseTimeToMinutes(interruptionSleepAgainInput);
+      if (sleptMinutes === null || finalWakeMinutes === null || interruptionWakeRaw === null || interruptionSleepAgainRaw === null) {
+        interruptionInvalid = true;
+      } else {
+        const interruptionWakeMinutes = normalizeIntoRange(interruptionWakeRaw, sleptMinutes, finalWakeMinutes);
+        const interruptionSleepAgainMinutes =
+          interruptionWakeMinutes !== null ? normalizeIntoRange(interruptionSleepAgainRaw, interruptionWakeMinutes, finalWakeMinutes) : null;
+        if (interruptionWakeMinutes === null || interruptionSleepAgainMinutes === null) {
+          interruptionInvalid = true;
+        } else {
+          interruptionDurationMinutes = interruptionSleepAgainMinutes - interruptionWakeMinutes;
+        }
+      }
+    }
+  }
+
+  // Awake time during an interruption is not sleep — it's subtracted out of the total time
+  // in bed to get the effective sleep duration used for both the step bonus and quality score.
+  const effectiveSleepMinutes =
+    totalInBedMinutes === null
+      ? null
+      : sleepInterrupted === "yes"
+      ? interruptionDurationMinutes !== null && totalInBedMinutes - interruptionDurationMinutes > 0
+        ? totalInBedMinutes - interruptionDurationMinutes
+        : null
+      : totalInBedMinutes;
+
+  const sleepBonusSteps = effectiveSleepMinutes !== null ? sleepBonusStepsForDuration(effectiveSleepMinutes) : 0;
+  const sleepQualityScore = effectiveSleepMinutes !== null ? computeSleepQualityScore(effectiveSleepMinutes, interruptionDurationMinutes) : null;
+
+  const interruptionBlocksSave =
+    sleepInterrupted === "yes" && (interruptionInvalid || !interruptionTimesEntered || effectiveSleepMinutes === null);
+
+  const canSaveReflection =
+    morningUnlocked &&
+    sleepTimesEntered &&
+    totalInBedMinutes !== null &&
+    interruptionAnswered &&
+    !interruptionBlocksSave;
 
   useFocusEffect(
     useCallback(() => {
@@ -183,7 +285,7 @@ export default function MorningIntentionReflectionScreen() {
   }
 
   async function saveReflection() {
-    if (!canSaveReflection || sleepDurationMinutes === null) return;
+    if (!canSaveReflection || effectiveSleepMinutes === null) return;
     const todayKey = getTodayKey();
 
     const saved = await AsyncStorage.getItem(MORNING_INTENTION_REFLECTIONS_KEY);
@@ -198,8 +300,15 @@ export default function MorningIntentionReflectionScreen() {
       reflectionText: reflectionText.trim(),
       sleepTime: sleptTimeInput.trim(),
       wakeTime: wokeTimeInput.trim(),
-      sleepDurationMinutes,
+      finalWakeTime: wokeTimeInput.trim(),
+      sleepDurationMinutes: effectiveSleepMinutes,
       sleepBonusSteps,
+      interrupted: sleepInterrupted === "yes",
+      interruptionWakeTime: sleepInterrupted === "yes" ? interruptionWakeInput.trim() : undefined,
+      interruptionSleepTime: sleepInterrupted === "yes" ? interruptionSleepAgainInput.trim() : undefined,
+      interruptionDurationMinutes: sleepInterrupted === "yes" ? interruptionDurationMinutes ?? undefined : undefined,
+      effectiveSleepMinutes,
+      sleepQualityScore: sleepQualityScore ?? undefined,
       morningSupport,
       createdAt: new Date().toISOString(),
     };
@@ -293,7 +402,7 @@ export default function MorningIntentionReflectionScreen() {
                 </View>
 
                 <View style={[styles.panel, { borderColor: theme.accent }]}>
-                  <Text style={styles.label}>Approximate time you slept last night</Text>
+                  <Text style={styles.label}>Approximate sleep time</Text>
                   <TextInput
                     style={formStyles.input}
                     placeholder="Example: 11:30 PM"
@@ -311,11 +420,58 @@ export default function MorningIntentionReflectionScreen() {
                     value={wokeTimeInput}
                     onChangeText={setWokeTimeInput}
                   />
+
+                  {sleepTimesEntered ? (
+                    <>
+                      <Text style={styles.label}>Was your sleep interrupted?</Text>
+                      <View style={styles.choiceRow}>
+                        <TouchableOpacity
+                          style={[styles.choiceButton, sleepInterrupted === "yes" && { backgroundColor: theme.active, borderColor: theme.accent }]}
+                          onPress={() => setSleepInterrupted("yes")}
+                        >
+                          <Text style={sleepInterrupted === "yes" ? [styles.optionSelectedText, { color: theme.glow }] : styles.optionText}>Yes</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.choiceButton, sleepInterrupted === "no" && { backgroundColor: theme.active, borderColor: theme.accent }]}
+                          onPress={() => setSleepInterrupted("no")}
+                        >
+                          <Text style={sleepInterrupted === "no" ? [styles.optionSelectedText, { color: theme.glow }] : styles.optionText}>No</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  ) : null}
+
+                  {sleepInterrupted === "yes" ? (
+                    <>
+                      <Text style={styles.label}>What time did you wake up?</Text>
+                      <TextInput
+                        style={formStyles.input}
+                        placeholder="Example: 3:00 AM"
+                        placeholderTextColor="#94A3B8"
+                        autoCapitalize="characters"
+                        value={interruptionWakeInput}
+                        onChangeText={setInterruptionWakeInput}
+                      />
+                      <Text style={styles.label}>What time did you fall asleep again?</Text>
+                      <TextInput
+                        style={formStyles.input}
+                        placeholder="Example: 3:20 AM"
+                        placeholderTextColor="#94A3B8"
+                        autoCapitalize="characters"
+                        value={interruptionSleepAgainInput}
+                        onChangeText={setInterruptionSleepAgainInput}
+                      />
+                    </>
+                  ) : null}
+
                   {sleepTimesInvalid ? (
                     <Text style={styles.sleepErrorText}>Enter valid times, like 11:30 PM and 7:15 AM.</Text>
-                  ) : sleepDurationMinutes !== null ? (
+                  ) : interruptionBlocksSave && interruptionTimesEntered ? (
+                    <Text style={styles.sleepErrorText}>Those interruption times don't fit within your sleep window — double-check them.</Text>
+                  ) : effectiveSleepMinutes !== null ? (
                     <Text style={styles.sleepSummaryText}>
-                      {formatSleepDuration(sleepDurationMinutes)} of sleep · +{1 + sleepBonusSteps} step{1 + sleepBonusSteps === 1 ? "" : "s"} total
+                      {formatSleepDuration(effectiveSleepMinutes)} of sleep · +{1 + sleepBonusSteps} step{1 + sleepBonusSteps === 1 ? "" : "s"} total
+                      {sleepQualityScore !== null ? ` · Sleep Quality ${sleepQualityScore}/100` : ""}
                     </Text>
                   ) : (
                     <Text style={styles.sleepSummaryText}>MYLIT calculates your sleep bonus from these two times.</Text>
@@ -605,6 +761,20 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: 8,
     marginBottom: 12,
+  },
+  choiceRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 4,
+  },
+  choiceButton: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.96)",
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: "#334155",
+    paddingVertical: 10,
+    alignItems: "center",
   },
   option: {
     backgroundColor: "rgba(15, 23, 42, 0.96)",

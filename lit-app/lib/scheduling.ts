@@ -156,10 +156,14 @@ export function getEnergyRestoreForDuration(duration?: string | number | null): 
   return Math.max(2, getStepsForDuration(duration) * 2);
 }
 
-/** Energy a completed NAP quest restores: 30 min → +5, 1 hr → +10 (scales at ~1 per 6 min). */
+/**
+ * Energy a completed NAP quest restores — a special Recovery subtype with its own tiers,
+ * distinct from the generic Recovery quest/checklist values: 15 min → +3, 30 min → +6,
+ * 45 min → +9, 60 min → +12 (1 energy per 5 minutes).
+ */
 export function getNapEnergyRestore(duration?: string | number | null): number {
   const minutes = parseDurationMinutes(duration, 30);
-  return Math.max(5, Math.round(minutes / 6));
+  return Math.max(1, Math.round(minutes / 5));
 }
 
 /** Energy the mandatory eat/rest quest restores when completed. */
@@ -317,11 +321,12 @@ export function findScheduleOverlap(candidate: Partial<ScheduledQuestLike>, exis
 }
 
 /**
- * After 120 minutes of *contiguous* (back-to-back, no gap) scheduled items on
- * a day — mixing progress and recovery items alike — MYLIT auto-inserts a
- * 1-hour recovery block right after. A gap between items, or an existing
- * recovery item of 60+ minutes, resets the streak (the user already took a
- * real break).
+ * After 120 minutes of *contiguous* (back-to-back, no gap) scheduled PROGRESS items on
+ * a day, MYLIT auto-inserts a 1-hour recovery block right after. Recovery items do not
+ * contribute to the progress streak — ANY recovery-classified item (regardless of its own
+ * duration) breaks/resets the streak, since it means the user already has a break planned
+ * there. Mixed Progress + Recovery scheduling therefore never triggers this on its own;
+ * only genuinely continuous Progress work does.
  */
 export function getRequiredRecoveryBlockForDate(items: Partial<ScheduledQuestLike>[], date: string): ScheduledQuestLike | null {
   const dayItems = items
@@ -335,9 +340,10 @@ export function getRequiredRecoveryBlockForDate(items: Partial<ScheduledQuestLik
   let streakMinutes = 0;
 
   for (const { item, range } of dayItems) {
-    const isNaturalBreak = inferScheduledClassification(item) === "recovery" && range.duration >= 60;
+    // Recovery items do not contribute to progress streaks — any duration breaks the streak.
+    const isRecoveryItem = inferScheduledClassification(item) === "recovery";
 
-    if (isNaturalBreak) {
+    if (isRecoveryItem) {
       cursor = range.end;
       streakMinutes = 0;
       continue;

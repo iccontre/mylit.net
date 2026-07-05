@@ -39,10 +39,21 @@ type CheckIn = {
   hasEatenToday?: boolean;
   foodSinceMorning?: string;
   afternoonCheckInCompletedToday?: boolean;
+  tookNap?: boolean;
+  napDurationMinutes?: number;
+  napEnergyRestored?: number;
   energy: number;
   mode: CheckInMode;
   createdAt: string;
 };
+
+/** Nap is a special Recovery subtype — its own energy tiers, distinct from generic Recovery quest/checklist values. */
+const NAP_ENERGY_BY_DURATION: Record<number, number> = { 15: 3, 30: 6, 45: 9, 60: 12 };
+const NAP_DURATION_OPTIONS = [15, 30, 45, 60] as const;
+
+function getTodayKeyLocal(): string {
+  return new Date().toLocaleDateString("en-CA");
+}
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -116,6 +127,8 @@ export default function SleepCheckInScreen() {
   const [currentEnergyFeeling, setCurrentEnergyFeeling] = useState("");
   const [wakeTime, setWakeTime] = useState("");
   const [dreamedTonight, setDreamedTonight] = useState<"yes" | "no" | "">("");
+  const [tookNap, setTookNap] = useState<"yes" | "no" | "">("");
+  const [napDuration, setNapDuration] = useState<number | null>(null);
 
   useEffect(() => {
     loadLatestCheckIn();
@@ -127,7 +140,16 @@ export default function SleepCheckInScreen() {
     if (!saved) return;
 
     try {
-      setLatestCheckIn(JSON.parse(saved));
+      const parsed = JSON.parse(saved) as CheckIn;
+      setLatestCheckIn(parsed);
+      // Prefill today's nap answer if this check-in already recorded one, so reopening
+      // the screen shows what was saved instead of resetting the question.
+      const isTodayAfternoon =
+        parsed.checkInType === "afternoon" && new Date(parsed.createdAt).toLocaleDateString("en-CA") === getTodayKeyLocal();
+      if (isTodayAfternoon && typeof parsed.tookNap === "boolean") {
+        setTookNap(parsed.tookNap ? "yes" : "no");
+        if (parsed.napDurationMinutes) setNapDuration(parsed.napDurationMinutes);
+      }
     } catch {
       setLatestCheckIn(null);
     }
@@ -135,26 +157,43 @@ export default function SleepCheckInScreen() {
 
   const isAfternoon = checkInType === "afternoon";
   const hasMorningInputs = hours.trim() !== "" && sleepQuality.trim() !== "" && mood.trim() !== "" && stress.trim() !== "";
-  const hasAfternoonInputs = eatenSinceMorning !== "" && mood.trim() !== "" && stress.trim() !== "";
+  const savedModeForNap: ModeState = latestCheckIn?.mode === "Recovery" || latestCheckIn?.mode === "Progress" ? latestCheckIn.mode : "Neutral";
+  // Nap question only makes sense in Recovery mode — gated on the mode the user has been
+  // in today (from the latest saved check-in), not the not-yet-submitted afternoon inputs.
+  const showNapSection = isAfternoon && savedModeForNap === "Recovery";
+  const hasNapAnswer = !showNapSection || tookNap !== "" && (tookNap === "no" || napDuration !== null);
+  const hasAfternoonInputs = eatenSinceMorning !== "" && mood.trim() !== "" && stress.trim() !== "" && hasNapAnswer;
   const hasAllInputs = isAfternoon ? hasAfternoonInputs : hasMorningInputs;
+
+  const todayKeyForCheckIn = getTodayKeyLocal();
+  // Nap energy restores once per day — if today's afternoon check-in already applied it,
+  // resubmitting (e.g. to tweak mood/stress) must not stack the bonus again.
+  const napAlreadyAppliedToday =
+    latestCheckIn?.checkInType === "afternoon" &&
+    new Date(latestCheckIn.createdAt).toLocaleDateString("en-CA") === todayKeyForCheckIn &&
+    Boolean(latestCheckIn?.napEnergyRestored);
+  const napEnergyToApply =
+    showNapSection && tookNap === "yes" && napDuration && !napAlreadyAppliedToday ? NAP_ENERGY_BY_DURATION[napDuration] ?? 0 : 0;
 
   const energy = useMemo(() => {
     if (!hasAllInputs) return 0;
 
     if (isAfternoon) {
-      return calculateAfternoonEnergy(
+      const base = calculateAfternoonEnergy(
         latestCheckIn?.energy ?? 50,
         eatenSinceMorning === "yes",
         Number(mood),
         Number(stress),
         currentEnergyFeeling.trim() ? Number(currentEnergyFeeling) : undefined
       );
+      // Nap energy is added on top, after submit — never just from tapping the duration option.
+      return clampEnergy(base + napEnergyToApply);
     }
 
     return calculateMorningEnergy(Number(hours), Number(sleepQuality), Number(mood), Number(stress));
-  }, [currentEnergyFeeling, eatenSinceMorning, hasAllInputs, hours, isAfternoon, latestCheckIn?.energy, mood, sleepQuality, stress]);
+  }, [currentEnergyFeeling, eatenSinceMorning, hasAllInputs, hours, isAfternoon, latestCheckIn?.energy, mood, napEnergyToApply, sleepQuality, stress]);
 
-  const savedMode: ModeState = latestCheckIn?.mode === "Recovery" || latestCheckIn?.mode === "Progress" ? latestCheckIn.mode : "Neutral";
+  const savedMode: ModeState = savedModeForNap;
   const mode: CheckInMode = hasAllInputs ? getMode(energy) : savedMode === "Progress" ? "Progress" : "Recovery";
   const activeMode: ModeState = hasAllInputs ? mode : savedMode;
   const isRecovery = activeMode !== "Progress";
@@ -202,6 +241,15 @@ export default function SleepCheckInScreen() {
       hasEatenToday: isAfternoon ? eatenSinceMorning === "yes" : false,
       foodSinceMorning: isAfternoon ? foodSinceMorning.trim() : undefined,
       afternoonCheckInCompletedToday: isAfternoon,
+      tookNap: isAfternoon && showNapSection ? tookNap === "yes" : latestCheckIn?.tookNap,
+      napDurationMinutes: isAfternoon && showNapSection && tookNap === "yes" ? napDuration ?? undefined : latestCheckIn?.napDurationMinutes,
+      // Keep whatever was already restored today if the bonus was already applied —
+      // otherwise record this save's nap energy (0 if no nap was taken).
+      napEnergyRestored: isAfternoon
+        ? napAlreadyAppliedToday
+          ? latestCheckIn?.napEnergyRestored
+          : napEnergyToApply
+        : latestCheckIn?.napEnergyRestored,
       energy,
       mode,
       createdAt: new Date().toISOString(),
@@ -289,6 +337,48 @@ export default function SleepCheckInScreen() {
 
                   <Text style={styles.label}>What did you eat? Optional</Text>
                   <TextInput style={styles.input} placeholder="Example: sandwich, fruit, water" placeholderTextColor="#64748B" value={foodSinceMorning} onChangeText={setFoodSinceMorning} />
+
+                  {showNapSection ? (
+                    <>
+                      <Text style={styles.label}>Did you take a nap?</Text>
+                      <Text style={styles.helperText}>If you napped, MYLIT can restore your energy based on how long you rested.</Text>
+                      <View style={styles.choiceRow}>
+                        <TouchableOpacity
+                          style={[styles.choiceButton, tookNap === "yes" && styles.choiceButtonActive, { borderColor: tookNap === "yes" ? theme.accent : "#334155" }]}
+                          onPress={() => setTookNap("yes")}
+                        >
+                          <Text style={styles.choiceText}>Yes</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.choiceButton, tookNap === "no" && styles.choiceButtonActive, { borderColor: tookNap === "no" ? theme.accent : "#334155" }]}
+                          onPress={() => {
+                            setTookNap("no");
+                            setNapDuration(null);
+                          }}
+                        >
+                          <Text style={styles.choiceText}>No</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      {tookNap === "yes" ? (
+                        <View style={styles.napDurationRow}>
+                          {NAP_DURATION_OPTIONS.map((minutes) => (
+                            <TouchableOpacity
+                              key={minutes}
+                              style={[styles.napDurationButton, napDuration === minutes && styles.choiceButtonActive, { borderColor: napDuration === minutes ? theme.accent : "#334155" }]}
+                              onPress={() => setNapDuration(minutes)}
+                            >
+                              <Text style={styles.napDurationText}>{minutes} min</Text>
+                              <Text style={styles.napDurationEnergy}>+{NAP_ENERGY_BY_DURATION[minutes]} energy</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                      ) : null}
+                      {napAlreadyAppliedToday ? (
+                        <Text style={styles.helperText}>Nap energy already added today — editing other answers won&apos;t add it again.</Text>
+                      ) : null}
+                    </>
+                  ) : null}
                 </>
               ) : (
                 <>
@@ -527,6 +617,33 @@ const styles = StyleSheet.create({
   },
   choiceButtonActive: {
     backgroundColor: "rgba(24, 75, 49, 0.9)",
+  },
+  napDurationRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 8,
+  },
+  napDurationButton: {
+    width: "48%",
+    backgroundColor: "rgba(15, 23, 42, 0.96)",
+    borderRadius: 4,
+    borderWidth: 2,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  napDurationText: {
+    color: "#F9FAFB",
+    fontSize: 13,
+    fontWeight: "900",
+    fontFamily: pixelFont,
+  },
+  napDurationEnergy: {
+    color: "#94A3B8",
+    fontSize: 11,
+    fontWeight: "700",
+    fontFamily: pixelFont,
+    marginTop: 2,
   },
   choiceText: {
     color: "#F9FAFB",
