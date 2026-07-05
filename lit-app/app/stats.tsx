@@ -404,7 +404,6 @@ export default function StatsScreen() {
 
               <View style={styles.heroPanel}>
                 <View style={styles.heroCopyRow}>
-                  <View style={styles.bannerIconWrap}><Text style={styles.bannerIconText}>🎒</Text></View>
                   <View style={styles.heroCopy}>
                     <Text style={styles.heroLabel}>STATS BOARD</Text>
                     <Text style={styles.heroTitle}>STATS</Text>
@@ -772,8 +771,6 @@ const styles = StyleSheet.create({
   hudContent: { minHeight: "100%", paddingTop: 14, paddingHorizontal: 14, paddingBottom: 82 },
   heroPanel: { backgroundColor: "rgba(5,12,24,0.94)", borderWidth: 3, borderColor: "#D99B2B", borderRadius: 8, padding: 10, marginBottom: 8 },
   heroCopyRow: { flexDirection: "row", alignItems: "center" },
-  bannerIconWrap: { width: 44, height: 54, backgroundColor: "rgba(70,28,112,0.86)", borderWidth: 2, borderColor: "#FDE047", alignItems: "center", justifyContent: "center", marginRight: 10 },
-  bannerIconText: { fontSize: 24 },
   heroCopy: { flex: 1 },
   heroLabel: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 10, fontWeight: "900", letterSpacing: 1.2 },
   heroTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 28, fontWeight: "900", letterSpacing: 2, textAlign: "center" },

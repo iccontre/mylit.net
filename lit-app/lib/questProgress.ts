@@ -234,16 +234,17 @@ export function formatCapacityHeader(plannedMinutes: number, mode: "Progress" | 
   return `Planned ${formatPlannedDurationLabel(plannedMinutes)} / ${capHours}h`;
 }
 
-function scheduledItemKind(value: {
-  kind?: QuestKind | string;
-  classification?: string;
-  title?: string;
-  text?: string;
-}): QuestKind {
-  if (value.kind === "recovery" || value.classification === "recovery") return "recovery";
-  const title = value.title || value.text || "";
-  if (inferScheduledClassification(title) === "recovery") return "recovery";
-  return "progress";
+/**
+ * The user's explicitly saved kind/classification is the source of truth — it must win
+ * outright over the title-keyword fallback. inferScheduledClassification already does this
+ * correctly when given a full object, but its Partial<ScheduledQuestLike> parameter type
+ * doesn't line up with every raw shape in this file (RawChecklistItem/QueueItem `status`
+ * fields are plain strings), so this loosely-typed helper avoids fighting that mismatch.
+ */
+function resolveExplicitOrInferredKind(input: { kind?: string; classification?: string; title: string }): QuestKind {
+  if (input.kind === "progress" || input.classification === "progress") return "progress";
+  if (input.kind === "recovery" || input.classification === "recovery") return "recovery";
+  return inferScheduledClassification(input.title) === "recovery" ? "recovery" : "progress";
 }
 
 function isActiveScheduledItem(status?: string, completedAt?: string): boolean {
@@ -635,8 +636,7 @@ export function normalizeQuestItems(input: {
     if (raw.checked === true && raw.checkedDate === input.todayKey) return;
     if (String(raw.status) === "missed" && raw.checkedDate === input.todayKey) return;
     const durationMinutes = parseDurationMinutes(raw.durationMinutes ?? raw.duration, 30);
-    const kind: QuestKind =
-      raw.kind === "recovery" ? "recovery" : inferScheduledClassification(title) === "recovery" ? "recovery" : "progress";
+    const kind: QuestKind = resolveExplicitOrInferredKind({ kind: raw.kind, title });
     pushItem({
       id: buildStableItemId("Checklist", title, { rawId: raw.id ?? String(index), dateKey: input.todayKey, scheduledTime: raw.startTime || raw.time }),
       title,
@@ -660,8 +660,7 @@ export function normalizeQuestItems(input: {
     // Quests list/history — see isScheduledItemExpired for the exact window).
     if (isScheduledItemExpired({ date: itemDate, startTime: raw.time || raw.startTime })) return;
     const durationMinutes = parseDurationMinutes(raw.durationMinutes ?? raw.duration, 30);
-    const kind: QuestKind =
-      raw.classification === "recovery" ? "recovery" : inferScheduledClassification(title) === "recovery" ? "recovery" : "progress";
+    const kind: QuestKind = resolveExplicitOrInferredKind({ kind: raw.kind, classification: raw.classification, title });
     pushItem({
       id: buildStableItemId("Quick Thought", title, { rawId: raw.id ?? String(index), dateKey: input.todayKey, scheduledTime: raw.time || raw.startTime }),
       title,
@@ -684,12 +683,7 @@ export function normalizeQuestItems(input: {
     // mirrors those items under a "Calendar" source, so it needs the same expiry guard.
     if (raw.source === "quickThought" && isScheduledItemExpired({ date: itemDate, startTime: raw.startTime || raw.time })) return;
     const durationMinutes = parseDurationMinutes(raw.durationMinutes ?? raw.duration, 30);
-    const kind: QuestKind =
-      raw.kind === "recovery" || raw.classification === "recovery"
-        ? "recovery"
-        : inferScheduledClassification(title) === "recovery"
-        ? "recovery"
-        : "progress";
+    const kind: QuestKind = resolveExplicitOrInferredKind({ kind: raw.kind, classification: raw.classification, title });
     const source: QuestSource = raw.source === "quickThought" ? "Quick Thought" : raw.source === "dayPlanChecklist" ? "Checklist" : raw.source === "todayQuest" ? "Today's Quest" : "Calendar";
     pushItem({
       id: buildStableItemId(source, title, { rawId: raw.id ?? String(index), dateKey: input.todayKey, scheduledTime: raw.startTime || raw.time }),

@@ -156,9 +156,6 @@ export default function PathScreen() {
                   Keep your direction visible and update it when life changes.
                 </Text>
               </View>
-              <View style={styles.heroIconBox}>
-                <Text style={styles.heroIcon}>🏮</Text>
-              </View>
             </View>
 
             <View style={styles.evieCard}>
@@ -383,23 +380,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     lineHeight: 20,
     marginTop: 8,
-  },
-  heroIconBox: {
-    height: 74,
-    width: 74,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(15, 23, 42, 0.74)",
-    borderWidth: 2,
-    borderColor: "rgba(251, 191, 36, 0.58)",
-    borderRadius: 6,
-    marginLeft: 12,
-  },
-  heroIcon: {
-    fontSize: 42,
-    textShadowColor: "#000",
-    textShadowOffset: { width: 2, height: 2 },
-    textShadowRadius: 0,
   },
   evieCard: {
     flexDirection: "row",

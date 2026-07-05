@@ -128,7 +128,9 @@ const HOUR_HEIGHT = 60;
 const GRID_START_HOUR = 7;
 const GRID_END_HOUR = 24;
 const GRID_HEIGHT = TIME_ROWS.length * HOUR_HEIGHT;
-const MIN_EVENT_HEIGHT = 40;
+// Tall enough to fit a 1-line time label + a wrapped 2-line title without clipping,
+// even for the shortest (15-min) scheduled items.
+const MIN_EVENT_HEIGHT = 56;
 
 function minutesForGridPlacement(time?: string): number {
   const startOfGrid = GRID_START_HOUR * 60;
@@ -228,6 +230,11 @@ function classificationIcon(classification: ScheduledClassification): string {
   return "🥇";
 }
 
+/** True for the "Last phone / blue-screen cutoff" sleep-guide item (matches its stable id from sleepGuideEvents). */
+function isPhoneCutoffEvent(event: CalendarEvent): boolean {
+  return event.id.endsWith("-sleep-phone");
+}
+
 function normalizeClassification(value: unknown): ScheduledClassification {
   return value === "recovery" ? "recovery" : value === "focus" ? "focus" : value === "sleepGuide" ? "sleepGuide" : "progress";
 }
@@ -273,8 +280,8 @@ function extractFirstTime(value?: string) {
 }
 
 /** Compact preview lines for a Week View day card — sleep guide items collapse to one line. */
-function buildDayCardPreview(events: CalendarEvent[]): { icon: string; text: string }[] {
-  type Candidate = { icon: string; text: string; order: number };
+function buildDayCardPreview(events: CalendarEvent[]): { icon: string; text: string; isTodayQuest?: boolean }[] {
+  type Candidate = { icon: string; text: string; order: number; isTodayQuest?: boolean };
   const candidates: Candidate[] = [];
 
   if (events.some((event) => event.classification === "sleepGuide")) {
@@ -282,7 +289,7 @@ function buildDayCardPreview(events: CalendarEvent[]): { icon: string; text: str
   }
 
   const todayQuest = events.find((event) => event.source === "Day Plan / Quest Board");
-  if (todayQuest) candidates.push({ icon: "⭐", text: todayQuest.title, order: 1 });
+  if (todayQuest) candidates.push({ icon: "⭐", text: todayQuest.title, order: 1, isTodayQuest: true });
 
   const focus = events.find((event) => event.classification === "focus");
   if (focus) candidates.push({ icon: "🌿", text: focus.title, order: 2 });
@@ -507,8 +514,15 @@ export default function CalendarScreen() {
 
   const dayViewFocusEvent = selectedEvents.find((event) => event.classification === "focus");
   const dayViewTodayQuestEvent = selectedEvents.find((event) => event.source === "Day Plan / Quest Board");
+  // The phone/blue-screen cutoff is often computed shortly after midnight, which would
+  // otherwise land it near the TOP of the grid (or vanish past the visible range) — it's
+  // pinned as the final item at the bottom of the schedule instead. Its real scheduled
+  // time/data is untouched; only where it renders changes.
+  const dayViewPhoneCutoffEvent = selectedEvents.find(isPhoneCutoffEvent);
   const dayViewPositionedEvents = layoutDayEvents(
-    selectedEvents.filter((event) => event.classification !== "focus" && event.id !== dayViewTodayQuestEvent?.id)
+    selectedEvents.filter(
+      (event) => event.classification !== "focus" && event.id !== dayViewTodayQuestEvent?.id && event.id !== dayViewPhoneCutoffEvent?.id
+    )
   );
 
   function goToPreviousWeek() {
@@ -541,13 +555,11 @@ export default function CalendarScreen() {
         <View style={styles.worldOverlay}>
           <ScrollView style={styles.screenScroller} contentContainerStyle={[styles.hudContent, { paddingBottom: mobile.scrollPaddingBottom }]} showsVerticalScrollIndicator={false} bounces={false}>
             <View style={styles.heroPanel}>
-              <View style={styles.heroSideIcon}><Text style={styles.heroSideIconText}>📖</Text></View>
               <View style={styles.heroCopy}>
                 <Text style={styles.heroLabel}>SCHEDULE BOARD</Text>
                 <Text style={styles.heroTitle}>CALENDAR</Text>
                 <Text style={styles.heroSubtitle}>Plan quests, habits, and recovery.</Text>
               </View>
-              <View style={styles.heroSideIcon}><Text style={styles.heroSideIconText}>🏰</Text></View>
             </View>
 
             {viewMode === "week" ? (
@@ -592,9 +604,16 @@ export default function CalendarScreen() {
                           <Text style={styles.dayCardEmpty}>Nothing yet</Text>
                         ) : (
                           visiblePreview.map((line, lineIndex) => (
-                            <Text key={lineIndex} style={styles.dayCardPreviewLine} numberOfLines={1}>
-                              {line.icon} {line.text}
-                            </Text>
+                            <View key={lineIndex} style={styles.dayCardPreviewRow}>
+                              {line.isTodayQuest ? (
+                                <View style={styles.todayQuestIconBadge}>
+                                  <Text style={styles.todayQuestIconBadgeText}>{line.icon}</Text>
+                                </View>
+                              ) : (
+                                <Text style={styles.dayCardPreviewIcon}>{line.icon}</Text>
+                              )}
+                              <Text style={styles.dayCardPreviewLine} numberOfLines={1}>{line.text}</Text>
+                            </View>
                           ))
                         )}
                         {moreCount > 0 ? <Text style={styles.dayCardMore}>+{moreCount} more</Text> : null}
@@ -685,10 +704,12 @@ export default function CalendarScreen() {
                   ) : null}
                   {dayViewTodayQuestEvent ? (
                     <TouchableOpacity
-                      style={[styles.dayViewPinnedBanner, styles.dayViewPinnedBannerGold, getEventToneStyle(dayViewTodayQuestEvent.tone)]}
+                      style={[styles.dayViewPinnedBanner, getEventToneStyle(dayViewTodayQuestEvent.tone)]}
                       onPress={() => setSelectedEvent(dayViewTodayQuestEvent)}
                     >
-                      <Text style={styles.dayViewPinnedBannerIcon}>⭐</Text>
+                      <View style={styles.dayViewPinnedIconBadge}>
+                        <Text style={styles.dayViewPinnedBannerIconInBadge}>⭐</Text>
+                      </View>
                       <Text style={styles.dayViewPinnedBannerText} numberOfLines={1}>Today Quest: {dayViewTodayQuestEvent.title}</Text>
                     </TouchableOpacity>
                   ) : null}
@@ -721,9 +742,19 @@ export default function CalendarScreen() {
                       ))}
                     </View>
                   </View>
-                </View>
 
-                <Text style={styles.dayViewFooterNote}>Overlapping tasks share space so you can see them all.</Text>
+                  {dayViewPhoneCutoffEvent ? (
+                    <TouchableOpacity
+                      style={[styles.dayViewPinnedBanner, styles.dayViewPinnedBannerBottom, getEventToneStyle(dayViewPhoneCutoffEvent.tone)]}
+                      onPress={() => setSelectedEvent(dayViewPhoneCutoffEvent)}
+                    >
+                      <Text style={styles.dayViewPinnedBannerIcon}>{classificationIcon(dayViewPhoneCutoffEvent.classification)}</Text>
+                      <Text style={styles.dayViewPinnedBannerText} numberOfLines={1}>
+                        {dayViewPhoneCutoffEvent.cellLabel}: {dayViewPhoneCutoffEvent.startTime || "Not set"}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
               </>
             )}
           </ScrollView>
@@ -857,10 +888,7 @@ const styles = StyleSheet.create({
   screenScroller: { flex: 1 },
   hudContent: { minHeight: "100%", paddingTop: 18, paddingHorizontal: 12, paddingBottom: 104 },
 
-  // Header — flanking icons share the same width so the title column is truly centered.
   heroPanel: { backgroundColor: "rgba(5, 12, 24, 0.92)", borderWidth: 3, borderColor: "#D99B2B", borderRadius: 8, padding: 12, marginBottom: 12, flexDirection: "row", alignItems: "center" },
-  heroSideIcon: { width: 46, height: 66, backgroundColor: "rgba(70, 28, 112, 0.86)", borderWidth: 2, borderColor: "#FDE047", alignItems: "center", justifyContent: "center" },
-  heroSideIconText: { fontSize: 24 },
   heroCopy: { flex: 1, alignItems: "center", paddingHorizontal: 6 },
   heroLabel: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 10, fontWeight: "900", letterSpacing: 1.2, textAlign: "center" },
   heroTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 27, fontWeight: "900", letterSpacing: 1, textAlign: "center" },
@@ -893,8 +921,14 @@ const styles = StyleSheet.create({
   dayCardBody: { backgroundColor: "#EAD9B6", paddingHorizontal: 7, paddingVertical: 6, minHeight: 92 },
   dayCardDate: { color: "#4A3620", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", marginBottom: 4, textAlign: "center" },
   dayCardEmpty: { color: "#8A7554", fontFamily: pixelFont, fontSize: 9, fontStyle: "italic" },
-  dayCardPreviewLine: { color: "#3D2C18", fontSize: 9, fontWeight: "800", marginBottom: 2 },
+  dayCardPreviewRow: { flexDirection: "row", alignItems: "center", marginBottom: 2, gap: 3 },
+  dayCardPreviewIcon: { fontSize: 9 },
+  dayCardPreviewLine: { color: "#3D2C18", fontSize: 9, fontWeight: "800", flexShrink: 1 },
   dayCardMore: { color: "#7C5B2B", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", marginTop: 2 },
+  // Today Quest gets a white-bordered icon badge — the one category icon called out by
+  // design as needing a border, everywhere it appears (Week View preview + Day View).
+  todayQuestIconBadge: { width: 14, height: 14, borderRadius: 3, borderWidth: 1.5, borderColor: "#FFFFFF", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(113,63,18,0.9)" },
+  todayQuestIconBadgeText: { fontSize: 8, lineHeight: 9 },
   dayCardPointer: { width: 0, height: 0, marginTop: 4, borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 7, borderLeftColor: "transparent", borderRightColor: "transparent", borderTopColor: "#FDE047" },
 
   // Shared small day badge used in both the selected-day summary and Day View heading.
@@ -940,7 +974,12 @@ const styles = StyleSheet.create({
   // Day View — dark RPG timeline board.
   dayViewPanel: { backgroundColor: "rgba(8,13,24,0.92)", borderWidth: 2, borderColor: "#334155", borderRadius: 8, padding: 8, marginBottom: 8 },
   dayViewPinnedBanner: { flexDirection: "row", alignItems: "center", minHeight: 30, borderWidth: 1, borderRadius: 4, paddingHorizontal: 8, marginBottom: 6 },
-  dayViewPinnedBannerGold: { borderWidth: 2, borderColor: "#FFFFFF" },
+  // Pinned "final item" variant (phone/blue-screen cutoff) — sits below the timeline
+  // instead of above it, so it's always visible as the last item even when its actual
+  // time would otherwise place it near the top (e.g. a post-midnight cutoff).
+  dayViewPinnedBannerBottom: { marginTop: 4, marginBottom: 0 },
+  dayViewPinnedIconBadge: { width: 22, height: 22, borderRadius: 4, borderWidth: 2, borderColor: "#FFFFFF", alignItems: "center", justifyContent: "center", marginRight: 6, backgroundColor: "rgba(0,0,0,0.2)" },
+  dayViewPinnedBannerIconInBadge: { fontSize: 12 },
   dayViewPinnedBannerIcon: { fontSize: 13, marginRight: 6 },
   dayViewPinnedBannerText: { color: "#F8FAFC", fontSize: 11, fontWeight: "900", flex: 1 },
   dayViewTimelineRow: { flexDirection: "row" },
@@ -951,7 +990,6 @@ const styles = StyleSheet.create({
   dayViewEventBlock: { position: "absolute", borderWidth: 1, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 4, overflow: "hidden" },
   dayViewEventTime: { color: "#F8FAFC", fontSize: 10, fontWeight: "900" },
   dayViewEventTitle: { color: "#F8FAFC", fontSize: 11, lineHeight: 14, fontWeight: "800", marginTop: 2 },
-  dayViewFooterNote: { color: "#94A3B8", fontSize: 11, fontWeight: "700", textAlign: "center", marginBottom: 6 },
 
   eventGold: { backgroundColor: "rgba(113,63,18,0.85)", borderColor: "#FBBF24" }, eventPurple: { backgroundColor: "rgba(88,28,135,0.85)", borderColor: "#A78BFA" }, eventBlue: { backgroundColor: "rgba(14,116,144,0.85)", borderColor: "#67E8F9" }, eventGreen: { backgroundColor: "rgba(20,83,45,0.65)", borderColor: "#86EFAC" },
 

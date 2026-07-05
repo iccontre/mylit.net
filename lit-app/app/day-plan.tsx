@@ -363,6 +363,11 @@ export default function DayPlanScreen() {
   const [isLowEnergy, setIsLowEnergy] = useState(false);
   const [boardMode, setBoardMode] = useState<"Progress" | "Recovery">("Progress");
   const [savedMessage, setSavedMessage] = useState("");
+  // Small confirmation shown right next to the Save Weekly Habit button — the shared
+  // `savedMessage` banner renders far below it, so a save at the top of the page could
+  // easily go unnoticed without scrolling down to see it.
+  const [weeklyHabitSaved, setWeeklyHabitSaved] = useState(false);
+  const weeklyHabitSavedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [conflictMessage, setConflictMessage] = useState("");
   const [recoveryWarning, setRecoveryWarning] = useState("");
   const [pendingRecoveryConfirmId, setPendingRecoveryConfirmId] = useState<string | null>(null);
@@ -374,6 +379,12 @@ export default function DayPlanScreen() {
     loadDayPlan();
     loadLatestCheckIn();
     loadQuickThoughts();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (weeklyHabitSavedTimeout.current) clearTimeout(weeklyHabitSavedTimeout.current);
+    };
   }, []);
 
   async function loadQuickThoughts() {
@@ -619,6 +630,9 @@ export default function DayPlanScreen() {
     committedPlanRef.current = nextCommitted;
     await persistProgressKeys({ [DAY_PLAN_KEY]: JSON.stringify(nextCommitted) });
     setSavedMessage("Weekly Habit saved to Calendar.");
+    setWeeklyHabitSaved(true);
+    if (weeklyHabitSavedTimeout.current) clearTimeout(weeklyHabitSavedTimeout.current);
+    weeklyHabitSavedTimeout.current = setTimeout(() => setWeeklyHabitSaved(false), 2500);
     void trackEvent(ANALYTICS_EVENTS.day_plan_saved, { scope: "weeklyHabit" });
     void syncDayPlanScheduledItems();
   }
@@ -943,6 +957,7 @@ export default function DayPlanScreen() {
               </ScrollView>
               <TextInput style={formStyles.input} value={dayPlan.weekdayRoles[selectedDay]} onChangeText={updateSelectedRole} placeholder="e.g. Coding Day" placeholderTextColor="#94A3B8" />
               <TouchableOpacity style={styles.saveButton} onPress={saveWeeklyHabit}><Text style={styles.saveButtonText}>SAVE WEEKLY HABIT</Text></TouchableOpacity>
+              {weeklyHabitSaved ? <Text style={styles.inlineSavedMessage}>Weekly Habit saved</Text> : null}
             </View>
 
             <View style={styles.todayQuestOuterBorder}>
@@ -999,9 +1014,14 @@ export default function DayPlanScreen() {
               {visibleChecklist.map((item: ChecklistItem) => (
                 <View key={item.id} style={[styles.checkCard, item.kind === "recovery" ? styles.recoveryBorder : styles.progressBorder]}>
                   <View style={styles.rowBetween}>
-                    <TouchableOpacity onPress={() => toggleChecklistItemChecked(item.id)}>
-                      <Text style={styles.checkToggle}>{item.checked ? "☑" : "☐"}</Text>
-                    </TouchableOpacity>
+                    <View style={styles.checkboxGroup}>
+                      <TouchableOpacity onPress={() => toggleChecklistItemChecked(item.id)}>
+                        <Text style={styles.checkToggle}>{item.checked ? "☑" : "☐"}</Text>
+                      </TouchableOpacity>
+                      <Text style={[styles.checkHelperText, item.checked && styles.checkHelperTextDone]}>
+                        {item.checked ? "Completed" : "Check if completed"}
+                      </Text>
+                    </View>
                     <View style={styles.kindSwitchRow}>
                       <TouchableOpacity style={[styles.kindMiniButton, item.kind === "progress" && styles.kindProgressActive]} onPress={() => updateChecklistItem(item.id, { kind: "progress" })}><Text style={styles.kindMiniText}>PROGRESS</Text></TouchableOpacity>
                       <TouchableOpacity style={[styles.kindMiniButton, item.kind === "recovery" && styles.kindRecoveryActive]} onPress={() => updateChecklistItem(item.id, { kind: "recovery" })}><Text style={styles.kindMiniText}>RECOVERY</Text></TouchableOpacity>
@@ -1208,6 +1228,9 @@ const styles = StyleSheet.create({
   progressBorder: { borderColor: "#FBBF24" },
   recoveryBorder: { borderColor: "#A78BFA" },
   checkToggle: { color: "#F8FAFC", fontSize: 24, marginRight: 8 },
+  checkboxGroup: { flexDirection: "row", alignItems: "center", flexShrink: 1 },
+  checkHelperText: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 10, fontWeight: "700" },
+  checkHelperTextDone: { color: "#86EFAC" },
   kindSwitchRow: { flexDirection: "row", gap: 6 },
   kindMiniButton: { borderWidth: 1, borderColor: "#475569", paddingVertical: 5, paddingHorizontal: 7, backgroundColor: "rgba(30, 41, 59, 0.82)" },
   kindProgressActive: { borderColor: "#FBBF24", backgroundColor: "rgba(113,63,18,0.8)" },
@@ -1241,6 +1264,7 @@ const styles = StyleSheet.create({
   previewRecoveryLock: { color: "#FDBA74", fontSize: 12, lineHeight: 18, fontWeight: "900", marginTop: 4 },
   emptyPreview: { color: "#CBD5E1", fontSize: 12, lineHeight: 18, fontWeight: "800" },
   savedMessage: { color: "#86EFAC", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", textAlign: "center", marginBottom: 10 },
+  inlineSavedMessage: { color: "#86EFAC", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", textAlign: "center", marginTop: 8 },
   conflictMessage: { color: "#FCA5A5", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", textAlign: "center", marginBottom: 10, lineHeight: 17 },
   saveButton: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", paddingVertical: 13, alignItems: "center", marginBottom: 10 },
   saveButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900", letterSpacing: 1 },
