@@ -188,9 +188,13 @@ export default function MorningIntentionReflectionScreen() {
     }
     try {
       const parsed = JSON.parse(saved) as PreSleepIntention;
-      // Only surface an intention set last night — an older, stale intention
-      // should not keep showing up on later mornings.
-      setLatestIntention(parsed.date === getYesterdayKey() ? parsed : null);
+      // "Last night" can be dated either yesterday OR today: Pre-Sleep Intention unlocks
+      // at 9 PM and many users save it after midnight, which stamps it with TODAY's date,
+      // not yesterday's — that mismatch was hiding it here. Both are safe to accept since
+      // this screen is itself locked until 7 AM, so a "today"-dated intention can only mean
+      // it was set between midnight and now, i.e. genuinely last night.
+      const isFromLastNight = parsed.date === getYesterdayKey() || parsed.date === getTodayKey();
+      setLatestIntention(isFromLastNight ? parsed : null);
     } catch {
       setLatestIntention(null);
     }

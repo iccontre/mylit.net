@@ -43,6 +43,13 @@ const CHECKIN_KEY = LATEST_CHECKIN_KEY;
 const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
 const MAX_FRAME_WIDTH = 520;
 const MIN_SLEEP_HOURS = 9;
+/** Desired sleep time can be set from 7 PM through 2 AM, but not past 2 AM. */
+const SLEEP_TIME_FLOOR_MINUTES = 19 * 60;
+const SLEEP_TIME_CAP_MINUTES = 2 * 60;
+
+function isWithinSleepTimeWindow(totalMinutesOfDay: number): boolean {
+  return totalMinutesOfDay >= SLEEP_TIME_FLOOR_MINUTES || totalMinutesOfDay <= SLEEP_TIME_CAP_MINUTES;
+}
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -242,7 +249,15 @@ export default function SleepCalendarScreen() {
             <View style={styles.panel}>
               <Text style={styles.panelTitle}>☽ YOUR SLEEP GOALS</Text>
               <View style={styles.goalRow}>
-                <TimeStepper label="DESIRED SLEEP TIME" icon="🌙" value={desiredSleepTime} onChange={setDesiredSleepTime} />
+                <TimeStepper
+                  label="DESIRED SLEEP TIME"
+                  icon="🌙"
+                  value={desiredSleepTime}
+                  onChange={(next) => {
+                    // Desired sleep time can be set until 2 AM, but not past it.
+                    if (isWithinSleepTimeWindow(parseTimeToMinutes(next))) setDesiredSleepTime(next);
+                  }}
+                />
                 <Text style={styles.goalArrow}>›</Text>
                 <TimeStepper label="DESIRED WAKE TIME" icon="☀️" value={desiredWakeTime} onChange={setDesiredWakeTime} />
               </View>

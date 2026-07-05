@@ -62,6 +62,8 @@ export default function ReflectionScreen() {
   const [smallerVersion, setSmallerVersion] = useState("");
 
   async function saveReflection() {
+    if (!whatGotInTheWay.trim() && !whatWasOff.trim() && !smallerVersion.trim()) return;
+
     const newEntry: ReflectionEntry = {
       id: String(Date.now()),
       quest,
@@ -150,7 +152,11 @@ export default function ReflectionScreen() {
               />
             </View>
 
-            <TouchableOpacity style={styles.primaryBtn} onPress={saveReflection}>
+            <TouchableOpacity
+              style={[styles.primaryBtn, !whatGotInTheWay.trim() && !whatWasOff.trim() && !smallerVersion.trim() && { opacity: 0.5 }]}
+              disabled={!whatGotInTheWay.trim() && !whatWasOff.trim() && !smallerVersion.trim()}
+              onPress={saveReflection}
+            >
               <Text style={styles.primaryText}>Save Reflection</Text>
             </TouchableOpacity>
 

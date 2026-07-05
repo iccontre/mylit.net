@@ -5,6 +5,7 @@ import { Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpac
 
 import { FormScreen } from "../components/FormScreen";
 import { BottomNav } from "../components/BottomNav";
+import { WeekDaySelector } from "../components/WeekDaySelector";
 import { formPageContent } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
@@ -38,6 +39,7 @@ import {
   inferScheduledClassification,
   parseDurationMinutes,
   shiftTimeSlot,
+  wouldCrossMidnight,
   wouldTriggerRecoveryLock,
   type ScheduledClassification,
   type ScheduledQuestLike,
@@ -104,7 +106,9 @@ type QuestDay = { date: Date; dateKey: string; weekday: string; label: string; d
 
 const STORAGE_KEY = TOMORROW_QUEUE_KEY;
 const CHECKIN_KEY = "lit_latest_checkin";
-const TIME_SLOTS = generateTimeSlots(7, 22, 30);
+// Daytime starts 7 AM; tasks can now be scheduled as late as 11:30 PM as long as they
+// don't cross midnight (see wouldCrossMidnight — validated at save time).
+const TIME_SLOTS = generateTimeSlots(7, 23.5, 30);
 const DURATIONS = ["15 min", "30 min", "45 min", "1 hr"];
 /** Nap is a special Recovery subtype with its own energy tiers — see getNapEnergyRestore. */
 const NAP_DURATION_OPTIONS = [15, 30, 45, 60] as const;
@@ -131,12 +135,12 @@ function isPastDateKey(dateKey: string) {
   return dateKey < getDateKey(new Date());
 }
 
-function generateCurrentWeek(): QuestDay[] {
+function generateWeek(weekOffset: number): QuestDay[] {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const monday = new Date(today);
   const day = today.getDay();
-  monday.setDate(today.getDate() + (day === 0 ? -6 : 1 - day));
+  monday.setDate(today.getDate() + (day === 0 ? -6 : 1 - day) + weekOffset * 7);
   return Array.from({ length: 7 }, (_, index) => {
     const date = new Date(monday);
     date.setDate(monday.getDate() + index);
@@ -195,8 +199,12 @@ type LocalProfile = {
 export default function TomorrowQueueScreen() {
   const router = useRouter();
   const mobile = useMobileFrame();
-  const weekDays = useMemo(() => generateCurrentWeek(), []);
-  const todayInWeek = weekDays.find((day: QuestDay) => day.dateKey === getDateKey()) || weekDays[0];
+  // currentWeekDays always anchors to the REAL current week (for "today" lookups), separate
+  // from weekDays/weekOffset which is purely which week the user is currently BROWSING.
+  const currentWeekDays = useMemo(() => generateWeek(0), []);
+  const todayInWeek = currentWeekDays.find((day: QuestDay) => day.dateKey === getDateKey()) || currentWeekDays[0];
+  const [weekOffset, setWeekOffset] = useState(0);
+  const weekDays = useMemo(() => generateWeek(weekOffset), [weekOffset]);
   const [request, setRequest] = useState("");
   const [items, setItems] = useState<QueueItem[]>([]);
   const [dayPlan, setDayPlan] = useState<Record<string, unknown> | null>(null);
@@ -209,6 +217,7 @@ export default function TomorrowQueueScreen() {
   const [conflictMessage, setConflictMessage] = useState("");
   const [recoveryWarning, setRecoveryWarning] = useState("");
   const [pendingRecoveryConfirm, setPendingRecoveryConfirm] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showInfo, setShowInfo] = useState(false);
   const [timeInputDraft, setTimeInputDraft] = useState("9:00 AM");
@@ -252,6 +261,13 @@ export default function TomorrowQueueScreen() {
     setRecoveryWarning("");
     setPendingRecoveryConfirm(false);
   }, [request, selectedKind, selectedDateKey, selectedTime, selectedDuration]);
+
+  const justSavedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (justSavedTimeout.current) clearTimeout(justSavedTimeout.current);
+    };
+  }, []);
 
   async function loadQueue() {
     const [saved, plan, checkIn, profileRaw, completedRaw, missedRaw] = await Promise.all([
@@ -321,6 +337,7 @@ export default function TomorrowQueueScreen() {
       .map((item) => ({ id: item.id, title: item.title, date: item.date, startTime: item.startTime, durationMinutes: item.durationMinutes }));
     const existing = [...dayPlanItems, ...questItems];
     for (const slot of TIME_SLOTS) {
+      if (wouldCrossMidnight(slot, durationMinutes)) continue;
       const candidate = { id: "__probe__", date: dateKey, startTime: slot, durationMinutes };
       if (!findScheduleOverlap(candidate, existing, "__probe__")) return slot;
     }
@@ -345,6 +362,12 @@ export default function TomorrowQueueScreen() {
     }
 
     const durationMinutes = parseDurationMinutes(selectedDuration, 30);
+
+    if (wouldCrossMidnight(selectedTime, durationMinutes)) {
+      setMessage(`${selectedTime} + ${selectedDuration} would run past midnight — pick an earlier time or shorter duration.`);
+      return;
+    }
+
     const otherItems = editingId ? items.filter((item) => item.id !== editingId) : items;
     const capacity = checkUserScheduledQuestCapacity({
       dateKey: selectedDay.dateKey,
@@ -352,10 +375,17 @@ export default function TomorrowQueueScreen() {
       quickThoughts: otherItems,
       dayPlan,
       additionalMinutes: durationMinutes,
+      additionalKind: selectedKind,
       boardMode,
     });
 
     if (!capacity.allowed) {
+      if (capacity.blockedByProgressCap) {
+        setMessage(
+          `${capacity.modeLabel} mode allows up to ${formatPlannedDurationLabel(capacity.maxProgressMinutes)} of progress work per day — the rest is reserved for recovery. Try a Recovery task instead, or shorten this one.`
+        );
+        return;
+      }
       const capLabel = formatPlannedDurationLabel(capacity.capacityMinutes);
       setMessage(
         `Quest Board limit reached for this day — your ${capacity.modeLabel} check-in allows up to ${capLabel} of planned quests (${formatPlannedDurationLabel(capacity.remainingMinutes)} left).`
@@ -452,6 +482,10 @@ export default function TomorrowQueueScreen() {
     setRequest("");
     setEditingId(null);
     void syncQuickThoughtItems();
+
+    setJustSaved(true);
+    if (justSavedTimeout.current) clearTimeout(justSavedTimeout.current);
+    justSavedTimeout.current = setTimeout(() => setJustSaved(false), 2500);
   }
 
   // A nap is a recovery quest that restores energy on completion: 15 min → +3, 30 min → +6,
@@ -470,6 +504,7 @@ export default function TomorrowQueueScreen() {
       quickThoughts: items,
       dayPlan,
       additionalMinutes: minutes,
+      additionalKind: "recovery",
       boardMode,
     });
     if (!capacity.allowed) {
@@ -549,7 +584,6 @@ export default function TomorrowQueueScreen() {
         <View style={styles.worldOverlay}>
           <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.hudContent]}>
             <View style={styles.heroPanel}>
-              <View style={styles.bannerIcon}><Text style={styles.bannerIconText}>✦</Text></View>
               <View style={styles.heroCopy}>
                 <Text style={styles.heroKicker}>QUEST SCHEDULER</Text>
                 <Text style={styles.title}>QUESTS</Text>
@@ -567,6 +601,21 @@ export default function TomorrowQueueScreen() {
                 <Text style={styles.infoBtnText}>?</Text>
               </TouchableOpacity>
             </View>
+
+            <WeekDaySelector
+              weekDays={weekDays.map((day: QuestDay) => day.date)}
+              selectedIndex={weekDays.findIndex((day: QuestDay) => day.dateKey === selectedDateKey)}
+              onSelectDay={(index) => {
+                const day = weekDays[index];
+                if (!day || isPastDateKey(day.dateKey)) return;
+                setSelectedDateKey(day.dateKey);
+                setMessage("");
+                if (!editingId) applyDefaultStartTime(day.dateKey, items, dayPlan);
+              }}
+              onPrevWeek={() => setWeekOffset((current) => current - 1)}
+              onNextWeek={() => setWeekOffset((current) => current + 1)}
+              isToday={(date) => getDateKey(date) === getDateKey()}
+            />
 
             <View style={styles.appQuestPanel}>
               <Text style={styles.bigSectionTitle}>⏱️ APP QUESTS FOR YOUR PATH</Text>
@@ -612,22 +661,9 @@ export default function TomorrowQueueScreen() {
                 <TouchableOpacity style={[styles.kindButton, styles.kindRecovery, selectedKind === "recovery" && styles.kindRecoveryActive]} onPress={() => setSelectedKind("recovery")}><Text style={styles.kindButtonText}>RECOVERY</Text></TouchableOpacity>
               </View>
 
-              <Text style={styles.sectionTitle}>3. DAY</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayStrip}>
-                {weekDays.map((day: QuestDay) => {
-                  const selected = day.dateKey === selectedDateKey;
-                  const isPast = isPastDateKey(day.dateKey);
-                  return (
-                    <TouchableOpacity key={day.dateKey} style={[styles.dayButton, selected && !isPast && styles.dayButtonActive, isPast && styles.dayButtonDisabled]} disabled={isPast} onPress={() => { setSelectedDateKey(day.dateKey); setMessage(""); if (!editingId) applyDefaultStartTime(day.dateKey, items, dayPlan); }}>
-                      <Text style={[styles.dayLabel, selected && styles.dayLabelActive, isPast && styles.dayTextDisabled]}>{day.label}</Text>
-                      <Text style={[styles.dayNumber, selected && styles.dayLabelActive, isPast && styles.dayTextDisabled]}>{day.dayNumber}</Text>
-                      {isPast ? <Text style={styles.pastDayLabel}>Past</Text> : null}
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
+              <Text style={styles.helperText}>Scheduling for {selectedDay.weekday}, {selectedDay.label} {selectedDay.dayNumber} — change the day above.</Text>
 
-              <Text style={styles.sectionTitle}>4. START TIME</Text>
+              <Text style={styles.sectionTitle}>3. START TIME</Text>
               <View style={styles.timeStepperRow}>
                 <TouchableOpacity style={styles.timeStepButton} onPress={() => { const next = shiftTimeSlot(selectedTime, -1, TIME_SLOTS); setSelectedTime(next); setTimeInputDraft(next); }}><Text style={styles.timeStepText}>←</Text></TouchableOpacity>
                 <TextInput
@@ -644,7 +680,7 @@ export default function TomorrowQueueScreen() {
               </View>
               {timeInputError ? <Text style={styles.timeInputError}>{timeInputError}</Text> : null}
 
-              <Text style={styles.sectionTitle}>5. DURATION</Text>
+              <Text style={styles.sectionTitle}>4. DURATION</Text>
               <View style={styles.durationRow}>
                 {DURATIONS.map((duration) => (
                   <TouchableOpacity key={duration} style={[styles.durationButton, selectedDuration === duration && styles.durationButtonActive]} onPress={() => setSelectedDuration(duration)}>
@@ -664,7 +700,8 @@ export default function TomorrowQueueScreen() {
                 onPress={saveQuest}
               >
                 <Text style={styles.saveButtonText}>
-                  {pendingRecoveryConfirm ? "CONFIRM & SAVE" : editingId ? "SAVE CHANGES" : "SAVE QUEST"} · +{selectedSteps} STEP{selectedSteps === 1 ? "" : "S"}
+                  {justSaved ? "SAVED" : pendingRecoveryConfirm ? "CONFIRM & SAVE" : editingId ? "SAVE CHANGES" : "SAVE QUEST"}
+                  {justSaved ? "" : ` · +${selectedSteps} STEP${selectedSteps === 1 ? "" : "S"}`}
                 </Text>
               </TouchableOpacity>
 
@@ -766,8 +803,6 @@ const styles = StyleSheet.create({
   screenScroller: { flex: 1 },
   hudContent: { flexGrow: 1, width: "100%", paddingTop: 18, paddingHorizontal: 14 },
   heroPanel: { backgroundColor: "rgba(5, 12, 24, 0.9)", borderWidth: 3, borderColor: "#D99B2B", borderRadius: 8, padding: 13, marginBottom: 12, flexDirection: "row", alignItems: "center" },
-  bannerIcon: { width: 46, height: 66, backgroundColor: "rgba(70, 28, 112, 0.86)", borderWidth: 2, borderColor: "#FDE047", alignItems: "center", justifyContent: "center", marginRight: 12 },
-  bannerIconText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 26, fontWeight: "900" },
   heroCopy: { flex: 1 },
   heroKicker: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", letterSpacing: 1.2, marginBottom: 5 },
   title: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 27, fontWeight: "900", letterSpacing: 1, lineHeight: 32, textAlign: "center" },
@@ -780,7 +815,7 @@ const styles = StyleSheet.create({
   supplementaryQuestCard: { marginTop: 8, borderColor: "#86EFAC" },
   supplementaryQuestLabel: { color: "#86EFAC", fontFamily: pixelFont, fontSize: 10, fontWeight: "900", letterSpacing: 0.8, marginBottom: 4 },
   emptyPreviewText: { color: "#94A3B8", fontSize: 12, lineHeight: 17, fontWeight: "700", fontStyle: "italic" },
-  creationPanel: { backgroundColor: "rgba(8, 13, 24, 0.95)", borderRadius: 8, padding: 12, marginBottom: 14, borderWidth: 3, borderColor: "#334155" },
+  creationPanel: { backgroundColor: "rgba(58, 42, 21, 0.92)", borderRadius: 8, padding: 12, marginBottom: 14, borderWidth: 3, borderColor: "#8B6B3D" },
   rowBetween: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   panelHeading: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", letterSpacing: 0.5 },
   // flex:1 lets the heading center in the space left of the CANCEL button (when editing).
@@ -798,15 +833,6 @@ const styles = StyleSheet.create({
   kindProgressActive: { backgroundColor: "rgba(113,63,18,0.9)" },
   kindRecoveryActive: { backgroundColor: "rgba(88,28,135,0.9)" },
   kindButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
-  dayStrip: { gap: 8, paddingBottom: 8 },
-  dayButton: { width: 58, backgroundColor: "rgba(15,23,42,0.92)", borderWidth: 2, borderColor: "#334155", borderRadius: 8, alignItems: "center", paddingVertical: 8 },
-  dayButtonActive: { borderColor: "#FBBF24", backgroundColor: "rgba(69,43,8,0.7)" },
-  dayButtonDisabled: { opacity: 0.45 },
-  dayLabel: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 10, fontWeight: "900" },
-  dayNumber: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 18, fontWeight: "900", marginTop: 3 },
-  dayLabelActive: { color: "#FDE68A" },
-  dayTextDisabled: { color: "#64748B" },
-  pastDayLabel: { color: "#94A3B8", fontSize: 8, marginTop: 2 },
   timeStepperRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginBottom: 8 },
   timeStepButton: { width: 44, height: 38, borderWidth: 2, borderColor: "#FBBF24", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(69,43,8,0.6)" },
   timeStepText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 18, fontWeight: "900" },

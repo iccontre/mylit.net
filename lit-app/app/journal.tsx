@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Image,
   Platform,
@@ -60,6 +60,13 @@ export default function JournalScreen() {
   const [content, setContent] = useState("");
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+  const justSavedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (justSavedTimeout.current) clearTimeout(justSavedTimeout.current);
+    };
+  }, []);
 
   useEffect(() => {
     loadEntries();
@@ -99,6 +106,10 @@ export default function JournalScreen() {
 
     setContent("");
     setMood("");
+
+    setJustSaved(true);
+    if (justSavedTimeout.current) clearTimeout(justSavedTimeout.current);
+    justSavedTimeout.current = setTimeout(() => setJustSaved(false), 2500);
   }
 
   async function clearEntries() {
@@ -177,8 +188,8 @@ export default function JournalScreen() {
               />
             </View>
 
-            <TouchableOpacity style={styles.saveButton} onPress={saveJournalEntry}>
-              <Text style={styles.saveButtonText}>Save Journal Entry</Text>
+            <TouchableOpacity style={styles.saveButton} disabled={justSaved} onPress={saveJournalEntry}>
+              <Text style={styles.saveButtonText}>{justSaved ? "Saved" : "Save Journal Entry"}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.backButton} onPress={() => setShowHistory(true)}>

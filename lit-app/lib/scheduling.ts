@@ -345,6 +345,17 @@ export function sleepInterruptionPenalty(interruptionDurationMinutes: number): n
   return 5;
 }
 
+/**
+ * Progress/Recovery tasks can be scheduled after 10 PM, but never extend past midnight —
+ * the app's day view and daily cap accounting both stop at 12 AM. Returns true when
+ * `startTime` + `durationMinutes` would run into the next day.
+ */
+export function wouldCrossMidnight(startTime: string | undefined, durationMinutes: number): boolean {
+  const startMinutes = parseTimeToMinutes(startTime);
+  if (startMinutes === null) return false;
+  return startMinutes + durationMinutes > 24 * 60;
+}
+
 /** Parses a single time or sleep-guide range like "7:00 PM – 8:00 PM" (uses the first time for placement). */
 export function parseSleepGuideTime(value?: string | null): number | null {
   if (!value) return null;

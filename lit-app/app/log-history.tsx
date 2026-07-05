@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter, useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
-import { Image, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Image, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { BottomNav } from "../components/BottomNav";
 import { FormScreen } from "../components/FormScreen";
@@ -201,7 +201,7 @@ export default function LogHistoryScreen() {
     dream: [],
     pre_sleep_intention: [],
   });
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [selectedEntry, setSelectedEntry] = useState<LogEntry | null>(null);
 
   const loadLogs = useCallback(async () => {
     const [journalRaw, reflectionRaw, meditationRaw, dreamRaw, preSleepRaw] = await Promise.all([
@@ -230,10 +230,6 @@ export default function LogHistoryScreen() {
   );
 
   const totalCount = SECTIONS.reduce((sum, section) => sum + entriesByType[section.type].length, 0);
-
-  function toggle(id: string) {
-    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
-  }
 
   return (
     <View style={[styles.pageRoot, mobile.pageRootStyle]}>
@@ -269,29 +265,26 @@ export default function LogHistoryScreen() {
                   {entries.length === 0 ? (
                     <Text style={styles.sectionEmpty}>No entries yet.</Text>
                   ) : (
-                    entries.map((entry) => {
-                      const isOpen = Boolean(expanded[entry.id]);
-                      return (
-                        <TouchableOpacity
-                          key={entry.id}
-                          style={styles.entryCard}
-                          activeOpacity={0.85}
-                          onPress={() => toggle(entry.id)}
-                        >
-                          <View style={styles.entryTopRow}>
-                            <Text style={styles.entryLabel} numberOfLines={1}>{entry.label}</Text>
-                            <Text style={styles.entryWhen}>{entry.when}</Text>
-                          </View>
-                          {entry.meta ? <Text style={styles.entryMeta} numberOfLines={isOpen ? undefined : 1}>{entry.meta}</Text> : null}
-                          {entry.body ? (
-                            <Text style={styles.entryBody} numberOfLines={isOpen ? undefined : 2}>
-                              {isOpen ? entry.body : entry.preview}
-                            </Text>
-                          ) : null}
-                          <Text style={styles.entryCue}>{isOpen ? "Tap to collapse ▲" : "Tap to read ▾"}</Text>
-                        </TouchableOpacity>
-                      );
-                    })
+                    entries.map((entry) => (
+                      <TouchableOpacity
+                        key={entry.id}
+                        style={styles.entryCard}
+                        activeOpacity={0.85}
+                        onPress={() => setSelectedEntry(entry)}
+                      >
+                        <View style={styles.entryTopRow}>
+                          <Text style={styles.entryLabel} numberOfLines={1}>{entry.label}</Text>
+                          <Text style={styles.entryWhen}>{entry.when}</Text>
+                        </View>
+                        {entry.meta ? <Text style={styles.entryMeta} numberOfLines={1}>{entry.meta}</Text> : null}
+                        {entry.preview ? (
+                          <Text style={styles.entryBody} numberOfLines={2}>
+                            {entry.preview}
+                          </Text>
+                        ) : null}
+                        <Text style={styles.entryCue}>Tap to read ▾</Text>
+                      </TouchableOpacity>
+                    ))
                   )}
                 </View>
               );
@@ -301,6 +294,29 @@ export default function LogHistoryScreen() {
               <Text style={styles.backButtonText}>← Back to Stats</Text>
             </TouchableOpacity>
           </FormScreen>
+
+          <Modal visible={selectedEntry !== null} transparent animationType="fade" onRequestClose={() => setSelectedEntry(null)}>
+            <View style={styles.modalBackdrop}>
+              <View style={styles.modalPanel}>
+                <View style={styles.modalHeader}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.modalLabel} numberOfLines={1}>{selectedEntry?.label}</Text>
+                    <Text style={styles.modalWhen}>{selectedEntry?.when}</Text>
+                  </View>
+                  <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setSelectedEntry(null)}>
+                    <Text style={styles.modalCloseBtnText}>✕</Text>
+                  </TouchableOpacity>
+                </View>
+                <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+                  {selectedEntry?.meta ? <Text style={styles.modalMeta}>{selectedEntry.meta}</Text> : null}
+                  <Text style={styles.modalBody}>{selectedEntry?.body || selectedEntry?.preview}</Text>
+                </ScrollView>
+                <TouchableOpacity style={styles.modalDoneBtn} onPress={() => setSelectedEntry(null)}>
+                  <Text style={styles.modalDoneBtnText}>DONE</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
 
           <BottomNav activeRoute="stats" theme="purple" bottomOffset={mobile.bottomNavOffset} />
         </View>
@@ -389,6 +405,18 @@ const styles = StyleSheet.create({
   entryMeta: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", marginTop: 6 },
   entryBody: { color: "#F8F1D7", fontFamily: pixelFont, fontSize: 12, fontWeight: "700", lineHeight: 18, marginTop: 7 },
   entryCue: { color: "#64748B", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", marginTop: 8, textTransform: "uppercase", letterSpacing: 0.6 },
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(2,4,10,0.82)", alignItems: "center", justifyContent: "center", padding: 18 },
+  modalPanel: { width: "100%", maxWidth: 380, maxHeight: "82%", backgroundColor: "rgba(8,13,24,0.99)", borderWidth: 3, borderColor: "#A78BFA", borderRadius: 10, padding: 14 },
+  modalHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 10, gap: 10 },
+  modalLabel: { color: "#E9D5FF", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", letterSpacing: 0.5 },
+  modalWhen: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 11, fontWeight: "800", marginTop: 4 },
+  modalCloseBtn: { width: 30, height: 30, borderWidth: 2, borderColor: "#A78BFA", borderRadius: 6, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(15,23,42,0.9)" },
+  modalCloseBtnText: { color: "#E9D5FF", fontFamily: pixelFont, fontSize: 14, fontWeight: "900" },
+  modalScroll: { maxHeight: 420 },
+  modalMeta: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", marginBottom: 10 },
+  modalBody: { color: "#F8F1D7", fontFamily: pixelFont, fontSize: 13, fontWeight: "700", lineHeight: 20 },
+  modalDoneBtn: { marginTop: 12, borderWidth: 2, borderColor: "#A78BFA", borderRadius: 6, paddingVertical: 12, alignItems: "center", backgroundColor: "rgba(15,23,42,0.9)" },
+  modalDoneBtnText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 0.8 },
   backButton: {
     backgroundColor: "rgba(8, 13, 24, 0.94)",
     borderWidth: 2,

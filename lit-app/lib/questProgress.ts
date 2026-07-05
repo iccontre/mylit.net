@@ -59,6 +59,23 @@ export {
 export const PROGRESS_CAPACITY_MINUTES = 8 * 60;
 export const RECOVERY_CAPACITY_MINUTES = 5 * 60;
 
+/**
+ * Within the total day cap, only part of it can be PROGRESS work — the rest is reserved
+ * for recovery: Progress mode allows up to 5h30 of progress (leaving 2h30 reserved of the
+ * 8h total); Recovery mode allows up to 3h of progress (leaving 2h reserved of the 5h
+ * total). Recovery-kind work is never limited by this sub-cap — only the total cap applies
+ * to it. This is also what naturally enforces "lock new progress once energy drops below
+ * 60 with >3h progress already done": once energy dips below 60 the app's live mode
+ * recomputes to Recovery, and its 3h progress sub-cap immediately applies to that day's
+ * already-completed/scheduled progress total.
+ */
+export const PROGRESS_MODE_MAX_PROGRESS_MINUTES = 5 * 60 + 30;
+export const RECOVERY_MODE_MAX_PROGRESS_MINUTES = 3 * 60;
+
+export function getMaxProgressMinutes(mode: "Progress" | "Recovery"): number {
+  return mode === "Recovery" ? RECOVERY_MODE_MAX_PROGRESS_MINUTES : PROGRESS_MODE_MAX_PROGRESS_MINUTES;
+}
+
 /** @deprecated Item-count capacity — use minute-based capacity helpers instead. */
 export const PROGRESS_QUEST_CAPACITY = 8;
 /** @deprecated Item-count capacity — use minute-based capacity helpers instead. */
@@ -288,23 +305,94 @@ export function computeUserScheduledMinutesForDay(input: {
   return total;
 }
 
+/**
+ * Same inputs as computeUserScheduledMinutesForDay, but split by kind (progress vs
+ * recovery) using each item's EXPLICIT saved kind — never inferred from the current board
+ * mode. Used to enforce the max-progress-time sub-cap alongside the total day cap.
+ */
+export function computeUserScheduledMinutesByKindForDay(input: {
+  dateKey: string;
+  weekday: WeekdayName;
+  quickThoughts: QueueItem[];
+  dayPlan: DayPlanRaw | null | undefined;
+}): { progressMinutes: number; recoveryMinutes: number; totalMinutes: number } {
+  let progressMinutes = 0;
+  let recoveryMinutes = 0;
+  const add = (kind: QuestKind, minutes: number) => {
+    if (kind === "recovery") recoveryMinutes += minutes;
+    else progressMinutes += minutes;
+  };
+
+  for (const raw of input.quickThoughts) {
+    const itemDate = raw.date ?? raw.dateKey;
+    if (itemDate !== input.dateKey) continue;
+    if (!isActiveScheduledItem(raw.status, raw.completedAt)) continue;
+    const minutes = parseDurationMinutes(raw.durationMinutes ?? raw.duration, 30);
+    const title = (raw.text || raw.title || raw.task || raw.note || "").trim();
+    add(resolveExplicitOrInferredKind({ kind: raw.kind, classification: raw.classification, title }), minutes);
+  }
+
+  const todayQuest = input.dayPlan?.todayQuest;
+  if (todayQuest?.title?.trim()) {
+    const questDate = todayQuest.date ?? input.dateKey;
+    if (questDate === input.dateKey && isActiveScheduledItem(todayQuest.status)) {
+      const minutes = parseDurationMinutes(todayQuest.durationMinutes ?? todayQuest.duration, 60);
+      add(todayQuest.kind === "recovery" ? "recovery" : "progress", minutes);
+    }
+  }
+
+  const checklist = getChecklistItemsForDay(input.dayPlan, input.weekday);
+  for (const raw of checklist) {
+    if (raw.checked || !isActiveScheduledItem(raw.status)) continue;
+    const minutes = parseDurationMinutes(raw.durationMinutes ?? raw.duration, 30);
+    const title = (raw.text || raw.title || "").trim();
+    add(resolveExplicitOrInferredKind({ kind: raw.kind, title }), minutes);
+  }
+
+  return { progressMinutes, recoveryMinutes, totalMinutes: progressMinutes + recoveryMinutes };
+}
+
 export function checkUserScheduledQuestCapacity(input: {
   dateKey: string;
   weekday: WeekdayName;
   quickThoughts: QueueItem[];
   dayPlan: DayPlanRaw | null | undefined;
   additionalMinutes: number;
+  /** Kind of the item being added — defaults to "progress" (the common case: quests/checklist items are progress unless explicitly marked recovery). Only progress-kind additions are checked against the max-progress-time sub-cap. */
+  additionalKind?: QuestKind;
   boardMode: "Progress" | "Recovery";
-}): { allowed: boolean; plannedMinutes: number; capacityMinutes: number; remainingMinutes: number; modeLabel: "Progress" | "Recovery" } {
+}): {
+  allowed: boolean;
+  plannedMinutes: number;
+  capacityMinutes: number;
+  remainingMinutes: number;
+  modeLabel: "Progress" | "Recovery";
+  /** True when the total cap was satisfied but the max-progress-time sub-cap was the actual blocker. */
+  blockedByProgressCap: boolean;
+  progressMinutes: number;
+  maxProgressMinutes: number;
+} {
   const plannedMinutes = computeUserScheduledMinutesForDay(input);
   const capacityMinutes = getQuestCapacityMinutes(input.boardMode);
   const remainingMinutes = Math.max(0, capacityMinutes - plannedMinutes);
+  const additionalKind = input.additionalKind ?? "progress";
+
+  const { progressMinutes } = computeUserScheduledMinutesByKindForDay(input);
+  const maxProgressMinutes = getMaxProgressMinutes(input.boardMode);
+  const wouldExceedProgressCap =
+    additionalKind === "progress" && progressMinutes + input.additionalMinutes > maxProgressMinutes;
+
+  const withinTotalCap = plannedMinutes + input.additionalMinutes <= capacityMinutes;
+
   return {
-    allowed: plannedMinutes + input.additionalMinutes <= capacityMinutes,
+    allowed: withinTotalCap && !wouldExceedProgressCap,
     plannedMinutes,
     capacityMinutes,
     remainingMinutes,
     modeLabel: input.boardMode,
+    blockedByProgressCap: withinTotalCap && wouldExceedProgressCap,
+    progressMinutes,
+    maxProgressMinutes,
   };
 }
 
@@ -554,6 +642,8 @@ export function getChecklistItemsForDay(plan: DayPlanRaw | null | undefined, day
 
 /** "Set Pre-Sleep Intention" only appears on the Quest Board at/after this local hour. */
 export const PRE_SLEEP_INTENTION_UNLOCK_HOUR = 21;
+/** Matches morning-intention-reflection.tsx's MORNING_UNLOCK_HOUR — Pre-Sleep Intention's window closes when Morning Reflection's opens. */
+const MORNING_REFLECTION_UNLOCK_HOUR = 7;
 
 export function normalizeQuestItems(input: {
   quests: QuestLike[];
@@ -579,10 +669,13 @@ export function normalizeQuestItems(input: {
     items.push(item);
   };
 
-  // Only appears from 9:00 PM local time onward — it's a wind-down ritual, not an
-  // all-day reminder. It never restores or costs energy (it routes straight to
-  // /pre-sleep-intention instead of going through the generic complete/energy flow).
-  if (!input.preSleepIntentionDoneToday && now.getHours() >= PRE_SLEEP_INTENTION_UNLOCK_HOUR) {
+  // Available from 9:00 PM through 6:59 AM — a wind-down ritual, not an all-day reminder,
+  // but still usable by night owls who haven't gone to sleep by midnight (previously the
+  // window silently closed at midnight since `hour >= 21` is false for hours 0–6). It never
+  // restores or costs energy (it routes straight to /pre-sleep-intention instead of going
+  // through the generic complete/energy flow).
+  const preSleepWindowOpen = now.getHours() >= PRE_SLEEP_INTENTION_UNLOCK_HOUR || now.getHours() < MORNING_REFLECTION_UNLOCK_HOUR;
+  if (!input.preSleepIntentionDoneToday && preSleepWindowOpen) {
     pushItem({
       id: buildStableItemId("Sleep", "Set Pre-Sleep Intention", { dateKey: input.todayKey }),
       title: "Set Pre-Sleep Intention",

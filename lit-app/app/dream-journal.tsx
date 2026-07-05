@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Image,
   Platform,
@@ -89,6 +89,13 @@ export default function DreamJournalScreen() {
   const [feeling, setFeeling] = useState("");
   const [showInfo, setShowInfo] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+  const justSavedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (justSavedTimeout.current) clearTimeout(justSavedTimeout.current);
+    };
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -156,6 +163,10 @@ export default function DreamJournalScreen() {
     setTitle("");
     setSummary("");
     setFeeling("");
+
+    setJustSaved(true);
+    if (justSavedTimeout.current) clearTimeout(justSavedTimeout.current);
+    justSavedTimeout.current = setTimeout(() => setJustSaved(false), 2500);
   }
 
   async function clearDreams() {
@@ -224,8 +235,8 @@ export default function DreamJournalScreen() {
                 })}
               </View>
 
-              <TouchableOpacity style={[styles.saveButton, { borderColor: theme.accent }]} onPress={saveDream}>
-                <Text style={styles.saveButtonText}>Save Dream · +1 Step</Text>
+              <TouchableOpacity style={[styles.saveButton, { borderColor: theme.accent }]} disabled={justSaved} onPress={saveDream}>
+                <Text style={styles.saveButtonText}>{justSaved ? "Saved" : "Save Dream · +1 Step"}</Text>
               </TouchableOpacity>
             </View>
 

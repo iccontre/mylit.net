@@ -5,6 +5,7 @@ import { Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpac
 
 import { FormScreen } from "../components/FormScreen";
 import { BottomNav } from "../components/BottomNav";
+import { WeekDaySelector } from "../components/WeekDaySelector";
 import { formPageContent, formStyles } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
@@ -13,6 +14,7 @@ import {
   DAY_PLAN_KEY,
   MAX_CHECKLIST_MINUTES_PER_DAY,
   TOMORROW_QUEUE_KEY,
+  checkUserScheduledQuestCapacity,
   computeChecklistMinutesForDay,
   computeUserScheduledMinutesForDay,
   formatChecklistTimeLabel,
@@ -42,6 +44,7 @@ import {
   TODAY_QUEST_STEPS,
   TODAY_QUEST_TWO_HOUR_MINUTES,
   TODAY_QUEST_TWO_HOUR_STEPS,
+  wouldCrossMidnight,
   wouldTriggerRecoveryLock,
   type ScheduledClassification,
   type ScheduledQuestLike,
@@ -104,7 +107,9 @@ type QuickThoughtLike = {
 };
 
 const CHECKIN_KEY = "lit_latest_checkin";
-const TIME_SLOTS = generateTimeSlots(7, 22, 30);
+// Daytime starts 7 AM; tasks can now be scheduled as late as 11:30 PM as long as they
+// don't cross midnight (see wouldCrossMidnight — validated at save time).
+const TIME_SLOTS = generateTimeSlots(7, 23.5, 30);
 /** Checklist items use 15/30/45/60 min durations. */
 const CHECKLIST_DURATIONS = ["15 min", "30 min", "45 min", "1 hr"];
 /** Today's Quest additionally offers a 2 hr option — not available to checklist/quick-thought items. */
@@ -360,6 +365,22 @@ export default function DayPlanScreen() {
   const mobile = useMobileFrame();
   const [dayPlan, setDayPlan] = useState<DayPlan>(() => createDefaultPlan());
   const [selectedDay, setSelectedDay] = useState<WeekdayName>(todayWeekday());
+  // Purely a display concern — browsing another week's actual dates never changes what
+  // "selectedDay" (a recurring weekday) means, or which real week capacity checks resolve
+  // against (resolveDateForWeekday always anchors to the true current week).
+  const [weekOffset, setWeekOffset] = useState(0);
+  const displayWeekDays = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const jsDay = today.getDay();
+    const monday = new Date(today);
+    monday.setDate(today.getDate() + (jsDay === 0 ? -6 : 1 - jsDay) + weekOffset * 7);
+    return WEEKDAYS.map((_, index) => {
+      const date = new Date(monday);
+      date.setDate(monday.getDate() + index);
+      return date;
+    });
+  }, [weekOffset]);
   const [isLowEnergy, setIsLowEnergy] = useState(false);
   const [boardMode, setBoardMode] = useState<"Progress" | "Recovery">("Progress");
   const [savedMessage, setSavedMessage] = useState("");
@@ -498,6 +519,13 @@ export default function DayPlanScreen() {
     const item = bucketDay ? dayPlan.weekdayChecklists[bucketDay].find((entry) => entry.id === itemId) : null;
     if (!bucketDay || !item || !item.text.trim()) return;
 
+    if (wouldCrossMidnight(item.startTime, item.durationMinutes)) {
+      setConflictMessage(`${item.startTime} + ${item.duration} would run past midnight — pick an earlier time or shorter duration.`);
+      setRecoveryWarning("");
+      setPendingRecoveryConfirmId(null);
+      return;
+    }
+
     const conflictTitle = findTimeConflictTitle(itemId, item.weekdays, item.startTime, item.durationMinutes);
     if (conflictTitle) {
       setConflictMessage(`${item.startTime} interferes with "${conflictTitle}" — change the time.`);
@@ -515,6 +543,30 @@ export default function DayPlanScreen() {
       if (otherMinutes + item.durationMinutes > MAX_CHECKLIST_MINUTES_PER_DAY) {
         setConflictMessage(
           `${weekday} would have ${formatPlannedDurationLabel(otherMinutes + item.durationMinutes)} of checklist time — the max is ${formatPlannedDurationLabel(MAX_CHECKLIST_MINUTES_PER_DAY)}. Shorten this item or remove another.`
+        );
+        setRecoveryWarning("");
+        setPendingRecoveryConfirmId(null);
+        return;
+      }
+    }
+    // Day-wide cap (8h/5h total, 5h30/3h max progress) applies consistently to checklist
+    // items and quests alike — validate each selected weekday against it too.
+    for (const weekday of item.weekdays) {
+      const dateKey = resolveDateForWeekday(weekday);
+      const capacity = checkUserScheduledQuestCapacity({
+        dateKey,
+        weekday,
+        quickThoughts,
+        dayPlan: committedPlanRef.current,
+        additionalMinutes: item.durationMinutes,
+        additionalKind: item.kind,
+        boardMode,
+      });
+      if (!capacity.allowed) {
+        setConflictMessage(
+          capacity.blockedByProgressCap
+            ? `${boardMode} mode allows up to ${formatPlannedDurationLabel(capacity.maxProgressMinutes)} of progress work per day on ${weekday} — the rest is reserved for recovery.`
+            : `${weekday} is already at the ${formatPlannedDurationLabel(capacity.capacityMinutes)} daily quest limit — remove or shorten something first.`
         );
         setRecoveryWarning("");
         setPendingRecoveryConfirmId(null);
@@ -554,6 +606,13 @@ export default function DayPlanScreen() {
   async function saveTodayQuest() {
     if (!dayPlan.todayQuest.title.trim()) return;
 
+    if (wouldCrossMidnight(dayPlan.todayQuest.startTime, dayPlan.todayQuest.durationMinutes)) {
+      setConflictMessage(`${dayPlan.todayQuest.startTime} + ${dayPlan.todayQuest.duration} would run past midnight — pick an earlier time or shorter duration.`);
+      setRecoveryWarning("");
+      setPendingRecoveryConfirmId(null);
+      return;
+    }
+
     const conflictTitle = findTimeConflictTitle(
       dayPlan.todayQuest.id,
       [dayPlan.todayQuest.weekday],
@@ -562,6 +621,26 @@ export default function DayPlanScreen() {
     );
     if (conflictTitle) {
       setConflictMessage(`${dayPlan.todayQuest.startTime} interferes with "${conflictTitle}" — change the time.`);
+      setRecoveryWarning("");
+      setPendingRecoveryConfirmId(null);
+      return;
+    }
+
+    const todayQuestCapacity = checkUserScheduledQuestCapacity({
+      dateKey: getDateKey(),
+      weekday: dayPlan.todayQuest.weekday,
+      quickThoughts,
+      dayPlan: committedPlanRef.current,
+      additionalMinutes: dayPlan.todayQuest.durationMinutes,
+      additionalKind: dayPlan.todayQuest.kind,
+      boardMode,
+    });
+    if (!todayQuestCapacity.allowed) {
+      setConflictMessage(
+        todayQuestCapacity.blockedByProgressCap
+          ? `${boardMode} mode allows up to ${formatPlannedDurationLabel(todayQuestCapacity.maxProgressMinutes)} of progress work per day — the rest is reserved for recovery.`
+          : `Today is already at the ${formatPlannedDurationLabel(todayQuestCapacity.capacityMinutes)} daily quest limit — remove or shorten something first.`
+      );
       setRecoveryWarning("");
       setPendingRecoveryConfirmId(null);
       return;
@@ -645,12 +724,6 @@ export default function DayPlanScreen() {
       todayFocus: selectedDay === todayWeekday() ? value : current.todayFocus,
       todayGoal: selectedDay === todayWeekday() ? value : current.todayGoal,
     }));
-  }
-
-  function moveSelectedDay(direction: -1 | 1) {
-    const index = WEEKDAYS.indexOf(selectedDay);
-    const next = WEEKDAYS[(index + direction + WEEKDAYS.length) % WEEKDAYS.length];
-    setSelectedDay(next);
   }
 
   function updateTodayQuestTitle(value: string) {
@@ -918,7 +991,6 @@ export default function DayPlanScreen() {
         <View style={styles.worldOverlay}>
           <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.hudContent]}>
             <View style={styles.heroPanel}>
-              <View style={styles.bannerIcon}><Text style={styles.bannerIconText}>📜</Text></View>
               <View style={styles.heroCopy}>
                 <Text style={styles.heroKicker}>DAY PLAN</Text>
                 <Text style={styles.title}>DAY PLAN</Text>
@@ -937,27 +1009,22 @@ export default function DayPlanScreen() {
               </TouchableOpacity>
             </View>
 
+            <WeekDaySelector
+              weekDays={displayWeekDays}
+              selectedIndex={WEEKDAYS.indexOf(selectedDay)}
+              onSelectDay={(index) => setSelectedDay(WEEKDAYS[index])}
+              onPrevWeek={() => setWeekOffset((current) => current - 1)}
+              onNextWeek={() => setWeekOffset((current) => current + 1)}
+              isToday={(date) => getDateKey(date) === getDateKey(new Date())}
+            />
+
             <View style={styles.panelGreen}>
               <Text style={styles.sectionTitle}>WEEKLY HABIT</Text>
-              <Text style={styles.helperText}>Your recurring role for {selectedDay}. Shown on Calendar as a green marker. No steps awarded.</Text>
-              <View style={styles.dayStepperRow}>
-                <TouchableOpacity style={styles.arrowButton} onPress={() => moveSelectedDay(-1)}><Text style={styles.arrowText}>←</Text></TouchableOpacity>
-                <View style={styles.dayStepperCenter}>
-                  <Text style={styles.dayStepperTitle}>{selectedDay}</Text>
-                  {selectedRole ? <Text style={styles.dayStepperRole}>{selectedRole}</Text> : null}
-                </View>
-                <TouchableOpacity style={styles.arrowButton} onPress={() => moveSelectedDay(1)}><Text style={styles.arrowText}>→</Text></TouchableOpacity>
-              </View>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.dayStrip}>
-                {WEEKDAYS.map((day) => (
-                  <TouchableOpacity key={day} style={[styles.dayButton, selectedDay === day && styles.dayButtonActive]} onPress={() => setSelectedDay(day)}>
-                    <Text style={[styles.dayButtonText, selectedDay === day && styles.dayButtonTextActive]}>{day.slice(0, 3)}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+              <Text style={styles.helperText}>Set a recurring role for the days you choose. It repeats every week until changed.</Text>
+              <Text style={styles.helperTextSubtle}>Editing {selectedDay} — shown on Calendar as a green marker. No steps awarded.</Text>
               <TextInput style={formStyles.input} value={dayPlan.weekdayRoles[selectedDay]} onChangeText={updateSelectedRole} placeholder="e.g. Coding Day" placeholderTextColor="#94A3B8" />
-              <TouchableOpacity style={styles.saveButton} onPress={saveWeeklyHabit}><Text style={styles.saveButtonText}>SAVE WEEKLY HABIT</Text></TouchableOpacity>
-              {weeklyHabitSaved ? <Text style={styles.inlineSavedMessage}>Weekly Habit saved</Text> : null}
+              <TouchableOpacity style={styles.saveButton} onPress={saveWeeklyHabit}><Text style={styles.saveButtonText}>{weeklyHabitSaved ? "SAVED" : "SAVE WEEKLY HABIT"}</Text></TouchableOpacity>
+              {weeklyHabitSaved ? <Text style={styles.inlineSavedMessage}>Saved</Text> : null}
             </View>
 
             <View style={styles.todayQuestOuterBorder}>
@@ -989,7 +1056,7 @@ export default function DayPlanScreen() {
                 onPress={saveTodayQuest}
               >
                 <Text style={styles.saveQuestButtonText}>
-                  {!isTodayQuestDirty() ? "SAVED ✓" : "SET TODAY’S MAIN QUEST"}
+                  {!isTodayQuestDirty() ? "SAVED" : "SET TODAY’S MAIN QUEST"}
                 </Text>
               </TouchableOpacity>
               {dayPlan.todayQuest.status !== "completed" ? (
@@ -1000,11 +1067,12 @@ export default function DayPlanScreen() {
             </View>
             </View>
 
-            <View style={styles.panel}>
+            <View style={styles.panelPurple}>
               <View style={styles.rowBetween}>
                 <Text style={[styles.sectionTitle, styles.sectionTitleInRow]}>CHECKLIST ITEMS</Text>
                 <Text style={styles.helperPill}>{isLowEnergy ? "Recovery mode suggested" : "Optional"}</Text>
               </View>
+              <Text style={styles.helperText}>Set items that you want repeated throughout the week.</Text>
               <Text style={styles.remainingTimeText}>
                 {formatChecklistTimeLabel(selectedDayChecklistMinutes)} · {formatPlannedDurationLabel(selectedDayRemainingMinutes)} left today · {boardMode} ({boardMode === "Recovery" ? "5h" : "8h"} limit)
               </Text>
@@ -1057,7 +1125,7 @@ export default function DayPlanScreen() {
                     onPress={() => saveChecklistItem(item.id)}
                   >
                     <Text style={styles.saveQuestButtonText}>
-                      {!isChecklistItemDirty(item) ? "SAVED ✓" : pendingRecoveryConfirmId === item.id ? "CONFIRM & SAVE" : "SAVE QUEST"}
+                      {!isChecklistItemDirty(item) ? "SAVED" : pendingRecoveryConfirmId === item.id ? "CONFIRM & SAVE" : "SAVE QUEST"}
                     </Text>
                   </TouchableOpacity>
                   {!item.checked && selectedDay === todayWeekday() ? (
@@ -1184,8 +1252,6 @@ const styles = StyleSheet.create({
   screenScroller: { flex: 1 },
   hudContent: { flexGrow: 1, width: "100%", paddingTop: 18, paddingHorizontal: 14 },
   heroPanel: { backgroundColor: "rgba(5, 12, 24, 0.92)", borderWidth: 3, borderColor: "#D99B2B", borderRadius: 8, padding: 13, marginBottom: 12, flexDirection: "row", alignItems: "center" },
-  bannerIcon: { width: 46, height: 66, backgroundColor: "rgba(70, 28, 112, 0.86)", borderWidth: 2, borderColor: "#FDE047", alignItems: "center", justifyContent: "center", marginRight: 12 },
-  bannerIconText: { fontSize: 26 },
   heroCopy: { flex: 1 },
   heroKicker: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", letterSpacing: 1.2, marginBottom: 5 },
   title: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 27, fontWeight: "900", letterSpacing: 1, lineHeight: 32, textAlign: "center" },
@@ -1212,19 +1278,9 @@ const styles = StyleSheet.create({
   timeStepText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 18, fontWeight: "900" },
   timeValue: { flex: 1, color: "#F8FAFC", textAlign: "center", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", borderBottomWidth: 1, borderBottomColor: "#475569", paddingVertical: 4 },
   timeError: { color: "#FCA5A5", fontFamily: pixelFont, fontSize: 10, textAlign: "center", marginTop: 4 },
-  dayStepperRow: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
-  arrowButton: { width: 42, height: 42, borderWidth: 2, borderColor: "#FBBF24", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(69, 43, 8, 0.55)" },
-  arrowText: { color: "#FDE68A", fontSize: 18, fontWeight: "900" },
-  dayStepperCenter: { flex: 1, alignItems: "center" },
-  dayStepperTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 18, fontWeight: "900" },
-  dayStepperRole: { color: "#86EFAC", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", marginTop: 3 },
-  dayStrip: { paddingBottom: 8, gap: 8 },
-  dayButton: { borderWidth: 2, borderColor: "#334155", paddingVertical: 8, paddingHorizontal: 12, backgroundColor: "rgba(15,23,42,0.9)" },
-  dayButtonActive: { borderColor: "#FBBF24", backgroundColor: "rgba(69,43,8,0.65)" },
-  dayButtonText: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
-  dayButtonTextActive: { color: "#FDE68A" },
+  helperTextSubtle: { color: "#94A3B8", fontSize: 11, lineHeight: 16, marginBottom: 8, fontWeight: "700" },
   rowBetween: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  checkCard: { backgroundColor: "rgba(15, 23, 42, 0.92)", borderWidth: 2, borderRadius: 8, padding: 10, marginBottom: 10 },
+  checkCard: { backgroundColor: "rgba(58, 42, 21, 0.94)", borderWidth: 2, borderRadius: 8, padding: 10, marginBottom: 10 },
   progressBorder: { borderColor: "#FBBF24" },
   recoveryBorder: { borderColor: "#A78BFA" },
   checkToggle: { color: "#F8FAFC", fontSize: 24, marginRight: 8 },

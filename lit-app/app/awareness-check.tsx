@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Image,
   Platform,
@@ -60,6 +60,13 @@ export default function AwarenessCheckScreen() {
   const [truth, setTruth] = useState("");
   const [checks, setChecks] = useState<AwarenessCheck[]>([]);
   const [showInfo, setShowInfo] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
+  const justSavedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (justSavedTimeout.current) clearTimeout(justSavedTimeout.current);
+    };
+  }, []);
   const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
@@ -101,6 +108,10 @@ export default function AwarenessCheckScreen() {
     setTruth("");
 
     await successHaptic();
+
+    setJustSaved(true);
+    if (justSavedTimeout.current) clearTimeout(justSavedTimeout.current);
+    justSavedTimeout.current = setTimeout(() => setJustSaved(false), 2500);
   }
 
   async function clearChecks() {
@@ -166,8 +177,8 @@ export default function AwarenessCheckScreen() {
                 onChangeText={setTruth}
               />
 
-              <TouchableOpacity style={[styles.saveButton, !truth.trim() && styles.saveButtonDisabled]} disabled={!truth.trim()} onPress={saveAwarenessCheck}>
-                <Text style={styles.saveButtonText}>Save Meditation</Text>
+              <TouchableOpacity style={[styles.saveButton, (!truth.trim() || justSaved) && styles.saveButtonDisabled]} disabled={!truth.trim() || justSaved} onPress={saveAwarenessCheck}>
+                <Text style={styles.saveButtonText}>{justSaved ? "Saved" : "Save Meditation"}</Text>
               </TouchableOpacity>
             </View>
 
