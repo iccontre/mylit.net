@@ -20,6 +20,7 @@ import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { persistProgressKeys } from "../lib/progressStore";
 import { CHECKIN_HISTORY_KEY, LATEST_CHECKIN_KEY } from "../lib/storageKeys";
 import { syncDailySnapshot } from "../lib/progressSync";
+import { computeSleepSession, sleepInterruptionPenalty } from "../lib/scheduling";
 
 type CheckInMode = "Recovery" | "Progress";
 type CheckInType = "morning" | "afternoon";
@@ -30,7 +31,14 @@ type CheckIn = {
   checkInType?: CheckInType;
   hours?: string;
   sleepQuality?: string;
+  sleptTime?: string;
   wakeTime?: string;
+  finalWakeTime?: string;
+  interrupted?: boolean;
+  interruptionWakeTime?: string;
+  interruptionSleepTime?: string;
+  interruptionDurationMinutes?: number;
+  effectiveSleepMinutes?: number;
   dreamedTonight?: boolean;
   mood: string;
   stress: string;
@@ -118,7 +126,7 @@ export default function SleepCheckInScreen() {
   const checkInType: CheckInType = type === "afternoon" ? "afternoon" : "morning";
 
   const [latestCheckIn, setLatestCheckIn] = useState<CheckIn | null>(null);
-  const [hours, setHours] = useState("");
+  const [sleptTimeInput, setSleptTimeInput] = useState("");
   const [sleepQuality, setSleepQuality] = useState("");
   const [mood, setMood] = useState("");
   const [stress, setStress] = useState("");
@@ -126,6 +134,9 @@ export default function SleepCheckInScreen() {
   const [foodSinceMorning, setFoodSinceMorning] = useState("");
   const [currentEnergyFeeling, setCurrentEnergyFeeling] = useState("");
   const [wakeTime, setWakeTime] = useState("");
+  const [sleepInterrupted, setSleepInterrupted] = useState<"yes" | "no" | "">("");
+  const [interruptionWakeInput, setInterruptionWakeInput] = useState("");
+  const [interruptionSleepAgainInput, setInterruptionSleepAgainInput] = useState("");
   const [dreamedTonight, setDreamedTonight] = useState<"yes" | "no" | "">("");
   const [tookNap, setTookNap] = useState<"yes" | "no" | "">("");
   const [napDuration, setNapDuration] = useState<number | null>(null);
@@ -156,7 +167,34 @@ export default function SleepCheckInScreen() {
   }
 
   const isAfternoon = checkInType === "afternoon";
-  const hasMorningInputs = hours.trim() !== "" && sleepQuality.trim() !== "" && mood.trim() !== "" && stress.trim() !== "";
+
+  const sleepTimesEntered = sleptTimeInput.trim() !== "" && wakeTime.trim() !== "";
+  const interruptionAnswered = sleepInterrupted !== "";
+  const interruptionTimesEntered = interruptionWakeInput.trim() !== "" && interruptionSleepAgainInput.trim() !== "";
+  const sleepSession = computeSleepSession({
+    sleptTime: sleptTimeInput,
+    wokeTime: wakeTime,
+    interrupted: sleepInterrupted === "yes",
+    interruptionWakeTime: interruptionWakeInput,
+    interruptionSleepAgainTime: interruptionSleepAgainInput,
+  });
+  const totalInBedMinutes = sleepTimesEntered ? sleepSession.totalInBedMinutes : null;
+  const sleepTimesInvalid = sleepTimesEntered && totalInBedMinutes === null;
+  const interruptionDurationMinutes = sleepSession.interruptionDurationMinutes;
+  // Only trust effectiveSleepMinutes once the interruption question (and its follow-up
+  // times, if interrupted) is fully answered — otherwise treat it as not yet computable.
+  const effectiveSleepMinutes =
+    sleepTimesEntered && (sleepInterrupted !== "yes" || interruptionTimesEntered) ? sleepSession.effectiveSleepMinutes : null;
+  const interruptionBlocksSave = sleepInterrupted === "yes" && interruptionTimesEntered && effectiveSleepMinutes === null;
+
+  const hasMorningInputs =
+    sleepTimesEntered &&
+    totalInBedMinutes !== null &&
+    sleepQuality.trim() !== "" &&
+    mood.trim() !== "" &&
+    stress.trim() !== "" &&
+    interruptionAnswered &&
+    (sleepInterrupted !== "yes" || (interruptionTimesEntered && effectiveSleepMinutes !== null));
   const savedModeForNap: ModeState = latestCheckIn?.mode === "Recovery" || latestCheckIn?.mode === "Progress" ? latestCheckIn.mode : "Neutral";
   // Nap question only makes sense in Recovery mode — gated on the mode the user has been
   // in today (from the latest saved check-in), not the not-yet-submitted afternoon inputs.
@@ -190,8 +228,27 @@ export default function SleepCheckInScreen() {
       return clampEnergy(base + napEnergyToApply);
     }
 
-    return calculateMorningEnergy(Number(hours), Number(sleepQuality), Number(mood), Number(stress));
-  }, [currentEnergyFeeling, eatenSinceMorning, hasAllInputs, hours, isAfternoon, latestCheckIn?.energy, mood, napEnergyToApply, sleepQuality, stress]);
+    const effectiveHours = (effectiveSleepMinutes ?? 0) / 60;
+    const base = calculateMorningEnergy(effectiveHours, Number(sleepQuality), Number(mood), Number(stress));
+    // Interrupted sleep is lower quality even at the same effective duration as an unbroken
+    // night — apply the fragmentation penalty on top of the duration-based baseline.
+    const penalty =
+      sleepInterrupted === "yes" && interruptionDurationMinutes !== null ? sleepInterruptionPenalty(interruptionDurationMinutes) : 0;
+    return clampEnergy(base - penalty);
+  }, [
+    currentEnergyFeeling,
+    eatenSinceMorning,
+    effectiveSleepMinutes,
+    hasAllInputs,
+    interruptionDurationMinutes,
+    isAfternoon,
+    latestCheckIn?.energy,
+    mood,
+    napEnergyToApply,
+    sleepInterrupted,
+    sleepQuality,
+    stress,
+  ]);
 
   const savedMode: ModeState = savedModeForNap;
   const mode: CheckInMode = hasAllInputs ? getMode(energy) : savedMode === "Progress" ? "Progress" : "Recovery";
@@ -230,9 +287,18 @@ export default function SleepCheckInScreen() {
       ...latestCheckIn,
       id: String(Date.now()),
       checkInType,
-      hours: isAfternoon ? latestCheckIn?.hours : hours,
+      // `hours` is kept as a plain decimal for older consumers (weekly averages, daily
+      // snapshot sync) that read it directly — always derived from effective sleep now.
+      hours: isAfternoon ? latestCheckIn?.hours : effectiveSleepMinutes !== null ? (Math.round((effectiveSleepMinutes / 60) * 10) / 10).toString() : undefined,
       sleepQuality: isAfternoon ? latestCheckIn?.sleepQuality : sleepQuality,
+      sleptTime: isAfternoon ? latestCheckIn?.sleptTime : sleptTimeInput.trim() || undefined,
       wakeTime: isAfternoon ? latestCheckIn?.wakeTime : wakeTime.trim() || undefined,
+      finalWakeTime: isAfternoon ? latestCheckIn?.finalWakeTime : wakeTime.trim() || undefined,
+      interrupted: isAfternoon ? latestCheckIn?.interrupted : sleepInterrupted === "yes",
+      interruptionWakeTime: isAfternoon ? latestCheckIn?.interruptionWakeTime : sleepInterrupted === "yes" ? interruptionWakeInput.trim() : undefined,
+      interruptionSleepTime: isAfternoon ? latestCheckIn?.interruptionSleepTime : sleepInterrupted === "yes" ? interruptionSleepAgainInput.trim() : undefined,
+      interruptionDurationMinutes: isAfternoon ? latestCheckIn?.interruptionDurationMinutes : interruptionDurationMinutes ?? undefined,
+      effectiveSleepMinutes: isAfternoon ? latestCheckIn?.effectiveSleepMinutes : effectiveSleepMinutes ?? undefined,
       dreamedTonight: isAfternoon ? latestCheckIn?.dreamedTonight : dreamedTonight === "yes",
       mood,
       stress,
@@ -275,7 +341,7 @@ export default function SleepCheckInScreen() {
       mode,
       mood_score: Number(mood) || null,
       stress_score: Number(stress) || null,
-      sleep_hours: isAfternoon ? Number(latestCheckIn?.hours) || null : Number(hours) || null,
+      sleep_hours: isAfternoon ? Number(latestCheckIn?.hours) || null : effectiveSleepMinutes !== null ? Math.round((effectiveSleepMinutes / 60) * 10) / 10 : null,
     });
 
     router.push({
@@ -382,16 +448,59 @@ export default function SleepCheckInScreen() {
                 </>
               ) : (
                 <>
-                  <Text style={styles.label}>Hours slept</Text>
-                  <TextInput style={styles.input} keyboardType="numeric" placeholder="Example: 7" placeholderTextColor="#64748B" value={hours} onChangeText={setHours} />
+                  <Text style={styles.helperText}>Enter when you fell asleep and woke up. If your sleep was interrupted, MYLIT adjusts your energy estimate.</Text>
+
+                  <Text style={styles.label}>Approximate sleep time</Text>
+                  <TextInput style={styles.input} placeholder="Example: 11:30 PM" placeholderTextColor="#64748B" autoCapitalize="characters" value={sleptTimeInput} onChangeText={setSleptTimeInput} />
+
+                  <Text style={styles.label}>Approximate wake-up time</Text>
+                  <TextInput style={styles.input} placeholder="Example: 7:00 AM" placeholderTextColor="#64748B" autoCapitalize="characters" value={wakeTime} onChangeText={setWakeTime} />
+
+                  {sleepTimesEntered ? (
+                    <>
+                      <Text style={styles.label}>Was your sleep interrupted?</Text>
+                      <View style={styles.choiceRow}>
+                        <TouchableOpacity style={[styles.choiceButton, sleepInterrupted === "yes" && styles.choiceButtonActive, { borderColor: sleepInterrupted === "yes" ? theme.accent : "#334155" }]} onPress={() => setSleepInterrupted("yes")}>
+                          <Text style={styles.choiceText}>Yes</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.choiceButton, sleepInterrupted === "no" && styles.choiceButtonActive, { borderColor: sleepInterrupted === "no" ? theme.accent : "#334155" }]}
+                          onPress={() => {
+                            setSleepInterrupted("no");
+                            setInterruptionWakeInput("");
+                            setInterruptionSleepAgainInput("");
+                          }}
+                        >
+                          <Text style={styles.choiceText}>No</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  ) : null}
+
+                  {sleepInterrupted === "yes" ? (
+                    <>
+                      <Text style={styles.label}>What time did you wake up?</Text>
+                      <TextInput style={styles.input} placeholder="Example: 3:00 AM" placeholderTextColor="#64748B" autoCapitalize="characters" value={interruptionWakeInput} onChangeText={setInterruptionWakeInput} />
+
+                      <Text style={styles.label}>What time did you fall asleep again?</Text>
+                      <TextInput style={styles.input} placeholder="Example: 3:20 AM" placeholderTextColor="#64748B" autoCapitalize="characters" value={interruptionSleepAgainInput} onChangeText={setInterruptionSleepAgainInput} />
+                    </>
+                  ) : null}
+
+                  {sleepTimesInvalid ? (
+                    <Text style={styles.errorText}>Enter valid times, like 11:30 PM and 7:15 AM.</Text>
+                  ) : interruptionBlocksSave ? (
+                    <Text style={styles.errorText}>Those interruption times don&apos;t fit within your sleep window — double-check them.</Text>
+                  ) : effectiveSleepMinutes !== null ? (
+                    <Text style={styles.helperText}>
+                      {Math.floor(effectiveSleepMinutes / 60)}h {effectiveSleepMinutes % 60}m of effective sleep.
+                    </Text>
+                  ) : null}
 
                   <Text style={styles.label}>Sleep Quality, 1–10</Text>
                   <TextInput style={styles.input} keyboardType="numeric" placeholder="Example: 7" placeholderTextColor="#64748B" value={sleepQuality} onChangeText={setSleepQuality} />
 
                   <Text style={styles.helperText}>Rate how restored your sleep felt, even if the number of hours looked okay.</Text>
-
-                  <Text style={styles.label}>Approximate wake-up time</Text>
-                  <TextInput style={styles.input} placeholder="Example: 7:00 AM" placeholderTextColor="#64748B" value={wakeTime} onChangeText={setWakeTime} />
 
                   <Text style={styles.label}>Did you dream tonight?</Text>
                   <View style={styles.choiceRow}>
@@ -657,6 +766,14 @@ const styles = StyleSheet.create({
     color: "#94A3B8",
     marginTop: 8,
     fontWeight: "700",
+    fontFamily: pixelFont,
+  },
+  errorText: {
+    fontSize: 12,
+    lineHeight: 18,
+    color: "#FCA5A5",
+    marginTop: 8,
+    fontWeight: "800",
     fontFamily: pixelFont,
   },
   dreamJournalButton: {

@@ -260,6 +260,91 @@ export function parseTimeToMinutes(time?: string | null): number | null {
   return null;
 }
 
+/**
+ * Places a raw parsed clock time (0–1439) onto the same "day-relative" timeline as
+ * `rangeStart`/`rangeEnd` (which may exceed 1439 when a window crosses midnight) by trying
+ * +0/+24h/+48h offsets. Used to validate that a sleep interruption's wake/fall-asleep-again
+ * time genuinely falls inside the night's sleep window before trusting it.
+ */
+export function normalizeIntoRange(rawMinutes: number, rangeStart: number, rangeEnd: number): number | null {
+  for (const offset of [0, 24 * 60, 48 * 60]) {
+    const candidate = rawMinutes + offset;
+    if (candidate >= rangeStart && candidate <= rangeEnd) return candidate;
+  }
+  return null;
+}
+
+export type SleepSessionInput = {
+  sleptTime: string;
+  wokeTime: string;
+  interrupted: boolean;
+  interruptionWakeTime?: string;
+  interruptionSleepAgainTime?: string;
+};
+
+export type SleepSessionResult = {
+  valid: boolean;
+  /** Sleep time → final wake time, cross-midnight aware. */
+  totalInBedMinutes: number | null;
+  interruptionDurationMinutes: number | null;
+  /** Total in bed minus any interruption — the number actually used for bonuses/energy. */
+  effectiveSleepMinutes: number | null;
+};
+
+/**
+ * Shared sleep-session math used by both Morning Check-In (sleep-checkin.tsx) and Morning
+ * Reflection (morning-intention-reflection.tsx) so the two screens can never drift apart on
+ * how interrupted sleep is calculated. Awake time during an interruption is not sleep — it's
+ * subtracted out of the total time in bed to get the effective sleep duration.
+ */
+export function computeSleepSession(input: SleepSessionInput): SleepSessionResult {
+  const empty: SleepSessionResult = { valid: false, totalInBedMinutes: null, interruptionDurationMinutes: null, effectiveSleepMinutes: null };
+
+  const sleptMinutes = parseTimeToMinutes(input.sleptTime);
+  const wokeRaw = parseTimeToMinutes(input.wokeTime);
+  if (sleptMinutes === null || wokeRaw === null) return empty;
+
+  const finalWakeMinutes = wokeRaw <= sleptMinutes ? wokeRaw + 24 * 60 : wokeRaw;
+  const totalInBedMinutes = finalWakeMinutes - sleptMinutes;
+  if (totalInBedMinutes <= 0 || totalInBedMinutes > 16 * 60) return empty;
+
+  if (!input.interrupted) {
+    return { valid: true, totalInBedMinutes, interruptionDurationMinutes: null, effectiveSleepMinutes: totalInBedMinutes };
+  }
+
+  if (!input.interruptionWakeTime || !input.interruptionSleepAgainTime) {
+    return { valid: false, totalInBedMinutes, interruptionDurationMinutes: null, effectiveSleepMinutes: null };
+  }
+
+  const interruptionWakeRaw = parseTimeToMinutes(input.interruptionWakeTime);
+  const interruptionSleepAgainRaw = parseTimeToMinutes(input.interruptionSleepAgainTime);
+  if (interruptionWakeRaw === null || interruptionSleepAgainRaw === null) {
+    return { valid: false, totalInBedMinutes, interruptionDurationMinutes: null, effectiveSleepMinutes: null };
+  }
+
+  const interruptionWakeMinutes = normalizeIntoRange(interruptionWakeRaw, sleptMinutes, finalWakeMinutes);
+  const interruptionSleepAgainMinutes =
+    interruptionWakeMinutes !== null ? normalizeIntoRange(interruptionSleepAgainRaw, interruptionWakeMinutes, finalWakeMinutes) : null;
+  if (interruptionWakeMinutes === null || interruptionSleepAgainMinutes === null) {
+    return { valid: false, totalInBedMinutes, interruptionDurationMinutes: null, effectiveSleepMinutes: null };
+  }
+
+  const interruptionDurationMinutes = interruptionSleepAgainMinutes - interruptionWakeMinutes;
+  const effectiveSleepMinutes = totalInBedMinutes - interruptionDurationMinutes;
+  if (effectiveSleepMinutes <= 0) {
+    return { valid: false, totalInBedMinutes, interruptionDurationMinutes, effectiveSleepMinutes: null };
+  }
+
+  return { valid: true, totalInBedMinutes, interruptionDurationMinutes, effectiveSleepMinutes };
+}
+
+/** Fragmentation penalty applied to sleep-quality/energy scores when sleep was interrupted. */
+export function sleepInterruptionPenalty(interruptionDurationMinutes: number): number {
+  if (interruptionDurationMinutes >= 45) return 12;
+  if (interruptionDurationMinutes >= 20) return 8;
+  return 5;
+}
+
 /** Parses a single time or sleep-guide range like "7:00 PM – 8:00 PM" (uses the first time for placement). */
 export function parseSleepGuideTime(value?: string | null): number | null {
   if (!value) return null;
