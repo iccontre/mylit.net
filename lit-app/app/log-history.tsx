@@ -342,7 +342,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 4, height: 4 },
   },
   heroKicker: { color: "#C4A7FF", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 2, marginBottom: 8 },
-  title: { color: "#F9FAFB", fontFamily: pixelFont, fontSize: 30, fontWeight: "900", letterSpacing: 1, lineHeight: 36 },
+  title: { color: "#F9FAFB", fontFamily: pixelFont, fontSize: 30, fontWeight: "900", letterSpacing: 1, lineHeight: 36, textAlign: "center" },
   subtitle: { color: "#F8F1D7", fontFamily: pixelFont, fontSize: 12, fontWeight: "800", lineHeight: 18, marginTop: 8 },
   emptyCard: {
     backgroundColor: "rgba(8, 13, 24, 0.95)",

@@ -776,7 +776,7 @@ const styles = StyleSheet.create({
   bannerIconText: { fontSize: 24 },
   heroCopy: { flex: 1 },
   heroLabel: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 10, fontWeight: "900", letterSpacing: 1.2 },
-  heroTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 28, fontWeight: "900", letterSpacing: 2 },
+  heroTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 28, fontWeight: "900", letterSpacing: 2, textAlign: "center" },
   heroSubtitle: { color: "#F8E7A1", fontSize: 11, fontWeight: "800", lineHeight: 16 },
   eviePanel: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(8,13,24,0.95)", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, padding: 8, marginBottom: 8 },
   evieAvatar: { width: 44, height: 50, marginRight: 8 },

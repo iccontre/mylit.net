@@ -317,6 +317,7 @@ const styles = StyleSheet.create({
     color: "#F9FAFB",
     marginBottom: 6,
     lineHeight: 30,
+    textAlign: "center",
   },
   subtitle: {
     fontFamily: pixelFont,

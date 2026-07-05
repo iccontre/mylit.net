@@ -314,6 +314,7 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: "900",
     lineHeight: 38,
+    textAlign: "center",
   },
   subtitle: {
     color: "#F8F1D7",

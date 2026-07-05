@@ -541,7 +541,7 @@ const styles = StyleSheet.create({
   hudContent: { flexGrow: 1, width: "100%", paddingTop: 18, paddingHorizontal: 14 },
   headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
   headerBack: { fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
-  headerTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900", letterSpacing: 1 },
+  headerTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900", letterSpacing: 1, textAlign: "center" },
   infoBtn: { width: 26, height: 26, borderWidth: 2, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(8,13,24,0.7)" },
   infoBtnText: { fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
   guideCard: {

@@ -771,7 +771,7 @@ const styles = StyleSheet.create({
   bannerIconText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 26, fontWeight: "900" },
   heroCopy: { flex: 1 },
   heroKicker: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", letterSpacing: 1.2, marginBottom: 5 },
-  title: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 27, fontWeight: "900", letterSpacing: 1, lineHeight: 32 },
+  title: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 27, fontWeight: "900", letterSpacing: 1, lineHeight: 32, textAlign: "center" },
   summary: { color: "#F8E7A1", fontFamily: pixelFont, fontSize: 12, fontWeight: "800", lineHeight: 17, marginTop: 5 },
   appQuestPanel: { backgroundColor: "rgba(8, 13, 24, 0.95)", borderRadius: 8, padding: 12, marginBottom: 14, borderWidth: 3, borderColor: "#FBBF24" },
   helperText: { color: "#CBD5E1", fontSize: 12, lineHeight: 17, fontWeight: "700", marginBottom: 8 },

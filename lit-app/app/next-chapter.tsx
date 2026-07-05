@@ -471,6 +471,7 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "900",
     letterSpacing: 1.5,
+    textAlign: "center",
   },
   subtitle: {
     color: "#2A1707",

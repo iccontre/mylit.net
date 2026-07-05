@@ -396,6 +396,7 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "900",
     letterSpacing: 2,
+    textAlign: "center",
   },
   heroSubtitle: {
     color: "#F8FAFC",

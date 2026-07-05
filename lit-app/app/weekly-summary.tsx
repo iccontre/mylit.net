@@ -259,7 +259,7 @@ const styles = StyleSheet.create({
   bannerIconText: { fontSize: 26 },
   heroCopy: { flex: 1 },
   heroLabel: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", letterSpacing: 1.2 },
-  heroTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 22, fontWeight: "900", letterSpacing: 2, marginTop: 2 },
+  heroTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 22, fontWeight: "900", letterSpacing: 2, marginTop: 2, textAlign: "center" },
   heroSubtitle: { color: "#F8E7A1", fontSize: 12, fontWeight: "800", lineHeight: 17, marginTop: 2 },
   evieCard: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(8,13,24,0.95)", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, padding: 10, marginBottom: 10 },
   evieImage: { width: 50, height: 58, marginRight: 10 },

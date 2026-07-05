@@ -436,6 +436,7 @@ const styles = StyleSheet.create({
     fontFamily: pixelFont,
     textTransform: "uppercase",
     lineHeight: 30,
+    textAlign: "center",
   },
   heroSubtitle: {
     fontSize: 13,

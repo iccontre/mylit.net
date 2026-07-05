@@ -370,6 +370,7 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     color: "#F9FAFB",
     lineHeight: 32,
+    textAlign: "center",
   },
   subtitle: {
     fontFamily: pixelFont,

@@ -397,6 +397,7 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     letterSpacing: 1.2,
     lineHeight: 40,
+    textAlign: "center",
     textShadowColor: "#111827",
     textShadowOffset: { width: 2, height: 2 },
     textShadowRadius: 0,

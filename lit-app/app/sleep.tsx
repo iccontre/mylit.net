@@ -288,6 +288,7 @@ const styles = StyleSheet.create({
     letterSpacing: 5,
     lineHeight: 46,
     fontFamily: pixelFont,
+    textAlign: "center",
     textShadowColor: "#000",
     textShadowOffset: { width: 3, height: 3 },
     textShadowRadius: 0,
