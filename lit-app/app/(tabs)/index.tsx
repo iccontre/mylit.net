@@ -50,7 +50,7 @@ import {
   type MissedEntry,
   type QuestKind,
 } from "../../lib/questProgress";
-import { formatDurationLabel, formatEnergyDelta, getEnergyDelta } from "../../lib/scheduling";
+import { formatDurationLabel, formatEnergyDelta, getEnergyDelta, getMandatoryQuestRestoreEnergy } from "../../lib/scheduling";
 import { LATEST_PRE_SLEEP_INTENTION_KEY } from "../../lib/storageKeys";
 
 const mylitLogo = uiAssets.logo.mylit;
@@ -202,8 +202,8 @@ const PASSIVE_DECAY_POINTS = 5;
 const PASSIVE_DECAY_INTERVAL_HOURS = 2;
 
 // Luna's mandatory recovery quest, triggered when energy runs low (see getMandatoryQuest).
+// Restore amounts are tiered by duration — see getMandatoryQuestRestoreEnergy in scheduling.ts.
 const MANDATORY_QUEST_TITLE = "Eat or rest to restore energy";
-const MANDATORY_QUEST_RESTORE_ENERGY = 5;
 // Below 60 energy: a short 15-min reset that only blocks starting new PROGRESS quests.
 const MANDATORY_MILD_THRESHOLD = 60;
 const MANDATORY_MILD_DURATION_MINUTES = 15;
@@ -799,8 +799,12 @@ export default function HomeScreen() {
             (PASSIVE_DECAY_INTERVAL_HOURS * 60 * 60 * 1000)
         ) * PASSIVE_DECAY_POINTS
       : 0;
-  const mandatoryRecoveryBoost =
-    completedMandatoryEntries.filter(completedAfterCheckIn).length * MANDATORY_QUEST_RESTORE_ENERGY;
+  // Each mandatory completion restores based on ITS OWN duration (mild 15-min → +5, severe
+  // 30-min → +10) — previously this multiplied a flat +5 by count regardless of which tier
+  // was actually completed, so the severe (harder, lower-energy) tier under-restored.
+  const mandatoryRecoveryBoost = completedMandatoryEntries
+    .filter(completedAfterCheckIn)
+    .reduce((sum, entry) => sum + getMandatoryQuestRestoreEnergy(entry.durationMinutes ?? MANDATORY_MILD_DURATION_MINUTES), 0);
   // Forced Recovery's +10 energy restore is applied through questEnergyDelta above like any
   // other completion (see getForcedRecoveryTrigger/buildForcedRecoveryItem below) — no separate
   // schedule-based restore needed here.
@@ -927,12 +931,13 @@ export default function HomeScreen() {
     if (alreadyDone) return null;
 
     const isSevere = energyYield < MANDATORY_SEVERE_THRESHOLD;
+    const durationMinutes = isSevere ? MANDATORY_SEVERE_DURATION_MINUTES : MANDATORY_MILD_DURATION_MINUTES;
     return {
       title: MANDATORY_QUEST_TITLE,
       type: "Mandatory",
       steps: 1,
-      durationMinutes: isSevere ? MANDATORY_SEVERE_DURATION_MINUTES : MANDATORY_MILD_DURATION_MINUTES,
-      restoreEnergy: MANDATORY_QUEST_RESTORE_ENERGY,
+      durationMinutes,
+      restoreEnergy: getMandatoryQuestRestoreEnergy(durationMinutes),
       mandatory: true,
       description: isSevere
         ? "Your flame is very low. Take 30 minutes to eat or rest before continuing."

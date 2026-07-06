@@ -166,8 +166,17 @@ export function getNapEnergyRestore(duration?: string | number | null): number {
   return Math.max(1, Math.round(minutes / 5));
 }
 
-/** Energy the mandatory eat/rest quest restores when completed. */
-export const MANDATORY_QUEST_RESTORE_ENERGY = 5;
+/**
+ * Energy the mandatory eat/rest quest restores when completed — tiered by duration so the
+ * harder, lower-energy severe tier actually restores more: mild (15 min, triggered under 60
+ * energy) → +5, severe (30 min, triggered under 30 energy) → +10. Both restore more per
+ * minute than a normal Recovery quest (+2/15min, +4/30min) — that bonus is the incentive to
+ * take the mandatory quest over a regular one.
+ */
+export function getMandatoryQuestRestoreEnergy(durationMinutes?: string | number | null): number {
+  const minutes = parseDurationMinutes(durationMinutes, 15);
+  return minutes >= 30 ? 10 : 5;
+}
 
 /** A nap quest's title always begins with "Nap" so completions can be identified from logs. */
 export function isNapTitle(title?: string | null): boolean {
@@ -193,7 +202,7 @@ export function getEnergyDelta(opts: {
   title?: string | null;
   mandatory?: boolean;
 }): number {
-  if (opts.mandatory) return MANDATORY_QUEST_RESTORE_ENERGY;
+  if (opts.mandatory) return getMandatoryQuestRestoreEnergy(opts.durationMinutes);
   if (opts.title === FORCED_RECOVERY_TITLE) return FORCED_RECOVERY_RESTORE_ENERGY;
   if (isNapTitle(opts.title)) return getNapEnergyRestore(opts.durationMinutes);
   const minutes = parseDurationMinutes(opts.durationMinutes, 30);
