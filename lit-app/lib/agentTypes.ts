@@ -326,6 +326,132 @@ export type PathPipeline = {
 };
 
 // ---------------------------------------------------------------------------
+// Evie AI Path Pipeline — MYLIT's first LLM-backed planner (see
+// api/agents/evie-path-pipeline.ts and lib/evieAiPathPipeline.ts). Distinct from the
+// deterministic PathPipeline above: this is generated server-side from the user's own
+// Set My Path prompt plus Life Profile / Guide Memory / Learning Memory / Stats context.
+// It only ever produces SUGGESTIONS — saving one still routes through the exact same
+// validated save helpers as the deterministic pipeline (saveWeeklyHabitSuggestion /
+// saveDailyQuestSuggestion in lib/pathPipeline.ts), so nothing here can create an active
+// quest/habit without the user tapping Save. No AI call happens in this file — it is types
+// only.
+// ---------------------------------------------------------------------------
+
+export type EvieGoalDomain =
+  | "career"
+  | "school"
+  | "body"
+  | "friendship"
+  | "creative"
+  | "purpose"
+  | "sleep"
+  | "other";
+
+export type EvieAiPathPipelineStatus = "ready" | "needs_clarification" | "safe_fallback";
+
+export type EvieAiResearchBrief = {
+  summary: string;
+  keySteps: string[];
+  skillsNeeded: string[];
+  milestones: string[];
+  risks: string[];
+  suggestedResources: string[];
+  /** Must say "model-guided starter research" (or similarly hedged) whenever real web research wasn't performed. */
+  sourceNote: string;
+};
+
+export type EvieAiThreeMonthDirection = {
+  title: string;
+  description: string;
+  successSigns: string[];
+};
+
+export type EvieAiOneMonthMilestone = {
+  title: string;
+  description: string;
+  measurableOutcome: string;
+};
+
+export type EvieAiTwoWeekSprint = {
+  title: string;
+  focus: string;
+  steps: string[];
+};
+
+export type EvieAiWeeklyHabitSuggestion = {
+  title: string;
+  reason: string;
+  repeatDays: string[];
+  mode: "progress" | "recovery";
+  durationMinutes: number;
+};
+
+/** 120 (2 hours) is only ever meant for Today's Quest — see lib/evieAiPathPipeline.ts's save-time clamp. */
+export type EvieAiDailyQuestDuration = 15 | 30 | 45 | 60 | 120;
+
+export type EvieAiDailyQuestSource = "user_prompt" | "life_profile" | "stats_pattern" | "research_brief";
+
+export type EvieAiDailyQuestSuggestion = {
+  title: string;
+  reason: string;
+  mode: "progress" | "recovery";
+  durationMinutes: EvieAiDailyQuestDuration;
+  suggestedTimeWindow: string;
+  energyEffect: number;
+  difficulty: "easy" | "medium" | "hard";
+  source: EvieAiDailyQuestSource;
+  acceptanceLabel: string;
+};
+
+export type EvieAiPathPipelineResponse = {
+  status: EvieAiPathPipelineStatus;
+  guide: "evie";
+  goalSummary: string;
+  goalDomain: EvieGoalDomain;
+  /** 0–1 — how specific/actionable the user's own prompt was. */
+  specificityScore: number;
+  clarifyingQuestions: string[];
+  researchBrief: EvieAiResearchBrief;
+  threeMonthDirection: EvieAiThreeMonthDirection;
+  oneMonthMilestone: EvieAiOneMonthMilestone;
+  twoWeekSprint: EvieAiTwoWeekSprint;
+  weeklyHabitSuggestions: EvieAiWeeklyHabitSuggestion[];
+  dailyQuestSuggestions: EvieAiDailyQuestSuggestion[];
+  lunaRecoveryNotes: string[];
+  safetyNotes: string[];
+  nextBestAction: string;
+};
+
+export type EvieAiPathPipelineConstraints = {
+  maxProgressMinutesToday?: number;
+  maxRecoveryMinutesToday?: number;
+  sleepWindow?: string;
+  schoolWorkConstraints?: string[];
+  userAvoids?: string[];
+};
+
+export type EvieAiPathPipelineRequest = {
+  userPrompt: string;
+  lifeProfile: UserLifeProfile;
+  guideMemory: GuideMemory;
+  learningMemory: LearningMemory;
+  statsInsights: StatsInsight[];
+  recentAgentEvents: AgentEvent[];
+  currentEnergy: number;
+  currentMode: AgentEventMode;
+  availableDays?: string[];
+  constraints?: EvieAiPathPipelineConstraints;
+};
+
+/** One saved AI pipeline run — never overwritten, newest-first, capped history (see AI_EVIE_PATH_PIPELINES_KEY). */
+export type EvieAiPathPipelineRecord = {
+  id: string;
+  createdAt: string;
+  userPrompt: string;
+  response: EvieAiPathPipelineResponse;
+};
+
+// ---------------------------------------------------------------------------
 // Weekly Agent Review: MYLIT's first weekly improvement loop. Reviews the
 // user's week and turns it into supportive, non-shame-based adjustments for
 // Evie, Luna, and Calendar. See lib/weeklyReview.ts. No AI calls.
