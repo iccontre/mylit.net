@@ -20,6 +20,7 @@ import { uiAssets } from "../constants/uiAssets";
 import { USER_STATS_KEY } from "../lib/questProgress";
 import { persistProgressKeys } from "../lib/progressStore";
 import { computeSleepSession, sleepInterruptionPenalty } from "../lib/scheduling";
+import { recordAgentEvent } from "../lib/mylitAgents";
 import {
   LATEST_PRE_SLEEP_INTENTION_KEY,
   MORNING_INTENTION_REFLECTIONS_KEY,
@@ -255,6 +256,14 @@ export default function MorningIntentionReflectionScreen() {
     }
 
     await successHaptic();
+    void recordAgentEvent({
+      type: "morning_reflection_saved",
+      sourcePage: "morning-intention-reflection",
+      relatedItemId: reflection.id,
+      durationMinutes: effectiveSleepMinutes ?? undefined,
+      stepDelta: alreadyAwardedToday ? undefined : 1 + sleepBonusSteps,
+      metadata: { interrupted: sleepInterrupted === "yes" },
+    });
     router.push("/");
   }
 

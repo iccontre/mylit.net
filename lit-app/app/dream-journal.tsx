@@ -22,6 +22,7 @@ import { persistProgressKeys } from "../lib/progressStore";
 import { DREAM_JOURNAL_KEY } from "../lib/storageKeys";
 import { HistoryModal } from "../components/HistoryModal";
 import { normalizeDreamLogs } from "../lib/logHistory";
+import { recordAgentEvent } from "../lib/mylitAgents";
 
 const LUNA_DREAM_BULLETS = [
   "Dream Journal helps you capture dreams quickly after waking.",
@@ -159,6 +160,7 @@ export default function DreamJournalScreen() {
     await saveEntries([entry, ...entries]);
     await earnSteps(1);
     await successHaptic();
+    void recordAgentEvent({ type: "dream_saved", sourcePage: "dream-journal", relatedItemId: entry.id, stepDelta: 1, metadata: { feeling } });
 
     setTitle("");
     setSummary("");

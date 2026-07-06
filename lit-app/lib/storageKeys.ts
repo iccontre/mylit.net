@@ -61,6 +61,10 @@ export const AGENT_CONTEXT_SNAPSHOT_KEY = "lit_agent_context_snapshot";
 export const STATS_INSIGHTS_KEY = "lit_stats_insights";
 /** BiomarkerSnapshot[] with source:"manual" only — no device/health integration yet. */
 export const BIOMARKER_SNAPSHOTS_MANUAL_KEY = "lit_biomarker_snapshots_manual";
+/** AgentEvent[] — the append-only event ledger the pattern engine learns from. */
+export const AGENT_EVENT_LEDGER_KEY = "lit_agent_event_ledger";
+/** LearningMemory — patterns distilled from the event ledger over time. */
+export const LEARNING_MEMORY_KEY = "lit_learning_memory";
 
 /**
  * Canonical synced keys that back the Log History screen. These are the SAME keys the
@@ -112,6 +116,8 @@ export const SYNCABLE_PROGRESS_KEYS = [
   AGENT_CONTEXT_SNAPSHOT_KEY,
   STATS_INSIGHTS_KEY,
   BIOMARKER_SNAPSHOTS_MANUAL_KEY,
+  AGENT_EVENT_LEDGER_KEY,
+  LEARNING_MEMORY_KEY,
 ] as const;
 
 export type SyncableProgressKey = (typeof SYNCABLE_PROGRESS_KEYS)[number];
@@ -130,6 +136,7 @@ export const ARRAY_MERGE_PROGRESS_KEYS = new Set<SyncableProgressKey>([
   FOCUS_BLOCK_HISTORY_KEY,
   STATS_INSIGHTS_KEY,
   BIOMARKER_SNAPSHOTS_MANUAL_KEY,
+  AGENT_EVENT_LEDGER_KEY,
 ]);
 
 export function isSyncableProgressKey(key: string): key is SyncableProgressKey {

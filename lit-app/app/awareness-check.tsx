@@ -22,6 +22,7 @@ import { persistProgressKeys } from "../lib/progressStore";
 import { AWARENESS_CHECKS_KEY } from "../lib/storageKeys";
 import { HistoryModal } from "../components/HistoryModal";
 import { normalizeMeditationLogs } from "../lib/logHistory";
+import { recordAgentEvent } from "../lib/mylitAgents";
 
 const LUNA_MEDITATIONS_BULLETS = [
   "Meditation/Awareness is for grounding and honesty — not traditional seated meditation.",
@@ -103,6 +104,7 @@ export default function AwarenessCheckScreen() {
 
     setChecks(nextChecks);
     await persistProgressKeys({ [AWARENESS_CHECKS_KEY]: JSON.stringify(nextChecks) });
+    void recordAgentEvent({ type: "meditation_saved", sourcePage: "awareness-check", relatedItemId: newCheck.id, metadata: { mood } });
 
     setMood("");
     setTruth("");

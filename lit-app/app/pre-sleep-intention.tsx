@@ -25,6 +25,7 @@ import {
 import { HistoryModal } from "../components/HistoryModal";
 import { normalizePreSleepLogs } from "../lib/logHistory";
 import { USER_STATS_KEY } from "../lib/questProgress";
+import { recordAgentEvent } from "../lib/mylitAgents";
 
 const LUNA_PRE_SLEEP_BULLETS = [
   "Pre-Sleep Intention gives your mind one clear signal before bed.",
@@ -117,6 +118,13 @@ export default function PreSleepIntentionScreen() {
       await earnSteps(1);
     }
     await successHaptic();
+    void recordAgentEvent({
+      type: "pre_sleep_intention_saved",
+      sourcePage: "pre-sleep-intention",
+      relatedItemId: entry.id,
+      stepDelta: alreadyEarnedToday ? undefined : 1,
+      metadata: { feeling },
+    });
 
     router.push("/");
   }

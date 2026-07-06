@@ -31,7 +31,10 @@ export function GuideFoundationCard() {
 
   return (
     <View style={styles.panel}>
-      <Text style={styles.panelTitle}>✦ MYLIT GUIDE FOUNDATION</Text>
+      <Text style={styles.panelTitle}>✦ MYLIT LEARNING LOOP</Text>
+      <Text style={styles.panelSubtitle}>
+        MYLIT learns from your patterns without judging you. Stats helps Evie and Luna adjust your path, recovery, and schedule over time.
+      </Text>
 
       <View style={[styles.row, { borderColor: "#38BDF8" }]}>
         <Text style={[styles.rowLabel, { color: "#BAE6FD" }]}>WHAT MYLIT NOTICED</Text>
@@ -45,7 +48,7 @@ export function GuideFoundationCard() {
       </View>
 
       <View style={[styles.row, { borderColor: "#FBBF24" }]}>
-        <Text style={[styles.rowLabel, { color: "#FDE68A" }]}>EVIE'S ADJUSTMENT</Text>
+        <Text style={[styles.rowLabel, { color: "#FDE68A" }]}>EVIE MAY ADJUST</Text>
         <Text style={styles.rowText}>{snapshot.evie.headline}</Text>
         {snapshot.evie.supportingLines.map((line, index) => (
           <Text key={index} style={styles.rowSubText}>· {line}</Text>
@@ -53,7 +56,7 @@ export function GuideFoundationCard() {
       </View>
 
       <View style={[styles.row, { borderColor: "#A78BFA" }]}>
-        <Text style={[styles.rowLabel, { color: "#E9D5FF" }]}>LUNA'S RECOVERY NOTE</Text>
+        <Text style={[styles.rowLabel, { color: "#E9D5FF" }]}>LUNA MAY SUPPORT</Text>
         <Text style={styles.rowText}>{snapshot.luna.headline}</Text>
         {snapshot.luna.supportingLines.map((line, index) => (
           <Text key={index} style={styles.rowSubText}>· {line}</Text>
@@ -61,7 +64,7 @@ export function GuideFoundationCard() {
       </View>
 
       <View style={[styles.row, { borderColor: "#22C55E" }]}>
-        <Text style={[styles.rowLabel, { color: "#86EFAC" }]}>CALENDAR SUGGESTION</Text>
+        <Text style={[styles.rowLabel, { color: "#86EFAC" }]}>CALENDAR MAY PROTECT</Text>
         <Text style={styles.rowText}>{snapshot.calendar.headline}</Text>
         {snapshot.calendar.suggestions.map((line, index) => (
           <Text key={index} style={styles.rowSubText}>· {line}</Text>
@@ -96,6 +99,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "900",
     letterSpacing: 0.5,
+    textAlign: "center",
+    marginBottom: 6,
+  },
+  panelSubtitle: {
+    color: "#94A3B8",
+    fontSize: 11,
+    lineHeight: 16,
+    fontWeight: "700",
     textAlign: "center",
     marginBottom: 10,
   },

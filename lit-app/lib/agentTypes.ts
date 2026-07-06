@@ -153,3 +153,97 @@ export type AgentContextSnapshot = {
   calendar: CalendarPlanningSummary;
   computedAt: string;
 };
+
+// ---------------------------------------------------------------------------
+// Learning-agent substrate: event ledger + learning memory + pattern engine.
+// See .agent/docs/MYLIT_AGENT_ARCHITECTURE.md. Still no AI calls, no health
+// permissions — this is the typed data + deterministic logic future AI-backed
+// Evie/Luna responses will eventually read from.
+// ---------------------------------------------------------------------------
+
+export type AgentEventType =
+  | "quest_completed"
+  | "quest_missed"
+  | "checklist_completed"
+  | "checklist_missed"
+  | "sleep_checkin_saved"
+  | "morning_reflection_saved"
+  | "journal_saved"
+  | "dream_saved"
+  | "meditation_saved"
+  | "pre_sleep_intention_saved"
+  | "energy_changed"
+  | "recovery_completed"
+  | "progress_task_completed"
+  | "calendar_overloaded"
+  | "progress_locked"
+  | "goal_updated"
+  | "path_updated";
+
+export type AgentEventMode = "progress" | "recovery" | "neutral";
+
+/** One meaningful, timestamped user action — the raw material the pattern engine learns from. */
+export type AgentEvent = {
+  id: string;
+  userId?: string | null;
+  type: AgentEventType;
+  /** Screen/route that generated this event, e.g. "home", "day-plan", "sleep-checkin". */
+  sourcePage: string;
+  createdAt: string;
+  /** Local YYYY-MM-DD the event happened on — used for weekday/date-range grouping. */
+  localDate: string;
+  relatedItemId?: string;
+  mode?: AgentEventMode;
+  durationMinutes?: number;
+  stepDelta?: number;
+  energyDelta?: number;
+  metadata?: Record<string, string | number | boolean | null>;
+};
+
+/**
+ * Learned patterns distilled from the event ledger over time. Every field is optional and
+ * only ever set once there's enough data to support it — an empty LearningMemory is a
+ * perfectly normal state for a new or light user.
+ */
+export type LearningMemory = {
+  preferredQuestDurations?: number[];
+  bestProgressTimeWindows?: string[];
+  worstProgressTimeWindows?: string[];
+  recoveryActivitiesThatHelp?: string[];
+  commonMissedQuestReasons?: string[];
+  commonSleepBarriers?: string[];
+  consistencyPatterns?: string[];
+  overloadPatterns?: string[];
+  recentWins?: string[];
+  recentRisks?: string[];
+  lastUpdatedAt: string;
+};
+
+export type EvieLearningContext = {
+  suggestedQuestDurationMinutes?: number;
+  pathAdjustmentNote?: string;
+  blockedGoalNote?: string;
+  recentWins: string[];
+  computedAt: string;
+};
+
+export type LunaLearningContext = {
+  recoveryUrgency: "none" | "suggested" | "needed";
+  sleepBarrierNote?: string;
+  softenReflectionPrompts: boolean;
+  recentRisks: string[];
+  computedAt: string;
+};
+
+export type CalendarLearningContext = {
+  overloadedWeekdays: string[];
+  betterTimeWindowNote?: string;
+  recommendedSplitNote?: string;
+  computedAt: string;
+};
+
+export type StatsLearningSummary = {
+  insights: StatsInsight[];
+  memory: LearningMemory;
+  computedAt: string;
+};

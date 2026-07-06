@@ -21,6 +21,7 @@ import { persistProgressKeys } from "../lib/progressStore";
 import { JOURNAL_ENTRIES_KEY } from "../lib/storageKeys";
 import { HistoryModal } from "../components/HistoryModal";
 import { normalizeJournalLogs } from "../lib/logHistory";
+import { recordAgentEvent } from "../lib/mylitAgents";
 
 const LUNA_JOURNAL_BULLETS = [
   "Journal is for honest notes and thought patterns — not perfection.",
@@ -103,6 +104,7 @@ export default function JournalScreen() {
 
     const nextEntries = [newEntry, ...entries];
     await saveEntries(nextEntries);
+    void recordAgentEvent({ type: "journal_saved", sourcePage: "journal", relatedItemId: newEntry.id, metadata: { entryType } });
 
     setContent("");
     setMood("");

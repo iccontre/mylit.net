@@ -7,6 +7,8 @@ import {
   AGENT_CONTEXT_SNAPSHOT_KEY,
   STATS_INSIGHTS_KEY,
   BIOMARKER_SNAPSHOTS_MANUAL_KEY,
+  AGENT_EVENT_LEDGER_KEY,
+  LEARNING_MEMORY_KEY,
   COMPLETED_QUESTS_KEY,
   MISSED_QUESTS_KEY,
   CHECKIN_HISTORY_KEY,
@@ -27,6 +29,13 @@ import type {
   UiUxImmersionCheck,
   BiomarkerSnapshot,
   BiomarkerPermissionStatus,
+  AgentEvent,
+  AgentEventType,
+  AgentEventMode,
+  LearningMemory,
+  EvieLearningContext,
+  LunaLearningContext,
+  CalendarLearningContext,
 } from "./agentTypes";
 
 // Non-AI helper foundation for MYLIT's long-term agent architecture. See
@@ -58,6 +67,7 @@ export async function saveUserLifeProfile(partial: Partial<UserLifeProfile>): Pr
   const current = await loadUserLifeProfile();
   const next: UserLifeProfile = { ...current, ...partial, updatedAt: new Date().toISOString() };
   await persistProgressKeys({ [USER_LIFE_PROFILE_KEY]: JSON.stringify(next) });
+  void recordAgentEvent({ type: "goal_updated", sourcePage: "life-profile" });
   return next;
 }
 
@@ -87,6 +97,78 @@ export async function saveGuideMemory(partial: Partial<GuideMemory>): Promise<Gu
   const next: GuideMemory = { ...current, ...partial, updatedAt: new Date().toISOString() };
   await persistProgressKeys({ [GUIDE_MEMORY_KEY]: JSON.stringify(next) });
   return next;
+}
+
+// ---------------------------------------------------------------------------
+// Agent Event Ledger — the raw material the pattern engine learns from
+// ---------------------------------------------------------------------------
+
+/** Keeps the synced payload bounded — oldest events drop first, never the most recent. */
+const MAX_LEDGER_EVENTS = 1000;
+
+export async function loadAgentEventLedger(): Promise<AgentEvent[]> {
+  return readJson<AgentEvent[]>(AGENT_EVENT_LEDGER_KEY, []);
+}
+
+export type RecordAgentEventInput = {
+  type: AgentEventType;
+  sourcePage: string;
+  userId?: string | null;
+  relatedItemId?: string;
+  mode?: AgentEventMode;
+  durationMinutes?: number;
+  stepDelta?: number;
+  energyDelta?: number;
+  metadata?: Record<string, string | number | boolean | null>;
+  createdAt?: string;
+};
+
+/**
+ * Appends one event to the ledger. Never throws (callers fire this with `void` from
+ * critical save/complete paths, exactly like the existing `void trackEvent(...)` analytics
+ * calls, and a failure here must never block or roll back the action that triggered it).
+ * De-dupes on (type, relatedItemId) so a retried save/completion can't double-log the same
+ * action, and caps the ledger length by dropping the OLDEST events, never recent ones.
+ */
+export async function recordAgentEvent(input: RecordAgentEventInput): Promise<void> {
+  try {
+    const createdAt = input.createdAt ?? new Date().toISOString();
+    const localDate = toDateKey(createdAt) ?? new Date().toLocaleDateString("en-CA");
+    const existing = await loadAgentEventLedger();
+
+    if (input.relatedItemId && existing.some((e) => e.type === input.type && e.relatedItemId === input.relatedItemId)) {
+      return;
+    }
+
+    const event: AgentEvent = {
+      id: `${input.type}-${createdAt}-${Math.random().toString(36).slice(2, 8)}`,
+      userId: input.userId ?? null,
+      type: input.type,
+      sourcePage: input.sourcePage,
+      createdAt,
+      localDate,
+      relatedItemId: input.relatedItemId,
+      mode: input.mode,
+      durationMinutes: input.durationMinutes,
+      stepDelta: input.stepDelta,
+      energyDelta: input.energyDelta,
+      metadata: input.metadata,
+    };
+
+    // Newest first, oldest trimmed off the end once over the cap.
+    const next = [event, ...existing].slice(0, MAX_LEDGER_EVENTS);
+    await persistProgressKeys({ [AGENT_EVENT_LEDGER_KEY]: JSON.stringify(next) });
+  } catch (error) {
+    console.warn("recordAgentEvent error:", error);
+  }
+}
+
+export async function getAgentEventsForRange(startMs: number, endMs: number): Promise<AgentEvent[]> {
+  const events = await loadAgentEventLedger();
+  return events.filter((event) => {
+    const t = new Date(event.createdAt).getTime();
+    return Number.isFinite(t) && t >= startMs && t < endMs;
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -255,6 +337,225 @@ export async function summarizeStatsForAgents(): Promise<StatsInsight[]> {
 }
 
 // ---------------------------------------------------------------------------
+// Pattern Engine — reads the event ledger for time-of-day / weekday / duration patterns
+// that summarizeStatsForAgents can't see from raw per-feature storage alone. Naturally
+// starts empty for existing users (the ledger only fills going forward) and gets richer
+// the longer someone uses MYLIT.
+// ---------------------------------------------------------------------------
+
+type TimeOfDayBucket = "morning" | "afternoon" | "evening" | "late night";
+
+function timeOfDayBucket(iso: string): TimeOfDayBucket {
+  const hour = new Date(iso).getHours();
+  if (hour >= 6 && hour < 12) return "morning";
+  if (hour >= 12 && hour < 17) return "afternoon";
+  if (hour >= 17 && hour < 22) return "evening";
+  return "late night";
+}
+
+function isWeekendIso(iso: string): boolean {
+  const day = new Date(iso).getDay();
+  return day === 0 || day === 6;
+}
+
+export async function summarizeBehaviorPatterns(): Promise<StatsInsight[]> {
+  const events = await loadAgentEventLedger();
+  const insights: StatsInsight[] = [];
+  const nowIso = new Date().toISOString();
+  const push = (id: string, category: StatsInsight["category"], summary: string, confidence: number) =>
+    insights.push({ id, category, summary, confidence, computedAt: nowIso });
+
+  const questEvents = events.filter((e) => e.type === "quest_completed" || e.type === "quest_missed");
+
+  // Time-of-day risk: a bucket where misses outnumber completions, with enough volume to trust it.
+  if (questEvents.length >= 8) {
+    const buckets = new Map<TimeOfDayBucket, { completed: number; missed: number }>();
+    for (const event of questEvents) {
+      const bucket = timeOfDayBucket(event.createdAt);
+      const stat = buckets.get(bucket) ?? { completed: 0, missed: 0 };
+      if (event.type === "quest_completed") stat.completed += 1;
+      else stat.missed += 1;
+      buckets.set(bucket, stat);
+    }
+    let worstBucket: TimeOfDayBucket | null = null;
+    let worstMissRate = 0;
+    for (const [bucket, stat] of buckets) {
+      const total = stat.completed + stat.missed;
+      if (total < 3) continue;
+      const missRate = stat.missed / total;
+      if (missRate >= 0.5 && missRate > worstMissRate) {
+        worstBucket = bucket;
+        worstMissRate = missRate;
+      }
+    }
+    if (worstBucket) {
+      push(
+        `time_of_day_risk_${worstBucket.replace(" ", "_")}`,
+        "workload",
+        `${worstBucket.charAt(0).toUpperCase()}${worstBucket.slice(1)} progress tasks are missed more often than they're completed for you.`,
+        0.5
+      );
+    }
+  }
+
+  // Weekday vs weekend consistency.
+  if (questEvents.length >= 8) {
+    let weekdayCompleted = 0, weekdayMissed = 0, weekendCompleted = 0, weekendMissed = 0;
+    for (const event of questEvents) {
+      const weekend = isWeekendIso(event.createdAt);
+      if (event.type === "quest_completed") {
+        if (weekend) weekendCompleted += 1; else weekdayCompleted += 1;
+      } else if (weekend) weekendMissed += 1; else weekdayMissed += 1;
+    }
+    const weekdayTotal = weekdayCompleted + weekdayMissed;
+    const weekendTotal = weekendCompleted + weekendMissed;
+    if (weekdayTotal >= 4 && weekendTotal >= 4) {
+      const weekdayRate = weekdayCompleted / weekdayTotal;
+      const weekendRate = weekendCompleted / weekendTotal;
+      if (weekdayRate - weekendRate >= 0.2) {
+        push("weekday_more_consistent", "consistency", "You're more consistent on weekdays than weekends.", 0.5);
+      } else if (weekendRate - weekdayRate >= 0.2) {
+        push("weekend_more_consistent", "consistency", "You're more consistent on weekends than weekdays.", 0.5);
+      }
+    }
+  }
+
+  // Duration preference: shorter quests completed more reliably than longer ones.
+  const withDuration = questEvents.filter((e) => typeof e.durationMinutes === "number");
+  if (withDuration.length >= 8) {
+    const short = withDuration.filter((e) => (e.durationMinutes as number) <= 15);
+    const long = withDuration.filter((e) => (e.durationMinutes as number) >= 45);
+    const shortTotal = short.length;
+    const longTotal = long.length;
+    if (shortTotal >= 3 && longTotal >= 3) {
+      const shortRate = short.filter((e) => e.type === "quest_completed").length / shortTotal;
+      const longRate = long.filter((e) => e.type === "quest_completed").length / longTotal;
+      if (shortRate - longRate >= 0.25) {
+        push("shorter_quests_completed_more", "quest_length", "Shorter quests are completed more often than longer ones for you.", 0.5);
+      }
+    }
+  }
+
+  // Recovery-day → stronger next-day completion.
+  const recoveryDays = new Set(events.filter((e) => e.type === "quest_completed" && e.mode === "recovery").map((e) => e.localDate));
+  if (recoveryDays.size >= 3) {
+    let daysChecked = 0;
+    let daysThatImproved = 0;
+    for (const day of recoveryDays) {
+      const nextDay = addDaysToDateKey(day, 1);
+      const nextDayEvents = questEvents.filter((e) => e.localDate === nextDay);
+      if (!nextDayEvents.length) continue;
+      daysChecked += 1;
+      const rate = nextDayEvents.filter((e) => e.type === "quest_completed").length / nextDayEvents.length;
+      if (rate >= 0.7) daysThatImproved += 1;
+    }
+    if (daysChecked >= 3 && daysThatImproved / daysChecked >= 0.6) {
+      push("recovery_improves_next_day", "recovery_habit", "Days after a Recovery task tend to have stronger completion the next day.", 0.5);
+    }
+  }
+
+  return insights;
+}
+
+/** Merges raw-storage insights with event-ledger behavior patterns, deduped by id. */
+export async function buildStatsInsightSnapshot(): Promise<StatsInsight[]> {
+  const [fromRawData, fromEvents] = await Promise.all([summarizeStatsForAgents(), summarizeBehaviorPatterns()]);
+  const merged = new Map<string, StatsInsight>();
+  for (const insight of [...fromRawData, ...fromEvents]) merged.set(insight.id, insight);
+  return Array.from(merged.values());
+}
+
+// ---------------------------------------------------------------------------
+// Learning Memory — patterns distilled from the event ledger over time
+// ---------------------------------------------------------------------------
+
+const WIN_INSIGHT_IDS = new Set([
+  "improving_consistency",
+  "checklist_consistent",
+  "energy_rising",
+  "recovery_improves_next_day",
+  "weekday_more_consistent",
+  "weekend_more_consistent",
+  "reflecting_regularly",
+  "shorter_quests_completed_more",
+]);
+
+const RISK_INSIGHT_IDS = new Set([
+  "consistency_dipped",
+  "needs_shorter_quests",
+  "overloaded_weekday",
+  "sleep_interruption_missed_link",
+  "short_sleep_week",
+  "energy_falling",
+  "checklist_inconsistent",
+]);
+
+export async function loadLearningMemory(): Promise<LearningMemory> {
+  return readJson<LearningMemory>(LEARNING_MEMORY_KEY, { lastUpdatedAt: new Date(0).toISOString() });
+}
+
+/**
+ * Recomputes LearningMemory from the event ledger + latest insights and persists it. Safe
+ * to call often (e.g. alongside buildAgentContextSnapshot) — it always derives fresh values
+ * rather than accumulating, so it can never duplicate or drift from the underlying data.
+ */
+export async function updateLearningMemoryFromEvents(): Promise<LearningMemory> {
+  const [events, insights, current] = await Promise.all([loadAgentEventLedger(), buildStatsInsightSnapshot(), loadLearningMemory()]);
+
+  const completedDurations = events
+    .filter((e) => e.type === "quest_completed" && typeof e.durationMinutes === "number")
+    .map((e) => e.durationMinutes as number);
+  const preferredQuestDurations = completedDurations.length
+    ? Array.from(new Set(completedDurations)).sort((a, b) => a - b)
+    : current.preferredQuestDurations;
+
+  const questEvents = events.filter((e) => e.type === "quest_completed" || e.type === "quest_missed");
+  let bestProgressTimeWindows = current.bestProgressTimeWindows;
+  let worstProgressTimeWindows = current.worstProgressTimeWindows;
+  if (questEvents.length >= 8) {
+    const buckets = new Map<TimeOfDayBucket, { completed: number; missed: number }>();
+    for (const event of questEvents) {
+      const bucket = timeOfDayBucket(event.createdAt);
+      const stat = buckets.get(bucket) ?? { completed: 0, missed: 0 };
+      if (event.type === "quest_completed") stat.completed += 1;
+      else stat.missed += 1;
+      buckets.set(bucket, stat);
+    }
+    const withEnoughVolume = Array.from(buckets.entries()).filter(([, stat]) => stat.completed + stat.missed >= 3);
+    if (withEnoughVolume.length) {
+      const byCompletionRate = withEnoughVolume
+        .map(([bucket, stat]) => ({ bucket, rate: stat.completed / (stat.completed + stat.missed) }))
+        .sort((a, b) => b.rate - a.rate);
+      bestProgressTimeWindows = [byCompletionRate[0].bucket];
+      const worst = byCompletionRate[byCompletionRate.length - 1];
+      worstProgressTimeWindows = worst.rate < 0.5 ? [worst.bucket] : [];
+    }
+  }
+
+  const recentWins = insights.filter((i) => WIN_INSIGHT_IDS.has(i.id)).map((i) => i.summary);
+  const recentRisks = insights.filter((i) => RISK_INSIGHT_IDS.has(i.id) || i.id.startsWith("time_of_day_risk_")).map((i) => i.summary);
+  const overloadPatterns = insights.filter((i) => i.category === "workload").map((i) => i.summary);
+  const consistencyPatterns = insights.filter((i) => i.category === "consistency").map((i) => i.summary);
+  const commonSleepBarriers = insights.filter((i) => i.category === "sleep").map((i) => i.summary);
+
+  const next: LearningMemory = {
+    ...current,
+    preferredQuestDurations,
+    bestProgressTimeWindows,
+    worstProgressTimeWindows,
+    recentWins: recentWins.length ? recentWins : current.recentWins,
+    recentRisks: recentRisks.length ? recentRisks : current.recentRisks,
+    overloadPatterns: overloadPatterns.length ? overloadPatterns : current.overloadPatterns,
+    consistencyPatterns: consistencyPatterns.length ? consistencyPatterns : current.consistencyPatterns,
+    commonSleepBarriers: commonSleepBarriers.length ? commonSleepBarriers : current.commonSleepBarriers,
+    lastUpdatedAt: new Date().toISOString(),
+  };
+
+  await persistProgressKeys({ [LEARNING_MEMORY_KEY]: JSON.stringify(next) });
+  return next;
+}
+
+// ---------------------------------------------------------------------------
 // Guide summaries (deterministic — no AI)
 // ---------------------------------------------------------------------------
 
@@ -316,6 +617,68 @@ export function buildCalendarPlanningSummary(profile: UserLifeProfile, insights:
     ? "Balancing your schedule based on what's actually been working:"
     : "Balancing your Progress and Recovery time against today's energy caps.";
   return { headline, suggestions, computedAt: new Date().toISOString() };
+}
+
+// ---------------------------------------------------------------------------
+// Agent Feedback Loop — richer, still-deterministic context objects future AI-backed guide
+// responses will read from. Distinct from the plainer EviePathSummary/LunaSupportSummary/
+// CalendarPlanningSummary above (which stay as the simple text shown in the UI today).
+// ---------------------------------------------------------------------------
+
+export function buildEvieLearningContext(memory: LearningMemory, insights: StatsInsight[]): EvieLearningContext {
+  const suggestedQuestDurationMinutes = memory.preferredQuestDurations?.length
+    ? Math.min(...memory.preferredQuestDurations)
+    : undefined;
+
+  const blockedGoalNote = insights.find((i) => i.id === "needs_shorter_quests" || i.id === "overloaded_weekday")?.summary;
+  const pathAdjustmentNote = insights.find((i) => EVIE_INSIGHT_CATEGORIES.includes(i.category))?.summary;
+
+  return {
+    suggestedQuestDurationMinutes,
+    pathAdjustmentNote,
+    blockedGoalNote,
+    recentWins: memory.recentWins ?? [],
+    computedAt: new Date().toISOString(),
+  };
+}
+
+export function buildLunaLearningContext(memory: LearningMemory, insights: StatsInsight[]): LunaLearningContext {
+  const risks = memory.recentRisks ?? [];
+  const sleepBarrierNote = insights.find((i) => i.category === "sleep")?.summary ?? memory.commonSleepBarriers?.[0];
+  const recoveryUrgency: LunaLearningContext["recoveryUrgency"] = insights.some((i) => i.id === "energy_falling" || i.id === "short_sleep_week")
+    ? "needed"
+    : risks.length
+      ? "suggested"
+      : "none";
+
+  return {
+    recoveryUrgency,
+    sleepBarrierNote,
+    // A recent dip/miss pattern means Luna should soften reflection prompts rather than
+    // pile on — never shame-based, per MYLIT's core support principle.
+    softenReflectionPrompts: insights.some((i) => i.id === "consistency_dipped" || i.id === "needs_shorter_quests"),
+    recentRisks: risks,
+    computedAt: new Date().toISOString(),
+  };
+}
+
+export function buildCalendarLearningContext(memory: LearningMemory, insights: StatsInsight[]): CalendarLearningContext {
+  const overloadedWeekdays = insights
+    .filter((i) => i.id === "overloaded_weekday")
+    .map((i) => i.summary.split(" tends to have")[0]);
+
+  const betterTimeWindowNote = memory.bestProgressTimeWindows?.length
+    ? `You tend to follow through best on ${memory.bestProgressTimeWindows[0]} tasks.`
+    : undefined;
+
+  const recommendedSplitNote = insights.find((i) => i.category === "recovery_habit" || i.category === "progress_habit")?.summary;
+
+  return {
+    overloadedWeekdays,
+    betterTimeWindowNote,
+    recommendedSplitNote,
+    computedAt: new Date().toISOString(),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -406,9 +769,11 @@ export async function buildAgentContextSnapshot(): Promise<AgentContextSnapshot>
   const [lifeProfile, guideMemory, insights, biomarkers] = await Promise.all([
     loadUserLifeProfile(),
     loadGuideMemory(),
-    summarizeStatsForAgents(),
+    buildStatsInsightSnapshot(),
     loadManualBiomarkerSnapshots(),
   ]);
+  // Best-effort — recomputing learning memory must never block building the snapshot itself.
+  void updateLearningMemoryFromEvents().catch((error) => console.warn("updateLearningMemoryFromEvents error:", error));
 
   const evie = buildEviePathSummary(lifeProfile, insights);
   const luna = buildLunaSupportSummary(lifeProfile, insights);

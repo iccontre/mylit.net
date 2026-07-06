@@ -10,6 +10,7 @@ import { formPageContent, formStyles } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
+import { recordAgentEvent } from "../lib/mylitAgents";
 import {
   DAY_PLAN_KEY,
   MAX_CHECKLIST_MINUTES_PER_DAY,
@@ -689,6 +690,19 @@ export default function DayPlanScreen() {
           ),
         },
       };
+      // Only the "checking off" direction is a real completion — unchecking is undoing a
+      // mistake, not a miss (misses are inferred elsewhere from time passing, not this toggle).
+      if (nextChecked) {
+        void recordAgentEvent({
+          type: "checklist_completed",
+          sourcePage: "day-plan",
+          relatedItemId: `${itemId}:${getDateKey()}`,
+          mode: item.kind,
+          durationMinutes: item.durationMinutes,
+          stepDelta: item.steps,
+          metadata: { title: item.text },
+        });
+      }
     }
   }
 

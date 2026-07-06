@@ -21,6 +21,7 @@ import { persistProgressKeys } from "../lib/progressStore";
 import { CHECKIN_HISTORY_KEY, LATEST_CHECKIN_KEY } from "../lib/storageKeys";
 import { syncDailySnapshot } from "../lib/progressSync";
 import { computeSleepSession, sleepInterruptionPenalty } from "../lib/scheduling";
+import { recordAgentEvent } from "../lib/mylitAgents";
 
 type CheckInMode = "Recovery" | "Progress";
 type CheckInType = "morning" | "afternoon";
@@ -342,6 +343,13 @@ export default function SleepCheckInScreen() {
       mood_score: Number(mood) || null,
       stress_score: Number(stress) || null,
       sleep_hours: isAfternoon ? Number(latestCheckIn?.hours) || null : effectiveSleepMinutes !== null ? Math.round((effectiveSleepMinutes / 60) * 10) / 10 : null,
+    });
+    void recordAgentEvent({
+      type: "sleep_checkin_saved",
+      sourcePage: "sleep-checkin",
+      relatedItemId: checkIn.id,
+      mode: mode === "Recovery" ? "recovery" : "progress",
+      metadata: { checkInType: isAfternoon ? "afternoon" : "morning", energy },
     });
 
     router.push({

@@ -15,6 +15,7 @@ import {
 import { ANALYTICS_EVENTS, trackEvent } from "../../lib/analytics";
 import { setChecklistItemChecked, syncQuestCompleted, syncQuestMissed, syncQuestStarted } from "../../lib/progressSync";
 import { clearProgressKey, persistProgressKeys } from "../../lib/progressStore";
+import { recordAgentEvent } from "../../lib/mylitAgents";
 import { syncAndGetStepRank, type StepRank } from "../../lib/stepRank";
 import {
   ACTIVE_TIMED_ITEM_KEY,
@@ -716,6 +717,15 @@ export default function HomeScreen() {
 
     void trackEvent(ANALYTICS_EVENTS.quest_completed, { id: item.id, title: item.title, steps: item.steps });
     void syncQuestCompleted(item);
+    void recordAgentEvent({
+      type: "quest_completed",
+      sourcePage: "home",
+      relatedItemId: item.id,
+      mode: item.kind,
+      durationMinutes: item.durationMinutes,
+      stepDelta: item.steps,
+      metadata: { source: item.source, title: item.title },
+    });
   }
 
   async function completeActiveItem() {
@@ -742,6 +752,14 @@ export default function HomeScreen() {
     }
     void trackEvent(ANALYTICS_EVENTS.quest_missed, { id: item.id, title: item.title });
     void syncQuestMissed(item);
+    void recordAgentEvent({
+      type: "quest_missed",
+      sourcePage: "home",
+      relatedItemId: item.id,
+      mode: item.kind,
+      durationMinutes: item.durationMinutes,
+      metadata: { source: item.source, title: item.title },
+    });
     router.push({ pathname: "/reflection", params: { quest: item.title } });
   }
 
