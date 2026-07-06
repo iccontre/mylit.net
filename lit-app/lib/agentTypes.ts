@@ -324,3 +324,25 @@ export type PathPipeline = {
   reflectionPrompt: ReflectionPromptSuggestion | null;
   computedAt: string;
 };
+
+// ---------------------------------------------------------------------------
+// Weekly Agent Review: MYLIT's first weekly improvement loop. Reviews the
+// user's week and turns it into supportive, non-shame-based adjustments for
+// Evie, Luna, and Calendar. See lib/weeklyReview.ts. No AI calls.
+// ---------------------------------------------------------------------------
+
+export type WeeklyAgentReview = {
+  /** Stable id = weekStart — regenerating the same week replaces this entry, never duplicates it. */
+  id: string;
+  weekStart: string;
+  weekEnd: string;
+  wins: string[];
+  struggles: string[];
+  sleepEnergyPattern: string;
+  progressRecoveryPattern: string;
+  evieAdjustment: string;
+  lunaAdjustment: string;
+  calendarAdjustment: string;
+  suggestedNextWeekFocus: string;
+  createdAt: string;
+};

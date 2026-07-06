@@ -343,9 +343,9 @@ export async function summarizeStatsForAgents(): Promise<StatsInsight[]> {
 // the longer someone uses MYLIT.
 // ---------------------------------------------------------------------------
 
-type TimeOfDayBucket = "morning" | "afternoon" | "evening" | "late night";
+export type TimeOfDayBucket = "morning" | "afternoon" | "evening" | "late night";
 
-function timeOfDayBucket(iso: string): TimeOfDayBucket {
+export function timeOfDayBucket(iso: string): TimeOfDayBucket {
   const hour = new Date(iso).getHours();
   if (hour >= 6 && hour < 12) return "morning";
   if (hour >= 12 && hour < 17) return "afternoon";
@@ -353,7 +353,7 @@ function timeOfDayBucket(iso: string): TimeOfDayBucket {
   return "late night";
 }
 
-function isWeekendIso(iso: string): boolean {
+export function isWeekendIso(iso: string): boolean {
   const day = new Date(iso).getDay();
   return day === 0 || day === 6;
 }

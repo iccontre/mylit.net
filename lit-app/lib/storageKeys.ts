@@ -65,6 +65,8 @@ export const BIOMARKER_SNAPSHOTS_MANUAL_KEY = "lit_biomarker_snapshots_manual";
 export const AGENT_EVENT_LEDGER_KEY = "lit_agent_event_ledger";
 /** LearningMemory — patterns distilled from the event ledger over time. */
 export const LEARNING_MEMORY_KEY = "lit_learning_memory";
+/** WeeklyAgentReview[] — one per week (id = weekStart), regenerating replaces, never duplicates. */
+export const WEEKLY_AGENT_REVIEWS_KEY = "lit_weekly_agent_reviews";
 
 /**
  * Canonical synced keys that back the Log History screen. These are the SAME keys the
@@ -118,6 +120,7 @@ export const SYNCABLE_PROGRESS_KEYS = [
   BIOMARKER_SNAPSHOTS_MANUAL_KEY,
   AGENT_EVENT_LEDGER_KEY,
   LEARNING_MEMORY_KEY,
+  WEEKLY_AGENT_REVIEWS_KEY,
 ] as const;
 
 export type SyncableProgressKey = (typeof SYNCABLE_PROGRESS_KEYS)[number];
@@ -137,6 +140,7 @@ export const ARRAY_MERGE_PROGRESS_KEYS = new Set<SyncableProgressKey>([
   STATS_INSIGHTS_KEY,
   BIOMARKER_SNAPSHOTS_MANUAL_KEY,
   AGENT_EVENT_LEDGER_KEY,
+  WEEKLY_AGENT_REVIEWS_KEY,
 ]);
 
 export function isSyncableProgressKey(key: string): key is SyncableProgressKey {

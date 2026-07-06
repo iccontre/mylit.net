@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Image, ImageBackground, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { uiAssets } from "../constants/uiAssets";
+import { WeeklyAgentReviewCard } from "../components/WeeklyAgentReviewCard";
 
 type Mode = "Recovery" | "Progress";
 
@@ -163,6 +164,8 @@ export default function WeeklySummaryScreen() {
                   <Text style={styles.evieText}>You do not need a perfect week to learn something useful.</Text>
                 </View>
               </View>
+
+              <WeeklyAgentReviewCard />
 
               <View style={styles.stepsCard}>
                 <Text style={styles.cardKicker}>TOTAL STEPS</Text>
