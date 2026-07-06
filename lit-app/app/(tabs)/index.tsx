@@ -681,16 +681,39 @@ export default function HomeScreen() {
   async function completeQuestItem(item: HomeQuestItem) {
     if (completedQuests.some((entry) => entry.id === item.id)) return;
 
-    const nextCompleted = await markItemComplete(item, completedQuests);
-    await successHaptic();
+    let nextCompleted = completedQuests;
+    try {
+      nextCompleted = await markItemComplete(item, completedQuests);
+    } catch (error) {
+      // A storage failure here must never leave the card stuck on the board forever — the
+      // user already pressed Complete, so still dismiss the active timer even though the
+      // completion record (and its steps) couldn't be persisted this time.
+      console.warn("markItemComplete error:", error);
+      if (activeItem?.id === item.id) await clearActiveItem();
+      setSelectedItem(null);
+      return;
+    }
+
+    // These two MUST run so the card actually disappears from the board — everything below
+    // is best-effort. If a later call here throws, completedQuests already contains this
+    // item, so the guard above would silently block every future tap while the active-timer
+    // card stayed stuck forever (the exact "Complete does nothing" bug). Isolating the
+    // best-effort work in its own try/catch means a failure there can no longer do that.
     setCompletedQuests(nextCompleted);
-    setFocusLog(await loadFocusBlockLog());
     setSelectedItem(null);
-    await loadDayPlan();
-    await loadQuickThoughts();
     if (activeItem?.id === item.id) {
       await clearActiveItem();
     }
+
+    try {
+      await successHaptic();
+      setFocusLog(await loadFocusBlockLog());
+      await loadDayPlan();
+      await loadQuickThoughts();
+    } catch (error) {
+      console.warn("completeQuestItem follow-up error:", error);
+    }
+
     void trackEvent(ANALYTICS_EVENTS.quest_completed, { id: item.id, title: item.title, steps: item.steps });
     void syncQuestCompleted(item);
   }
