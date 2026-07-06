@@ -31,6 +31,7 @@ import { TODAY_QUEST_STEPS } from "../lib/scheduling";
 import { syncAndGetStepRank, type StepRank } from "../lib/stepRank";
 import { ProgressRecoveryModal } from "../components/ProgressRecoveryModal";
 import { BottomNav } from "../components/BottomNav";
+import { GuideFoundationCard } from "../components/GuideFoundationCard";
 
 type ActivePanel = "weekly" | "skill" | "rank" | "behavior" | null;
 type ActiveInfo =
@@ -460,6 +461,8 @@ export default function StatsScreen() {
               <ChestCard accent="purple" icon="🏆" title="RANK" subtitle="Your steps vs other players." meta={stepRank ? `#${stepRank.rank} of ${stepRank.totalPlayers}` : "Sign in to rank"} onPress={() => setActivePanel("rank")} onInfo={() => setActiveInfo("rank")} />
               <ChestCard accent="gold" icon="📊" title="BEHAVIOR" subtitle="Routines, sleep & cognitive habits." meta={`${computed.progressDays} progress · ${computed.recoveryDays} recovery`} onPress={() => setActivePanel("behavior")} onInfo={() => setActiveInfo("behavior")} />
               <ChestCard accent="purple" icon="📖" title="LOG HISTORY" subtitle="Journals, reflections, meditations, dreams & intentions." meta="Saved to your account · synced across devices" onPress={() => router.push("/log-history")} />
+
+              <GuideFoundationCard />
 
               <View style={styles.pageFooter}>
                 <View style={styles.pageFooterLine} />

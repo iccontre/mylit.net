@@ -48,6 +48,21 @@ export const WAITING_ROOM_BOOSTS_KEY = "lit_waiting_room_boosts";
 export const FOCUS_BLOCK_HISTORY_KEY = "lit_focus_block_history";
 
 /**
+ * MYLIT agent-foundation keys (see .agent/docs/MYLIT_AGENT_ARCHITECTURE.md). Purely typed
+ * data + deterministic (non-AI) summaries — no external calls, no health permissions.
+ */
+/** UserLifeProfile — separate from LOCAL_PROFILE_KEY's existing Path onboarding profile. */
+export const USER_LIFE_PROFILE_KEY = "lit_user_life_profile";
+/** GuideMemory — small structured "what the guides remember" object. */
+export const GUIDE_MEMORY_KEY = "lit_guide_memory";
+/** AgentContextSnapshot — derived/recomputed cache, safe to let newest-write win on merge. */
+export const AGENT_CONTEXT_SNAPSHOT_KEY = "lit_agent_context_snapshot";
+/** StatsInsight[] — small plain-language patterns Stats has noticed. */
+export const STATS_INSIGHTS_KEY = "lit_stats_insights";
+/** BiomarkerSnapshot[] with source:"manual" only — no device/health integration yet. */
+export const BIOMARKER_SNAPSHOTS_MANUAL_KEY = "lit_biomarker_snapshots_manual";
+
+/**
  * Canonical synced keys that back the Log History screen. These are the SAME keys the
  * entry pages already write to (via persistProgressKeys) and are already listed in
  * SYNCABLE_PROGRESS_KEYS + ARRAY_MERGE_PROGRESS_KEYS, so every saved log is stored
@@ -92,6 +107,11 @@ export const SYNCABLE_PROGRESS_KEYS = [
   GOAL_FEEDBACK_LOG_KEY,
   WAITING_ROOM_BOOSTS_KEY,
   FOCUS_BLOCK_HISTORY_KEY,
+  USER_LIFE_PROFILE_KEY,
+  GUIDE_MEMORY_KEY,
+  AGENT_CONTEXT_SNAPSHOT_KEY,
+  STATS_INSIGHTS_KEY,
+  BIOMARKER_SNAPSHOTS_MANUAL_KEY,
 ] as const;
 
 export type SyncableProgressKey = (typeof SYNCABLE_PROGRESS_KEYS)[number];
@@ -108,6 +128,8 @@ export const ARRAY_MERGE_PROGRESS_KEYS = new Set<SyncableProgressKey>([
   REFLECTIONS_KEY,
   GOAL_FEEDBACK_LOG_KEY,
   FOCUS_BLOCK_HISTORY_KEY,
+  STATS_INSIGHTS_KEY,
+  BIOMARKER_SNAPSHOTS_MANUAL_KEY,
 ]);
 
 export function isSyncableProgressKey(key: string): key is SyncableProgressKey {

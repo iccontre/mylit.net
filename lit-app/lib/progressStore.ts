@@ -20,6 +20,8 @@ import {
   DAY_PLAN_KEY,
   MISSED_QUESTS_KEY,
   WAITING_ROOM_BOOSTS_KEY,
+  USER_LIFE_PROFILE_KEY,
+  GUIDE_MEMORY_KEY,
 } from "./storageKeys";
 import { getDateKey } from "./scheduling";
 import { sanitizeDayPlanChecklists } from "./dayPlanChecklist";
@@ -66,6 +68,10 @@ const OBJECT_MERGE_PROGRESS_KEYS = new Set<SyncableProgressKey>([
   LOCAL_PROFILE_KEY,
   DAY_PLAN_KEY,
   WAITING_ROOM_BOOSTS_KEY,
+  // Deep-merge-prefer-non-empty is exactly the "merge new fields into existing profile
+  // safely, never overwrite non-empty local with empty cloud" rule these two new keys need.
+  USER_LIFE_PROFILE_KEY,
+  GUIDE_MEMORY_KEY,
 ]);
 
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
