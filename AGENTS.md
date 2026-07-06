@@ -15,8 +15,12 @@ repo root only holds workspace metadata.
 
 - Dev server (web): `npm run web` — serves on `http://localhost:8081` (Metro bundler).
   First bundle takes ~10-15s; wait for `Web Bundled ... entry.js` in the log.
-- Lint: `npm run lint` (Expo ESLint). Currently passes with warnings only, no errors.
-- Typecheck: `npx tsc --noEmit`.
+- Lint: `npm run lint` (Expo ESLint). Currently reports pre-existing errors
+  (mostly `react/no-unescaped-entities`) plus warnings — these are not caused by
+  environment setup; do not "fix" them unless the task asks.
+- Typecheck: `npx tsc --noEmit`. Currently reports a pre-existing error in
+  `constants/mobileLayout.ts` (`position: "fixed"` not in RN `ViewStyle`); this is
+  a known code-level issue, not an environment problem.
 - There is no automated test suite (no Jest/test scripts configured).
 
 ### Non-obvious notes
@@ -28,6 +32,13 @@ repo root only holds workspace metadata.
   runs fine — do not "fix" them unless asked.
 - App state (onboarding, check-ins) persists via AsyncStorage (browser localStorage on
   web), so a hard reload keeps prior data; clear site data to start fresh.
+- Supabase is optional for local development: with no `EXPO_PUBLIC_SUPABASE_*` env vars,
+  the app runs fully local-first (AsyncStorage). The `/welcome` → `/auth` entry path
+  dead-ends on a "Supabase not ready" screen (the offline button only renders when
+  Supabase is configured), but the whole app is still reachable offline — navigate the
+  browser directly to `http://localhost:8081/onboarding` (allowed with no redirect), or
+  to the root `http://localhost:8081/` once welcome has been seen, and it routes into
+  onboarding → the main tabs. Account sync (cross-device) requires the anon key.
 
 ### Progress safety (never reset user data)
 
