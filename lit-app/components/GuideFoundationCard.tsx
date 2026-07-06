@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Platform, StyleSheet, Text, View } from "react-native";
+import { useRouter } from "expo-router";
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { buildAgentContextSnapshot } from "../lib/mylitAgents";
 import type { AgentContextSnapshot } from "../lib/agentTypes";
@@ -13,6 +14,7 @@ const pixelFont = Platform.select({ ios: "Menlo", android: "monospace", web: "mo
  * sent anywhere. Safe to render even for a user who has entered no life-profile data yet.
  */
 export function GuideFoundationCard() {
+  const router = useRouter();
   const [snapshot, setSnapshot] = useState<AgentContextSnapshot | null>(null);
 
   useEffect(() => {
@@ -67,6 +69,10 @@ export function GuideFoundationCard() {
             : "Health data is not connected yet. Future versions may let you opt in to Apple Health or wearable data."}
         </Text>
       </View>
+
+      <TouchableOpacity style={styles.editButton} onPress={() => router.push("/life-profile")}>
+        <Text style={styles.editButtonText}>✎ EDIT LIFE PROFILE</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -115,5 +121,20 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     fontWeight: "700",
     marginTop: 4,
+  },
+  editButton: {
+    borderWidth: 2,
+    borderColor: "#FBBF24",
+    borderRadius: 6,
+    paddingVertical: 10,
+    alignItems: "center",
+    backgroundColor: "rgba(69,43,8,0.4)",
+  },
+  editButtonText: {
+    color: "#FDE68A",
+    fontFamily: pixelFont,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.5,
   },
 });
