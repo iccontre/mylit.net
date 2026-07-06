@@ -33,8 +33,19 @@ export function GuideFoundationCard() {
     <View style={styles.panel}>
       <Text style={styles.panelTitle}>✦ MYLIT GUIDE FOUNDATION</Text>
 
+      <View style={[styles.row, { borderColor: "#38BDF8" }]}>
+        <Text style={[styles.rowLabel, { color: "#BAE6FD" }]}>WHAT MYLIT NOTICED</Text>
+        {snapshot.insights.length > 0 ? (
+          snapshot.insights.slice(0, 3).map((insight) => (
+            <Text key={insight.id} style={styles.rowText}>· {insight.summary}</Text>
+          ))
+        ) : (
+          <Text style={styles.rowText}>Stats will quietly learn from your patterns and help Evie and Luna adjust your plan.</Text>
+        )}
+      </View>
+
       <View style={[styles.row, { borderColor: "#FBBF24" }]}>
-        <Text style={[styles.rowLabel, { color: "#FDE68A" }]}>EVIE</Text>
+        <Text style={[styles.rowLabel, { color: "#FDE68A" }]}>EVIE'S ADJUSTMENT</Text>
         <Text style={styles.rowText}>{snapshot.evie.headline}</Text>
         {snapshot.evie.supportingLines.map((line, index) => (
           <Text key={index} style={styles.rowSubText}>· {line}</Text>
@@ -42,33 +53,26 @@ export function GuideFoundationCard() {
       </View>
 
       <View style={[styles.row, { borderColor: "#A78BFA" }]}>
-        <Text style={[styles.rowLabel, { color: "#E9D5FF" }]}>LUNA</Text>
+        <Text style={[styles.rowLabel, { color: "#E9D5FF" }]}>LUNA'S RECOVERY NOTE</Text>
         <Text style={styles.rowText}>{snapshot.luna.headline}</Text>
         {snapshot.luna.supportingLines.map((line, index) => (
           <Text key={index} style={styles.rowSubText}>· {line}</Text>
         ))}
       </View>
 
-      <View style={[styles.row, { borderColor: "#38BDF8" }]}>
-        <Text style={[styles.rowLabel, { color: "#BAE6FD" }]}>STATS</Text>
-        <Text style={styles.rowText}>
-          {snapshot.insights.length > 0
-            ? "Stats is quietly learning from your patterns and helping Evie and Luna adjust your plan."
-            : "Stats will quietly learn from your patterns and help Evie and Luna adjust your plan."}
-        </Text>
-        {snapshot.insights.slice(0, 2).map((insight) => (
-          <Text key={insight.id} style={styles.rowSubText}>· {insight.summary}</Text>
+      <View style={[styles.row, { borderColor: "#22C55E" }]}>
+        <Text style={[styles.rowLabel, { color: "#86EFAC" }]}>CALENDAR SUGGESTION</Text>
+        <Text style={styles.rowText}>{snapshot.calendar.headline}</Text>
+        {snapshot.calendar.suggestions.map((line, index) => (
+          <Text key={index} style={styles.rowSubText}>· {line}</Text>
         ))}
       </View>
 
-      <View style={[styles.row, { borderColor: "#475569" }]}>
-        <Text style={[styles.rowLabel, { color: "#CBD5E1" }]}>BIOMARKERS</Text>
-        <Text style={styles.rowText}>
-          {snapshot.latestBiomarker
-            ? "Manual check-ins only — health data is not connected yet."
-            : "Health data is not connected yet. Future versions may let you opt in to Apple Health or wearable data."}
-        </Text>
-      </View>
+      <Text style={styles.biomarkerNote}>
+        {snapshot.latestBiomarker
+          ? "Biomarkers: manual check-ins only — health data is not connected yet."
+          : "Biomarkers: health data is not connected yet. Future versions may let you opt in to Apple Health or wearable data."}
+      </Text>
 
       <TouchableOpacity style={styles.editButton} onPress={() => router.push("/life-profile")}>
         <Text style={styles.editButtonText}>✎ EDIT LIFE PROFILE</Text>
@@ -121,6 +125,14 @@ const styles = StyleSheet.create({
     lineHeight: 16,
     fontWeight: "700",
     marginTop: 4,
+  },
+  biomarkerNote: {
+    color: "#64748B",
+    fontSize: 10,
+    lineHeight: 15,
+    fontWeight: "700",
+    textAlign: "center",
+    marginBottom: 10,
   },
   editButton: {
     borderWidth: 2,

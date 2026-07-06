@@ -10,8 +10,11 @@ import {
   COMPLETED_QUESTS_KEY,
   MISSED_QUESTS_KEY,
   CHECKIN_HISTORY_KEY,
+  FOCUS_BLOCK_HISTORY_KEY,
+  REFLECTIONS_KEY,
+  JOURNAL_ENTRIES_KEY,
 } from "./storageKeys";
-import type { CompletionEntry, MissedEntry } from "./questProgress";
+import type { CompletionEntry, MissedEntry, FocusBlockLogEntry } from "./questProgress";
 import type {
   UserLifeProfile,
   GuideMemory,
@@ -90,7 +93,9 @@ export async function saveGuideMemory(partial: Partial<GuideMemory>): Promise<Gu
 // Stats feedback loop
 // ---------------------------------------------------------------------------
 
-type CheckInLike = { createdAt?: string; interrupted?: boolean };
+type CheckInLike = { createdAt?: string; interrupted?: boolean; effectiveSleepMinutes?: number; energy?: number };
+type ReflectionLike = { createdAt?: string };
+type JournalLike = { createdAt?: string };
 
 function toDateKey(iso: string | undefined): string | null {
   if (!iso) return null;
@@ -118,10 +123,13 @@ function weekdayFromDateKey(dateKey: string): string | null {
  * early/light user sees no insights rather than noisy guesses from 1-2 data points.
  */
 export async function summarizeStatsForAgents(): Promise<StatsInsight[]> {
-  const [completed, missed, checkins] = await Promise.all([
+  const [completed, missed, checkins, focusLog, reflections, journalEntries] = await Promise.all([
     readJson<CompletionEntry[]>(COMPLETED_QUESTS_KEY, []),
     readJson<MissedEntry[]>(MISSED_QUESTS_KEY, []),
     readJson<CheckInLike[]>(CHECKIN_HISTORY_KEY, []),
+    readJson<FocusBlockLogEntry[]>(FOCUS_BLOCK_HISTORY_KEY, []),
+    readJson<ReflectionLike[]>(REFLECTIONS_KEY, []),
+    readJson<JournalLike[]>(JOURNAL_ENTRIES_KEY, []),
   ]);
 
   const insights: StatsInsight[] = [];
@@ -196,6 +204,53 @@ export async function summarizeStatsForAgents(): Promise<StatsInsight[]> {
     }
   }
 
+  // 6. Recent sleep duration, averaged from the last week of check-ins with a real reading.
+  const recentSleepMinutes = checkins
+    .filter((c) => inRange(c.createdAt ?? "", now - 7 * dayMs, now) && typeof c.effectiveSleepMinutes === "number")
+    .map((c) => c.effectiveSleepMinutes as number);
+  if (recentSleepMinutes.length >= 3) {
+    const avgHours = recentSleepMinutes.reduce((sum, m) => sum + m, 0) / recentSleepMinutes.length / 60;
+    if (avgHours < 6.5) {
+      push("short_sleep_week", "sleep", `You're averaging about ${avgHours.toFixed(1)}h of sleep this week — a little more rest could make the rest of this easier.`, 0.55);
+    }
+  }
+
+  // 7. Energy trend: this week's check-ins vs the week before.
+  const recentEnergy = checkins.filter((c) => inRange(c.createdAt ?? "", now - 7 * dayMs, now) && typeof c.energy === "number").map((c) => c.energy as number);
+  const priorEnergy = checkins.filter((c) => inRange(c.createdAt ?? "", now - 14 * dayMs, now - 7 * dayMs) && typeof c.energy === "number").map((c) => c.energy as number);
+  if (recentEnergy.length >= 2 && priorEnergy.length >= 2) {
+    const avg = (values: number[]) => values.reduce((sum, v) => sum + v, 0) / values.length;
+    const recentAvg = avg(recentEnergy);
+    const priorAvg = avg(priorEnergy);
+    if (recentAvg - priorAvg >= 10) {
+      push("energy_rising", "consistency", "Your energy has been trending up this week compared to last.", 0.5);
+    } else if (priorAvg - recentAvg >= 10) {
+      push("energy_falling", "recovery_habit", "Your energy has dipped this week — a lighter, more Recovery-leaning day or two might help.", 0.5);
+    }
+  }
+
+  // 8. Checklist consistency: how many of the last 7 days had at least one completed checklist item.
+  const recentChecklistDays = new Set(
+    focusLog
+      .filter((entry) => entry.source === "Checklist" && inRange(entry.completedAt, now - 7 * dayMs, now))
+      .map((entry) => entry.dateKey)
+  );
+  const recentFocusLogTotal = focusLog.filter((entry) => inRange(entry.completedAt, now - 7 * dayMs, now)).length;
+  if (recentFocusLogTotal >= 5) {
+    if (recentChecklistDays.size >= 5) {
+      push("checklist_consistent", "consistency", "You've kept up your checklist items on most days this week — that steadiness adds up.", 0.5);
+    } else if (recentChecklistDays.size <= 1) {
+      push("checklist_inconsistent", "consistency", "Your checklist items have been light this week — a smaller, easier list might be more sustainable right now.", 0.45);
+    }
+  }
+
+  // 9. Reflection/journal engagement — a light, supportive signal only (no tag parsing exists yet).
+  const recentReflections = reflections.filter((r) => inRange(r.createdAt ?? "", now - 14 * dayMs, now)).length;
+  const recentJournalEntries = journalEntries.filter((j) => inRange(j.createdAt ?? "", now - 14 * dayMs, now)).length;
+  if (recentReflections + recentJournalEntries >= 3) {
+    push("reflecting_regularly", "consistency", "You've been reflecting and journaling regularly lately — that habit helps you adjust before things pile up.", 0.45);
+  }
+
   return insights;
 }
 
@@ -210,6 +265,10 @@ function pickInsightSummaries(insights: StatsInsight[], categories: StatsInsight
     .map((insight) => insight.summary);
 }
 
+const EVIE_INSIGHT_CATEGORIES: StatsInsight["category"][] = ["progress_habit", "consistency", "quest_length", "workload"];
+const LUNA_INSIGHT_CATEGORIES: StatsInsight["category"][] = ["sleep", "recovery_habit"];
+const CALENDAR_INSIGHT_CATEGORIES: StatsInsight["category"][] = ["workload", "quest_length", "consistency"];
+
 export function buildEviePathSummary(profile: UserLifeProfile, insights: StatsInsight[]): EviePathSummary {
   const hasDirection = Boolean(
     profile.careerGoals ||
@@ -221,11 +280,15 @@ export function buildEviePathSummary(profile: UserLifeProfile, insights: StatsIn
       profile.longTermDreamStatement
   );
 
-  const headline = hasDirection
-    ? "Your path is starting to form. I'll use your goals, obstacles, and progress patterns to help you build forward."
-    : "Tell me what you're building toward, and I'll help you turn it into real direction.";
+  const supportingLines = pickInsightSummaries(insights, EVIE_INSIGHT_CATEGORIES, 2);
 
-  const supportingLines = pickInsightSummaries(insights, ["progress_habit", "consistency", "quest_length", "workload"], 2);
+  // When Stats has noticed something relevant, Evie's headline shifts from a general intro
+  // to a real adjustment based on it — this is the feedback loop, made visible.
+  const headline = supportingLines.length
+    ? "Here's what I'm adjusting based on your recent patterns:"
+    : hasDirection
+      ? "Your path is starting to form. I'll use your goals, obstacles, and progress patterns to help you build forward."
+      : "Tell me what you're building toward, and I'll help you turn it into real direction.";
 
   return { headline, supportingLines, computedAt: new Date().toISOString() };
 }
@@ -233,21 +296,25 @@ export function buildEviePathSummary(profile: UserLifeProfile, insights: StatsIn
 export function buildLunaSupportSummary(profile: UserLifeProfile, insights: StatsInsight[]): LunaSupportSummary {
   const hasSupportContext = Boolean(profile.commonSleepBarriers || profile.recoveryActivitiesThatHelp || profile.preferredLunaSupport);
 
-  const headline = hasSupportContext
-    ? "I'll use your sleep, recovery, and reflections to help you protect your flame."
-    : "Rest counts as progress too. Whenever you're ready, tell me what recovery looks like for you.";
+  const supportingLines = pickInsightSummaries(insights, LUNA_INSIGHT_CATEGORIES, 2);
 
-  const supportingLines = pickInsightSummaries(insights, ["sleep", "recovery_habit"], 2);
+  const headline = supportingLines.length
+    ? "Here's what I'm noticing about your sleep and recovery lately — no shame in any of it:"
+    : hasSupportContext
+      ? "I'll use your sleep, recovery, and reflections to help you protect your flame."
+      : "Rest counts as progress too. Whenever you're ready, tell me what recovery looks like for you.";
 
   return { headline, supportingLines, computedAt: new Date().toISOString() };
 }
 
 export function buildCalendarPlanningSummary(profile: UserLifeProfile, insights: StatsInsight[]): CalendarPlanningSummary {
-  const headline = "Balancing your Progress and Recovery time against today's energy caps.";
-  const suggestions = pickInsightSummaries(insights, ["workload", "quest_length", "consistency"], 3);
+  const suggestions = pickInsightSummaries(insights, CALENDAR_INSIGHT_CATEGORIES, 3);
   if (profile.currentObstacles && suggestions.length < 3) {
     suggestions.push(`Keep in mind: ${profile.currentObstacles}`);
   }
+  const headline = suggestions.length
+    ? "Balancing your schedule based on what's actually been working:"
+    : "Balancing your Progress and Recovery time against today's energy caps.";
   return { headline, suggestions, computedAt: new Date().toISOString() };
 }
 
