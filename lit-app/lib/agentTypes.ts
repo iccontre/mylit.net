@@ -247,3 +247,80 @@ export type StatsLearningSummary = {
   memory: LearningMemory;
   computedAt: string;
 };
+
+// ---------------------------------------------------------------------------
+// Path Pipeline: Evie's first personalized pipeline generator. Turns any dream/
+// identity goal (career, body, friendship, purpose, confidence — anything the
+// user actually typed into UserLifeProfile) into a structured path, purely by
+// templating the user's own words — no fixed goal-category lookup, no AI call.
+// See lib/pathPipeline.ts.
+// ---------------------------------------------------------------------------
+
+/** Which UserLifeProfile field the pipeline is built around. */
+export type UserDreamGoalSource =
+  | "longTermDreamStatement"
+  | "futureSelfStatement"
+  | "careerGoals"
+  | "bodyHealthGoals"
+  | "friendshipSocialGoals"
+  | "purposeGoals"
+  | "confidenceGoals";
+
+export type UserDreamGoal = {
+  goalText: string;
+  source: UserDreamGoalSource;
+};
+
+export type ThreeMonthDirection = {
+  headline: string;
+  focusAreas: string[];
+  computedAt: string;
+};
+
+export type OneMonthMilestone = {
+  headline: string;
+  concreteStep: string;
+  computedAt: string;
+};
+
+export type TwoWeekSprint = {
+  headline: string;
+  focus: string;
+  computedAt: string;
+};
+
+export type WeeklyHabitSuggestion = {
+  id: string;
+  title: string;
+  suggestedDays: string[];
+  suggestedTimeWindow?: string;
+  durationMinutes: number;
+  kind: "progress" | "recovery";
+  rationale?: string;
+};
+
+export type DailyQuestSuggestion = {
+  id: string;
+  title: string;
+  category: string;
+  durationMinutes: number;
+  kind: "progress" | "recovery";
+  suggestedTimeWindow?: string;
+  rationale?: string;
+};
+
+export type ReflectionPromptSuggestion = {
+  prompt: string;
+  tone: MotivationStyle;
+};
+
+export type PathPipeline = {
+  dreamGoal: UserDreamGoal | null;
+  threeMonth: ThreeMonthDirection | null;
+  oneMonth: OneMonthMilestone | null;
+  twoWeek: TwoWeekSprint | null;
+  weeklyHabit: WeeklyHabitSuggestion | null;
+  dailyQuests: DailyQuestSuggestion[];
+  reflectionPrompt: ReflectionPromptSuggestion | null;
+  computedAt: string;
+};

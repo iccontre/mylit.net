@@ -13,6 +13,7 @@ import {
 
 import { GuideInfoModal } from "../components/GuideInfoModal";
 import { GuideFoundationCard } from "../components/GuideFoundationCard";
+import { PathPipelineCard } from "../components/PathPipelineCard";
 import { GOAL_HORIZON_LABELS } from "../constants/goalMilestoneTemplates";
 import { BottomNav } from "../components/BottomNav";
 import { useMobileFrame } from "../constants/mobileLayout";
@@ -261,6 +262,8 @@ export default function PathScreen() {
             )}
 
             <GuideFoundationCard />
+
+            <PathPipelineCard />
 
             <TouchableOpacity
               style={styles.primaryActionButton}
