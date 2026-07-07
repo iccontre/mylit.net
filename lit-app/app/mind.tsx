@@ -12,6 +12,7 @@ import {
 
 import { BottomNav } from "../components/BottomNav";
 import { GuideInfoModal } from "../components/GuideInfoModal";
+import { LunaSupportPanel } from "../components/LunaSupportPanel";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 
@@ -121,6 +122,10 @@ export default function MindScreen() {
             </View>
 
             <View style={styles.cardStack}>{MIND_CARDS.map(renderMindCard)}</View>
+
+            <View style={{ marginTop: 16 }}>
+              <LunaSupportPanel />
+            </View>
           </ScrollView>
 
           <GuideInfoModal

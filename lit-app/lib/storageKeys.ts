@@ -69,6 +69,8 @@ export const LEARNING_MEMORY_KEY = "lit_learning_memory";
 export const WEEKLY_AGENT_REVIEWS_KEY = "lit_weekly_agent_reviews";
 /** EvieAiPathPipelineRecord[] — one per "Ask Evie to Build My Path" run, newest-first, capped history. */
 export const AI_EVIE_PATH_PIPELINES_KEY = "lit_ai_evie_path_pipelines";
+/** LunaSupportModifierRecord[] — one per "Ask Luna to help me adjust" run, newest-first, capped history. */
+export const AI_LUNA_SUPPORT_SESSIONS_KEY = "lit_ai_luna_support_sessions";
 
 /**
  * Canonical synced keys that back the Log History screen. These are the SAME keys the
@@ -124,6 +126,7 @@ export const SYNCABLE_PROGRESS_KEYS = [
   LEARNING_MEMORY_KEY,
   WEEKLY_AGENT_REVIEWS_KEY,
   AI_EVIE_PATH_PIPELINES_KEY,
+  AI_LUNA_SUPPORT_SESSIONS_KEY,
 ] as const;
 
 export type SyncableProgressKey = (typeof SYNCABLE_PROGRESS_KEYS)[number];
@@ -145,6 +148,7 @@ export const ARRAY_MERGE_PROGRESS_KEYS = new Set<SyncableProgressKey>([
   AGENT_EVENT_LEDGER_KEY,
   WEEKLY_AGENT_REVIEWS_KEY,
   AI_EVIE_PATH_PIPELINES_KEY,
+  AI_LUNA_SUPPORT_SESSIONS_KEY,
 ]);
 
 export function isSyncableProgressKey(key: string): key is SyncableProgressKey {

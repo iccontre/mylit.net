@@ -452,6 +452,98 @@ export type EvieAiPathPipelineRecord = {
 };
 
 // ---------------------------------------------------------------------------
+// Luna AI Support Modifier — MYLIT's first LLM-backed support/plan-adjustment guide (see
+// api/agents/luna-support-modifier.ts and lib/lunaSupportModifier.ts). Luna is NOT a general
+// chatbot in this phase: her only job is to notice struggle (missed quests, low energy, poor
+// sleep, heavy reflections) and propose gentle plan adjustments. Every adjustment is a
+// SUGGESTION — applying one routes through the same validated helpers/mutation guards as
+// everything else (see lib/lunaSupportModifier.ts), never an automatic change. Types only —
+// no AI call happens in this file.
+// ---------------------------------------------------------------------------
+
+export type LunaSupportModifierStatus = "ready" | "support_only" | "needs_clarification";
+
+export type LunaAdjustmentType =
+  | "reduce_duration"
+  | "move_later"
+  | "move_earlier"
+  | "swap_progress_for_recovery"
+  | "add_recovery"
+  | "pause_goal"
+  | "ask_evie_to_rebuild";
+
+export type LunaPlanAdjustment = {
+  type: LunaAdjustmentType;
+  reason: string;
+  /** Id of an item in the request's activeQuests — required for reduce_duration/move_later/move_earlier/swap_progress_for_recovery. */
+  targetQuestId?: string;
+  suggestedDurationMinutes?: number;
+};
+
+export type LunaRecoveryQuestSuggestion = {
+  title: string;
+  reason: string;
+  durationMinutes: 15 | 30 | 45 | 60;
+  energyRestoreEstimate: number;
+};
+
+export type LunaSupportModifierResponse = {
+  status: LunaSupportModifierStatus;
+  guide: "luna";
+  supportMessage: string;
+  whatLunaNoticed: string[];
+  suggestedPlanAdjustments: LunaPlanAdjustment[];
+  recoveryQuestSuggestions: LunaRecoveryQuestSuggestion[];
+  evieHandoffNote: string;
+  safetyNote: string;
+};
+
+export type LunaActiveQuestSummary = {
+  id: string;
+  title: string;
+  kind: "progress" | "recovery";
+  durationMinutes: number;
+  startTime?: string;
+  status: string;
+};
+
+export type LunaCurrentPathPipelineSummary = {
+  goalText?: string;
+  threeMonthHeadline?: string;
+  twoWeekHeadline?: string;
+};
+
+export type LunaSleepContext = {
+  effectiveSleepMinutes?: number;
+  interrupted?: boolean;
+};
+
+export type LunaReflectionSummary = {
+  quest: string;
+  whatGotInTheWay: string;
+};
+
+export type LunaSupportModifierRequest = {
+  userMessage: string;
+  currentPathPipeline: LunaCurrentPathPipelineSummary | null;
+  recentMisses: { title: string; dateKey: string }[];
+  recentEnergy: number;
+  sleepContext: LunaSleepContext;
+  reflectionSummary: LunaReflectionSummary | null;
+  learningMemory: LearningMemory;
+  currentMode: AgentEventMode;
+  activeQuests: LunaActiveQuestSummary[];
+};
+
+/** One saved Luna support session — never overwritten, newest-first, capped history. */
+export type LunaSupportModifierRecord = {
+  id: string;
+  createdAt: string;
+  userMessage: string;
+  response: LunaSupportModifierResponse;
+};
+
+// ---------------------------------------------------------------------------
 // Weekly Agent Review: MYLIT's first weekly improvement loop. Reviews the
 // user's week and turns it into supportive, non-shame-based adjustments for
 // Evie, Luna, and Calendar. See lib/weeklyReview.ts. No AI calls.
