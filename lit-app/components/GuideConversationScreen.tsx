@@ -16,6 +16,7 @@ import { BottomNav, type BottomNavRoute, type BottomNavTheme } from "./BottomNav
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { decideMemoryUpdateProposal, loadGuideConversation, sendGuideMessage } from "../lib/guideConversation";
+import { friendlyAiUnavailableMessage } from "../lib/aiUnavailableMessages";
 import type { GuideConversationTurn, GuideMemoryUpdateProposal, GuideName } from "../lib/agentTypes";
 
 const pixelFont = Platform.select({ ios: "Menlo", android: "monospace", web: "monospace", default: "monospace" });
@@ -62,7 +63,11 @@ export function GuideConversationScreen({ guide }: GuideConversationScreenProps)
   const [messageText, setMessageText] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [decisionStatus, setDecisionStatus] = useState<Record<string, string>>({});
+  // Synchronous in-flight lock — belt-and-suspenders alongside the `loading` state/disabled
+  // prop, so a rapid double-click/double-tap can never fire two overlapping AI calls.
+  const inFlightRef = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -74,18 +79,27 @@ export function GuideConversationScreen({ guide }: GuideConversationScreenProps)
   );
 
   async function handleSend() {
-    if (loading || !messageText.trim()) return;
+    if (inFlightRef.current || !messageText.trim()) return;
+    inFlightRef.current = true;
     setLoading(true);
     setError("");
-    const outcome = await sendGuideMessage(guide, messageText);
-    setLoading(false);
-    if (!outcome.ok) {
-      setError(outcome.error);
-      return;
+    setNotice("");
+    try {
+      const outcome = await sendGuideMessage(guide, messageText);
+      if (!outcome.ok) {
+        setError(outcome.error);
+        return;
+      }
+      setMessageText("");
+      setTurns((prev) => [...prev, outcome.userTurn, outcome.guideTurn]);
+      if (outcome.aiUnavailableReason) {
+        setNotice(friendlyAiUnavailableMessage(outcome.aiUnavailableReason, config.name));
+      }
+      requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
+    } finally {
+      inFlightRef.current = false;
+      setLoading(false);
     }
-    setMessageText("");
-    setTurns((prev) => [...prev, outcome.userTurn, outcome.guideTurn]);
-    requestAnimationFrame(() => scrollRef.current?.scrollToEnd({ animated: true }));
   }
 
   async function handleDecision(turn: GuideConversationTurn, proposal: GuideMemoryUpdateProposal, decision: "approved" | "dismissed") {
@@ -163,6 +177,7 @@ export function GuideConversationScreen({ guide }: GuideConversationScreenProps)
               ))}
             </View>
 
+            {notice ? <Text style={styles.noticeText}>{notice}</Text> : null}
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
             <View style={styles.composer}>
@@ -241,6 +256,7 @@ const styles = StyleSheet.create({
   proposalButtonSecondaryText: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 10, fontWeight: "900" },
   proposalStatus: { color: "#FDE68A", fontSize: 10, fontWeight: "700", marginTop: 6 },
   errorText: { color: "#FCA5A5", fontSize: 11, lineHeight: 16, fontWeight: "700", textAlign: "center", marginBottom: 8 },
+  noticeText: { color: "#FCD34D", fontSize: 10, lineHeight: 15, fontWeight: "700", textAlign: "center", marginBottom: 8 },
   composer: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
   composerInput: {
     flex: 1,

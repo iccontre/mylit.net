@@ -3,7 +3,10 @@ import OpenAI from "openai";
 
 import { buildCrisisSafeLunaResponse, buildSafeFallbackLunaSupport } from "../../lib/lunaAiFallback";
 import { matchesCrisisLanguage } from "../../lib/crisisDetection";
+import { classifyAiError, logAiUsage } from "../../lib/aiUsageLog";
 import type { LunaSupportModifierRequest, LunaSupportModifierResponse } from "../../lib/agentTypes";
+
+const ROUTE_NAME = "luna-support-modifier";
 
 // Server-only route: Luna's first LLM-backed support/plan-adjustment guide.
 //
@@ -174,9 +177,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     activeQuests: Array.isArray(body.activeQuests) ? body.activeQuests : [],
   };
 
+  const userContent = buildUserContent(request);
+
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    res.status(200).json(buildSafeFallbackLunaSupport(request));
+    logAiUsage({ route: ROUTE_NAME, promptChars: userContent.length, ok: false, reason: "missing_key" });
+    res.status(200).json(buildSafeFallbackLunaSupport(request, "missing_key"));
     return;
   }
 
@@ -186,7 +192,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       model: MODEL,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: buildUserContent(request) },
+        { role: "user", content: userContent },
       ],
       response_format: { type: "json_schema", json_schema: RESPONSE_JSON_SCHEMA },
       temperature: 0.5,
@@ -194,6 +200,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const raw = completion.choices[0]?.message?.content;
     if (!raw) throw new Error("Empty model response");
+
+    logAiUsage({ route: ROUTE_NAME, promptChars: userContent.length, completionChars: raw.length, ok: true });
 
     const parsed = JSON.parse(raw) as LunaSupportModifierResponse;
     parsed.guide = "luna";
@@ -212,7 +220,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     res.status(200).json(parsed);
   } catch (error) {
+    const reason = classifyAiError(error);
     console.warn("luna-support-modifier model call failed:", error instanceof Error ? error.message : error);
-    res.status(200).json(buildSafeFallbackLunaSupport(request));
+    logAiUsage({ route: ROUTE_NAME, promptChars: userContent.length, ok: false, reason });
+    res.status(200).json(buildSafeFallbackLunaSupport(request, reason));
   }
 }

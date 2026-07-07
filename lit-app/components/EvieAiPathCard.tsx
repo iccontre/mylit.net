@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { ActivityIndicator, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
@@ -10,6 +10,7 @@ import {
   saveAiWeeklyHabitSuggestion,
 } from "../lib/evieAiPathPipeline";
 import { LATEST_CHECKIN_KEY } from "../lib/storageKeys";
+import { friendlyAiUnavailableMessage } from "../lib/aiUnavailableMessages";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { EvieAiDailyQuestSuggestion, EvieAiPathPipelineResponse, EvieAiWeeklyHabitSuggestion } from "../lib/agentTypes";
 
@@ -29,6 +30,11 @@ export function EvieAiPathCard() {
   const [boardMode, setBoardMode] = useState<"Progress" | "Recovery">("Progress");
   const [habitStatus, setHabitStatus] = useState<Record<number, string>>({});
   const [questStatus, setQuestStatus] = useState<Record<number, string>>({});
+  const [usedCache, setUsedCache] = useState(false);
+  // Synchronous in-flight lock — belt-and-suspenders alongside the `loading` state/disabled
+  // prop, so a rapid double-click/double-tap can never fire two overlapping AI calls even if
+  // React hasn't re-rendered the disabled button yet.
+  const inFlightRef = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -50,19 +56,25 @@ export function EvieAiPathCard() {
     }, [])
   );
 
-  async function handleAskEvie() {
-    if (loading || !promptText.trim()) return;
+  async function handleAskEvie(options?: { forceRefresh?: boolean }) {
+    if (inFlightRef.current || !promptText.trim()) return;
+    inFlightRef.current = true;
     setLoading(true);
     setError("");
-    const outcome = await requestEviePathPipeline(promptText);
-    setLoading(false);
-    if (!outcome.ok) {
-      setError(outcome.error);
-      return;
+    try {
+      const outcome = await requestEviePathPipeline(promptText, options);
+      if (!outcome.ok) {
+        setError(outcome.error);
+        return;
+      }
+      setResult(outcome.record.response);
+      setUsedCache(outcome.fromCache);
+      setHabitStatus({});
+      setQuestStatus({});
+    } finally {
+      inFlightRef.current = false;
+      setLoading(false);
     }
-    setResult(outcome.record.response);
-    setHabitStatus({});
-    setQuestStatus({});
   }
 
   async function handleSaveHabit(habit: EvieAiWeeklyHabitSuggestion, index: number) {
@@ -110,6 +122,17 @@ export function EvieAiPathCard() {
 
       {result ? (
         <View style={styles.resultStack}>
+          {result.aiUnavailableReason ? (
+            <Text style={styles.noticeText}>{friendlyAiUnavailableMessage(result.aiUnavailableReason, "Evie")}</Text>
+          ) : usedCache ? (
+            <View style={styles.cacheNoticeRow}>
+              <Text style={styles.cacheNoticeText}>Using cached result — nothing changed since your last ask.</Text>
+              <TouchableOpacity disabled={loading} onPress={() => void handleAskEvie({ forceRefresh: true })}>
+                <Text style={styles.cacheRefreshLink}>Regenerate</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+
           <View style={[styles.row, { borderColor: "#FBBF24" }]}>
             <Text style={[styles.rowLabel, { color: "#FDE68A" }]}>GOAL SUMMARY</Text>
             <Text style={styles.rowText}>{result.goalSummary}</Text>
@@ -252,6 +275,10 @@ const styles = StyleSheet.create({
   askButtonRow: { flexDirection: "row", alignItems: "center" },
   askButtonText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", letterSpacing: 0.5 },
   errorText: { color: "#FCA5A5", fontSize: 11, lineHeight: 16, fontWeight: "700", textAlign: "center", marginTop: 8 },
+  noticeText: { color: "#FCD34D", fontSize: 10, lineHeight: 15, fontWeight: "700", textAlign: "center", marginBottom: 8 },
+  cacheNoticeRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: 8 },
+  cacheNoticeText: { color: "#94A3B8", fontSize: 10, lineHeight: 14, fontWeight: "700" },
+  cacheRefreshLink: { color: "#FDE68A", fontSize: 10, fontWeight: "900", textDecorationLine: "underline" },
   resultStack: { marginTop: 10 },
   row: {
     borderWidth: 2,

@@ -5,6 +5,7 @@ import { persistProgressKeys } from "./progressStore";
 import { GUIDE_CONVERSATIONS_KEY, GUIDE_MEMORY_UPDATES_KEY, LATEST_CHECKIN_KEY } from "./storageKeys";
 import type {
   AgentEventMode,
+  AiUnavailableReason,
   GuideConversationRequest,
   GuideConversationResponse,
   GuideConversationTurn,
@@ -65,7 +66,7 @@ async function loadCurrentModeContext(): Promise<AgentEventMode> {
 }
 
 export type SendGuideMessageResult =
-  | { ok: true; userTurn: GuideConversationTurn; guideTurn: GuideConversationTurn }
+  | { ok: true; userTurn: GuideConversationTurn; guideTurn: GuideConversationTurn; aiUnavailableReason?: AiUnavailableReason }
   | { ok: false; error: string };
 
 /** Sends one message in a guide's conversation and appends both the user + guide turns to storage. */
@@ -153,7 +154,7 @@ export async function sendGuideMessage(guide: GuideName, userMessage: string): P
     metadata: { action: "guide_conversation_turn", guide },
   });
 
-  return { ok: true, userTurn, guideTurn };
+  return { ok: true, userTurn, guideTurn, aiUnavailableReason: response.aiUnavailableReason };
 }
 
 // ---------------------------------------------------------------------------

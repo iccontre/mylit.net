@@ -13,6 +13,7 @@ import { saveWeeklyHabitSuggestion, saveDailyQuestSuggestion, type SaveWeeklyHab
 import { AI_EVIE_PATH_PIPELINES_KEY, LATEST_CHECKIN_KEY, TOMORROW_QUEUE_KEY, DAY_PLAN_KEY } from "./storageKeys";
 import { computeUserScheduledMinutesByKindForDay, getMaxProgressMinutes, getQuestCapacityMinutes } from "./questProgress";
 import { getDateKey, type WeekdayName } from "./scheduling";
+import { stableHash } from "./hash";
 import type {
   AgentEventMode,
   DailyQuestSuggestion,
@@ -75,11 +76,33 @@ async function loadTodayConstraints(boardMode: "Progress" | "Recovery") {
 }
 
 export type RequestEviePathPipelineResult =
-  | { ok: true; record: EvieAiPathPipelineRecord }
+  | { ok: true; record: EvieAiPathPipelineRecord; fromCache: boolean }
   | { ok: false; error: string };
 
-/** Gathers local context, asks the server route to build a plan, and saves the result (a suggestion, not an active quest/habit). */
-export async function requestEviePathPipeline(userPrompt: string): Promise<RequestEviePathPipelineResult> {
+/**
+ * Cache key: userPrompt (normalized) + lifeProfile.updatedAt + learningMemory.lastUpdatedAt.
+ * Identical inputs always produce the identical key, so a repeat "Ask Evie" with nothing
+ * meaningfully changed can reuse the last result instead of spending another OpenAI call —
+ * see AI usage protection notes in requestEviePathPipeline below.
+ */
+function computeEvieCacheKey(userPrompt: string, lifeProfileUpdatedAt: string | undefined, learningMemoryUpdatedAt: string): string {
+  const normalizedPrompt = userPrompt.trim().toLowerCase();
+  return stableHash(`${normalizedPrompt}|${lifeProfileUpdatedAt ?? ""}|${learningMemoryUpdatedAt}`);
+}
+
+export type RequestEviePathPipelineOptions = {
+  /** Skip the cache and always call the server route — used by an explicit "Regenerate" action. */
+  forceRefresh?: boolean;
+};
+
+/**
+ * Gathers local context, asks the server route to build a plan, and saves the result (a
+ * suggestion, not an active quest/habit). AI usage protection: unless forceRefresh is set,
+ * this first checks whether the exact same (userPrompt, lifeProfile, learningMemory) already
+ * produced a saved pipeline and, if so, returns that cached record WITHOUT calling the
+ * server/OpenAI again.
+ */
+export async function requestEviePathPipeline(userPrompt: string, options?: RequestEviePathPipelineOptions): Promise<RequestEviePathPipelineResult> {
   const [lifeProfile, guideMemory, learningMemory, statsInsights, checkInContext] = await Promise.all([
     loadUserLifeProfile(),
     loadGuideMemory(),
@@ -87,6 +110,16 @@ export async function requestEviePathPipeline(userPrompt: string): Promise<Reque
     buildStatsInsightSnapshot(),
     loadCheckInContext(),
   ]);
+
+  const cacheKey = computeEvieCacheKey(userPrompt, lifeProfile.updatedAt, learningMemory.lastUpdatedAt);
+
+  if (!options?.forceRefresh) {
+    const existingHistory = await readJson<EvieAiPathPipelineRecord[]>(AI_EVIE_PATH_PIPELINES_KEY, []);
+    const cached = existingHistory.find((entry) => entry.cacheKey === cacheKey);
+    if (cached) {
+      return { ok: true, record: cached, fromCache: true };
+    }
+  }
 
   const [recentAgentEvents, constraints] = await Promise.all([
     getAgentEventsForRange(Date.now() - RECENT_EVENTS_WINDOW_MS, Date.now()),
@@ -131,6 +164,7 @@ export async function requestEviePathPipeline(userPrompt: string): Promise<Reque
     createdAt: new Date().toISOString(),
     userPrompt: request.userPrompt,
     response,
+    cacheKey,
   };
 
   const existing = await readJson<EvieAiPathPipelineRecord[]>(AI_EVIE_PATH_PIPELINES_KEY, []);
@@ -145,7 +179,7 @@ export async function requestEviePathPipeline(userPrompt: string): Promise<Reque
     metadata: { status: response.status, goalDomain: response.goalDomain },
   });
 
-  return { ok: true, record };
+  return { ok: true, record, fromCache: false };
 }
 
 /** Newest saved AI pipeline run, if any — used to restore the Path screen on revisit. */

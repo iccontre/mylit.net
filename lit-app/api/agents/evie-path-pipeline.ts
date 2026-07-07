@@ -2,7 +2,10 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import OpenAI from "openai";
 
 import { buildSafeFallbackEviePipeline } from "../../lib/evieAiFallback";
+import { classifyAiError, logAiUsage } from "../../lib/aiUsageLog";
 import type { EvieAiPathPipelineRequest, EvieAiPathPipelineResponse } from "../../lib/agentTypes";
+
+const ROUTE_NAME = "evie-path-pipeline";
 
 // Server-only route: Evie's first LLM-backed path planner.
 //
@@ -237,13 +240,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const currentMode: EvieAiPathPipelineRequest["currentMode"] =
     body.currentMode === "progress" || body.currentMode === "recovery" ? body.currentMode : "neutral";
 
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    const fallback = buildSafeFallbackEviePipeline({ userPrompt, lifeProfile, currentEnergy, currentMode });
-    res.status(200).json(fallback);
-    return;
-  }
-
   const request: EvieAiPathPipelineRequest = {
     userPrompt,
     lifeProfile,
@@ -256,6 +252,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     availableDays: body.availableDays,
     constraints: body.constraints,
   };
+  const userContent = buildUserContent(request);
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    logAiUsage({ route: ROUTE_NAME, promptChars: userContent.length, ok: false, reason: "missing_key" });
+    const fallback = buildSafeFallbackEviePipeline({ userPrompt, lifeProfile, currentEnergy, currentMode }, "missing_key");
+    res.status(200).json(fallback);
+    return;
+  }
 
   try {
     const client = new OpenAI({ apiKey });
@@ -263,7 +268,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       model: MODEL,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: buildUserContent(request) },
+        { role: "user", content: userContent },
       ],
       response_format: { type: "json_schema", json_schema: RESPONSE_JSON_SCHEMA },
       temperature: 0.6,
@@ -272,6 +277,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const raw = completion.choices[0]?.message?.content;
     if (!raw) throw new Error("Empty model response");
 
+    logAiUsage({ route: ROUTE_NAME, promptChars: userContent.length, completionChars: raw.length, ok: true });
+
     const parsed = JSON.parse(raw) as EvieAiPathPipelineResponse;
     // Defense in depth: force these regardless of what the model returned.
     parsed.guide = "evie";
@@ -279,8 +286,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     res.status(200).json(parsed);
   } catch (error) {
+    const reason = classifyAiError(error);
     console.warn("evie-path-pipeline model call failed:", error instanceof Error ? error.message : error);
-    const fallback = buildSafeFallbackEviePipeline({ userPrompt, lifeProfile, currentEnergy, currentMode });
+    logAiUsage({ route: ROUTE_NAME, promptChars: userContent.length, ok: false, reason });
+    const fallback = buildSafeFallbackEviePipeline({ userPrompt, lifeProfile, currentEnergy, currentMode }, reason);
     res.status(200).json(fallback);
   }
 }

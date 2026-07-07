@@ -1,5 +1,5 @@
 import { CRISIS_RESOURCE_NOTE } from "./crisisDetection";
-import type { LunaSupportModifierRequest, LunaSupportModifierResponse } from "./agentTypes";
+import type { AiUnavailableReason, LunaSupportModifierRequest, LunaSupportModifierResponse } from "./agentTypes";
 
 // Deterministic, dependency-free fallback for Luna's AI Support Modifier. Used by the server
 // route (api/agents/luna-support-modifier.ts) whenever OPENAI_API_KEY is missing or the model
@@ -7,7 +7,10 @@ import type { LunaSupportModifierRequest, LunaSupportModifierResponse } from "./
 // NO AsyncStorage / React Native imports so it stays safe to run in a plain Node function.
 // Mirrors the tone of lib/mylitAgents.ts's buildLunaSupportSummary/buildLunaLearningContext.
 
-export function buildSafeFallbackLunaSupport(request: LunaSupportModifierRequest): LunaSupportModifierResponse {
+export function buildSafeFallbackLunaSupport(
+  request: LunaSupportModifierRequest,
+  reason: AiUnavailableReason = "missing_key"
+): LunaSupportModifierResponse {
   const whatLunaNoticed: string[] = [];
 
   if (request.recentMisses.length >= 2) {
@@ -73,6 +76,7 @@ export function buildSafeFallbackLunaSupport(request: LunaSupportModifierRequest
     recoveryQuestSuggestions,
     evieHandoffNote: request.recentMisses.length >= 3 ? "If the plan keeps not fitting, Evie can rebuild it around what's realistic right now." : "",
     safetyNote: "This is supportive guidance, not medical or therapy advice. If things feel like more than MYLIT can help with, please reach out to a real person you trust.",
+    aiUnavailableReason: reason,
   };
 }
 

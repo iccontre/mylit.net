@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ActivityIndicator, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
@@ -12,6 +12,7 @@ import {
   saveLunaRecoveryQuestSuggestion,
 } from "../lib/lunaSupportModifier";
 import { LATEST_CHECKIN_KEY } from "../lib/storageKeys";
+import { friendlyAiUnavailableMessage } from "../lib/aiUnavailableMessages";
 import type { LunaPlanAdjustment, LunaRecoveryQuestSuggestion, LunaSupportModifierResponse } from "../lib/agentTypes";
 
 const pixelFont = Platform.select({ ios: "Menlo", android: "monospace", web: "monospace", default: "monospace" });
@@ -40,6 +41,9 @@ export function LunaSupportPanel() {
   const [boardMode, setBoardMode] = useState<"Progress" | "Recovery">("Progress");
   const [adjustmentStatus, setAdjustmentStatus] = useState<Record<number, string>>({});
   const [recoveryStatus, setRecoveryStatus] = useState<Record<number, string>>({});
+  // Synchronous in-flight lock — belt-and-suspenders alongside the `loading` state/disabled
+  // prop, so a rapid double-click/double-tap can never fire two overlapping AI calls.
+  const inFlightRef = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -57,18 +61,23 @@ export function LunaSupportPanel() {
   );
 
   async function handleAskLuna() {
-    if (loading || !messageText.trim()) return;
+    if (inFlightRef.current || !messageText.trim()) return;
+    inFlightRef.current = true;
     setLoading(true);
     setError("");
-    const outcome = await requestLunaSupport(messageText);
-    setLoading(false);
-    if (!outcome.ok) {
-      setError(outcome.error);
-      return;
+    try {
+      const outcome = await requestLunaSupport(messageText);
+      if (!outcome.ok) {
+        setError(outcome.error);
+        return;
+      }
+      setResult(outcome.record.response);
+      setAdjustmentStatus({});
+      setRecoveryStatus({});
+    } finally {
+      inFlightRef.current = false;
+      setLoading(false);
     }
-    setResult(outcome.record.response);
-    setAdjustmentStatus({});
-    setRecoveryStatus({});
   }
 
   async function handleAdjustment(adjustment: LunaPlanAdjustment, index: number) {
@@ -131,6 +140,10 @@ export function LunaSupportPanel() {
 
       {result ? (
         <View style={styles.resultStack}>
+          {result.aiUnavailableReason ? (
+            <Text style={styles.noticeText}>{friendlyAiUnavailableMessage(result.aiUnavailableReason, "Luna")}</Text>
+          ) : null}
+
           <View style={[styles.row, { borderColor: "#A78BFA" }]}>
             <Text style={[styles.rowLabel, { color: "#E9D5FF" }]}>LUNA</Text>
             <Text style={styles.rowText}>{result.supportMessage}</Text>
@@ -228,6 +241,7 @@ const styles = StyleSheet.create({
   askButtonRow: { flexDirection: "row", alignItems: "center" },
   askButtonText: { color: "#E9D5FF", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", letterSpacing: 0.5 },
   errorText: { color: "#FCA5A5", fontSize: 11, lineHeight: 16, fontWeight: "700", textAlign: "center", marginTop: 8 },
+  noticeText: { color: "#FCD34D", fontSize: 10, lineHeight: 15, fontWeight: "700", textAlign: "center", marginBottom: 8 },
   resultStack: { marginTop: 10 },
   row: {
     borderWidth: 2,

@@ -1,5 +1,5 @@
 import { CRISIS_RESOURCE_NOTE } from "./crisisDetection";
-import type { GuideConversationResponse, GuideName } from "./agentTypes";
+import type { AiUnavailableReason, GuideConversationResponse, GuideName } from "./agentTypes";
 
 // Deterministic, dependency-free fallback for Guide Conversation Memory. Used by
 // api/agents/guide-conversation.ts whenever OPENAI_API_KEY is missing or the model call
@@ -9,7 +9,7 @@ import type { GuideConversationResponse, GuideName } from "./agentTypes";
 const GENERIC_SAFETY_NOTE =
   "This is supportive guidance, not medical or therapy advice. If something feels like more than MYLIT can help with, please reach out to a real person you trust.";
 
-export function buildFallbackGuideConversationResponse(guide: GuideName): GuideConversationResponse {
+export function buildFallbackGuideConversationResponse(guide: GuideName, reason: AiUnavailableReason = "missing_key"): GuideConversationResponse {
   const reply =
     guide === "evie"
       ? "Thanks for sharing that. Evie's AI planning brain isn't reachable right now, so she can't turn this into a plan update yet — try again in a bit, or use \"Ask Evie to Build My Path\" on the Path screen."
@@ -20,6 +20,7 @@ export function buildFallbackGuideConversationResponse(guide: GuideName): GuideC
     reply,
     memoryUpdateProposals: [],
     safetyNote: GENERIC_SAFETY_NOTE,
+    aiUnavailableReason: reason,
   };
 }
 

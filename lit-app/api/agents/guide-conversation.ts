@@ -3,7 +3,10 @@ import OpenAI from "openai";
 
 import { matchesCrisisLanguage } from "../../lib/crisisDetection";
 import { buildCrisisSafeGuideConversationResponse, buildFallbackGuideConversationResponse } from "../../lib/guideConversationFallback";
+import { classifyAiError, logAiUsage } from "../../lib/aiUsageLog";
 import type { GuideConversationRequest, GuideConversationResponse, GuideName } from "../../lib/agentTypes";
+
+const ROUTE_NAME = "guide-conversation";
 
 // Server-only route: lightweight guided conversation memory for Evie ("Talk to Evie about my
 // path") and Luna ("Talk to Luna about what feels hard"). Deliberately NOT an unrestricted
@@ -161,9 +164,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     currentMode: body.currentMode === "progress" || body.currentMode === "recovery" ? body.currentMode : "neutral",
   };
 
+  const userContent = buildUserContent(request);
+
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    res.status(200).json(buildFallbackGuideConversationResponse(guide));
+    logAiUsage({ route: ROUTE_NAME, promptChars: userContent.length, ok: false, reason: "missing_key" });
+    res.status(200).json(buildFallbackGuideConversationResponse(guide, "missing_key"));
     return;
   }
 
@@ -173,7 +179,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       model: MODEL,
       messages: [
         { role: "system", content: guide === "luna" ? LUNA_SYSTEM_PROMPT : EVIE_SYSTEM_PROMPT },
-        { role: "user", content: buildUserContent(request) },
+        { role: "user", content: userContent },
       ],
       response_format: { type: "json_schema", json_schema: buildResponseSchema(guide) },
       temperature: 0.6,
@@ -181,6 +187,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const raw = completion.choices[0]?.message?.content;
     if (!raw) throw new Error("Empty model response");
+
+    logAiUsage({ route: ROUTE_NAME, promptChars: userContent.length, completionChars: raw.length, ok: true });
 
     const parsed = JSON.parse(raw) as GuideConversationResponse;
     // Defense in depth: force this regardless of what the model returned.
@@ -191,7 +199,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     res.status(200).json(parsed);
   } catch (error) {
+    const reason = classifyAiError(error);
     console.warn("guide-conversation model call failed:", error instanceof Error ? error.message : error);
-    res.status(200).json(buildFallbackGuideConversationResponse(guide));
+    logAiUsage({ route: ROUTE_NAME, promptChars: userContent.length, ok: false, reason });
+    res.status(200).json(buildFallbackGuideConversationResponse(guide, reason));
   }
 }

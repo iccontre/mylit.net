@@ -1,5 +1,6 @@
 import type {
   AgentEventMode,
+  AiUnavailableReason,
   EvieAiDailyQuestSuggestion,
   EvieAiPathPipelineResponse,
   EvieGoalDomain,
@@ -56,12 +57,15 @@ function computeSpecificityScore(text: string): number {
  * generator but outputs the AI response schema so the client UI can render either path
  * identically.
  */
-export function buildSafeFallbackEviePipeline(input: {
-  userPrompt: string;
-  lifeProfile: UserLifeProfile;
-  currentEnergy: number;
-  currentMode: AgentEventMode;
-}): EvieAiPathPipelineResponse {
+export function buildSafeFallbackEviePipeline(
+  input: {
+    userPrompt: string;
+    lifeProfile: UserLifeProfile;
+    currentEnergy: number;
+    currentMode: AgentEventMode;
+  },
+  reason: AiUnavailableReason = "missing_key"
+): EvieAiPathPipelineResponse {
   const goalText = pickGoalText(input.userPrompt, input.lifeProfile);
   const hasGoal = goalText.length > 0;
   const specificityScore = computeSpecificityScore(goalText);
@@ -170,5 +174,6 @@ export function buildSafeFallbackEviePipeline(input: {
     nextBestAction: hasGoal
       ? `Try the small step: ${dailyQuestSuggestions[0]?.title ?? goalSummary}`
       : "Write a specific goal into the prompt above so Evie has something to build around.",
+    aiUnavailableReason: reason,
   };
 }

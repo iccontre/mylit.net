@@ -337,6 +337,14 @@ export type PathPipeline = {
 // only.
 // ---------------------------------------------------------------------------
 
+/**
+ * Why a route fell back to its deterministic response instead of a real model call — set
+ * only on the fallback path, never alongside a genuine "ready"/ready-like AI response. Lets
+ * the client show a friendly, specific notice (e.g. "AI is at its usage quota right now")
+ * instead of silently pretending a fallback is a normal result. See lib/aiUsageLog.ts.
+ */
+export type AiUnavailableReason = "missing_key" | "quota_exceeded" | "rate_limited" | "error";
+
 export type EvieGoalDomain =
   | "career"
   | "school"
@@ -420,6 +428,8 @@ export type EvieAiPathPipelineResponse = {
   lunaRecoveryNotes: string[];
   safetyNotes: string[];
   nextBestAction: string;
+  /** Set only when this response is the deterministic fallback, not a real model result. */
+  aiUnavailableReason?: AiUnavailableReason;
 };
 
 export type EvieAiPathPipelineConstraints = {
@@ -449,6 +459,8 @@ export type EvieAiPathPipelineRecord = {
   createdAt: string;
   userPrompt: string;
   response: EvieAiPathPipelineResponse;
+  /** Hash of (userPrompt + lifeProfile.updatedAt + learningMemory.lastUpdatedAt) — lets a later request with identical inputs reuse this instead of calling OpenAI again. Absent on records saved before caching was added. */
+  cacheKey?: string;
 };
 
 // ---------------------------------------------------------------------------
@@ -496,6 +508,8 @@ export type LunaSupportModifierResponse = {
   recoveryQuestSuggestions: LunaRecoveryQuestSuggestion[];
   evieHandoffNote: string;
   safetyNote: string;
+  /** Set only when this response is the deterministic fallback, not a real model result. */
+  aiUnavailableReason?: AiUnavailableReason;
 };
 
 export type LunaActiveQuestSummary = {
@@ -623,6 +637,8 @@ export type GuideConversationResponse = {
     proposedValue: string;
   }>;
   safetyNote: string;
+  /** Set only when this response is the deterministic fallback, not a real model result. */
+  aiUnavailableReason?: AiUnavailableReason;
 };
 
 // ---------------------------------------------------------------------------
