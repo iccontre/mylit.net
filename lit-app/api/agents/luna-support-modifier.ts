@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import OpenAI from "openai";
 
 import { buildCrisisSafeLunaResponse, buildSafeFallbackLunaSupport } from "../../lib/lunaAiFallback";
+import { matchesCrisisLanguage } from "../../lib/crisisDetection";
 import type { LunaSupportModifierRequest, LunaSupportModifierResponse } from "../../lib/agentTypes";
 
 // Server-only route: Luna's first LLM-backed support/plan-adjustment guide.
@@ -20,25 +21,6 @@ import type { LunaSupportModifierRequest, LunaSupportModifierResponse } from "..
 
 const MODEL = process.env.OPENAI_MODEL || "gpt-4o-mini";
 const MAX_MESSAGE_LENGTH = 4000;
-
-// Deliberately conservative/explicit phrases only — false negatives here fall through to a
-// normal supportive response (which is still gentle and non-pressuring), so there is no
-// safety cost to keeping this list narrow and avoiding disruptive false positives.
-const CRISIS_PATTERNS: RegExp[] = [
-  /\bkill myself\b/i,
-  /\bwant(ed)? to die\b/i,
-  /\bend(ing)? my life\b/i,
-  /\bsuicid(e|al)\b/i,
-  /\bhurt(ing)? myself\b/i,
-  /\bself[\s-]?harm\b/i,
-  /\bdon'?t want to (be alive|live anymore)\b/i,
-  /\bno reason to live\b/i,
-  /\bbetter off (dead|without me)\b/i,
-];
-
-function matchesCrisisLanguage(text: string): boolean {
-  return CRISIS_PATTERNS.some((pattern) => pattern.test(text));
-}
 
 const RESPONSE_JSON_SCHEMA = {
   name: "luna_support_modifier",

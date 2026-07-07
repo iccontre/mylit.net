@@ -36,7 +36,7 @@ type MindCard = {
   description: string;
   buttonText: string;
   icon: string;
-  route: "/journal" | "/awareness-check" | "/reflection";
+  route: "/journal" | "/awareness-check" | "/reflection" | "/talk-to-luna";
 };
 
 const MIND_CARDS: MindCard[] = [
@@ -60,6 +60,13 @@ const MIND_CARDS: MindCard[] = [
     buttonText: "Open Reflection",
     icon: "🪞",
     route: "/reflection",
+  },
+  {
+    title: "Talk to Luna",
+    description: "Talk through what feels hard, at your own pace.",
+    buttonText: "Talk to Luna about what feels hard",
+    icon: "💬",
+    route: "/talk-to-luna",
   },
 ];
 

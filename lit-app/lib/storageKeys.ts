@@ -71,6 +71,10 @@ export const WEEKLY_AGENT_REVIEWS_KEY = "lit_weekly_agent_reviews";
 export const AI_EVIE_PATH_PIPELINES_KEY = "lit_ai_evie_path_pipelines";
 /** LunaSupportModifierRecord[] — one per "Ask Luna to help me adjust" run, newest-first, capped history. */
 export const AI_LUNA_SUPPORT_SESSIONS_KEY = "lit_ai_luna_support_sessions";
+/** GuideConversationTurn[] — flat, both guides, filter by turn.guide. Capped per-guide (see lib/guideConversation.ts). */
+export const GUIDE_CONVERSATIONS_KEY = "lit_guide_conversations";
+/** GuideMemoryUpdateLogEntry[] — audit log written only once a proposal is decided (approved or dismissed). */
+export const GUIDE_MEMORY_UPDATES_KEY = "lit_guide_memory_updates";
 
 /**
  * Canonical synced keys that back the Log History screen. These are the SAME keys the
@@ -127,6 +131,8 @@ export const SYNCABLE_PROGRESS_KEYS = [
   WEEKLY_AGENT_REVIEWS_KEY,
   AI_EVIE_PATH_PIPELINES_KEY,
   AI_LUNA_SUPPORT_SESSIONS_KEY,
+  GUIDE_CONVERSATIONS_KEY,
+  GUIDE_MEMORY_UPDATES_KEY,
 ] as const;
 
 export type SyncableProgressKey = (typeof SYNCABLE_PROGRESS_KEYS)[number];
@@ -149,6 +155,8 @@ export const ARRAY_MERGE_PROGRESS_KEYS = new Set<SyncableProgressKey>([
   WEEKLY_AGENT_REVIEWS_KEY,
   AI_EVIE_PATH_PIPELINES_KEY,
   AI_LUNA_SUPPORT_SESSIONS_KEY,
+  GUIDE_CONVERSATIONS_KEY,
+  GUIDE_MEMORY_UPDATES_KEY,
 ]);
 
 export function isSyncableProgressKey(key: string): key is SyncableProgressKey {

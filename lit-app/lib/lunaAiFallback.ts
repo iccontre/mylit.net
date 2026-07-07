@@ -1,3 +1,4 @@
+import { CRISIS_RESOURCE_NOTE } from "./crisisDetection";
 import type { LunaSupportModifierRequest, LunaSupportModifierResponse } from "./agentTypes";
 
 // Deterministic, dependency-free fallback for Luna's AI Support Modifier. Used by the server
@@ -74,9 +75,6 @@ export function buildSafeFallbackLunaSupport(request: LunaSupportModifierRequest
     safetyNote: "This is supportive guidance, not medical or therapy advice. If things feel like more than MYLIT can help with, please reach out to a real person you trust.",
   };
 }
-
-const CRISIS_RESOURCE_NOTE =
-  "MYLIT isn't able to provide crisis support, but you deserve real help right now. In the US, you can call or text 988 (Suicide & Crisis Lifeline) anytime, or text HOME to 741741 (Crisis Text Line). If you're in immediate danger, please call 911 or your local emergency number.";
 
 /** Fixed, non-AI crisis-safe response — used whenever the user's message matches a self-harm/crisis pattern, regardless of OPENAI_API_KEY. Never generates productivity pressure. */
 export function buildCrisisSafeLunaResponse(): LunaSupportModifierResponse {

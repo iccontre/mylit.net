@@ -544,6 +544,88 @@ export type LunaSupportModifierRecord = {
 };
 
 // ---------------------------------------------------------------------------
+// Guide Conversation Memory — lightweight, guided conversation modes ("Talk to Evie about
+// my path" / "Talk to Luna about what feels hard"). This is deliberately NOT an unrestricted
+// chatbot: a conversation can only ever affect MYLIT's stored memory through a structured
+// update proposal the user explicitly approves, and it can never create or delete a quest —
+// only the existing, already-validated Evie/Luna pipelines do that. See
+// api/agents/guide-conversation.ts and lib/guideConversation.ts. Types only — no AI call
+// happens in this file.
+// ---------------------------------------------------------------------------
+
+export type GuideName = "evie" | "luna";
+
+export type GuideMemoryUpdateType =
+  | "new_goal"
+  | "changed_goal"
+  | "obstacle"
+  | "preference"
+  | "recovery_need"
+  | "motivation_style"
+  | "task_adjustment_request";
+
+/** One proposed structured memory update from a guide reply — inert until the user decides. */
+export type GuideMemoryUpdateProposal = {
+  id: string;
+  type: GuideMemoryUpdateType;
+  /** Short, human-facing summary, e.g. "Evie thinks your goal changed to: ..." */
+  summary: string;
+  /** The actual value that would be written if approved. */
+  proposedValue: string;
+  decision?: "approved" | "dismissed";
+  decidedAt?: string;
+};
+
+export type GuideConversationRole = "user" | "guide";
+
+/** One turn in a guide conversation. Guide turns may carry pending/decided memory update proposals. */
+export type GuideConversationTurn = {
+  id: string;
+  guide: GuideName;
+  role: GuideConversationRole;
+  text: string;
+  createdAt: string;
+  memoryUpdateProposals?: GuideMemoryUpdateProposal[];
+};
+
+/** Audit log entry written once a proposal is decided (approved OR dismissed) — never for pending proposals. */
+export type GuideMemoryUpdateLogEntry = {
+  id: string;
+  guide: GuideName;
+  type: GuideMemoryUpdateType;
+  summary: string;
+  proposedValue: string;
+  decision: "approved" | "dismissed";
+  /** Which field this was written to, e.g. "longTermDreamStatement" — omitted for dismissed or non-field-mapped types. */
+  appliedToField?: string;
+  sourceTurnId: string;
+  decidedAt: string;
+};
+
+export type GuideConversationRequest = {
+  guide: GuideName;
+  userMessage: string;
+  /** Compact recent turns only (last few exchanges, truncated) — never the full conversation history. */
+  recentTurns: { role: GuideConversationRole; text: string }[];
+  lifeProfile: UserLifeProfile;
+  guideMemory: GuideMemory;
+  learningMemory: LearningMemory;
+  statsInsights: StatsInsight[];
+  currentMode: AgentEventMode;
+};
+
+export type GuideConversationResponse = {
+  guide: GuideName;
+  reply: string;
+  memoryUpdateProposals: Array<{
+    type: GuideMemoryUpdateType;
+    summary: string;
+    proposedValue: string;
+  }>;
+  safetyNote: string;
+};
+
+// ---------------------------------------------------------------------------
 // Weekly Agent Review: MYLIT's first weekly improvement loop. Reviews the
 // user's week and turns it into supportive, non-shame-based adjustments for
 // Evie, Luna, and Calendar. See lib/weeklyReview.ts. No AI calls.

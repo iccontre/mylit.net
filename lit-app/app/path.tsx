@@ -268,6 +268,12 @@ export default function PathScreen() {
 
             <EvieAiPathCard />
 
+            <TouchableOpacity style={styles.secondaryActionButton} onPress={() => router.push("/talk-to-evie")}>
+              <Text style={styles.actionIcon}>💬</Text>
+              <Text style={styles.secondaryActionText}>Talk to Evie about my path</Text>
+              <Text style={styles.secondaryActionArrow}>›</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={styles.primaryActionButton}
               onPress={() => router.push({ pathname: "/onboarding", params: { mode: "editPath" } })}
