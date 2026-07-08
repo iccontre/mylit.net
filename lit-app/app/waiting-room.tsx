@@ -38,7 +38,6 @@ import {
   LATEST_CHECKIN_KEY,
   MISSED_QUESTS_KEY,
   TOMORROW_QUEUE_KEY,
-  USER_STATS_KEY,
   WAITING_ROOM_BOOSTS_KEY,
 } from "../lib/storageKeys";
 import { formatDurationLabel, formatEnergyDelta, getEnergyDelta } from "../lib/scheduling";
@@ -56,7 +55,6 @@ type ActiveTimedItem = {
 };
 
 type CheckIn = { mode?: "Recovery" | "Progress"; energy?: number };
-type UserStats = { totalSteps?: number; rankBonusesAwarded?: number[] };
 
 const pixelFont = Platform.select({ ios: "Menlo", android: "monospace", web: "monospace", default: "monospace" });
 
@@ -71,7 +69,7 @@ const TIPS = [
 const WAITING_ROOM_INFO_BULLETS = [
   "The Waiting Room keeps your current quest in one focused place.",
   "The timer stays synced with the Quest Board — leaving and coming back won't lose your place.",
-  "For 1-hour tasks, you can use Boost once for +2 steps.",
+  "Boost starts a 15-min timer — finish it before your quest ends for a 1.5x reward. One use per task.",
   "When time ends, choose Completed or Missed?",
   "Completed awards the task's normal steps. Missed? helps you reflect without punishment.",
 ];
@@ -98,6 +96,23 @@ function formatCountdown(ms: number): string {
 
 function boostKeyFor(item: ActiveTimedItem): string {
   return `${item.id}:${item.startedAt}`;
+}
+
+const BOOST_TIMER_MS = 15 * 60 * 1000;
+const BOOST_MULTIPLIER = 1.5;
+
+type BoostRecord = {
+  boostStartedAt: number;
+  boostCompletedAt?: number;
+  boostMultiplier: number;
+  boostUsed: boolean;
+  /** True once the 1.5x reward has actually been credited on quest completion — guards against double-award on refresh/duplicate taps. */
+  boostedRewardApplied: boolean;
+};
+
+/** Tolerates the old shape (plain ISO-string values) from before Boost became timer-based — treated as "no usable record", never crashes. */
+function isBoostRecord(value: unknown): value is BoostRecord {
+  return Boolean(value) && typeof value === "object" && typeof (value as BoostRecord).boostStartedAt === "number";
 }
 
 function toHomeQuestItem(item: ActiveTimedItem): HomeQuestItem {
@@ -161,7 +176,7 @@ export default function WaitingRoomScreen() {
   const [checkInMode, setCheckInMode] = useState<"Recovery" | "Progress" | null>(null);
   const [completedQuests, setCompletedQuests] = useState<CompletionEntry[]>([]);
   const [missedQuests, setMissedQuests] = useState<MissedEntry[]>([]);
-  const [boosted, setBoosted] = useState(false);
+  const [boostRecord, setBoostRecord] = useState<BoostRecord | null>(null);
   const [boostBusy, setBoostBusy] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -176,7 +191,7 @@ export default function WaitingRoomScreen() {
       readJson<unknown>(COMPLETED_QUESTS_KEY, []),
       readJson<unknown>(MISSED_QUESTS_KEY, []),
       readJson<CheckIn | null>(LATEST_CHECKIN_KEY, null),
-      readJson<Record<string, string>>(WAITING_ROOM_BOOSTS_KEY, {}),
+      readJson<Record<string, unknown>>(WAITING_ROOM_BOOSTS_KEY, {}),
     ]);
 
     let parsedActive: ActiveTimedItem | null = null;
@@ -198,7 +213,8 @@ export default function WaitingRoomScreen() {
     const missed = parseMissed(missedRaw);
     setCompletedQuests(completed);
     setMissedQuests(missed);
-    setBoosted(parsedActive ? Boolean(boosts[boostKeyFor(parsedActive)]) : false);
+    const rawBoostRecord = parsedActive ? boosts[boostKeyFor(parsedActive)] : null;
+    setBoostRecord(isBoostRecord(rawBoostRecord) ? rawBoostRecord : null);
 
     if (parsedActive) {
       const todayKey = getTodayKey();
@@ -271,26 +287,42 @@ export default function WaitingRoomScreen() {
     : "Nice. You chose to stay with your goal. That counts.";
   const accent = isRecoveryMode ? "#C4A7FF" : "#84CC16";
   const background = isRecoveryMode ? uiAssets.backgrounds.recovery : uiAssets.backgrounds.progress;
-  const canBoost = activeItem !== null && activeItem.durationMinutes >= 60;
+  // Boost is a 15-min side-timer, independent of the quest's own timer: tap it once to start,
+  // and if it finishes before the quest is marked complete, that completion earns 1.5x. Elapsed
+  // time is always recomputed from boostStartedAt (not a running interval), so leaving and
+  // returning to the Waiting Room never loses or resets progress — same pattern as the main
+  // quest countdown above.
+  const canBoost = activeItem !== null && !timerFinished;
+  const boostElapsedMs = boostRecord ? Math.max(0, nowMs - boostRecord.boostStartedAt) : 0;
+  const boostRemainingMs = boostRecord ? Math.max(0, BOOST_TIMER_MS - boostElapsedMs) : 0;
+  const boostReady = Boolean(boostRecord) && boostElapsedMs >= BOOST_TIMER_MS;
+  const boostLabel = !boostRecord
+    ? "Boost"
+    : boostRecord.boostedRewardApplied
+      ? "Boost Used"
+      : boostReady
+        ? "Boost Ready: 1.5x"
+        : `Boost Timer: ${formatCountdown(boostRemainingMs)}`;
 
   async function handleBoost() {
-    if (!activeItem || boosted || boostBusy || !canBoost || timerFinished) return;
+    if (!activeItem || boostRecord || boostBusy || !canBoost) return;
     setBoostBusy(true);
     try {
       const key = boostKeyFor(activeItem);
-      const boosts = await readJson<Record<string, string>>(WAITING_ROOM_BOOSTS_KEY, {});
-      if (boosts[key]) {
-        setBoosted(true);
+      const boosts = await readJson<Record<string, unknown>>(WAITING_ROOM_BOOSTS_KEY, {});
+      if (isBoostRecord(boosts[key])) {
+        setBoostRecord(boosts[key] as BoostRecord);
         return;
       }
-      const userStats = await readJson<UserStats>(USER_STATS_KEY, {});
-      const nextStats: UserStats = { ...userStats, totalSteps: (userStats.totalSteps ?? 0) + 2 };
-      const nextBoosts = { ...boosts, [key]: new Date().toISOString() };
-      await persistProgressKeys({
-        [WAITING_ROOM_BOOSTS_KEY]: JSON.stringify(nextBoosts),
-        [USER_STATS_KEY]: JSON.stringify(nextStats),
-      });
-      setBoosted(true);
+      const record: BoostRecord = {
+        boostStartedAt: Date.now(),
+        boostMultiplier: BOOST_MULTIPLIER,
+        boostUsed: true,
+        boostedRewardApplied: false,
+      };
+      const nextBoosts = { ...boosts, [key]: record };
+      await persistProgressKeys({ [WAITING_ROOM_BOOSTS_KEY]: JSON.stringify(nextBoosts) });
+      setBoostRecord(record);
       void trackEvent(ANALYTICS_EVENTS.waiting_room_boost_used, {
         id: activeItem.id,
         durationMinutes: activeItem.durationMinutes,
@@ -304,19 +336,35 @@ export default function WaitingRoomScreen() {
     if (!activeItem || busy) return;
     setBusy(true);
     try {
+      const rewardApplied = Boolean(boostRecord?.boostedRewardApplied);
+      const eligibleForBoost = boostReady && boostRecord && !rewardApplied;
       const homeItem = toHomeQuestItem(activeItem);
+      const boostedHomeItem = eligibleForBoost ? { ...homeItem, steps: Math.round(homeItem.steps * BOOST_MULTIPLIER) } : homeItem;
+
       if (completedQuests.some((entry) => entry.id === homeItem.id)) {
-        setCongrats({ steps: homeItem.steps, boost: boosted });
+        setCongrats({ steps: homeItem.steps, boost: rewardApplied });
         return;
       }
-      const nextCompleted = await markItemComplete(homeItem, completedQuests);
+
+      // Persist boostedRewardApplied BEFORE marking complete so a refresh mid-save can never
+      // re-apply the multiplier a second time — the "steps" that get written are already the
+      // boosted amount, and this flag is what prevents that from happening twice.
+      if (eligibleForBoost && activeItem) {
+        const key = boostKeyFor(activeItem);
+        const boosts = await readJson<Record<string, unknown>>(WAITING_ROOM_BOOSTS_KEY, {});
+        const nextRecord: BoostRecord = { ...(boostRecord as BoostRecord), boostedRewardApplied: true };
+        await persistProgressKeys({ [WAITING_ROOM_BOOSTS_KEY]: JSON.stringify({ ...boosts, [key]: nextRecord }) });
+        setBoostRecord(nextRecord);
+      }
+
+      const nextCompleted = await markItemComplete(boostedHomeItem, completedQuests);
       setCompletedQuests(nextCompleted);
       await clearProgressKey(ACTIVE_TIMED_ITEM_KEY);
       setActiveItem(null);
-      void trackEvent(ANALYTICS_EVENTS.quest_completed, { id: homeItem.id, title: homeItem.title, steps: homeItem.steps });
-      void trackEvent(ANALYTICS_EVENTS.waiting_room_completed, { id: homeItem.id, boost: boosted });
-      void syncQuestCompleted(homeItem);
-      setCongrats({ steps: homeItem.steps, boost: boosted });
+      void trackEvent(ANALYTICS_EVENTS.quest_completed, { id: homeItem.id, title: homeItem.title, steps: boostedHomeItem.steps });
+      void trackEvent(ANALYTICS_EVENTS.waiting_room_completed, { id: homeItem.id, boost: Boolean(eligibleForBoost) });
+      void syncQuestCompleted(boostedHomeItem);
+      setCongrats({ steps: boostedHomeItem.steps, boost: Boolean(eligibleForBoost) });
     } finally {
       setBusy(false);
     }
@@ -379,8 +427,7 @@ export default function WaitingRoomScreen() {
             {congrats ? (
               <View style={[styles.card, { borderColor: "#22C55E" }]}>
                 <Text style={styles.congratsTitle}>Congrats! +{congrats.steps}</Text>
-                {congrats.boost ? <Text style={styles.congratsLine}>Boost already added: +2</Text> : null}
-                <Text style={styles.congratsLine}>Total earned: +{congrats.steps + (congrats.boost ? 2 : 0)}</Text>
+                {congrats.boost ? <Text style={styles.congratsLine}>Boost applied: 1.5x reward</Text> : null}
                 <TouchableOpacity style={styles.returnHomeBtn} onPress={() => router.push("/")}>
                   <Text style={styles.returnHomeBtnText}>RETURN HOME</Text>
                 </TouchableOpacity>
@@ -444,21 +491,19 @@ export default function WaitingRoomScreen() {
                     {timerFinished ? "TIME'S UP" : formatCountdown(remainingMs)}
                   </Text>
 
-                  {canBoost ? (
-                    boosted ? (
-                      <View style={styles.boostDoneCard}>
-                        <Text style={styles.boostDoneText}>Boost used +2</Text>
-                        <Text style={styles.complimentText}>{complimentMessage}</Text>
-                      </View>
-                    ) : !timerFinished ? (
-                      <TouchableOpacity
-                        style={[styles.boostBtn, { borderColor: accent }, boostBusy && styles.boostBtnDisabled]}
-                        onPress={handleBoost}
-                        disabled={boostBusy}
-                      >
-                        <Text style={[styles.boostBtnText, { color: accent }]}>Boost (+2 steps)</Text>
-                      </TouchableOpacity>
-                    ) : null
+                  {boostRecord?.boostedRewardApplied ? (
+                    <View style={styles.boostDoneCard}>
+                      <Text style={styles.boostDoneText}>Boost Used — 1.5x applied</Text>
+                      <Text style={styles.complimentText}>{complimentMessage}</Text>
+                    </View>
+                  ) : canBoost ? (
+                    <TouchableOpacity
+                      style={[styles.boostBtn, { borderColor: accent }, (boostBusy || Boolean(boostRecord)) && styles.boostBtnDisabled]}
+                      onPress={handleBoost}
+                      disabled={boostBusy || Boolean(boostRecord)}
+                    >
+                      <Text style={[styles.boostBtnText, { color: accent }]}>{boostLabel}</Text>
+                    </TouchableOpacity>
                   ) : null}
 
                   {timerFinished ? (

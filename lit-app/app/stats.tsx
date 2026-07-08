@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   Image,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -270,6 +271,7 @@ export default function StatsScreen() {
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const [activeInfo, setActiveInfo] = useState<ActiveInfo>(null);
   const [recoveryVisible, setRecoveryVisible] = useState(false);
+  const [showLearningLoopModal, setShowLearningLoopModal] = useState(false);
   const [recoveryBusy, setRecoveryBusy] = useState(false);
   const [recoveryMessage, setRecoveryMessage] = useState("");
 
@@ -463,7 +465,21 @@ export default function StatsScreen() {
               <ChestCard accent="purple" icon="📖" title="LOG HISTORY" subtitle="Journals, reflections, meditations, dreams & intentions." meta="Saved to your account · synced across devices" onPress={() => router.push("/log-history")} />
               <ChestCard accent="green" icon="🧭" title="EDIT MY LIFE PROFILE" subtitle="Name, goals, obstacles, and how Evie/Luna should support you." meta="Optional · helps Evie and Luna understand you" onPress={() => router.push("/life-profile")} />
 
-              <GuideFoundationCard />
+              <TouchableOpacity style={styles.learningLoopButton} onPress={() => setShowLearningLoopModal(true)}>
+                <Text style={styles.learningLoopButtonText}>🔁 MYLIT LEARNING LOOP</Text>
+              </TouchableOpacity>
+              <Text style={styles.learningLoopNote}>See what Stats is learning so Evie, Luna, and Calendar can adjust.</Text>
+
+              <Modal visible={showLearningLoopModal} transparent animationType="fade" onRequestClose={() => setShowLearningLoopModal(false)}>
+                <View style={styles.learningLoopBackdrop}>
+                  <ScrollView style={styles.learningLoopPanel} contentContainerStyle={styles.learningLoopContent}>
+                    <GuideFoundationCard />
+                    <TouchableOpacity style={styles.learningLoopCloseBtn} onPress={() => setShowLearningLoopModal(false)}>
+                      <Text style={styles.learningLoopCloseBtnText}>CLOSE</Text>
+                    </TouchableOpacity>
+                  </ScrollView>
+                </View>
+              </Modal>
 
               <View style={styles.pageFooter}>
                 <View style={styles.pageFooterLine} />
@@ -765,6 +781,14 @@ function LunaNote({ text }: { text: string }) {
 }
 
 const styles = StyleSheet.create({
+  learningLoopButton: { borderWidth: 2, borderColor: "#38BDF8", borderRadius: 8, paddingVertical: 12, alignItems: "center", backgroundColor: "rgba(12,74,110,0.35)", marginTop: 4 },
+  learningLoopButtonText: { color: "#BAE6FD", fontFamily: "monospace", fontSize: 13, fontWeight: "900", letterSpacing: 0.5 },
+  learningLoopNote: { color: "#94A3B8", fontSize: 10, fontWeight: "700", textAlign: "center", marginTop: 6, marginBottom: 12 },
+  learningLoopBackdrop: { flex: 1, backgroundColor: "rgba(2,4,10,0.88)", padding: 18, paddingTop: 60, paddingBottom: 40 },
+  learningLoopPanel: { flex: 1, backgroundColor: "rgba(8,13,24,0.98)", borderWidth: 3, borderColor: "#334155", borderRadius: 12 },
+  learningLoopContent: { padding: 16 },
+  learningLoopCloseBtn: { marginTop: 8, alignItems: "center", paddingVertical: 10 },
+  learningLoopCloseBtnText: { color: "#94A3B8", fontFamily: "monospace", fontSize: 11, fontWeight: "900" },
   pageRoot: { flex: 1, backgroundColor: "#02040A" },
   phoneStage: { alignSelf: "center", backgroundColor: "#050814", overflow: "hidden", position: "relative", borderWidth: 2, borderColor: "rgba(251,191,36,0.55)", shadowColor: "#000", shadowOpacity: 0.85, shadowRadius: 0, shadowOffset: { width: 6, height: 6 } },
   phoneStageFullscreen: { borderWidth: 0, shadowOpacity: 0 },

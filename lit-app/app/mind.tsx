@@ -12,7 +12,6 @@ import {
 
 import { BottomNav } from "../components/BottomNav";
 import { GuideInfoModal } from "../components/GuideInfoModal";
-import { LunaSupportPanel } from "../components/LunaSupportPanel";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 
@@ -63,7 +62,7 @@ const MIND_CARDS: MindCard[] = [
   },
   {
     title: "Talk to Luna",
-    description: "Talk through what feels hard, at your own pace.",
+    description: "Open Luna when you need support, reflection, or recovery guidance.",
     buttonText: "Talk to Luna about what feels hard",
     icon: "💬",
     route: "/talk-to-luna",
@@ -129,10 +128,6 @@ export default function MindScreen() {
             </View>
 
             <View style={styles.cardStack}>{MIND_CARDS.map(renderMindCard)}</View>
-
-            <View style={{ marginTop: 16 }}>
-              <LunaSupportPanel />
-            </View>
           </ScrollView>
 
           <GuideInfoModal

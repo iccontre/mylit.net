@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Image, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 import { FormScreen } from "../components/FormScreen";
 import { BottomNav } from "../components/BottomNav";
@@ -422,6 +422,7 @@ export default function DayPlanScreen() {
   const [recoveryWarning, setRecoveryWarning] = useState("");
   const [pendingRecoveryConfirmId, setPendingRecoveryConfirmId] = useState<string | null>(null);
   const [showInfo, setShowInfo] = useState(false);
+  const [checklistModalItemId, setChecklistModalItemId] = useState<string | null>(null);
   const [quickThoughts, setQuickThoughts] = useState<QuickThoughtLike[]>([]);
   const committedPlanRef = useRef<DayPlan>(createDefaultPlan());
 
@@ -945,9 +946,10 @@ export default function DayPlanScreen() {
       setSavedMessage(`${selectedDay} is already at the ${formatPlannedDurationLabel(MAX_CHECKLIST_MINUTES_PER_DAY)} checklist limit — free up time before adding more.`);
       return;
     }
+    const newId = `${selectedDay}-${Date.now()}`;
     setDayPlan((current: DayPlan) => {
       const nextItem: ChecklistItem = {
-        id: `${selectedDay}-${Date.now()}`,
+        id: newId,
         text: "",
         checked: false,
         steps: stepsForItem(30, kind),
@@ -967,6 +969,9 @@ export default function DayPlanScreen() {
         },
       };
     });
+    // Opens straight into the edit modal — replaces the old "add blank row, then scroll to
+    // edit it inline" flow with a single button + modal (see task: collapse checklist creation).
+    setChecklistModalItemId(newId);
   }
 
 
@@ -1152,98 +1157,131 @@ export default function DayPlanScreen() {
                 <Text style={styles.emptyChecklist}>{EMPTY_CHECKLIST_COPY}</Text>
               ) : null}
               {visibleChecklist.map((item: ChecklistItem) => (
-                <View key={item.id} style={[styles.checkCard, item.hobby ? styles.hobbyBorder : item.kind === "recovery" ? styles.recoveryBorder : styles.progressBorder]}>
-                  <View style={styles.rowBetween}>
-                    <View style={styles.checkboxGroup}>
-                      <TouchableOpacity onPress={() => toggleChecklistItemChecked(item.id)}>
-                        <Text style={[styles.checkToggle, !item.checked && !item.durationConfirmed && styles.checkToggleDisabled]}>
-                          {item.checked ? "☑" : "☐"}
-                        </Text>
-                      </TouchableOpacity>
-                      <Text style={[styles.checkHelperText, item.checked && styles.checkHelperTextDone]}>
-                        {item.checked ? "Completed" : item.durationConfirmed ? "Check if completed" : "Add time to complete"}
-                      </Text>
-                    </View>
-                    <View style={styles.kindSwitchRow}>
-                      <TouchableOpacity style={[styles.kindMiniButton, !item.hobby && item.kind === "progress" && styles.kindProgressActive]} onPress={() => updateChecklistItem(item.id, { kind: "progress", hobby: false })}><Text style={styles.kindMiniText}>PROGRESS</Text></TouchableOpacity>
-                      <TouchableOpacity style={[styles.kindMiniButton, !item.hobby && item.kind === "recovery" && styles.kindRecoveryActive]} onPress={() => updateChecklistItem(item.id, { kind: "recovery", hobby: false })}><Text style={styles.kindMiniText}>RECOVERY</Text></TouchableOpacity>
-                      <TouchableOpacity style={[styles.kindMiniButton, item.hobby && styles.kindHobbyActive]} onPress={() => updateChecklistItem(item.id, { kind: "recovery", hobby: true })}><Text style={styles.kindMiniText}>HOBBY</Text></TouchableOpacity>
-                      <TouchableOpacity style={styles.deleteButton} onPress={() => deleteChecklistItem(item.id)}><Text style={styles.deleteButtonText}>🗑</Text></TouchableOpacity>
-                    </View>
-                  </View>
-                  {!item.durationConfirmed ? (
-                    <Text style={styles.timerRequiredText}>Checklist items are recurring quests. Set a time so MYLIT can track them fairly.</Text>
-                  ) : null}
-                  <View style={styles.categoryRow}>
-                    {CATEGORY_OPTIONS.map((option) => (
-                      <TouchableOpacity
-                        key={option.value}
-                        style={[styles.categoryButton, item.category === option.value && styles.categoryButtonActive]}
-                        onPress={() => updateChecklistItem(item.id, { category: item.category === option.value ? undefined : option.value })}
-                      >
-                        <Text style={[styles.categoryButtonText, item.category === option.value && styles.categoryButtonTextActive]}>{option.label}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                  <TextInput style={[formStyles.input, styles.itemInput]} value={item.text} onChangeText={(text: string) => updateChecklistItem(item.id, { text })} placeholder="Ex: Study 30 min" placeholderTextColor="#94A3B8" />
-                  <TimeStepper value={item.startTime} onChange={(next) => updateChecklistItem(item.id, { startTime: next })} />
-                  <View style={styles.durationRow}>
-                    {CHECKLIST_DURATIONS.map((duration) => (
-                      <TouchableOpacity key={duration} style={[styles.durationButton, item.duration === duration && styles.durationButtonActive]} onPress={() => updateChecklistItem(item.id, { duration, durationMinutes: parseDurationMinutes(duration, 30), durationConfirmed: true })}>
-                        <Text style={[styles.durationText, item.duration === duration && styles.optionTextActive]}>{duration}</Text>
-                      </TouchableOpacity>
-                    ))}
-                    <Text style={styles.stepsText}>+{item.steps} step{item.steps === 1 ? "" : "s"}</Text>
-                    <Text style={styles.energyText}>{formatEnergyDelta(getEnergyDelta({ kind: item.kind, durationMinutes: item.durationMinutes, title: item.text }))}</Text>
-                  </View>
-                  <Text style={styles.weekdayLabel}>SHOW ON</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.weekdayToggleRow}>
-                    {WEEKDAYS.map((day) => {
-                      const active = item.weekdays.includes(day);
-                      return (
-                        <TouchableOpacity key={`${item.id}-${day}`} style={[styles.weekdayToggle, active && styles.weekdayToggleActive]} onPress={() => toggleChecklistWeekday(item.id, day)}>
-                          <Text style={[styles.weekdayToggleText, active && styles.weekdayToggleTextActive]}>{day.slice(0, 3)}</Text>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </ScrollView>
-                  {pendingRecoveryConfirmId === item.id && recoveryWarning ? <Text style={styles.recoveryWarning}>{recoveryWarning}</Text> : null}
-                  <TouchableOpacity
-                    style={[styles.saveQuestButton, !isChecklistItemDirty(item) && styles.saveQuestButtonDisabled]}
-                    disabled={!isChecklistItemDirty(item) || !item.text.trim()}
-                    onPress={() => saveChecklistItem(item.id)}
-                  >
-                    <Text style={styles.saveQuestButtonText}>
-                      {!isChecklistItemDirty(item) ? "SAVED" : pendingRecoveryConfirmId === item.id ? "CONFIRM & SAVE" : "SAVE QUEST"}
+                <TouchableOpacity
+                  key={item.id}
+                  style={[styles.checkCardCompact, item.hobby ? styles.hobbyBorder : item.kind === "recovery" ? styles.recoveryBorder : styles.progressBorder]}
+                  onPress={() => setChecklistModalItemId(item.id)}
+                >
+                  <TouchableOpacity onPress={() => toggleChecklistItemChecked(item.id)}>
+                    <Text style={[styles.checkToggle, !item.checked && !item.durationConfirmed && styles.checkToggleDisabled]}>
+                      {item.checked ? "☑" : "☐"}
                     </Text>
                   </TouchableOpacity>
-                  {!item.checked && selectedDay === todayWeekday() ? (
-                    <TouchableOpacity style={styles.reflectButton} onPress={() => router.push("/reflection")}>
-                      <Text style={styles.reflectButtonText}>REFLECT</Text>
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
+                  <View style={styles.checkCardCompactBody}>
+                    <Text style={styles.checkCardCompactTitle} numberOfLines={1}>{item.text || "Untitled item"}</Text>
+                    <Text style={styles.checkCardCompactMeta} numberOfLines={1}>
+                      {item.hobby ? "HOBBY" : item.kind === "recovery" ? "RECOVERY" : "PROGRESS"} · {item.startTime} · {item.duration}
+                    </Text>
+                  </View>
+                  <Text style={styles.checkCardCompactArrow}>›</Text>
+                </TouchableOpacity>
               ))}
-              <View style={styles.addRow}>
-                <TouchableOpacity
-                  style={[styles.addProgressButton, selectedDayChecklistAtLimit && styles.addButtonDisabled]}
-                  disabled={selectedDayChecklistAtLimit}
-                  onPress={() => addChecklistItem("progress")}
-                >
-                  <Text style={styles.addButtonText}>+ Progress</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.addRecoveryButton, selectedDayChecklistAtLimit && styles.addButtonDisabled]}
-                  disabled={selectedDayChecklistAtLimit}
-                  onPress={() => addChecklistItem("recovery")}
-                >
-                  <Text style={styles.addButtonText}>+ Recovery</Text>
-                </TouchableOpacity>
-              </View>
+
+              <TouchableOpacity
+                style={[styles.setChecklistItemButton, selectedDayChecklistAtLimit && styles.addButtonDisabled]}
+                disabled={selectedDayChecklistAtLimit}
+                onPress={() => addChecklistItem("progress")}
+              >
+                <Text style={styles.setChecklistItemButtonText}>+ SET A CHECKLIST ITEM</Text>
+              </TouchableOpacity>
+              <Text style={styles.setChecklistItemNote}>Create repeated items for the days you choose.</Text>
+
               {selectedDayChecklistAtLimit ? (
                 <Text style={styles.capMessage}>{formatPlannedDurationLabel(MAX_CHECKLIST_MINUTES_PER_DAY)} of checklist time is the daily max for {selectedDay} — that&apos;s enough to build the habit without overloading the day.</Text>
               ) : null}
             </View>
+
+            <Modal
+              visible={checklistModalItemId !== null}
+              transparent
+              animationType="fade"
+              onRequestClose={() => setChecklistModalItemId(null)}
+            >
+              <View style={styles.checklistModalBackdrop}>
+                <ScrollView style={styles.checklistModalPanel} contentContainerStyle={styles.checklistModalContent}>
+                  {(() => {
+                    const item = visibleChecklist.find((entry) => entry.id === checklistModalItemId);
+                    if (!item) return null;
+                    return (
+                      <View style={[styles.checkCard, item.hobby ? styles.hobbyBorder : item.kind === "recovery" ? styles.recoveryBorder : styles.progressBorder]}>
+                        <View style={styles.rowBetween}>
+                          <View style={styles.checkboxGroup}>
+                            <TouchableOpacity onPress={() => toggleChecklistItemChecked(item.id)}>
+                              <Text style={[styles.checkToggle, !item.checked && !item.durationConfirmed && styles.checkToggleDisabled]}>
+                                {item.checked ? "☑" : "☐"}
+                              </Text>
+                            </TouchableOpacity>
+                            <Text style={[styles.checkHelperText, item.checked && styles.checkHelperTextDone]}>
+                              {item.checked ? "Completed" : item.durationConfirmed ? "Check if completed" : "Add time to complete"}
+                            </Text>
+                          </View>
+                          <View style={styles.kindSwitchRow}>
+                            <TouchableOpacity style={[styles.kindMiniButton, !item.hobby && item.kind === "progress" && styles.kindProgressActive]} onPress={() => updateChecklistItem(item.id, { kind: "progress", hobby: false })}><Text style={styles.kindMiniText}>PROGRESS</Text></TouchableOpacity>
+                            <TouchableOpacity style={[styles.kindMiniButton, !item.hobby && item.kind === "recovery" && styles.kindRecoveryActive]} onPress={() => updateChecklistItem(item.id, { kind: "recovery", hobby: false })}><Text style={styles.kindMiniText}>RECOVERY</Text></TouchableOpacity>
+                            <TouchableOpacity style={[styles.kindMiniButton, item.hobby && styles.kindHobbyActive]} onPress={() => updateChecklistItem(item.id, { kind: "recovery", hobby: true })}><Text style={styles.kindMiniText}>HOBBY</Text></TouchableOpacity>
+                            <TouchableOpacity style={styles.deleteButton} onPress={() => { deleteChecklistItem(item.id); setChecklistModalItemId(null); }}><Text style={styles.deleteButtonText}>🗑</Text></TouchableOpacity>
+                          </View>
+                        </View>
+                        {!item.durationConfirmed ? (
+                          <Text style={styles.timerRequiredText}>Checklist items are recurring quests. Set a time so MYLIT can track them fairly.</Text>
+                        ) : null}
+                        <View style={styles.categoryRow}>
+                          {CATEGORY_OPTIONS.map((option) => (
+                            <TouchableOpacity
+                              key={option.value}
+                              style={[styles.categoryButton, item.category === option.value && styles.categoryButtonActive]}
+                              onPress={() => updateChecklistItem(item.id, { category: item.category === option.value ? undefined : option.value })}
+                            >
+                              <Text style={[styles.categoryButtonText, item.category === option.value && styles.categoryButtonTextActive]}>{option.label}</Text>
+                            </TouchableOpacity>
+                          ))}
+                        </View>
+                        <TextInput style={[formStyles.input, styles.itemInput]} value={item.text} onChangeText={(text: string) => updateChecklistItem(item.id, { text })} placeholder="Ex: Study 30 min" placeholderTextColor="#94A3B8" />
+                        <TimeStepper value={item.startTime} onChange={(next) => updateChecklistItem(item.id, { startTime: next })} />
+                        <View style={styles.durationRow}>
+                          {CHECKLIST_DURATIONS.map((duration) => (
+                            <TouchableOpacity key={duration} style={[styles.durationButton, item.duration === duration && styles.durationButtonActive]} onPress={() => updateChecklistItem(item.id, { duration, durationMinutes: parseDurationMinutes(duration, 30), durationConfirmed: true })}>
+                              <Text style={[styles.durationText, item.duration === duration && styles.optionTextActive]}>{duration}</Text>
+                            </TouchableOpacity>
+                          ))}
+                          <Text style={styles.stepsText}>+{item.steps} step{item.steps === 1 ? "" : "s"}</Text>
+                          <Text style={styles.energyText}>{formatEnergyDelta(getEnergyDelta({ kind: item.kind, durationMinutes: item.durationMinutes, title: item.text }))}</Text>
+                        </View>
+                        <Text style={styles.weekdayLabel}>SHOW ON</Text>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.weekdayToggleRow}>
+                          {WEEKDAYS.map((day) => {
+                            const active = item.weekdays.includes(day);
+                            return (
+                              <TouchableOpacity key={`${item.id}-${day}`} style={[styles.weekdayToggle, active && styles.weekdayToggleActive]} onPress={() => toggleChecklistWeekday(item.id, day)}>
+                                <Text style={[styles.weekdayToggleText, active && styles.weekdayToggleTextActive]}>{day.slice(0, 3)}</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </ScrollView>
+                        {pendingRecoveryConfirmId === item.id && recoveryWarning ? <Text style={styles.recoveryWarning}>{recoveryWarning}</Text> : null}
+                        <TouchableOpacity
+                          style={[styles.saveQuestButton, !isChecklistItemDirty(item) && styles.saveQuestButtonDisabled]}
+                          disabled={!isChecklistItemDirty(item) || !item.text.trim()}
+                          onPress={() => saveChecklistItem(item.id)}
+                        >
+                          <Text style={styles.saveQuestButtonText}>
+                            {!isChecklistItemDirty(item) ? "SAVED" : pendingRecoveryConfirmId === item.id ? "CONFIRM & SAVE" : "SAVE QUEST"}
+                          </Text>
+                        </TouchableOpacity>
+                        {!item.checked && selectedDay === todayWeekday() ? (
+                          <TouchableOpacity style={styles.reflectButton} onPress={() => router.push("/reflection")}>
+                            <Text style={styles.reflectButtonText}>REFLECT</Text>
+                          </TouchableOpacity>
+                        ) : null}
+                      </View>
+                    );
+                  })()}
+                  <TouchableOpacity style={styles.checklistModalCloseBtn} onPress={() => setChecklistModalItemId(null)}>
+                    <Text style={styles.checklistModalCloseBtnText}>CLOSE</Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              </View>
+            </Modal>
 
             <View style={styles.previewPanel}>
               <Text style={styles.sectionTitle}>CALENDAR PREVIEW</Text>
@@ -1405,11 +1443,28 @@ const styles = StyleSheet.create({
   weekdayToggleActive: { borderColor: "#FBBF24", backgroundColor: "rgba(113,63,18,0.8)" },
   weekdayToggleText: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 10, fontWeight: "900" },
   weekdayToggleTextActive: { color: "#FDE68A" },
-  addRow: { flexDirection: "row", gap: 10 },
-  addProgressButton: { flex: 1, borderWidth: 2, borderColor: "#FBBF24", padding: 11, alignItems: "center", backgroundColor: "rgba(69,43,8,0.65)" },
-  addRecoveryButton: { flex: 1, borderWidth: 2, borderColor: "#A78BFA", padding: 11, alignItems: "center", backgroundColor: "rgba(88,28,135,0.65)" },
-  addButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
   addButtonDisabled: { opacity: 0.4 },
+  checkCardCompact: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(58, 42, 21, 0.94)",
+    borderWidth: 2,
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 8,
+  },
+  checkCardCompactBody: { flex: 1, marginLeft: 8 },
+  checkCardCompactTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900" },
+  checkCardCompactMeta: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 9, fontWeight: "700", marginTop: 2 },
+  checkCardCompactArrow: { color: "#FDE68A", fontSize: 22, fontWeight: "900", marginLeft: 6 },
+  setChecklistItemButton: { borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, paddingVertical: 12, alignItems: "center", backgroundColor: "rgba(69,43,8,0.65)", marginTop: 4 },
+  setChecklistItemButtonText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", letterSpacing: 0.5 },
+  setChecklistItemNote: { color: "#94A3B8", fontSize: 10, fontWeight: "700", textAlign: "center", marginTop: 6 },
+  checklistModalBackdrop: { flex: 1, backgroundColor: "rgba(2,4,10,0.88)", padding: 18, paddingTop: 60, paddingBottom: 40 },
+  checklistModalPanel: { flex: 1, backgroundColor: "rgba(8,13,24,0.98)", borderWidth: 3, borderColor: "#334155", borderRadius: 12 },
+  checklistModalContent: { padding: 16 },
+  checklistModalCloseBtn: { marginTop: 8, alignItems: "center", paddingVertical: 10 },
+  checklistModalCloseBtnText: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
   previewPanel: { backgroundColor: "rgba(4, 18, 30, 0.94)", borderRadius: 8, padding: 12, marginBottom: 12, borderWidth: 3, borderColor: "#FBBF24" },
   previewFocus: { color: "#86EFAC", fontSize: 13, fontWeight: "800", marginBottom: 6 },
   previewQuest: { color: "#FDE68A", fontSize: 13, fontWeight: "900", marginBottom: 6 },

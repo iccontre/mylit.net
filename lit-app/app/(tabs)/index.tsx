@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { BottomNav } from "../../components/BottomNav";
+import { LunaGuideModal } from "../../components/LunaGuideModal";
+import { EvieGuideModal } from "../../components/EvieGuideModal";
 import { uiAssets } from "../../constants/uiAssets";
 import { useMobileFrame } from "../../constants/mobileLayout";
 import {
@@ -326,6 +328,8 @@ export default function HomeScreen() {
   const [selectedItem, setSelectedItem] = useState<HomeQuestItem | null>(null);
   const [lockMessage, setLockMessage] = useState("");
   const [showQuestHelp, setShowQuestHelp] = useState(false);
+  const [showHomeLunaModal, setShowHomeLunaModal] = useState(false);
+  const [showHomeEvieModal, setShowHomeEvieModal] = useState(false);
   const [timeNow, setTimeNow] = useState<Date>(() => new Date());
   const [countdownNow, setCountdownNow] = useState<number>(() => Date.now());
   const [recoveryNow, setRecoveryNow] = useState<number>(() => Date.now());
@@ -1217,27 +1221,11 @@ export default function HomeScreen() {
                 </View>
               </View>
 
-              {!isNeutral ? (
-                <View style={styles.guideScene}>
-                  <Image source={guideImage} style={[styles.guideEmblem, { borderColor: theme.accent }]} resizeMode="contain" />
-                  <View style={[styles.speechBubble, { borderColor: theme.accent }]}>
-                    <Text style={styles.speechText}>{guideMessage}</Text>
-                    <Text style={[styles.speechName, { color: theme.accent }]}>{guideName} {isRecovery ? "💜" : "💚"}</Text>
-                  </View>
-                </View>
-              ) : (
-                <View style={styles.neutralStatusPanel}>
-                  <Text style={[styles.neutralStatusText, { color: theme.glow }]}>{modeInstruction}</Text>
-                </View>
-              )}
+              <Text style={[styles.modeLabel, { color: theme.accent }]}>
+                {isNeutral ? "STEADY MODE" : isRecovery ? "RECOVERY MODE" : "PROGRESS MODE"}
+              </Text>
 
-              <View style={[styles.energyCard, { borderColor: theme.accent }]}>
-                <View style={styles.energyHeaderRow}>
-                  <Text style={[styles.energyTitle, { color: theme.accent }]}>{isRecovery ? "+ RECOVERY MODE +" : "ENERGY FLAME"}</Text>
-                  <View style={[styles.energyPill, { borderColor: theme.accent }]}>
-                    <Text style={[styles.energyPillText, { color: theme.accent }]}>{isNeutral ? "STEADY" : isRecovery ? "RECOVERY" : "PROGRESS"}</Text>
-                  </View>
-                </View>
+              <View style={styles.flameSection}>
                 {hasEnergyData && flameState.image ? (
                   <Image
                     source={flameState.image}
@@ -1278,7 +1266,6 @@ export default function HomeScreen() {
                   <Text style={styles.energyOutOf}> / 100</Text>
                 </View>
                 <Text style={[styles.flameMeterText, { color: theme.soft }]}>{hasEnergyData ? flameLabel : "CHECK-IN NEEDED"}</Text>
-                <Text style={styles.energyFooterText} numberOfLines={2}>{modeInstruction}</Text>
                 {hasEnergyData ? (
                   <Text style={[styles.flameProtectText, { color: theme.accent }]} numberOfLines={2}>
                     {isProgress
@@ -1287,6 +1274,31 @@ export default function HomeScreen() {
                   </Text>
                 ) : null}
               </View>
+
+              {!isNeutral ? (
+                <View style={styles.guideScene}>
+                  <Image source={guideImage} style={[styles.guideEmblem, { borderColor: theme.accent }]} resizeMode="contain" />
+                  <View style={[styles.speechBubble, { borderColor: theme.accent }]}>
+                    <Text style={styles.speechText}>{guideMessage}</Text>
+                    <Text style={[styles.speechName, { color: theme.accent }]}>{guideName} {isRecovery ? "💜" : "💚"}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.talkToGuideBtn, { borderColor: theme.accent }]}
+                    onPress={() => (isRecovery ? setShowHomeLunaModal(true) : setShowHomeEvieModal(true))}
+                  >
+                    <Text style={[styles.talkToGuideBtnText, { color: theme.accent }]}>
+                      {isRecovery ? "Talk to Luna" : "Talk to Evie"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.neutralStatusPanel}>
+                  <Text style={[styles.neutralStatusText, { color: theme.glow }]}>{modeInstruction}</Text>
+                </View>
+              )}
+
+              <LunaGuideModal visible={showHomeLunaModal} onClose={() => setShowHomeLunaModal(false)} />
+              <EvieGuideModal visible={showHomeEvieModal} onClose={() => setShowHomeEvieModal(false)} />
 
               <View style={styles.checkInRow}>
                 <TouchableOpacity style={[styles.checkInCard, { borderColor: theme.accent }]} onPress={() => navigateWithHaptic("/sleep-checkin")}>
@@ -1797,6 +1809,38 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "900",
     marginTop: 5,
+  },
+  modeLabel: {
+    textAlign: "center",
+    fontFamily: "monospace",
+    fontSize: 18,
+    fontWeight: "900",
+    letterSpacing: 1.5,
+    marginBottom: 4,
+    textTransform: "uppercase",
+  },
+  // No outer card — the flame sits directly on the background with just its own glow (see
+  // shadowColor/shadowRadius on the Image itself) instead of a heavy black box.
+  flameSection: {
+    width: "64%",
+    alignSelf: "center",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+  talkToGuideBtn: {
+    marginTop: 6,
+    borderWidth: 2,
+    borderRadius: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    alignSelf: "center",
+  },
+  talkToGuideBtnText: {
+    fontFamily: "monospace",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.5,
   },
   energyCard: {
     width: "64%",
