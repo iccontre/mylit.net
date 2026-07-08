@@ -56,7 +56,10 @@ function sleepBonusStepsForDuration(durationMinutes: number): number {
 function computeSleepQualityScore(effectiveSleepMinutes: number, interruptionDurationMinutes: number | null): number {
   const baseline = Math.round((effectiveSleepMinutes / (8 * 60)) * 100);
   const penalty = interruptionDurationMinutes !== null ? sleepInterruptionPenalty(interruptionDurationMinutes) : 0;
-  return Math.max(0, Math.min(100, baseline - penalty));
+  // Ceiling must also drop by the penalty, not just the score — otherwise a long enough
+  // night (baseline > 100) could still net exactly 100 after subtracting a fixed penalty.
+  const ceiling = 100 - penalty;
+  return Math.max(0, Math.min(ceiling, baseline - penalty));
 }
 
 function formatSleepDuration(durationMinutes: number): string {

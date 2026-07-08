@@ -8,6 +8,7 @@ import { formPageContent } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { loadUserLifeProfile, saveUserLifeProfile } from "../lib/mylitAgents";
+import { loadLocalBetaProfile, updateProfile } from "../lib/auth";
 import type { FocusWindow, MotivationStyle, UserLifeProfile, WorkRhythmPreference } from "../lib/agentTypes";
 
 // Editable version of the UserLifeProfile the agent foundation (lib/mylitAgents.ts) already
@@ -64,26 +65,30 @@ export default function LifeProfileScreen() {
   const router = useRouter();
   const mobile = useMobileFrame();
 
+  const [displayName, setDisplayName] = useState("");
   const [draft, setDraft] = useState<Record<TextField, string>>(normalizeDraft({}));
   const [motivationStyle, setMotivationStyle] = useState<MotivationStyle | "">("");
   const [workRhythmPreference, setWorkRhythmPreference] = useState<WorkRhythmPreference | "">("");
   const [preferredFocusWindow, setPreferredFocusWindow] = useState<FocusWindow | "">("");
   const savedSnapshotRef = useRef<string>(
-    JSON.stringify({ draft: normalizeDraft({}), motivationStyle: "", workRhythmPreference: "", preferredFocusWindow: "" })
+    JSON.stringify({ displayName: "", draft: normalizeDraft({}), motivationStyle: "", workRhythmPreference: "", preferredFocusWindow: "" })
   );
 
   useEffect(() => {
     void (async () => {
-      const profile = await loadUserLifeProfile();
+      const [profile, localProfile] = await Promise.all([loadUserLifeProfile(), loadLocalBetaProfile()]);
       const nextDraft = normalizeDraft(profile);
       const nextMotivation = profile.motivationStyle ?? "";
       const nextWorkRhythm = profile.workRhythmPreference ?? "";
       const nextFocusWindow = profile.preferredFocusWindow ?? "";
+      const nextDisplayName = localProfile?.display_name ?? "";
       setDraft(nextDraft);
       setMotivationStyle(nextMotivation);
       setWorkRhythmPreference(nextWorkRhythm);
       setPreferredFocusWindow(nextFocusWindow);
+      setDisplayName(nextDisplayName);
       savedSnapshotRef.current = JSON.stringify({
+        displayName: nextDisplayName,
         draft: nextDraft,
         motivationStyle: nextMotivation,
         workRhythmPreference: nextWorkRhythm,
@@ -95,7 +100,7 @@ export default function LifeProfileScreen() {
   // Dirty-check against the last-saved snapshot (like Today's Quest / checklist items) rather
   // than a timed flag — fields stay populated after saving, so a timer would flip the button
   // back to "Save" a few seconds later even though nothing had changed.
-  const currentSnapshot = JSON.stringify({ draft, motivationStyle, workRhythmPreference, preferredFocusWindow });
+  const currentSnapshot = JSON.stringify({ displayName, draft, motivationStyle, workRhythmPreference, preferredFocusWindow });
   const isDirty = currentSnapshot !== savedSnapshotRef.current;
 
   function updateField(field: TextField, value: string) {
@@ -127,6 +132,12 @@ export default function LifeProfileScreen() {
       preferredFocusWindow: preferredFocusWindow || undefined,
     };
     await saveUserLifeProfile(partial);
+    // display_name lives in the existing onboarding profile system (LOCAL_PROFILE_KEY), not
+    // UserLifeProfile — updateProfile() already handles local+cloud sync for it safely.
+    const trimmedName = displayName.trim();
+    if (trimmedName) {
+      await updateProfile({ display_name: trimmedName });
+    }
     savedSnapshotRef.current = currentSnapshot;
   }
 
@@ -151,6 +162,17 @@ export default function LifeProfileScreen() {
               <Text style={styles.guideText}>
                 Your path is starting to form. I'll use your goals, obstacles, and progress patterns to help you build forward.
               </Text>
+            </View>
+
+            <View style={styles.panel}>
+              <Text style={styles.sectionTitle}>DISPLAY NAME</Text>
+              <TextInput
+                style={styles.textArea}
+                value={displayName}
+                onChangeText={setDisplayName}
+                placeholder="What should MYLIT call you?"
+                placeholderTextColor="#94A3B8"
+              />
             </View>
 
             <View style={styles.panel}>

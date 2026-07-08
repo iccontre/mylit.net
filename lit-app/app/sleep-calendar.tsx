@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
 import { useEffect, useMemo, useState } from "react";
-import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 import { GuideInfoModal } from "../components/GuideInfoModal";
 import { uiAssets } from "../constants/uiAssets";
@@ -29,8 +29,17 @@ type CheckIn = {
   blueScreenCutoffSuggestion?: string;
   exerciseCutoffSuggestion?: string;
   windDownGoal?: string;
+  /** Minutes before desiredSleepTime the wind-down window starts — max 60 (see index.tsx's mandatory pre-sleep-routine lock). */
+  windDownMinutes?: number;
+  windDownHelps?: string;
+  windDownAvoid?: string;
+  windDownReminder?: string;
+  windDownActivities?: string;
   createdAt?: string;
 };
+
+const WIND_DOWN_OPTIONS = [15, 30, 45, 60] as const;
+const DEFAULT_WIND_DOWN_MINUTES = 30;
 
 type Suggestion = {
   icon: string;
@@ -139,7 +148,13 @@ export default function SleepCalendarScreen() {
   const router = useRouter();
   const [desiredSleepTime, setDesiredSleepTime] = useState("11:00 PM");
   const [desiredWakeTime, setDesiredWakeTime] = useState("8:00 AM");
+  const [windDownMinutes, setWindDownMinutes] = useState<number>(DEFAULT_WIND_DOWN_MINUTES);
+  const [windDownHelps, setWindDownHelps] = useState("");
+  const [windDownAvoid, setWindDownAvoid] = useState("");
+  const [windDownReminder, setWindDownReminder] = useState("");
+  const [windDownActivities, setWindDownActivities] = useState("");
   const [savedMessage, setSavedMessage] = useState("");
+  const [isDirty, setIsDirty] = useState(false);
   const [showInfo, setShowInfo] = useState(false);
 
   useEffect(() => {
@@ -154,9 +169,18 @@ export default function SleepCalendarScreen() {
       const parsed = JSON.parse(saved) as CheckIn;
       if (parsed.desiredSleepTime) setDesiredSleepTime(parsed.desiredSleepTime);
       if (parsed.desiredWakeTime || parsed.wakeTime) setDesiredWakeTime(parsed.desiredWakeTime || parsed.wakeTime || "8:00 AM");
+      if (typeof parsed.windDownMinutes === "number") setWindDownMinutes(Math.min(60, parsed.windDownMinutes));
+      if (parsed.windDownHelps) setWindDownHelps(parsed.windDownHelps);
+      if (parsed.windDownAvoid) setWindDownAvoid(parsed.windDownAvoid);
+      if (parsed.windDownReminder) setWindDownReminder(parsed.windDownReminder);
+      if (parsed.windDownActivities) setWindDownActivities(parsed.windDownActivities);
     } catch {
       // Keep default guide times if saved data cannot be parsed.
     }
+  }
+
+  function markDirty() {
+    setIsDirty(true);
   }
 
   const sleepDuration = useMemo(() => getSleepDurationHours(desiredSleepTime, desiredWakeTime), [desiredSleepTime, desiredWakeTime]);
@@ -190,11 +214,17 @@ export default function SleepCalendarScreen() {
       mealCutoffSuggestion: meal.value,
       blueScreenCutoffSuggestion: blueScreen.value,
       exerciseCutoffSuggestion: exercise.value,
+      windDownMinutes: Math.min(60, windDownMinutes),
+      windDownHelps: windDownHelps.trim() || undefined,
+      windDownAvoid: windDownAvoid.trim() || undefined,
+      windDownReminder: windDownReminder.trim() || undefined,
+      windDownActivities: windDownActivities.trim() || undefined,
       createdAt: current.createdAt || new Date().toISOString(),
     };
 
     await persistProgressKeys({ [CHECKIN_KEY]: JSON.stringify(next) });
     setSavedMessage("Sleep guide saved.");
+    setIsDirty(false);
     void trackEvent(ANALYTICS_EVENTS.sleep_guide_saved);
   }
 
@@ -255,11 +285,11 @@ export default function SleepCalendarScreen() {
                   value={desiredSleepTime}
                   onChange={(next) => {
                     // Desired sleep time can be set until 2 AM, but not past it.
-                    if (isWithinSleepTimeWindow(parseTimeToMinutes(next))) setDesiredSleepTime(next);
+                    if (isWithinSleepTimeWindow(parseTimeToMinutes(next))) { setDesiredSleepTime(next); markDirty(); }
                   }}
                 />
                 <Text style={styles.goalArrow}>›</Text>
-                <TimeStepper label="DESIRED WAKE TIME" icon="☀️" value={desiredWakeTime} onChange={setDesiredWakeTime} />
+                <TimeStepper label="DESIRED WAKE TIME" icon="☀️" value={desiredWakeTime} onChange={(next) => { setDesiredWakeTime(next); markDirty(); }} />
               </View>
               <View style={[styles.validationBox, !hasEnoughSleepWindow && styles.validationBoxWarning]}>
                 <Text style={[styles.validationText, !hasEnoughSleepWindow && styles.validationTextWarning]}>
@@ -268,6 +298,36 @@ export default function SleepCalendarScreen() {
                     : "Try to leave at least 9 hours between sleep and wake time."}
                 </Text>
               </View>
+            </View>
+
+            <View style={styles.panel}>
+              <Text style={styles.panelTitle}>☾ WIND-DOWN</Text>
+              <Text style={styles.validationText}>
+                Progress quests lock once wind-down starts, and Luna will prompt "Start your pre-sleep routine." Recovery/sleep tasks stay open.
+              </Text>
+              <View style={styles.goalRow}>
+                {WIND_DOWN_OPTIONS.map((minutes) => (
+                  <TouchableOpacity
+                    key={minutes}
+                    style={[styles.windDownOption, windDownMinutes === minutes && styles.windDownOptionActive]}
+                    onPress={() => { setWindDownMinutes(minutes); markDirty(); }}
+                  >
+                    <Text style={[styles.windDownOptionText, windDownMinutes === minutes && styles.windDownOptionTextActive]}>{minutes} min</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.fieldLabel}>What helps you slow down before bed?</Text>
+              <TextInput style={styles.fieldInput} value={windDownHelps} onChangeText={(t) => { setWindDownHelps(t); markDirty(); }} placeholder="Optional" placeholderTextColor="#8A6D4A" />
+
+              <Text style={styles.fieldLabel}>What should you avoid during wind-down?</Text>
+              <TextInput style={styles.fieldInput} value={windDownAvoid} onChangeText={(t) => { setWindDownAvoid(t); markDirty(); }} placeholder="Optional" placeholderTextColor="#8A6D4A" />
+
+              <Text style={styles.fieldLabel}>What is one calming thing Luna can remind you to do?</Text>
+              <TextInput style={styles.fieldInput} value={windDownReminder} onChangeText={(t) => { setWindDownReminder(t); markDirty(); }} placeholder="Optional" placeholderTextColor="#8A6D4A" />
+
+              <Text style={styles.fieldLabel}>Stretching, journaling, reading, hygiene, or no-screen time?</Text>
+              <TextInput style={styles.fieldInput} value={windDownActivities} onChangeText={(t) => { setWindDownActivities(t); markDirty(); }} placeholder="Optional" placeholderTextColor="#8A6D4A" />
             </View>
 
             <View style={styles.panel}>
@@ -289,7 +349,7 @@ export default function SleepCalendarScreen() {
             {savedMessage ? <Text style={hasEnoughSleepWindow ? styles.savedMessage : styles.warningMessage}>{savedMessage}</Text> : null}
 
             <TouchableOpacity style={[styles.saveButton, !hasEnoughSleepWindow && styles.saveButtonDisabled]} onPress={saveSleepGuide}>
-              <Text style={styles.saveButtonText}>☾ SAVE SLEEP GUIDE ☽</Text>
+              <Text style={styles.saveButtonText}>{!isDirty && savedMessage ? "SAVED" : "☾ SAVE SLEEP GUIDE ☽"}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.backButton} onPress={() => router.push("/")}>
@@ -485,6 +545,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
+  windDownOption: { flex: 1, borderWidth: 2, borderColor: "#475569", borderRadius: 6, paddingVertical: 9, alignItems: "center", backgroundColor: "rgba(30,41,59,0.6)" },
+  windDownOptionActive: { borderColor: "#A78BFA", backgroundColor: "rgba(88,28,135,0.5)" },
+  windDownOptionText: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
+  windDownOptionTextActive: { color: "#E9D5FF" },
+  fieldLabel: { color: "#CBD5E1", fontSize: 11, fontWeight: "800", marginTop: 10, marginBottom: 4 },
+  fieldInput: { backgroundColor: "rgba(15,23,42,0.9)", borderWidth: 2, borderColor: "#475569", borderRadius: 6, padding: 10, fontSize: 14, color: "#F9FAFB", fontWeight: "700" },
   timeCard: {
     flex: 1,
     backgroundColor: "rgba(15, 23, 42, 0.92)",

@@ -183,6 +183,9 @@ export function isNapTitle(title?: string | null): boolean {
   return /(^|\b)nap\b/i.test(String(title ?? ""));
 }
 
+/** Luna's mandatory eat/rest reset — title is stable so completions can be identified from logs (e.g. Calendar). */
+export const MANDATORY_QUEST_TITLE = "Eat or rest to restore energy";
+
 /** Luna's completed-focus-block lock — title is stable so completions can be identified from logs. */
 export const FORCED_RECOVERY_TITLE = "Forced Recovery";
 export const FORCED_RECOVERY_DURATION_MINUTES = 60;

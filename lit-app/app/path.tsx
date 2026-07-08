@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   Image,
+  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -15,6 +16,7 @@ import { GuideInfoModal } from "../components/GuideInfoModal";
 import { GuideFoundationCard } from "../components/GuideFoundationCard";
 import { PathPipelineCard } from "../components/PathPipelineCard";
 import { EvieAiPathCard } from "../components/EvieAiPathCard";
+import { LunaSupportPanel } from "../components/LunaSupportPanel";
 import { GOAL_HORIZON_LABELS } from "../constants/goalMilestoneTemplates";
 import { BottomNav } from "../components/BottomNav";
 import { useMobileFrame } from "../constants/mobileLayout";
@@ -81,6 +83,8 @@ export default function PathScreen() {
   const mobile = useMobileFrame();
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [showInfo, setShowInfo] = useState(false);
+  const [showEvieModal, setShowEvieModal] = useState(false);
+  const [showLunaModal, setShowLunaModal] = useState(false);
 
   useEffect(() => {
     loadProfile();
@@ -264,15 +268,80 @@ export default function PathScreen() {
 
             <GuideFoundationCard />
 
-            <PathPipelineCard />
+            <View style={styles.guideButtonRow}>
+              <TouchableOpacity style={styles.guideButton} onPress={() => setShowEvieModal(true)}>
+                <Image source={uiAssets.guides.evie} style={styles.guideButtonAvatar} resizeMode="contain" />
+                <Text style={styles.guideButtonLabel}>Evie</Text>
+                <Text style={styles.guideButtonNote}>Access everything you want from Evie.</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.guideButton, styles.guideButtonLuna]} onPress={() => setShowLunaModal(true)}>
+                <Image source={uiAssets.guides.luna} style={styles.guideButtonAvatar} resizeMode="contain" />
+                <Text style={styles.guideButtonLabel}>Luna</Text>
+                <Text style={styles.guideButtonNote}>Access everything you need from Luna.</Text>
+              </TouchableOpacity>
+            </View>
 
-            <EvieAiPathCard />
+            <Modal visible={showEvieModal} transparent animationType="fade" onRequestClose={() => setShowEvieModal(false)}>
+              <View style={styles.guideModalBackdrop}>
+                <ScrollView style={styles.guideModalPanel} contentContainerStyle={styles.guideModalContent}>
+                  <Text style={styles.guideModalTitle}>EVIE</Text>
+                  <Text style={styles.guideModalIntro}>
+                    Evie is a guide, not a replacement for your own choices. Fill in your Life Profile so she can
+                    actually help with the path you want — the more she knows, the more specific her help gets.
+                  </Text>
+                  <TouchableOpacity style={styles.guideModalPrimaryBtn} onPress={() => { setShowEvieModal(false); router.push("/life-profile"); }}>
+                    <Text style={styles.guideModalPrimaryBtnText}>Formulate my path</Text>
+                  </TouchableOpacity>
 
-            <TouchableOpacity style={styles.secondaryActionButton} onPress={() => router.push("/talk-to-evie")}>
-              <Text style={styles.actionIcon}>💬</Text>
-              <Text style={styles.secondaryActionText}>Talk to Evie about my path</Text>
-              <Text style={styles.secondaryActionArrow}>›</Text>
-            </TouchableOpacity>
+                  <PathPipelineCard />
+                  <EvieAiPathCard />
+
+                  <TouchableOpacity style={styles.secondaryActionButton} onPress={() => { setShowEvieModal(false); router.push("/talk-to-evie"); }}>
+                    <Text style={styles.actionIcon}>💬</Text>
+                    <Text style={styles.secondaryActionText}>Talk to Evie about my path</Text>
+                    <Text style={styles.secondaryActionArrow}>›</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={styles.guideModalCloseBtn} onPress={() => setShowEvieModal(false)}>
+                    <Text style={styles.guideModalCloseBtnText}>CLOSE</Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              </View>
+            </Modal>
+
+            <Modal visible={showLunaModal} transparent animationType="fade" onRequestClose={() => setShowLunaModal(false)}>
+              <View style={styles.guideModalBackdrop}>
+                <ScrollView style={styles.guideModalPanel} contentContainerStyle={styles.guideModalContent}>
+                  <Text style={styles.guideModalTitle}>LUNA</Text>
+                  <Text style={styles.guideModalIntro}>
+                    Recovery support, sleep support, and reminders — all in one place. Luna won't judge you for a
+                    hard week.
+                  </Text>
+
+                  <LunaSupportPanel />
+
+                  <TouchableOpacity style={styles.secondaryActionButton} onPress={() => { setShowLunaModal(false); router.push("/sleep-calendar"); }}>
+                    <Text style={styles.actionIcon}>🌙</Text>
+                    <Text style={styles.secondaryActionText}>Sleep support</Text>
+                    <Text style={styles.secondaryActionArrow}>›</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.secondaryActionButton} onPress={() => { setShowLunaModal(false); router.push("/day-plan"); }}>
+                    <Text style={styles.actionIcon}>💗</Text>
+                    <Text style={styles.secondaryActionText}>Reminders (in Day Plan)</Text>
+                    <Text style={styles.secondaryActionArrow}>›</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.secondaryActionButton} onPress={() => { setShowLunaModal(false); router.push("/talk-to-luna"); }}>
+                    <Text style={styles.actionIcon}>💬</Text>
+                    <Text style={styles.secondaryActionText}>Talk to Luna</Text>
+                    <Text style={styles.secondaryActionArrow}>›</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity style={styles.guideModalCloseBtn} onPress={() => setShowLunaModal(false)}>
+                    <Text style={styles.guideModalCloseBtnText}>CLOSE</Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              </View>
+            </Modal>
 
             <TouchableOpacity
               style={styles.primaryActionButton}
@@ -308,6 +377,29 @@ export default function PathScreen() {
 }
 
 const styles = StyleSheet.create({
+  guideButtonRow: { flexDirection: "row", gap: 10, marginBottom: 12 },
+  guideButton: {
+    flex: 1,
+    borderWidth: 2,
+    borderColor: "#22C55E",
+    borderRadius: 10,
+    padding: 12,
+    alignItems: "center",
+    backgroundColor: "rgba(34,197,94,0.08)",
+  },
+  guideButtonLuna: { borderColor: "#A78BFA", backgroundColor: "rgba(167,139,250,0.08)" },
+  guideButtonAvatar: { width: 40, height: 40, marginBottom: 4 },
+  guideButtonLabel: { color: "#F8FAFC", fontFamily: "monospace", fontSize: 14, fontWeight: "900", marginBottom: 3 },
+  guideButtonNote: { color: "#CBD5E1", fontSize: 10, lineHeight: 14, fontWeight: "700", textAlign: "center" },
+  guideModalBackdrop: { flex: 1, backgroundColor: "rgba(2,4,10,0.88)", padding: 18, paddingTop: 60, paddingBottom: 40 },
+  guideModalPanel: { flex: 1, backgroundColor: "rgba(8,13,24,0.98)", borderWidth: 3, borderColor: "#334155", borderRadius: 12 },
+  guideModalContent: { padding: 16 },
+  guideModalTitle: { color: "#FDE047", fontFamily: "monospace", fontSize: 20, fontWeight: "900", textAlign: "center", marginBottom: 8, letterSpacing: 1 },
+  guideModalIntro: { color: "#CBD5E1", fontSize: 12, lineHeight: 18, fontWeight: "700", textAlign: "center", marginBottom: 12 },
+  guideModalPrimaryBtn: { borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, paddingVertical: 12, alignItems: "center", backgroundColor: "rgba(113,63,18,0.4)", marginBottom: 12 },
+  guideModalPrimaryBtnText: { color: "#FDE68A", fontFamily: "monospace", fontSize: 12, fontWeight: "900", letterSpacing: 0.5 },
+  guideModalCloseBtn: { marginTop: 8, alignItems: "center", paddingVertical: 10 },
+  guideModalCloseBtnText: { color: "#94A3B8", fontFamily: "monospace", fontSize: 11, fontWeight: "900" },
   pageRoot: {
     flex: 1,
     backgroundColor: "#02040A",

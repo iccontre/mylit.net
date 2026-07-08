@@ -16,6 +16,7 @@ import {
   getRequiredRecoveryBlockForDate,
   getStepsForItem,
   inferScheduledClassification,
+  MANDATORY_QUEST_TITLE,
   parseDurationMinutes,
   parseSleepGuideTime,
   parseTimeToMinutes,
@@ -24,6 +25,7 @@ import {
   type ScheduledClassification,
   type ScheduledQuestLike,
 } from "../lib/scheduling";
+import { COMPLETED_QUESTS_KEY } from "../lib/storageKeys";
 
 type WeekdayName = "Sunday" | "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "Saturday";
 type EventTone = "gold" | "purple" | "blue" | "green";
@@ -310,6 +312,7 @@ export default function CalendarScreen() {
   const [queueItems, setQueueItems] = useState<unknown[]>([]);
   const [dayPlan, setDayPlan] = useState<DayPlan | null>(null);
   const [latestCheckIn, setLatestCheckIn] = useState<CheckIn | null>(null);
+  const [mandatoryCompletions, setMandatoryCompletions] = useState<{ id: string; dateKey: string; completedAt: string; durationMinutes?: number; steps: number }[]>([]);
   const [weekOffset, setWeekOffset] = useState(0);
   const [selectedDayIndex, setSelectedDayIndex] = useState(() => new Date().getDay());
   const [viewMode, setViewMode] = useState<ViewMode>("week");
@@ -329,14 +332,19 @@ export default function CalendarScreen() {
   );
 
   async function loadCalendarData() {
-    const [queue, plan, checkIn] = await Promise.all([
+    const [queue, plan, checkIn, completed] = await Promise.all([
       readJson<unknown[]>(TOMORROW_QUEUE_KEY, []),
       readJson<DayPlan | null>(DAY_PLAN_KEY, null),
       readJson<CheckIn | null>(CHECKIN_KEY, null),
+      readJson<{ id: string; title: string; dateKey: string; completedAt: string; durationMinutes?: number; steps: number }[]>(COMPLETED_QUESTS_KEY, []),
     ]);
     setQueueItems(Array.isArray(queue) ? queue : []);
     setDayPlan(plan);
     setLatestCheckIn(checkIn);
+    // Mandatory eat/rest is ephemeral (never saved as a scheduled Day Plan/Quick Thought item),
+    // so it would otherwise leave no trace here once completed — pull it from the completion
+    // log specifically so it still shows up on the day it happened.
+    setMandatoryCompletions(Array.isArray(completed) ? completed.filter((entry) => entry.title === MANDATORY_QUEST_TITLE) : []);
   }
 
   const today = useMemo(() => new Date(), []);
@@ -392,6 +400,28 @@ export default function CalendarScreen() {
         priority: 1,
       });
     }
+
+    mandatoryCompletions
+      .filter((entry) => entry.dateKey === dateKey)
+      .forEach((entry) => {
+        events.push({
+          id: entry.id,
+          title: "Eat or rest to restore energy",
+          cellLabel: "Recovery quest · completed",
+          source: "Quest Board",
+          date: dateKey,
+          dayLabel,
+          startTime: new Date(entry.completedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }),
+          duration: formatDurationLabel(entry.durationMinutes, 15),
+          durationMinutes: entry.durationMinutes,
+          steps: entry.steps,
+          classification: "recovery",
+          tone: eventTone("recovery"),
+          status: "completed",
+          note: "Luna's mandatory reset — completed.",
+          priority: 2,
+        });
+      });
 
     const quickThoughtItemsForDay = quickThoughtItems.filter((item) => item.date === dateKey);
     quickThoughtItemsForDay.forEach((item: ScheduledQuestLike) => {

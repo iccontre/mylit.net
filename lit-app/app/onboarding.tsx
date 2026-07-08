@@ -589,10 +589,7 @@ export default function OnboardingScreen() {
 
           <SectionShell number="5" title="YOUR PATH MILESTONES">
             <Text style={styles.milestoneHint}>
-              Write your own short-, mid-, and long-term goals below. In beta, your words matter most.
-            </Text>
-            <Text style={styles.betaNoteText}>
-              Optional: tap Suggest goals for a starting draft you can edit.
+              Write your own short-, mid-, and long-term goals below. Your words matter most.
             </Text>
 
             <View style={styles.milestoneGrid}>
@@ -600,16 +597,6 @@ export default function OnboardingScreen() {
               <MilestoneField horizon="midTerm" value={midTermGoal} onChange={setMidTermGoal} />
               <MilestoneField horizon="longTerm" value={longTermGoal} onChange={setLongTermGoal} />
             </View>
-
-            <TouchableOpacity
-              style={[styles.generateButtonSecondary, !dreamCategory && styles.generateButtonDisabled]}
-              onPress={() => generateMilestones(Boolean(canRegenerate))}
-              disabled={!dreamCategory}
-            >
-              <Text style={styles.generateButtonSecondaryText}>
-                {hasGenerated ? "NEW SUGGESTION" : "SUGGEST GOALS (BETA)"}
-              </Text>
-            </TouchableOpacity>
           </SectionShell>
 
           <SectionShell number="6" title="WHAT DOES PROGRESS MEAN?">

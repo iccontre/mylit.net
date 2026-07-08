@@ -67,6 +67,8 @@ export const AGENT_EVENT_LEDGER_KEY = "lit_agent_event_ledger";
 export const LEARNING_MEMORY_KEY = "lit_learning_memory";
 /** WeeklyAgentReview[] — one per week (id = weekStart), regenerating replaces, never duplicates. */
 export const WEEKLY_AGENT_REVIEWS_KEY = "lit_weekly_agent_reviews";
+/** LunaDayReminder[] — user-created reminders, scoped to a single day; +1 step once per reminder. */
+export const LUNA_DAY_REMINDERS_KEY = "lit_luna_day_reminders";
 /** EvieAiPathPipelineRecord[] — one per "Ask Evie to Build My Path" run, newest-first, capped history. */
 export const AI_EVIE_PATH_PIPELINES_KEY = "lit_ai_evie_path_pipelines";
 /** LunaSupportModifierRecord[] — one per "Ask Luna to help me adjust" run, newest-first, capped history. */
@@ -133,6 +135,7 @@ export const SYNCABLE_PROGRESS_KEYS = [
   AI_LUNA_SUPPORT_SESSIONS_KEY,
   GUIDE_CONVERSATIONS_KEY,
   GUIDE_MEMORY_UPDATES_KEY,
+  LUNA_DAY_REMINDERS_KEY,
 ] as const;
 
 export type SyncableProgressKey = (typeof SYNCABLE_PROGRESS_KEYS)[number];
@@ -157,6 +160,7 @@ export const ARRAY_MERGE_PROGRESS_KEYS = new Set<SyncableProgressKey>([
   AI_LUNA_SUPPORT_SESSIONS_KEY,
   GUIDE_CONVERSATIONS_KEY,
   GUIDE_MEMORY_UPDATES_KEY,
+  LUNA_DAY_REMINDERS_KEY,
 ]);
 
 export function isSyncableProgressKey(key: string): key is SyncableProgressKey {

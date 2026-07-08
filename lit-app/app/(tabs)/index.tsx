@@ -51,7 +51,7 @@ import {
   type MissedEntry,
   type QuestKind,
 } from "../../lib/questProgress";
-import { formatDurationLabel, formatEnergyDelta, getEnergyDelta, getMandatoryQuestRestoreEnergy } from "../../lib/scheduling";
+import { formatDurationLabel, formatEnergyDelta, getEnergyDelta, getMandatoryQuestRestoreEnergy, MANDATORY_QUEST_TITLE, parseTimeToMinutes } from "../../lib/scheduling";
 import { LATEST_PRE_SLEEP_INTENTION_KEY } from "../../lib/storageKeys";
 
 const mylitLogo = uiAssets.logo.mylit;
@@ -145,6 +145,9 @@ type CheckIn = {
   eatenSinceMorning?: boolean;
   foodSinceMorning?: string;
   createdAt?: string;
+  /** Sleep Guide fields — used only to compute the wind-down lock window (see getWindDownQuest). */
+  desiredSleepTime?: string;
+  windDownMinutes?: number;
 };
 
 type WeekdayName = "Sunday" | "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "Saturday";
@@ -204,13 +207,20 @@ const PASSIVE_DECAY_INTERVAL_HOURS = 2;
 
 // Luna's mandatory recovery quest, triggered when energy runs low (see getMandatoryQuest).
 // Restore amounts are tiered by duration — see getMandatoryQuestRestoreEnergy in scheduling.ts.
-const MANDATORY_QUEST_TITLE = "Eat or rest to restore energy";
+// MANDATORY_QUEST_TITLE now lives in scheduling.ts so Calendar can identify completions too.
 // Below 60 energy: a short 15-min reset that only blocks starting new PROGRESS quests.
 const MANDATORY_MILD_THRESHOLD = 60;
 const MANDATORY_MILD_DURATION_MINUTES = 15;
 // Below 30 energy: a stronger 30-min requirement that locks the whole Quest Board.
 const MANDATORY_SEVERE_THRESHOLD = 30;
 const MANDATORY_SEVERE_DURATION_MINUTES = 30;
+
+// Luna's wind-down lock, triggered by TIME (desired sleep time minus wind-down minutes),
+// separate from the energy-based mandatory quests above (see getWindDownQuest). Locks
+// Progress starts only — Recovery/sleep-routine tasks stay open, matching the mild tier.
+const WIND_DOWN_QUEST_TITLE = "Start your pre-sleep routine";
+const DEFAULT_WIND_DOWN_MINUTES = 30;
+const MAX_WIND_DOWN_MINUTES = 60;
 
 function clampEnergy(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
@@ -845,15 +855,22 @@ export default function HomeScreen() {
         kind: opts.kind,
         durationMinutes: opts.durationMinutes,
         title: opts.title,
-        mandatory: opts.mandatory || opts.title === MANDATORY_QUEST_TITLE,
+        // Title-specific, not "any mandatory item" — the wind-down quest is also
+        // `mandatory: true` (for its red-border/"!" styling) but restores energy through the
+        // normal Recovery formula, not the eat/rest quest's tiered restore.
+        mandatory: opts.title === MANDATORY_QUEST_TITLE,
       })
     );
 
   // Mild (15-min, energy 30-59) only blocks new PROGRESS starts — Recovery items still open.
   // Severe (30-min, energy < 30) locks the whole board until the mandatory quest resolves.
-  const activeMandatoryQuest = getMandatoryQuest();
+  // Wind-down (time-based, see getWindDownQuest) only applies when no energy-mandatory is active.
+  const activeMandatoryQuest = getMandatoryQuest() ?? getWindDownQuest();
   const mandatoryActive = activeMandatoryQuest !== null;
-  const mandatoryLocksRecoveryToo = activeMandatoryQuest?.durationMinutes === MANDATORY_SEVERE_DURATION_MINUTES;
+  // Title-checked (not just duration) so the wind-down quest — which can also be 30 min —
+  // never accidentally locks Recovery too; only the energy-based severe tier does that.
+  const mandatoryLocksRecoveryToo =
+    activeMandatoryQuest?.title === MANDATORY_QUEST_TITLE && activeMandatoryQuest?.durationMinutes === MANDATORY_SEVERE_DURATION_MINUTES;
 
   const todayName = getWeekdayName();
 
@@ -906,7 +923,7 @@ export default function HomeScreen() {
       };
 
   function generateQuests(): Quest[] {
-    const mandatoryQuest = getMandatoryQuest();
+    const mandatoryQuest = getMandatoryQuest() ?? getWindDownQuest();
 
     if (isNeutral) {
       return [{ title: "Complete Morning Check-In", type: "Start", steps: 1 }];
@@ -960,6 +977,48 @@ export default function HomeScreen() {
       description: isSevere
         ? "Your flame is very low. Take 30 minutes to eat or rest before continuing."
         : "Your flame dipped below 60. Take 15 minutes to eat or rest before more progress.",
+    };
+  }
+
+  /**
+   * Time-based wind-down lock: once "now" is within [desiredSleepTime - windDownMinutes,
+   * desiredSleepTime), Progress starts lock (Recovery/sleep-routine tasks stay open) and
+   * this mandatory quest prompts the user to start their pre-sleep routine. Never stacks
+   * with the energy-based mandatory quest above — that one takes priority if both are true.
+   */
+  function getWindDownQuest(): Quest | null {
+    if (isNeutral) return null;
+    const sleepTime = latestCheckIn?.desiredSleepTime;
+    if (!sleepTime) return null;
+
+    const alreadyDone = completedQuests.some((entry) => entry.title === WIND_DOWN_QUEST_TITLE);
+    if (alreadyDone) return null;
+
+    const sleepMinutes = parseTimeToMinutes(sleepTime);
+    if (sleepMinutes === null) return null;
+    const windDownMinutes = Math.min(MAX_WIND_DOWN_MINUTES, Number(latestCheckIn?.windDownMinutes) || DEFAULT_WIND_DOWN_MINUTES);
+    const windDownStart = sleepMinutes - windDownMinutes;
+
+    const now = new Date();
+    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+    // Normalize into a 0–1440 same-day comparison, handling sleep times that cross midnight
+    // (e.g. sleep at 12:30 AM -> windDownStart is still "tonight" before midnight).
+    const inWindow = (candidate: number) => {
+      const wrappedStart = ((windDownStart % 1440) + 1440) % 1440;
+      const wrappedEnd = ((sleepMinutes % 1440) + 1440) % 1440;
+      if (wrappedStart <= wrappedEnd) return candidate >= wrappedStart && candidate < wrappedEnd;
+      return candidate >= wrappedStart || candidate < wrappedEnd;
+    };
+    if (!inWindow(nowMinutes)) return null;
+
+    return {
+      title: WIND_DOWN_QUEST_TITLE,
+      type: "Mandatory",
+      steps: 1,
+      durationMinutes: windDownMinutes,
+      mandatory: true,
+      kind: "recovery",
+      description: "Wind-down time — start your pre-sleep routine before your desired sleep time.",
     };
   }
 
@@ -1187,6 +1246,10 @@ export default function HomeScreen() {
                       {
                         height: flameState.size + 58,
                         width: flameState.size + 58,
+                        shadowColor: theme.glow,
+                        shadowOpacity: 0.8,
+                        shadowRadius: 14,
+                        shadowOffset: { width: 0, height: 0 },
                       },
                     ]}
                     resizeMode="contain"
@@ -1739,15 +1802,17 @@ const styles = StyleSheet.create({
     width: "64%",
     minHeight: 202,
     alignSelf: "center",
-    backgroundColor: "rgba(6, 10, 18, 0.96)",
-    borderWidth: 4,
+    // Lighter/more transparent than the old near-opaque black box — the flame should read
+    // as glowing against the background, with the border doing the framing, not a solid fill.
+    backgroundColor: "rgba(6, 10, 18, 0.28)",
+    borderWidth: 3,
     borderRadius: 5,
     paddingVertical: 12,
     paddingHorizontal: 10,
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
-    shadowOpacity: 0.7,
+    shadowOpacity: 0.4,
     shadowRadius: 0,
     shadowOffset: { width: 4, height: 4 },
   },

@@ -6,6 +6,7 @@ import { Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpac
 import { FormScreen } from "../components/FormScreen";
 import { BottomNav } from "../components/BottomNav";
 import { WeekDaySelector } from "../components/WeekDaySelector";
+import { LunaReminderCard } from "../components/LunaReminderCard";
 import { formPageContent, formStyles } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
@@ -77,6 +78,12 @@ type ChecklistItem = {
   durationConfirmed: boolean;
   /** Work/Social/Health/Purpose — absent on items created before categories existed. */
   category?: QuestCategory;
+  /**
+   * User-set hobby/self-care item, encouraged by Luna. Always paired with kind:"recovery" so
+   * it inherits Recovery's existing exemption from progress locks/caps — hobby is a display
+   * distinction (pink styling, "HOBBY" label), never a new cap/energy category of its own.
+   */
+  hobby?: boolean;
 };
 
 type TodayQuest = {
@@ -1070,6 +1077,8 @@ export default function DayPlanScreen() {
               isToday={(date) => getDateKey(date) === getDateKey(new Date())}
             />
 
+            <LunaReminderCard selectedDateKey={resolveDateForWeekday(selectedDay)} />
+
             <View style={styles.panelGreen}>
               <Text style={styles.sectionTitle}>WEEKLY HABIT</Text>
               <Text style={styles.helperText}>Set a recurring role for the days you choose. It repeats every week until changed.</Text>
@@ -1143,7 +1152,7 @@ export default function DayPlanScreen() {
                 <Text style={styles.emptyChecklist}>{EMPTY_CHECKLIST_COPY}</Text>
               ) : null}
               {visibleChecklist.map((item: ChecklistItem) => (
-                <View key={item.id} style={[styles.checkCard, item.kind === "recovery" ? styles.recoveryBorder : styles.progressBorder]}>
+                <View key={item.id} style={[styles.checkCard, item.hobby ? styles.hobbyBorder : item.kind === "recovery" ? styles.recoveryBorder : styles.progressBorder]}>
                   <View style={styles.rowBetween}>
                     <View style={styles.checkboxGroup}>
                       <TouchableOpacity onPress={() => toggleChecklistItemChecked(item.id)}>
@@ -1156,8 +1165,9 @@ export default function DayPlanScreen() {
                       </Text>
                     </View>
                     <View style={styles.kindSwitchRow}>
-                      <TouchableOpacity style={[styles.kindMiniButton, item.kind === "progress" && styles.kindProgressActive]} onPress={() => updateChecklistItem(item.id, { kind: "progress" })}><Text style={styles.kindMiniText}>PROGRESS</Text></TouchableOpacity>
-                      <TouchableOpacity style={[styles.kindMiniButton, item.kind === "recovery" && styles.kindRecoveryActive]} onPress={() => updateChecklistItem(item.id, { kind: "recovery" })}><Text style={styles.kindMiniText}>RECOVERY</Text></TouchableOpacity>
+                      <TouchableOpacity style={[styles.kindMiniButton, !item.hobby && item.kind === "progress" && styles.kindProgressActive]} onPress={() => updateChecklistItem(item.id, { kind: "progress", hobby: false })}><Text style={styles.kindMiniText}>PROGRESS</Text></TouchableOpacity>
+                      <TouchableOpacity style={[styles.kindMiniButton, !item.hobby && item.kind === "recovery" && styles.kindRecoveryActive]} onPress={() => updateChecklistItem(item.id, { kind: "recovery", hobby: false })}><Text style={styles.kindMiniText}>RECOVERY</Text></TouchableOpacity>
+                      <TouchableOpacity style={[styles.kindMiniButton, item.hobby && styles.kindHobbyActive]} onPress={() => updateChecklistItem(item.id, { kind: "recovery", hobby: true })}><Text style={styles.kindMiniText}>HOBBY</Text></TouchableOpacity>
                       <TouchableOpacity style={styles.deleteButton} onPress={() => deleteChecklistItem(item.id)}><Text style={styles.deleteButtonText}>🗑</Text></TouchableOpacity>
                     </View>
                   </View>
@@ -1362,6 +1372,7 @@ const styles = StyleSheet.create({
   checkCard: { backgroundColor: "rgba(58, 42, 21, 0.94)", borderWidth: 2, borderRadius: 8, padding: 10, marginBottom: 10 },
   progressBorder: { borderColor: "#FBBF24" },
   recoveryBorder: { borderColor: "#A78BFA" },
+  hobbyBorder: { borderColor: "#F472B6" },
   checkToggle: { color: "#F8FAFC", fontSize: 24, marginRight: 8 },
   checkToggleDisabled: { color: "#64748B" },
   checkboxGroup: { flexDirection: "row", alignItems: "center", flexShrink: 1 },
@@ -1372,6 +1383,7 @@ const styles = StyleSheet.create({
   kindMiniButton: { borderWidth: 1, borderColor: "#475569", paddingVertical: 5, paddingHorizontal: 7, backgroundColor: "rgba(30, 41, 59, 0.82)" },
   kindProgressActive: { borderColor: "#FBBF24", backgroundColor: "rgba(113,63,18,0.8)" },
   kindRecoveryActive: { borderColor: "#A78BFA", backgroundColor: "rgba(88,28,135,0.8)" },
+  kindHobbyActive: { borderColor: "#F472B6", backgroundColor: "rgba(131,24,67,0.8)" },
   kindMiniText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 9, fontWeight: "900" },
   categoryRow: { flexDirection: "row", gap: 6, marginTop: 6, flexWrap: "wrap" },
   categoryButton: { borderWidth: 1, borderColor: "#475569", borderRadius: 4, paddingVertical: 5, paddingHorizontal: 8, backgroundColor: "rgba(30, 41, 59, 0.82)" },
