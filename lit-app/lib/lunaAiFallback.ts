@@ -29,7 +29,25 @@ export function buildSafeFallbackLunaSupport(
     whatLunaNoticed.push("You reflected on something getting in the way recently — that honesty matters.");
   }
 
-  const overloaded = request.recentEnergy < 40 || request.recentMisses.length >= 2;
+  const recentModeTrend = request.patternContext?.recentModeTrend;
+  if (recentModeTrend === "recovery_heavy") {
+    whatLunaNoticed.push("Your recent days have leaned Recovery more than Progress — that's valid, not a setback.");
+  }
+
+  const todayWeekday = new Date().toLocaleDateString([], { weekday: "long" });
+  const todayIsRestOriented = request.patternContext?.weekdayIntensity?.[todayWeekday] === "rest_oriented";
+  if (todayIsRestOriented) {
+    whatLunaNoticed.push(`You've set ${todayWeekday} as a lighter day yourself — today is a good day to lean into that.`);
+  }
+
+  if (request.sleepContext.caffeineTime) {
+    whatLunaNoticed.push(`You had caffeine around ${request.sleepContext.caffeineTime} — worth keeping in mind for tonight's wind-down.`);
+  }
+  if (request.sleepContext.sleepGuideAdherence === "inconsistent") {
+    whatLunaNoticed.push("Sleep has been a bit inconsistent against your usual rhythm lately.");
+  }
+
+  const overloaded = request.recentEnergy < 40 || request.recentMisses.length >= 2 || recentModeTrend === "recovery_heavy" || todayIsRestOriented;
 
   const supportMessage = overloaded
     ? "It sounds like things have been harder than usual lately. That's okay — let's lighten the load instead of pushing through."

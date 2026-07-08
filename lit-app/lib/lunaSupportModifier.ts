@@ -1,10 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { loadUserLifeProfile, loadLearningMemory, buildStatsInsightSnapshot, recordAgentEvent } from "./mylitAgents";
+import { loadUserLifeProfile, loadLearningMemory, buildStatsInsightSnapshot, buildGuidePatternContext, recordAgentEvent } from "./mylitAgents";
 import { loadLatestEvieAiPathPipeline } from "./evieAiPathPipeline";
 import { generatePathPipelineFromLifeProfile, saveDailyQuestSuggestion, type SaveDailyQuestResult } from "./pathPipeline";
 import { persistProgressKeys } from "./progressStore";
-import { AI_LUNA_SUPPORT_SESSIONS_KEY, LATEST_CHECKIN_KEY, MISSED_QUESTS_KEY, REFLECTIONS_KEY, TOMORROW_QUEUE_KEY } from "./storageKeys";
+import { AI_LUNA_SUPPORT_SESSIONS_KEY, CHECKIN_HISTORY_KEY, LATEST_CHECKIN_KEY, MISSED_QUESTS_KEY, REFLECTIONS_KEY, TOMORROW_QUEUE_KEY } from "./storageKeys";
 import type { MissedEntry } from "./questProgress";
 import {
   formatDurationLabel,
@@ -67,8 +67,26 @@ async function loadCurrentPathPipelineSummary(): Promise<LunaCurrentPathPipeline
   };
 }
 
+/** Rough, non-medical read on how closely recent nights have matched a healthy ~7-9h window. */
+async function computeSleepGuideAdherence(): Promise<LunaSleepContext["sleepGuideAdherence"]> {
+  const history = await readJson<Array<{ effectiveSleepMinutes?: number; createdAt?: string }>>(CHECKIN_HISTORY_KEY, []);
+  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const recentMinutes = history
+    .filter((entry) => entry.createdAt && new Date(entry.createdAt).getTime() >= cutoff && typeof entry.effectiveSleepMinutes === "number")
+    .map((entry) => entry.effectiveSleepMinutes as number);
+  if (recentMinutes.length < 3) return "unknown";
+  const goodNights = recentMinutes.filter((minutes) => minutes >= 6.5 * 60).length;
+  return goodNights / recentMinutes.length >= 0.6 ? "good" : "inconsistent";
+}
+
 async function loadCheckInContext(): Promise<{ recentEnergy: number; currentMode: AgentEventMode; boardMode: "Progress" | "Recovery"; sleepContext: LunaSleepContext }> {
-  const checkIn = await readJson<{ energy?: number; mode?: string; effectiveSleepMinutes?: number; interrupted?: boolean } | null>(LATEST_CHECKIN_KEY, null);
+  const [checkIn, sleepGuideAdherence] = await Promise.all([
+    readJson<{ energy?: number; mode?: string; effectiveSleepMinutes?: number; interrupted?: boolean; hadCaffeine?: boolean; caffeineTime?: string } | null>(
+      LATEST_CHECKIN_KEY,
+      null
+    ),
+    computeSleepGuideAdherence(),
+  ]);
   const recentEnergy = typeof checkIn?.energy === "number" ? checkIn.energy : 50;
   const boardMode: "Progress" | "Recovery" = checkIn?.mode === "Recovery" ? "Recovery" : "Progress";
   const currentMode: AgentEventMode = checkIn ? (boardMode === "Recovery" ? "recovery" : "progress") : "neutral";
@@ -76,7 +94,12 @@ async function loadCheckInContext(): Promise<{ recentEnergy: number; currentMode
     recentEnergy,
     currentMode,
     boardMode,
-    sleepContext: { effectiveSleepMinutes: checkIn?.effectiveSleepMinutes, interrupted: checkIn?.interrupted },
+    sleepContext: {
+      effectiveSleepMinutes: checkIn?.effectiveSleepMinutes,
+      interrupted: checkIn?.interrupted,
+      caffeineTime: checkIn?.hadCaffeine ? checkIn.caffeineTime : undefined,
+      sleepGuideAdherence,
+    },
   };
 }
 
@@ -116,13 +139,14 @@ export type RequestLunaSupportResult = { ok: true; record: LunaSupportModifierRe
 
 /** Gathers local context, asks the server route for support + suggestions, and saves the session (suggestions only — no automatic change). */
 export async function requestLunaSupport(userMessage: string): Promise<RequestLunaSupportResult> {
-  const [currentPathPipeline, checkInContext, recentMisses, reflectionSummary, activeQuests, learningMemory] = await Promise.all([
+  const [currentPathPipeline, checkInContext, recentMisses, reflectionSummary, activeQuests, learningMemory, patternContext] = await Promise.all([
     loadCurrentPathPipelineSummary(),
     loadCheckInContext(),
     loadRecentMisses(),
     loadReflectionSummary(),
     loadActiveQuests(),
     loadLearningMemory(),
+    buildGuidePatternContext(),
   ]);
 
   const request: LunaSupportModifierRequest = {
@@ -135,6 +159,7 @@ export async function requestLunaSupport(userMessage: string): Promise<RequestLu
     learningMemory,
     currentMode: checkInContext.currentMode,
     activeQuests,
+    patternContext,
   };
 
   const controller = new AbortController();

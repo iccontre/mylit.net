@@ -52,7 +52,7 @@ export function PathPipelineCard() {
   if (!pipeline.dreamGoal) {
     return (
       <View style={styles.panel}>
-        <Text style={styles.panelTitle}>✦ EVIE'S PATH PIPELINE</Text>
+        <Text style={styles.panelTitle}>✦ GUIDE SUGGESTIONS</Text>
         <Text style={styles.emptyText}>
           Tell Evie what you're building toward in your Life Profile, and she'll turn it into a 3-month direction, a
           2-week sprint, and daily quests you can actually keep up with.
@@ -84,7 +84,7 @@ export function PathPipelineCard() {
   return (
     <View style={styles.panel}>
       <View style={styles.headerRow}>
-        <Text style={[styles.panelTitle, styles.panelTitleInRow]}>✦ EVIE'S PATH PIPELINE</Text>
+        <Text style={[styles.panelTitle, styles.panelTitleInRow]}>✦ GUIDE SUGGESTIONS</Text>
         <TouchableOpacity style={styles.regenButton} onPress={() => void loadPipeline()}>
           <Text style={styles.regenButtonText}>↻</Text>
         </TouchableOpacity>

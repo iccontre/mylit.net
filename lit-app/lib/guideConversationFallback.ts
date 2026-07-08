@@ -12,8 +12,8 @@ const GENERIC_SAFETY_NOTE =
 export function buildFallbackGuideConversationResponse(guide: GuideName, reason: AiUnavailableReason = "missing_key"): GuideConversationResponse {
   const reply =
     guide === "evie"
-      ? "Thanks for sharing that. Evie's AI planning brain isn't reachable right now, so she can't turn this into a plan update yet — try again in a bit, or use \"Ask Evie to Build My Path\" on the Path screen."
-      : "Thanks for telling Luna what's going on. Her AI support brain isn't reachable right now, so she can't suggest adjustments from this yet — try again in a bit, or use \"Ask Luna to help me adjust\" on the Mind screen.";
+      ? "Thanks for sharing that. Evie's planning brain isn't reachable right now, so she can't turn this into a plan update yet — try again in a bit, or use \"Ask Evie to Build My Path\" on the Path screen."
+      : "Thanks for telling Luna what's going on. Her support brain isn't reachable right now, so she can't suggest adjustments from this yet — try again in a bit, or use \"Ask Luna to help me adjust\" on the Mind screen.";
 
   return {
     guide,

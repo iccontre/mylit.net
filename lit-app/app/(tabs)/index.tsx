@@ -33,7 +33,7 @@ import {
   getForcedRecoveryTrigger,
   getTodayKey,
   getWeekdayName,
-  isDefaultTodayQuestTitle,
+  isTodayQuestActiveForToday,
   kindAccent,
   loadFocusBlockLog,
   loadTodayCompletions,
@@ -996,7 +996,7 @@ export default function HomeScreen() {
   const remainingMs = activeItem ? Math.max(0, activeItem.endsAt - countdownNow) : 0;
   const timerFinished = activeItem !== null && remainingMs <= 0;
   const isBoardLocked = activeItem !== null;
-  const todayQuestUnset = isDefaultTodayQuestTitle(dayPlanRaw?.todayQuest?.title);
+  const todayQuestUnset = !isTodayQuestActiveForToday(dayPlanRaw?.todayQuest ?? null, todayKey);
 
   const nowMinutes = timeNow.getHours() * 60 + timeNow.getMinutes();
   const timeTrackPosition = getCurrentTimeTrackPosition(timeNow);

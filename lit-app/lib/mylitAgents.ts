@@ -15,6 +15,7 @@ import {
   FOCUS_BLOCK_HISTORY_KEY,
   REFLECTIONS_KEY,
   JOURNAL_ENTRIES_KEY,
+  DAY_PLAN_KEY,
 } from "./storageKeys";
 import type { CompletionEntry, MissedEntry, FocusBlockLogEntry } from "./questProgress";
 import type {
@@ -36,6 +37,10 @@ import type {
   EvieLearningContext,
   LunaLearningContext,
   CalendarLearningContext,
+  WeekdayIntensity,
+  GuidePatternContext,
+  WakeRhythm,
+  QuestCategory,
 } from "./agentTypes";
 
 // Non-AI helper foundation for MYLIT's long-term agent architecture. See
@@ -119,6 +124,8 @@ export type RecordAgentEventInput = {
   durationMinutes?: number;
   stepDelta?: number;
   energyDelta?: number;
+  /** Work/Social/Health/Purpose, when the source quest/checklist item has one set — feeds computeCategoryTrends. */
+  category?: QuestCategory;
   metadata?: Record<string, string | number | boolean | null>;
   createdAt?: string;
 };
@@ -152,6 +159,7 @@ export async function recordAgentEvent(input: RecordAgentEventInput): Promise<vo
       durationMinutes: input.durationMinutes,
       stepDelta: input.stepDelta,
       energyDelta: input.energyDelta,
+      category: input.category,
       metadata: input.metadata,
     };
 
@@ -494,6 +502,72 @@ export async function loadLearningMemory(): Promise<LearningMemory> {
   return readJson<LearningMemory>(LEARNING_MEMORY_KEY, { lastUpdatedAt: new Date(0).toISOString() });
 }
 
+const WEEKDAY_REST_KEYWORDS = /(rest|recover|recovery|break|light|reset|sabbath|chill)/i;
+const WEEKDAY_PROGRESS_KEYWORDS = /(work|study|grind|focus|coding|project)/i;
+
+/** "Rest Day" -> rest_oriented, "Deep Work" -> progress_oriented, anything else -> neutral. Guidance only, never enforced. */
+function classifyWeekdayIntensity(habitText: string): WeekdayIntensity {
+  if (WEEKDAY_REST_KEYWORDS.test(habitText)) return "rest_oriented";
+  if (WEEKDAY_PROGRESS_KEYWORDS.test(habitText)) return "progress_oriented";
+  return "neutral";
+}
+
+/** Reads Day Plan's own weekdayRoles (the user's Weekly Habit text per day) and classifies each set day. */
+async function computeWeekdayIntensity(): Promise<Record<string, WeekdayIntensity> | undefined> {
+  const dayPlan = await readJson<{ weekdayRoles?: Record<string, string> }>(DAY_PLAN_KEY, {});
+  const roles = dayPlan.weekdayRoles;
+  if (!roles) return undefined;
+
+  const result: Record<string, WeekdayIntensity> = {};
+  for (const [day, text] of Object.entries(roles)) {
+    if (typeof text === "string" && text.trim()) {
+      result[day] = classifyWeekdayIntensity(text);
+    }
+  }
+  return Object.keys(result).length ? result : undefined;
+}
+
+const MODE_TREND_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+
+/** Recovery vs Progress share across recent completed/missed quests — informs how ambitious new suggestions default to. */
+function computeRecentModeTrend(events: AgentEvent[]): LearningMemory["recentModeTrend"] {
+  const cutoff = Date.now() - MODE_TREND_WINDOW_MS;
+  const recent = events.filter(
+    (e) => (e.type === "quest_completed" || e.type === "quest_missed") && e.mode && e.mode !== "neutral" && new Date(e.createdAt).getTime() >= cutoff
+  );
+  if (recent.length < 6) return undefined;
+
+  const recoveryCount = recent.filter((e) => e.mode === "recovery").length;
+  const share = recoveryCount / recent.length;
+  if (share >= 0.6) return "recovery_heavy";
+  if (share <= 0.3) return "progress_heavy";
+  return "balanced";
+}
+
+const CATEGORY_TREND_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Completed/missed counts per Work/Social/Health/Purpose category over the last ~30 days — only for events that had a category set. */
+function computeCategoryTrends(events: AgentEvent[]): LearningMemory["categoryTrends"] {
+  const cutoff = Date.now() - CATEGORY_TREND_WINDOW_MS;
+  const relevant = events.filter(
+    (e) =>
+      e.category &&
+      new Date(e.createdAt).getTime() >= cutoff &&
+      (e.type === "quest_completed" || e.type === "quest_missed" || e.type === "checklist_completed" || e.type === "checklist_missed")
+  );
+  if (!relevant.length) return undefined;
+
+  const trends: NonNullable<LearningMemory["categoryTrends"]> = {};
+  for (const event of relevant) {
+    const category = event.category!;
+    const bucket = trends[category] ?? { completed: 0, missed: 0 };
+    if (event.type === "quest_completed" || event.type === "checklist_completed") bucket.completed += 1;
+    else bucket.missed += 1;
+    trends[category] = bucket;
+  }
+  return trends;
+}
+
 /**
  * Recomputes LearningMemory from the event ledger + latest insights and persists it. Safe
  * to call often (e.g. alongside buildAgentContextSnapshot) — it always derives fresh values
@@ -538,6 +612,12 @@ export async function updateLearningMemoryFromEvents(): Promise<LearningMemory> 
   const consistencyPatterns = insights.filter((i) => i.category === "consistency").map((i) => i.summary);
   const commonSleepBarriers = insights.filter((i) => i.category === "sleep").map((i) => i.summary);
 
+  const [weekdayIntensity, recentModeTrend, categoryTrends] = await Promise.all([
+    computeWeekdayIntensity(),
+    Promise.resolve(computeRecentModeTrend(events)),
+    Promise.resolve(computeCategoryTrends(events)),
+  ]);
+
   const next: LearningMemory = {
     ...current,
     preferredQuestDurations,
@@ -548,6 +628,9 @@ export async function updateLearningMemoryFromEvents(): Promise<LearningMemory> 
     overloadPatterns: overloadPatterns.length ? overloadPatterns : current.overloadPatterns,
     consistencyPatterns: consistencyPatterns.length ? consistencyPatterns : current.consistencyPatterns,
     commonSleepBarriers: commonSleepBarriers.length ? commonSleepBarriers : current.commonSleepBarriers,
+    weekdayIntensity: weekdayIntensity ?? current.weekdayIntensity,
+    recentModeTrend: recentModeTrend ?? current.recentModeTrend,
+    categoryTrends: categoryTrends ?? current.categoryTrends,
     lastUpdatedAt: new Date().toISOString(),
   };
 
@@ -754,6 +837,30 @@ export async function addManualBiomarkerSnapshot(
   const next = [snapshot, ...existing.filter((entry) => entry.id !== snapshot.id)];
   await persistProgressKeys({ [BIOMARKER_SNAPSHOTS_MANUAL_KEY]: JSON.stringify(next) });
   return next;
+}
+
+// ---------------------------------------------------------------------------
+// Guide Pattern Context — the shared "what MYLIT has noticed about the user's rhythm" bundle
+// sent to Evie, Luna, and the guide conversation route alike (see GuidePatternContext in
+// lib/agentTypes.ts and spec section 10). Recomputes learning memory first so the returned
+// trends are current.
+// ---------------------------------------------------------------------------
+
+export async function buildGuidePatternContext(): Promise<GuidePatternContext> {
+  const [lifeProfile, guideMemory, learningMemory] = await Promise.all([
+    loadUserLifeProfile(),
+    loadGuideMemory(),
+    updateLearningMemoryFromEvents(),
+  ]);
+
+  return {
+    weekdayIntensity: learningMemory.weekdayIntensity,
+    recentModeTrend: learningMemory.recentModeTrend,
+    categoryTrends: learningMemory.categoryTrends,
+    workRhythmPreference: lifeProfile.workRhythmPreference,
+    preferredFocusWindow: lifeProfile.preferredFocusWindow,
+    wakeRhythm: guideMemory.wakeRhythm,
+  };
 }
 
 // ---------------------------------------------------------------------------

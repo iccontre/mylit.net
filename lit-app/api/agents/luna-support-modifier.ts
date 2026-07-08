@@ -113,7 +113,17 @@ Rules you must follow:
   supportMessage rather than guessing — but still be warm, not clinical.
 - Every suggestion is optional for the user — do not create pressure to accept anything.
 - Respect MYLIT's mechanics: quests are "progress" or "recovery" mode; only Today's Quest can
-  ever run 2 hours (never suggest that here); never suggest scheduling past midnight.`;
+  ever run 2 hours (never suggest that here); never suggest scheduling past midnight.
+- patternContext.recentModeTrend ("recovery_heavy" | "progress_heavy" | "balanced") is the
+  user's actual recent trend — if recovery_heavy, lean further into easier/shorter
+  suggestions and a gentler supportMessage; you can suggest Evie rebuild the plan around a
+  lighter baseline.
+- patternContext.weekdayIntensity tells you which weekdays the user's own Weekly Habit reads
+  as rest-oriented — treat those as good reasons to lean into recovery, not something to push
+  through.
+- sleepContext.caffeineTime and sleepContext.sleepGuideAdherence, when present, are for you to
+  gently reference (e.g. late caffeine, inconsistent sleep) — never a medical claim, just
+  supportive pattern-noticing.`;
 
 function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
@@ -133,6 +143,7 @@ function buildUserContent(input: LunaSupportModifierRequest): string {
     learningMemory: input.learningMemory,
     currentMode: input.currentMode,
     activeQuests: input.activeQuests.slice(0, 20),
+    patternContext: input.patternContext ?? {},
   };
   return JSON.stringify(compact);
 }
@@ -175,6 +186,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     learningMemory: body.learningMemory ?? { lastUpdatedAt: new Date(0).toISOString() },
     currentMode: body.currentMode === "progress" || body.currentMode === "recovery" ? body.currentMode : "neutral",
     activeQuests: Array.isArray(body.activeQuests) ? body.activeQuests : [],
+    patternContext: body.patternContext,
   };
 
   const userContent = buildUserContent(request);

@@ -8,7 +8,7 @@ import { formPageContent } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { loadUserLifeProfile, saveUserLifeProfile } from "../lib/mylitAgents";
-import type { MotivationStyle, UserLifeProfile } from "../lib/agentTypes";
+import type { FocusWindow, MotivationStyle, UserLifeProfile, WorkRhythmPreference } from "../lib/agentTypes";
 
 // Editable version of the UserLifeProfile the agent foundation (lib/mylitAgents.ts) already
 // reads. This is entirely separate from the existing Path onboarding profile — nothing here
@@ -23,7 +23,24 @@ const MOTIVATION_OPTIONS: { value: MotivationStyle; label: string }[] = [
   { value: "balanced", label: "Balanced" },
 ];
 
-type TextField = Exclude<keyof UserLifeProfile, "motivationStyle" | "currentStage" | "updatedAt">;
+const WORK_RHYTHM_OPTIONS: { value: WorkRhythmPreference; label: string }[] = [
+  { value: "spread_through_day", label: "Start early + spread tasks throughout the day" },
+  { value: "focus_blocks", label: "Large focus blocks at 1–2 points in the day" },
+  { value: "flexible", label: "Depends on the day" },
+];
+
+const FOCUS_WINDOW_OPTIONS: { value: FocusWindow; label: string }[] = [
+  { value: "morning", label: "Morning" },
+  { value: "midday", label: "Midday" },
+  { value: "afternoon", label: "Afternoon" },
+  { value: "evening", label: "Evening" },
+  { value: "flexible", label: "Flexible" },
+];
+
+type TextField = Exclude<
+  keyof UserLifeProfile,
+  "motivationStyle" | "currentStage" | "updatedAt" | "workRhythmPreference" | "preferredFocusWindow"
+>;
 
 function normalizeDraft(profile: UserLifeProfile): Record<TextField, string> {
   return {
@@ -39,6 +56,7 @@ function normalizeDraft(profile: UserLifeProfile): Record<TextField, string> {
     preferredLunaSupport: profile.preferredLunaSupport ?? "",
     commonSleepBarriers: profile.commonSleepBarriers ?? "",
     recoveryActivitiesThatHelp: profile.recoveryActivitiesThatHelp ?? "",
+    plannedWakeTime: profile.plannedWakeTime ?? "",
   };
 }
 
@@ -48,23 +66,36 @@ export default function LifeProfileScreen() {
 
   const [draft, setDraft] = useState<Record<TextField, string>>(normalizeDraft({}));
   const [motivationStyle, setMotivationStyle] = useState<MotivationStyle | "">("");
-  const savedSnapshotRef = useRef<string>(JSON.stringify({ draft: normalizeDraft({}), motivationStyle: "" }));
+  const [workRhythmPreference, setWorkRhythmPreference] = useState<WorkRhythmPreference | "">("");
+  const [preferredFocusWindow, setPreferredFocusWindow] = useState<FocusWindow | "">("");
+  const savedSnapshotRef = useRef<string>(
+    JSON.stringify({ draft: normalizeDraft({}), motivationStyle: "", workRhythmPreference: "", preferredFocusWindow: "" })
+  );
 
   useEffect(() => {
     void (async () => {
       const profile = await loadUserLifeProfile();
       const nextDraft = normalizeDraft(profile);
       const nextMotivation = profile.motivationStyle ?? "";
+      const nextWorkRhythm = profile.workRhythmPreference ?? "";
+      const nextFocusWindow = profile.preferredFocusWindow ?? "";
       setDraft(nextDraft);
       setMotivationStyle(nextMotivation);
-      savedSnapshotRef.current = JSON.stringify({ draft: nextDraft, motivationStyle: nextMotivation });
+      setWorkRhythmPreference(nextWorkRhythm);
+      setPreferredFocusWindow(nextFocusWindow);
+      savedSnapshotRef.current = JSON.stringify({
+        draft: nextDraft,
+        motivationStyle: nextMotivation,
+        workRhythmPreference: nextWorkRhythm,
+        preferredFocusWindow: nextFocusWindow,
+      });
     })();
   }, []);
 
   // Dirty-check against the last-saved snapshot (like Today's Quest / checklist items) rather
   // than a timed flag — fields stay populated after saving, so a timer would flip the button
   // back to "Save" a few seconds later even though nothing had changed.
-  const currentSnapshot = JSON.stringify({ draft, motivationStyle });
+  const currentSnapshot = JSON.stringify({ draft, motivationStyle, workRhythmPreference, preferredFocusWindow });
   const isDirty = currentSnapshot !== savedSnapshotRef.current;
 
   function updateField(field: TextField, value: string) {
@@ -75,11 +106,26 @@ export default function LifeProfileScreen() {
     setMotivationStyle((prev) => (prev === value ? "" : value));
   }
 
+  function selectWorkRhythm(value: WorkRhythmPreference) {
+    setWorkRhythmPreference((prev) => (prev === value ? "" : value));
+    if (value !== "focus_blocks") setPreferredFocusWindow("");
+  }
+
+  function selectFocusWindow(value: FocusWindow) {
+    setPreferredFocusWindow((prev) => (prev === value ? "" : value));
+  }
+
   async function handleSave() {
     if (!isDirty) return;
-    // Explicitly include motivationStyle (even as undefined) so deselecting it actually
-    // clears the saved value instead of leaving the old choice in place.
-    const partial: Partial<UserLifeProfile> = { ...draft, motivationStyle: motivationStyle || undefined };
+    // Explicitly include motivationStyle/workRhythmPreference/preferredFocusWindow (even as
+    // undefined) so deselecting one actually clears the saved value instead of leaving the
+    // old choice in place.
+    const partial: Partial<UserLifeProfile> = {
+      ...draft,
+      motivationStyle: motivationStyle || undefined,
+      workRhythmPreference: workRhythmPreference || undefined,
+      preferredFocusWindow: preferredFocusWindow || undefined,
+    };
     await saveUserLifeProfile(partial);
     savedSnapshotRef.current = currentSnapshot;
   }
@@ -121,6 +167,50 @@ export default function LifeProfileScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
+            </View>
+
+            <View style={styles.panel}>
+              <Text style={styles.sectionTitle}>HOW YOU WORK</Text>
+              <Text style={styles.helperText}>
+                Do you prefer to start early and work on tasks throughout the day, or finish your major tasks in larger focus blocks?
+              </Text>
+              <View style={styles.choiceColumn}>
+                {WORK_RHYTHM_OPTIONS.map((option) => (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={[styles.choiceButtonWide, workRhythmPreference === option.value && styles.choiceButtonActive]}
+                    onPress={() => selectWorkRhythm(option.value)}
+                  >
+                    <Text style={[styles.choiceText, workRhythmPreference === option.value && styles.choiceTextActive]}>{option.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {workRhythmPreference === "focus_blocks" ? (
+                <>
+                  <Text style={styles.label}>Preferred focus window</Text>
+                  <View style={styles.choiceRow}>
+                    {FOCUS_WINDOW_OPTIONS.map((option) => (
+                      <TouchableOpacity
+                        key={option.value}
+                        style={[styles.choiceButton, preferredFocusWindow === option.value && styles.choiceButtonActive]}
+                        onPress={() => selectFocusWindow(option.value)}
+                      >
+                        <Text style={[styles.choiceText, preferredFocusWindow === option.value && styles.choiceTextActive]}>{option.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              ) : null}
+
+              <Text style={styles.label}>Planned wake time (optional)</Text>
+              <TextInput
+                style={styles.textInputSmall}
+                placeholder="e.g. 7:00 AM"
+                placeholderTextColor="#94A3B8"
+                value={draft.plannedWakeTime}
+                onChangeText={(text) => updateField("plannedWakeTime", text)}
+              />
             </View>
 
             <View style={[styles.panel, styles.evieAccent]}>
@@ -323,11 +413,23 @@ const styles = StyleSheet.create({
   evieTitle: { color: "#FDE68A" },
   lunaTitle: { color: "#E9D5FF" },
   helperText: { color: "#94A3B8", fontSize: 11, lineHeight: 16, fontWeight: "700", textAlign: "center", marginBottom: 10 },
-  choiceRow: { flexDirection: "row", gap: 8 },
-  choiceButton: { flex: 1, borderWidth: 2, borderColor: "#475569", borderRadius: 6, paddingVertical: 10, alignItems: "center", backgroundColor: "rgba(15,23,42,0.9)" },
+  choiceRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
+  choiceColumn: { gap: 8 },
+  choiceButton: { flex: 1, borderWidth: 2, borderColor: "#475569", borderRadius: 6, paddingVertical: 10, alignItems: "center", backgroundColor: "rgba(15,23,42,0.9)", minWidth: 90 },
+  choiceButtonWide: { borderWidth: 2, borderColor: "#475569", borderRadius: 6, paddingVertical: 10, paddingHorizontal: 10, alignItems: "center", backgroundColor: "rgba(15,23,42,0.9)" },
   choiceButtonActive: { borderColor: "#FBBF24", backgroundColor: "rgba(69,43,8,0.7)" },
-  choiceText: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
+  choiceText: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", textAlign: "center" },
   choiceTextActive: { color: "#FDE68A" },
+  textInputSmall: {
+    backgroundColor: "rgba(15, 23, 42, 0.96)",
+    borderWidth: 2,
+    borderColor: "#475569",
+    borderRadius: 6,
+    color: "#F9FAFB",
+    fontSize: 14,
+    fontWeight: "700",
+    padding: 10,
+  },
   label: { color: "#CBD5E1", fontSize: 11, fontWeight: "800", marginBottom: 5, marginTop: 10 },
   textArea: {
     backgroundColor: "rgba(15, 23, 42, 0.96)",

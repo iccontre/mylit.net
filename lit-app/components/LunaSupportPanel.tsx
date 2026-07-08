@@ -113,7 +113,7 @@ export function LunaSupportPanel() {
 
   return (
     <View style={styles.panel}>
-      <Text style={styles.panelTitle}>✦ TALK TO LUNA</Text>
+      <Text style={styles.panelTitle}>✦ LUNA'S SUPPORT</Text>
       <Text style={styles.helperText}>Tell Luna what got hard — she'll notice patterns and suggest small, gentle adjustments.</Text>
 
       <TextInput

@@ -9,6 +9,21 @@ export type MotivationStyle = "gentle" | "direct" | "balanced";
 
 export type LifeStage = "high_school" | "college" | "working" | "transitioning" | "other";
 
+/** The 4 onboarding quest/checklist categories — used for learning which kinds of tasks the user actually creates/completes/misses. */
+export type QuestCategory = "work" | "social" | "health" | "purpose";
+
+/**
+ * "Do you prefer to start early and spread tasks through the day, or finish major tasks in
+ * larger focus blocks?" — guides task-suggestion shape (see lib/pathPipeline.ts,
+ * lib/evieAiFallback.ts). Optional and additive: existing users are never forced to answer it.
+ */
+export type WorkRhythmPreference = "spread_through_day" | "focus_blocks" | "flexible";
+
+export type FocusWindow = "morning" | "midday" | "afternoon" | "evening" | "flexible";
+
+/** Per-weekday read on the user's own Weekly Habit text (Day Plan) — "Rest Day" on Saturday reads as rest_oriented, "Deep Work" reads as progress_oriented. Guidance only, never enforced. */
+export type WeekdayIntensity = "rest_oriented" | "progress_oriented" | "neutral";
+
 /**
  * The user's broader life-path profile — separate from the existing Path
  * onboarding profile (`lit_user_profile` / LOCAL_PROFILE_KEY), which stays
@@ -31,6 +46,12 @@ export type UserLifeProfile = {
   recoveryActivitiesThatHelp?: string;
   currentStage?: LifeStage;
   longTermDreamStatement?: string;
+  /** "Start early + spread tasks" vs "large focus blocks" vs "depends on the day" — optional, editable in Life Profile any time. */
+  workRhythmPreference?: WorkRhythmPreference;
+  /** Only meaningful when workRhythmPreference is "focus_blocks". */
+  preferredFocusWindow?: FocusWindow;
+  /** User's own target wake time from Sleep Guide, e.g. "7:00 AM" — falls back to the learned wake rhythm in GuideMemory when unset. */
+  plannedWakeTime?: string;
   /** ISO timestamp of the last edit — used for merge bookkeeping, not shown to the user. */
   updatedAt?: string;
 };
@@ -40,6 +61,19 @@ export type UserLifeProfile = {
  * free-text AI memory blob — just a few plain fields the deterministic
  * summaries can reference so repeat visits don't feel like starting over.
  */
+/**
+ * Learned wake-time consistency from recent Morning Check-Ins — feeds Afternoon Check-In's
+ * unlock time (planned/consistent wake + 7h) and Luna's sleep guidance. Recomputed from the
+ * last 7–14 days of check-ins; never medical, just a rolling estimate.
+ */
+export type WakeRhythm = {
+  /** Most recent actual wake times (e.g. "7:15 AM"), oldest first, capped to ~14 entries. */
+  recentWakeTimes: string[];
+  /** Median-ish estimate of the user's actual wake time, once there's enough data. */
+  consistentWakeTimeEstimate?: string;
+  updatedAt: string;
+};
+
 export type GuideMemory = {
   lastEvieSummaryAt?: string;
   lastLunaSummaryAt?: string;
@@ -47,6 +81,8 @@ export type GuideMemory = {
   acknowledgedInsightIds?: string[];
   /** Short freeform notes a guide "remembers" — set by app logic, never by an AI call. */
   notes?: string;
+  /** Learned wake-time consistency — see WakeRhythm. */
+  wakeRhythm?: WakeRhythm;
   updatedAt?: string;
 };
 
@@ -197,6 +233,8 @@ export type AgentEvent = {
   durationMinutes?: number;
   stepDelta?: number;
   energyDelta?: number;
+  /** Work/Social/Health/Purpose, when the source item had one set — absent on legacy/uncategorized items. */
+  category?: QuestCategory;
   metadata?: Record<string, string | number | boolean | null>;
 };
 
@@ -216,6 +254,12 @@ export type LearningMemory = {
   overloadPatterns?: string[];
   recentWins?: string[];
   recentRisks?: string[];
+  /** Per-weekday read on the user's own Weekly Habit text — e.g. { Saturday: "rest_oriented" }. Recomputed from Day Plan's weekdayRoles each time learning memory refreshes. */
+  weekdayIntensity?: Record<string, WeekdayIntensity>;
+  /** Rolling recent-days trend of Progress vs Recovery mode — informs how ambitious new suggestions default to. */
+  recentModeTrend?: "recovery_heavy" | "progress_heavy" | "balanced";
+  /** Rolling completed/missed counts per quest category (last ~30 days) — feeds category-aware suggestions and "What MYLIT Noticed" copy. */
+  categoryTrends?: Partial<Record<QuestCategory, { completed: number; missed: number }>>;
   lastUpdatedAt: string;
 };
 
@@ -297,16 +341,21 @@ export type WeeklyHabitSuggestion = {
   durationMinutes: number;
   kind: "progress" | "recovery";
   rationale?: string;
+  /** Work/Social/Health/Purpose — optional, heuristically inferred when not explicitly chosen. */
+  taskCategory?: QuestCategory;
 };
 
 export type DailyQuestSuggestion = {
   id: string;
+  /** Free-text label for where this suggestion came from (e.g. "stats pattern") — NOT the work/social/health/purpose category, see taskCategory. */
   title: string;
   category: string;
   durationMinutes: number;
   kind: "progress" | "recovery";
   suggestedTimeWindow?: string;
   rationale?: string;
+  /** Work/Social/Health/Purpose — optional, heuristically inferred when not explicitly chosen. */
+  taskCategory?: QuestCategory;
 };
 
 export type ReflectionPromptSuggestion = {
@@ -392,6 +441,7 @@ export type EvieAiWeeklyHabitSuggestion = {
   repeatDays: string[];
   mode: "progress" | "recovery";
   durationMinutes: number;
+  taskCategory: QuestCategory;
 };
 
 /** 120 (2 hours) is only ever meant for Today's Quest — see lib/evieAiPathPipeline.ts's save-time clamp. */
@@ -409,6 +459,7 @@ export type EvieAiDailyQuestSuggestion = {
   difficulty: "easy" | "medium" | "hard";
   source: EvieAiDailyQuestSource;
   acceptanceLabel: string;
+  taskCategory: QuestCategory;
 };
 
 export type EvieAiPathPipelineResponse = {
@@ -432,6 +483,21 @@ export type EvieAiPathPipelineResponse = {
   aiUnavailableReason?: AiUnavailableReason;
 };
 
+/**
+ * Shared "what MYLIT has noticed about the user's rhythm" bundle — sent to Evie, Luna, and
+ * the guide conversation route alike so all three guides reason from the same signals (see
+ * spec section 10). Deliberately compact/summarized, never raw event/journal data.
+ */
+export type GuidePatternContext = {
+  /** Per-weekday read on the user's own Weekly Habit text (Day Plan). */
+  weekdayIntensity?: Record<string, WeekdayIntensity>;
+  recentModeTrend?: "recovery_heavy" | "progress_heavy" | "balanced";
+  categoryTrends?: Partial<Record<QuestCategory, { completed: number; missed: number }>>;
+  workRhythmPreference?: WorkRhythmPreference;
+  preferredFocusWindow?: FocusWindow;
+  wakeRhythm?: WakeRhythm;
+};
+
 export type EvieAiPathPipelineConstraints = {
   maxProgressMinutesToday?: number;
   maxRecoveryMinutesToday?: number;
@@ -451,6 +517,7 @@ export type EvieAiPathPipelineRequest = {
   currentMode: AgentEventMode;
   availableDays?: string[];
   constraints?: EvieAiPathPipelineConstraints;
+  patternContext?: GuidePatternContext;
 };
 
 /** One saved AI pipeline run — never overwritten, newest-first, capped history (see AI_EVIE_PATH_PIPELINES_KEY). */
@@ -530,6 +597,10 @@ export type LunaCurrentPathPipelineSummary = {
 export type LunaSleepContext = {
   effectiveSleepMinutes?: number;
   interrupted?: boolean;
+  /** e.g. "2:30 PM" — from Afternoon Check-In, when the user reported having caffeine. */
+  caffeineTime?: string;
+  /** How closely recent nights have matched Sleep Guide's suggested window — never a medical judgment, just adherence. */
+  sleepGuideAdherence?: "good" | "inconsistent" | "unknown";
 };
 
 export type LunaReflectionSummary = {
@@ -547,6 +618,7 @@ export type LunaSupportModifierRequest = {
   learningMemory: LearningMemory;
   currentMode: AgentEventMode;
   activeQuests: LunaActiveQuestSummary[];
+  patternContext?: GuidePatternContext;
 };
 
 /** One saved Luna support session — never overwritten, newest-first, capped history. */
@@ -626,6 +698,7 @@ export type GuideConversationRequest = {
   learningMemory: LearningMemory;
   statsInsights: StatsInsight[];
   currentMode: AgentEventMode;
+  patternContext?: GuidePatternContext;
 };
 
 export type GuideConversationResponse = {

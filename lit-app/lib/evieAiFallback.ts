@@ -4,6 +4,8 @@ import type {
   EvieAiDailyQuestSuggestion,
   EvieAiPathPipelineResponse,
   EvieGoalDomain,
+  GuidePatternContext,
+  QuestCategory,
   UserLifeProfile,
 } from "./agentTypes";
 
@@ -42,6 +44,25 @@ function pickGoalDomain(text: string): EvieGoalDomain {
   return match?.domain ?? "other";
 }
 
+/** Maps Evie's finer-grained goal domain onto the 4 onboarding task categories. */
+function taskCategoryForGoalDomain(domain: EvieGoalDomain): QuestCategory {
+  switch (domain) {
+    case "career":
+    case "school":
+      return "work";
+    case "body":
+    case "sleep":
+      return "health";
+    case "friendship":
+      return "social";
+    case "creative":
+    case "purpose":
+    case "other":
+    default:
+      return "purpose";
+  }
+}
+
 function computeSpecificityScore(text: string): number {
   if (!text) return 0;
   const words = text.split(/\s+/).filter(Boolean);
@@ -63,6 +84,7 @@ export function buildSafeFallbackEviePipeline(
     lifeProfile: UserLifeProfile;
     currentEnergy: number;
     currentMode: AgentEventMode;
+    patternContext?: GuidePatternContext;
   },
   reason: AiUnavailableReason = "missing_key"
 ): EvieAiPathPipelineResponse {
@@ -71,6 +93,20 @@ export function buildSafeFallbackEviePipeline(
   const specificityScore = computeSpecificityScore(goalText);
   const vague = !hasGoal || specificityScore < 0.25;
   const goalDomain = pickGoalDomain(goalText);
+  const goalTaskCategory = taskCategoryForGoalDomain(goalDomain);
+
+  const weekdayIntensity = input.patternContext?.weekdayIntensity ?? {};
+  const restOrientedDays = Object.entries(weekdayIntensity)
+    .filter(([, intensity]) => intensity === "rest_oriented")
+    .map(([day]) => day);
+  const ALL_WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  const habitDays = ["Monday", "Wednesday", "Friday"].filter((day) => !restOrientedDays.includes(day));
+  const weeklyHabitDays = habitDays.length ? habitDays : ALL_WEEKDAYS.filter((day) => !restOrientedDays.includes(day)).slice(0, 3);
+  const recentModeTrend = input.patternContext?.recentModeTrend;
+  const recoveryLeaning = input.currentMode === "recovery" || recentModeTrend === "recovery_heavy";
+  // spread_through_day favors more, smaller tasks; focus_blocks favors fewer, larger ones.
+  const baseDuration: 30 | 45 = input.patternContext?.workRhythmPreference === "focus_blocks" ? 45 : 30;
+  const dailyQuestDuration: 15 | 30 | 45 | 60 = recoveryLeaning ? 15 : recentModeTrend === "progress_heavy" ? (baseDuration === 45 ? 60 : 45) : baseDuration;
 
   const goalSummary = hasGoal
     ? `Working toward: ${goalText}`
@@ -87,20 +123,23 @@ export function buildSafeFallbackEviePipeline(
   const dailyQuestSuggestions: EvieAiDailyQuestSuggestion[] = hasGoal
     ? [
         {
-          title: `Small step toward: ${goalText}`,
-          reason: "Sized small on purpose so it's easy to actually finish today.",
+          title: recoveryLeaning ? `A small, easy step toward: ${goalText}` : `Small step toward: ${goalText}`,
+          reason: recoveryLeaning
+            ? "Kept short since recovery has been the theme lately — small still counts."
+            : "Sized small on purpose so it's easy to actually finish today.",
           mode: "progress",
-          durationMinutes: 30,
+          durationMinutes: dailyQuestDuration,
           suggestedTimeWindow: "afternoon",
           energyEffect: -3,
           difficulty: "easy",
           source: input.userPrompt.trim() ? "user_prompt" : "life_profile",
           acceptanceLabel: "Add to today's quests",
+          taskCategory: goalTaskCategory,
         },
       ]
     : [];
 
-  if (input.currentEnergy < 40) {
+  if (input.currentEnergy < 40 || recoveryLeaning) {
     dailyQuestSuggestions.push({
       title: "Take a short recovery break",
       reason: "Your energy is running low — rest counts as real progress too.",
@@ -111,6 +150,7 @@ export function buildSafeFallbackEviePipeline(
       difficulty: "easy",
       source: "life_profile",
       acceptanceLabel: "Add to today's quests",
+      taskCategory: "health",
     });
   }
 
@@ -123,14 +163,14 @@ export function buildSafeFallbackEviePipeline(
     clarifyingQuestions,
     researchBrief: {
       summary: hasGoal
-        ? `A starting structure for "${goalText}" built from MYLIT's own planner (no AI available right now).`
+        ? `A starting structure for "${goalText}" built from MYLIT's own planner (Evie's guide system is unavailable right now).`
         : "No goal text yet, so there's nothing to research.",
       keySteps: hasGoal ? ["Pick one repeatable weekly action.", "Track it for two weeks before judging progress."] : [],
       skillsNeeded: [],
       milestones: hasGoal ? [`One month: take a real first step toward "${goalText}".`] : [],
-      risks: ["Plans built without AI are more generic — expect to adjust as you go."],
+      risks: ["Plans built without a live guide session are more generic — expect to adjust as you go."],
       suggestedResources: [],
-      sourceNote: "Generated by MYLIT's built-in planner (AI unavailable right now) — a starting structure, not verified research.",
+      sourceNote: "Generated by MYLIT's built-in planner (guide system unavailable right now) — a starting structure, not verified research.",
     },
     threeMonthDirection: {
       title: hasGoal ? `Keep moving toward: ${goalText}` : "Set a direction",
@@ -155,10 +195,13 @@ export function buildSafeFallbackEviePipeline(
       ? [
           {
             title: `Work toward: ${goalText}`,
-            reason: "One repeatable weekly touchpoint keeps this moving without overloading your schedule.",
-            repeatDays: ["Monday", "Wednesday", "Friday"],
+            reason: restOrientedDays.length
+              ? "One repeatable weekly touchpoint — kept off the days you've marked as rest days."
+              : "One repeatable weekly touchpoint keeps this moving without overloading your schedule.",
+            repeatDays: weeklyHabitDays,
             mode: "progress",
-            durationMinutes: 30,
+            durationMinutes: dailyQuestDuration,
+            taskCategory: goalTaskCategory,
           },
         ]
       : [],

@@ -1,6 +1,15 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { loadUserLifeProfile, loadGuideMemory, loadLearningMemory, buildStatsInsightSnapshot, saveUserLifeProfile, saveGuideMemory, recordAgentEvent } from "./mylitAgents";
+import {
+  loadUserLifeProfile,
+  loadGuideMemory,
+  loadLearningMemory,
+  buildStatsInsightSnapshot,
+  buildGuidePatternContext,
+  saveUserLifeProfile,
+  saveGuideMemory,
+  recordAgentEvent,
+} from "./mylitAgents";
 import { persistProgressKeys } from "./progressStore";
 import { GUIDE_CONVERSATIONS_KEY, GUIDE_MEMORY_UPDATES_KEY, LATEST_CHECKIN_KEY } from "./storageKeys";
 import type {
@@ -74,13 +83,14 @@ export async function sendGuideMessage(guide: GuideName, userMessage: string): P
   const trimmed = userMessage.trim();
   if (!trimmed) return { ok: false, error: "Type something first." };
 
-  const [existingConversation, lifeProfile, guideMemory, learningMemory, statsInsights, currentMode] = await Promise.all([
+  const [existingConversation, lifeProfile, guideMemory, learningMemory, statsInsights, currentMode, patternContext] = await Promise.all([
     loadGuideConversation(guide),
     loadUserLifeProfile(),
     loadGuideMemory(),
     loadLearningMemory(),
     buildStatsInsightSnapshot(),
     loadCurrentModeContext(),
+    buildGuidePatternContext(),
   ]);
 
   const recentTurns = existingConversation.slice(-RECENT_TURNS_SENT).map((turn) => ({
@@ -97,6 +107,7 @@ export async function sendGuideMessage(guide: GuideName, userMessage: string): P
     learningMemory,
     statsInsights,
     currentMode,
+    patternContext,
   };
 
   const controller = new AbortController();

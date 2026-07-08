@@ -7,13 +7,13 @@ import type { AiUnavailableReason } from "./agentTypes";
 export function friendlyAiUnavailableMessage(reason: AiUnavailableReason, guideLabel: string): string {
   switch (reason) {
     case "quota_exceeded":
-      return `${guideLabel}'s AI has hit its usage quota right now — showing a basic result instead. Try again later.`;
+      return `${guideLabel}'s guide system is at capacity right now — showing a basic result instead. Try again later.`;
     case "rate_limited":
-      return `${guideLabel}'s AI is getting a lot of requests right now — showing a basic result instead. Try again in a minute.`;
+      return `${guideLabel}'s guide system is busy right now — showing a basic result instead. Try again in a minute.`;
     case "missing_key":
-      return `${guideLabel}'s AI isn't set up yet — showing a basic result instead.`;
+      return `${guideLabel}'s guide system isn't set up yet — showing a basic result instead.`;
     case "error":
     default:
-      return `${guideLabel}'s AI had a hiccup — showing a basic result instead.`;
+      return `${guideLabel}'s guide system had a hiccup — showing a basic result instead.`;
   }
 }

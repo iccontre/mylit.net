@@ -5,6 +5,7 @@ import {
   loadGuideMemory,
   loadLearningMemory,
   buildStatsInsightSnapshot,
+  buildGuidePatternContext,
   getAgentEventsForRange,
   recordAgentEvent,
 } from "./mylitAgents";
@@ -121,9 +122,10 @@ export async function requestEviePathPipeline(userPrompt: string, options?: Requ
     }
   }
 
-  const [recentAgentEvents, constraints] = await Promise.all([
+  const [recentAgentEvents, constraints, patternContext] = await Promise.all([
     getAgentEventsForRange(Date.now() - RECENT_EVENTS_WINDOW_MS, Date.now()),
     loadTodayConstraints(checkInContext.boardMode),
+    buildGuidePatternContext(),
   ]);
 
   const request: EvieAiPathPipelineRequest = {
@@ -136,6 +138,7 @@ export async function requestEviePathPipeline(userPrompt: string, options?: Requ
     currentEnergy: checkInContext.energy,
     currentMode: checkInContext.mode,
     constraints,
+    patternContext,
   };
 
   const controller = new AbortController();

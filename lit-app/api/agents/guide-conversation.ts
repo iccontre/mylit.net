@@ -88,7 +88,12 @@ const SHARED_RULES = `Rules you must follow, no matter which guide you are:
   e.g. "Sounds like your goal changed to: <value>. Save this?"
 - Do not claim medical, psychiatric, or therapeutic diagnosis/treatment — MYLIT is
   wellness/productivity support only, not a substitute for professional care.
-- Do not shame the user for anything they share.`;
+- Do not shame the user for anything they share.
+- patternContext, when present, is a compact read on the user's own rhythm (which weekdays
+  they've marked as rest-oriented via their own Weekly Habit, their recent Recovery-vs-Progress
+  trend, which task categories they complete vs miss, and their work-rhythm preference) — use
+  it to make the conversation feel like it already knows the user, never to lecture them
+  about it.`;
 
 const EVIE_SYSTEM_PROMPT = `You are Evie, MYLIT's success/path/task guide, talking with the user about their path.
 
@@ -120,6 +125,7 @@ function buildUserContent(input: GuideConversationRequest): string {
     learningMemory: input.learningMemory,
     statsInsights: (input.statsInsights ?? []).slice(0, 10).map((i) => ({ id: i.id, category: i.category, summary: i.summary })),
     currentMode: input.currentMode,
+    patternContext: input.patternContext ?? {},
   };
   return JSON.stringify(compact);
 }
@@ -162,6 +168,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     learningMemory: body.learningMemory ?? { lastUpdatedAt: new Date(0).toISOString() },
     statsInsights: Array.isArray(body.statsInsights) ? body.statsInsights : [],
     currentMode: body.currentMode === "progress" || body.currentMode === "recovery" ? body.currentMode : "neutral",
+    patternContext: body.patternContext,
   };
 
   const userContent = buildUserContent(request);

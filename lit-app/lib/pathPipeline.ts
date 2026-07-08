@@ -219,6 +219,28 @@ export function adjustPipelineFromLearningMemory(pipeline: PathPipeline, memory:
     weeklyHabit = { ...weeklyHabit, suggestedDays: weeklyHabit.suggestedDays.filter((day) => day !== "Saturday" && day !== "Sunday") };
   }
 
+  // The user's own Weekly Habit text on a day (e.g. "Rest Day" on Saturday) is guidance, not
+  // a hard rule — a habit suggestion never lands on a day the user has already marked as
+  // rest-oriented themselves.
+  const weekdayIntensity = memory.weekdayIntensity ?? {};
+  const restOrientedDays = new Set(Object.entries(weekdayIntensity).filter(([, intensity]) => intensity === "rest_oriented").map(([day]) => day));
+  if (restOrientedDays.size && weeklyHabit) {
+    const trimmedDays = weeklyHabit.suggestedDays.filter((day) => !restOrientedDays.has(day));
+    if (trimmedDays.length) weeklyHabit = { ...weeklyHabit, suggestedDays: trimmedDays };
+  }
+
+  // Recent Recovery-vs-Progress trend nudges default difficulty: mostly-Recovery days lead
+  // with recovery and shorten progress work; mostly-Progress days with real completion data
+  // can afford a small step up, never past the existing duration ladder.
+  if (memory.recentModeTrend === "recovery_heavy") {
+    dailyQuests = dailyQuests
+      .map((quest) => (quest.kind === "progress" ? { ...quest, durationMinutes: Math.min(quest.durationMinutes, 15) } : quest))
+      .sort((a, b) => Number(b.kind === "recovery") - Number(a.kind === "recovery"));
+  } else if (memory.recentModeTrend === "progress_heavy" && (memory.recentWins ?? []).length > 0) {
+    const nextRung = (minutes: number) => (minutes < 30 ? 30 : minutes < 45 ? 45 : minutes < 60 ? 60 : minutes);
+    dailyQuests = dailyQuests.map((quest) => (quest.kind === "progress" ? { ...quest, durationMinutes: nextRung(quest.durationMinutes) } : quest));
+  }
+
   return { ...pipeline, dailyQuests, weeklyHabit, computedAt: new Date().toISOString() };
 }
 

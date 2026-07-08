@@ -20,8 +20,9 @@ import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { persistProgressKeys } from "../lib/progressStore";
 import { CHECKIN_HISTORY_KEY, LATEST_CHECKIN_KEY } from "../lib/storageKeys";
 import { syncDailySnapshot } from "../lib/progressSync";
-import { computeSleepSession, sleepInterruptionPenalty } from "../lib/scheduling";
-import { recordAgentEvent } from "../lib/mylitAgents";
+import { computeSleepSession, formatMinutesAsTime, parseTimeToMinutes, sleepInterruptionPenalty } from "../lib/scheduling";
+import { loadGuideMemory, loadUserLifeProfile, recordAgentEvent, saveGuideMemory } from "../lib/mylitAgents";
+import type { WakeRhythm } from "../lib/agentTypes";
 
 type CheckInMode = "Recovery" | "Progress";
 type CheckInType = "morning" | "afternoon";
@@ -51,6 +52,11 @@ type CheckIn = {
   tookNap?: boolean;
   napDurationMinutes?: number;
   napEnergyRestored?: number;
+  /** Afternoon-only — feeds Luna's sleep guidance, never a medical claim. */
+  hadCaffeine?: boolean;
+  caffeineTime?: string;
+  /** Energy immediately before THIS afternoon adjustment was applied — the anchor a same-day resubmit adjusts from, so editing afternoon answers twice never compounds the +/-10 delta. */
+  preAfternoonEnergy?: number;
   energy: number;
   mode: CheckInMode;
   createdAt: string;
@@ -75,34 +81,108 @@ function clampEnergy(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
+/**
+ * Conservative on purpose (see .agent/docs/MYLIT_GUIDE_INTELLIGENCE_QA.md): poor sleep
+ * quality, low mood, and high stress each subtract a fixed penalty and STACK when more than
+ * one is true, short sleep gets an extra ceiling that a single good input can't buy back out
+ * of, and the worst-case combination (quality/mood/stress all poor) is capped into Recovery
+ * regardless of how many hours were slept. This intentionally trades a little optimism for
+ * fewer "overestimated into Progress mode on a rough night" outcomes.
+ */
 function calculateMorningEnergy(hours: number, sleepQuality: number, mood: number, stress: number) {
   const hoursScore = clampEnergy((hours / 8) * 100);
   const sleepQualityScore = sleepQuality * 10;
   const moodScore = mood * 10;
   const stressScore = (10 - stress) * 10;
 
-  return clampEnergy(
-    Math.round(
-      hoursScore * 0.35 +
-        sleepQualityScore * 0.30 +
-        moodScore * 0.20 +
-        stressScore * 0.15
-    )
-  );
-}
+  let energy = hoursScore * 0.35 + sleepQualityScore * 0.30 + moodScore * 0.20 + stressScore * 0.15;
 
-function calculateAfternoonEnergy(baseEnergy: number, eaten: boolean, mood: number, stress: number, currentEnergyFeeling?: number) {
-  const foodBonus = eaten ? 12 : 0;
-  const moodAdjustment = (mood - 5) * 2;
-  const stressAdjustment = (5 - stress) * 2;
-  let updatedEnergy = baseEnergy + foodBonus + moodAdjustment + stressAdjustment;
+  if (sleepQuality <= 5) energy -= 8;
+  if (mood <= 5) energy -= 6;
+  if (stress >= 6) energy -= 8;
 
-  if (currentEnergyFeeling !== undefined) {
-    const energyFeelingScore = currentEnergyFeeling * 10;
-    updatedEnergy = Math.round(updatedEnergy * 0.75 + energyFeelingScore * 0.25);
+  // A single high input shouldn't let short sleep look fine — unless quality, mood, AND
+  // stress are all genuinely good, short nights get an extra ceiling under the Progress
+  // threshold (60).
+  const exceptionalInputs = sleepQuality >= 8 && mood >= 8 && stress <= 3;
+  if (hours < 6 && !exceptionalInputs) {
+    energy = Math.min(energy, 59);
   }
 
-  return clampEnergy(updatedEnergy);
+  // Quality + mood + stress all poor at once outweighs raw sleep duration — stay in Recovery
+  // even after a technically-long night.
+  if (sleepQuality <= 5 && mood <= 5 && stress >= 6) {
+    energy = Math.min(energy, 59);
+  }
+
+  return clampEnergy(Math.round(energy));
+}
+
+/**
+ * Afternoon Check-In is a MIDDAY ADJUSTMENT, never a from-scratch recompute: it can only move
+ * current energy by at most +/-10, regardless of how strong any single input is — the hard
+ * clamp below is what actually guarantees that, not the per-factor weights.
+ */
+function calculateAfternoonEnergy(baseEnergy: number, eaten: boolean, mood: number, stress: number, currentEnergyFeeling?: number) {
+  const foodAdjustment = eaten ? 6 : -4;
+  const moodAdjustment = (mood - 5) * 1.2;
+  const stressAdjustment = (5 - stress) * 1.2;
+  let delta = foodAdjustment + moodAdjustment + stressAdjustment;
+
+  if (currentEnergyFeeling !== undefined) {
+    // Nudge toward the user's own felt-energy rating rather than replacing the baseline with it.
+    const feltEnergyScore = currentEnergyFeeling * 10;
+    delta += (feltEnergyScore - baseEnergy) * 0.25;
+  }
+
+  const clampedDelta = Math.max(-10, Math.min(10, Math.round(delta)));
+  return clampEnergy(baseEnergy + clampedDelta);
+}
+
+const DEFAULT_AFTERNOON_UNLOCK_TIME = "2:00 PM";
+const AFTERNOON_UNLOCK_HOURS_AFTER_WAKE = 7;
+
+/** Afternoon Check-In unlocks 7h after the user's planned/learned wake time, or a safe 2 PM default when neither exists. */
+function computeAfternoonUnlockLabel(plannedWakeTime: string | undefined, consistentWakeTimeEstimate: string | undefined): string {
+  const wakeTime = plannedWakeTime?.trim() || consistentWakeTimeEstimate?.trim();
+  if (!wakeTime) return DEFAULT_AFTERNOON_UNLOCK_TIME;
+  const wakeMinutes = parseTimeToMinutes(wakeTime);
+  if (wakeMinutes === null) return DEFAULT_AFTERNOON_UNLOCK_TIME;
+  return formatMinutesAsTime(wakeMinutes + AFTERNOON_UNLOCK_HOURS_AFTER_WAKE * 60);
+}
+
+function nowMinutesSinceMidnight(): number {
+  const now = new Date();
+  return now.getHours() * 60 + now.getMinutes();
+}
+
+/** Rolling estimate of the user's actual wake time — simple average of the last ~14 Morning Check-In wake times, per spec ("do not overcomplicate"). */
+function computeConsistentWakeTime(recentWakeTimes: string[]): string | undefined {
+  const minutesList = recentWakeTimes.map((t) => parseTimeToMinutes(t)).filter((m): m is number => m !== null);
+  if (!minutesList.length) return undefined;
+  const average = Math.round(minutesList.reduce((sum, m) => sum + m, 0) / minutesList.length);
+  return formatMinutesAsTime(average);
+}
+
+const WAKE_RHYTHM_HISTORY_CAP = 14;
+
+/** Best-effort, non-blocking — a failure here must never block saving the check-in itself. */
+async function recordWakeTimeForRhythm(wakeTime: string): Promise<void> {
+  try {
+    const trimmed = wakeTime.trim();
+    if (!trimmed || parseTimeToMinutes(trimmed) === null) return;
+    const guideMemory = await loadGuideMemory();
+    const existing: WakeRhythm = guideMemory.wakeRhythm ?? { recentWakeTimes: [], updatedAt: new Date(0).toISOString() };
+    const recentWakeTimes = [...existing.recentWakeTimes, trimmed].slice(-WAKE_RHYTHM_HISTORY_CAP);
+    const wakeRhythm: WakeRhythm = {
+      recentWakeTimes,
+      consistentWakeTimeEstimate: computeConsistentWakeTime(recentWakeTimes),
+      updatedAt: new Date().toISOString(),
+    };
+    await saveGuideMemory({ wakeRhythm });
+  } catch (error) {
+    console.warn("recordWakeTimeForRhythm error:", error);
+  }
 }
 
 function getMode(score: number): CheckInMode {
@@ -141,9 +221,18 @@ export default function SleepCheckInScreen() {
   const [dreamedTonight, setDreamedTonight] = useState<"yes" | "no" | "">("");
   const [tookNap, setTookNap] = useState<"yes" | "no" | "">("");
   const [napDuration, setNapDuration] = useState<number | null>(null);
+  const [hadCaffeine, setHadCaffeine] = useState<"yes" | "no" | "">("");
+  const [caffeineTime, setCaffeineTime] = useState("");
+  const [afternoonUnlockLabel, setAfternoonUnlockLabel] = useState(DEFAULT_AFTERNOON_UNLOCK_TIME);
+  const [afternoonUnlockChecked, setAfternoonUnlockChecked] = useState(false);
 
   useEffect(() => {
     loadLatestCheckIn();
+    void (async () => {
+      const [lifeProfile, guideMemory] = await Promise.all([loadUserLifeProfile(), loadGuideMemory()]);
+      setAfternoonUnlockLabel(computeAfternoonUnlockLabel(lifeProfile.plannedWakeTime, guideMemory.wakeRhythm?.consistentWakeTimeEstimate));
+      setAfternoonUnlockChecked(true);
+    })();
   }, []);
 
   async function loadLatestCheckIn() {
@@ -168,6 +257,10 @@ export default function SleepCheckInScreen() {
   }
 
   const isAfternoon = checkInType === "afternoon";
+  // Locked until the unlock check resolves (avoids a flash of the form before we know the
+  // real unlock time) and, once resolved, until the current time actually passes it.
+  const afternoonUnlockMinutes = parseTimeToMinutes(afternoonUnlockLabel) ?? 14 * 60;
+  const isAfternoonLocked = isAfternoon && (!afternoonUnlockChecked || nowMinutesSinceMidnight() < afternoonUnlockMinutes);
 
   const sleepTimesEntered = sleptTimeInput.trim() !== "" && wakeTime.trim() !== "";
   const interruptionAnswered = sleepInterrupted !== "";
@@ -214,12 +307,22 @@ export default function SleepCheckInScreen() {
   const napEnergyToApply =
     showNapSection && tookNap === "yes" && napDuration && !napAlreadyAppliedToday ? NAP_ENERGY_BY_DURATION[napDuration] ?? 0 : 0;
 
+  // Editing today's afternoon answers a second time must adjust from the SAME pre-afternoon
+  // baseline, not from the already-adjusted energy the first submit saved — otherwise every
+  // resubmit would stack another +/-10 on top of the last one.
+  const isTodayAfternoonAlreadySaved =
+    latestCheckIn?.checkInType === "afternoon" && new Date(latestCheckIn.createdAt).toLocaleDateString("en-CA") === todayKeyForCheckIn;
+  const afternoonBaseEnergy =
+    isTodayAfternoonAlreadySaved && typeof latestCheckIn?.preAfternoonEnergy === "number"
+      ? latestCheckIn.preAfternoonEnergy
+      : latestCheckIn?.energy ?? 50;
+
   const energy = useMemo(() => {
     if (!hasAllInputs) return 0;
 
     if (isAfternoon) {
       const base = calculateAfternoonEnergy(
-        latestCheckIn?.energy ?? 50,
+        afternoonBaseEnergy,
         eatenSinceMorning === "yes",
         Number(mood),
         Number(stress),
@@ -237,13 +340,13 @@ export default function SleepCheckInScreen() {
       sleepInterrupted === "yes" && interruptionDurationMinutes !== null ? sleepInterruptionPenalty(interruptionDurationMinutes) : 0;
     return clampEnergy(base - penalty);
   }, [
+    afternoonBaseEnergy,
     currentEnergyFeeling,
     eatenSinceMorning,
     effectiveSleepMinutes,
     hasAllInputs,
     interruptionDurationMinutes,
     isAfternoon,
-    latestCheckIn?.energy,
     mood,
     napEnergyToApply,
     sleepInterrupted,
@@ -317,6 +420,11 @@ export default function SleepCheckInScreen() {
           ? latestCheckIn?.napEnergyRestored
           : napEnergyToApply
         : latestCheckIn?.napEnergyRestored,
+      hadCaffeine: isAfternoon ? hadCaffeine === "yes" : latestCheckIn?.hadCaffeine,
+      caffeineTime: isAfternoon ? (hadCaffeine === "yes" ? caffeineTime.trim() || undefined : undefined) : latestCheckIn?.caffeineTime,
+      // Anchors any SAME-DAY resubmit of afternoon answers to this same pre-adjustment value —
+      // see the afternoonBaseEnergy computation above.
+      preAfternoonEnergy: isAfternoon ? afternoonBaseEnergy : latestCheckIn?.preAfternoonEnergy,
       energy,
       mode,
       createdAt: new Date().toISOString(),
@@ -330,6 +438,10 @@ export default function SleepCheckInScreen() {
       [LATEST_CHECKIN_KEY]: JSON.stringify(checkIn),
       [CHECKIN_HISTORY_KEY]: JSON.stringify(nextHistory),
     });
+
+    if (!isAfternoon && wakeTime.trim()) {
+      void recordWakeTimeForRhythm(wakeTime.trim());
+    }
 
     await successHaptic();
 
@@ -359,6 +471,33 @@ export default function SleepCheckInScreen() {
         mode,
       },
     });
+  }
+
+  if (isAfternoonLocked) {
+    return (
+      <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+        <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen, { borderColor: theme.accent }]}>
+          <View pointerEvents="none" style={styles.backgroundLayer}>
+            <Image source={currentBackground} style={styles.backgroundImage} resizeMode="cover" />
+          </View>
+          <View style={styles.worldOverlay}>
+            <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.hudContent]}>
+              <View style={[styles.hero, { borderColor: theme.accent, backgroundColor: theme.panel }]}>
+                <Text style={styles.heroTitle}>AFTERNOON CHECK-IN</Text>
+                <Text style={styles.heroBody}>
+                  {afternoonUnlockChecked
+                    ? `Afternoon Check-In opens at ${afternoonUnlockLabel} — about 7 hours after your wake time, so there's enough of the day to reflect on.`
+                    : "Checking when your Afternoon Check-In unlocks…"}
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.backButton} onPress={() => router.push("/")}>
+                <Text style={styles.backButtonText}>Back to Today</Text>
+              </TouchableOpacity>
+            </FormScreen>
+          </View>
+        </View>
+      </View>
+    );
   }
 
   return (
@@ -453,6 +592,32 @@ export default function SleepCheckInScreen() {
                       ) : null}
                     </>
                   ) : null}
+
+                  <Text style={styles.label}>Did you have caffeine today?</Text>
+                  <View style={styles.choiceRow}>
+                    <TouchableOpacity
+                      style={[styles.choiceButton, hadCaffeine === "yes" && styles.choiceButtonActive, { borderColor: hadCaffeine === "yes" ? theme.accent : "#334155" }]}
+                      onPress={() => setHadCaffeine("yes")}
+                    >
+                      <Text style={styles.choiceText}>Yes</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.choiceButton, hadCaffeine === "no" && styles.choiceButtonActive, { borderColor: hadCaffeine === "no" ? theme.accent : "#334155" }]}
+                      onPress={() => {
+                        setHadCaffeine("no");
+                        setCaffeineTime("");
+                      }}
+                    >
+                      <Text style={styles.choiceText}>No</Text>
+                    </TouchableOpacity>
+                  </View>
+                  {hadCaffeine === "yes" ? (
+                    <>
+                      <Text style={styles.label}>What time? Optional</Text>
+                      <TextInput style={styles.input} placeholder="Example: 2:30 PM" placeholderTextColor="#64748B" autoCapitalize="characters" value={caffeineTime} onChangeText={setCaffeineTime} />
+                    </>
+                  ) : null}
+                  <Text style={styles.helperText}>Luna may adjust tonight&apos;s sleep guide based on caffeine and your recent sleep rhythm.</Text>
                 </>
               ) : (
                 <>

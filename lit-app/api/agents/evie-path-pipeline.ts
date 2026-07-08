@@ -106,13 +106,14 @@ const RESPONSE_JSON_SCHEMA = {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["title", "reason", "repeatDays", "mode", "durationMinutes"],
+          required: ["title", "reason", "repeatDays", "mode", "durationMinutes", "taskCategory"],
           properties: {
             title: { type: "string" },
             reason: { type: "string" },
             repeatDays: { type: "array", items: { type: "string" } },
             mode: { type: "string", enum: ["progress", "recovery"] },
             durationMinutes: { type: "number" },
+            taskCategory: { type: "string", enum: ["work", "social", "health", "purpose"] },
           },
         },
       },
@@ -131,6 +132,7 @@ const RESPONSE_JSON_SCHEMA = {
             "difficulty",
             "source",
             "acceptanceLabel",
+            "taskCategory",
           ],
           properties: {
             title: { type: "string" },
@@ -142,6 +144,7 @@ const RESPONSE_JSON_SCHEMA = {
             difficulty: { type: "string", enum: ["easy", "medium", "hard"] },
             source: { type: "string", enum: ["user_prompt", "life_profile", "stats_pattern", "research_brief"] },
             acceptanceLabel: { type: "string" },
+            taskCategory: { type: "string", enum: ["work", "social", "health", "purpose"] },
           },
         },
       },
@@ -183,6 +186,22 @@ Rules you must follow:
 - Use the provided Life Profile, Learning Memory, Stats Insights, recent Agent Events, and
   energy/mode context to personalize the plan (e.g. shorter quests if the user tends to miss
   long ones, lead with recovery if energy is low, avoid weekdays/times that have been hard).
+- patternContext.weekdayIntensity tells you which weekdays the user's OWN Weekly Habit reads
+  as rest-oriented (e.g. "Saturday: rest_oriented") — never suggest a heavy progress task on
+  those days; keep them light or recovery-leaning instead.
+- patternContext.recentModeTrend ("recovery_heavy" | "progress_heavy" | "balanced") reflects
+  the user's actual recent days: if recovery_heavy, default to easier/shorter/more
+  recovery-leaning suggestions; if progress_heavy with good completion, you may be a little
+  more ambitious, but never break the duration/cap rules above.
+- Every dailyQuestSuggestion and weeklyHabitSuggestion must include a taskCategory of "work",
+  "social", "health", or "purpose" — pick the one that actually matches the suggestion, and
+  favor categories patternContext.categoryTrends shows the user completes rather than misses.
+- patternContext.workRhythmPreference ("spread_through_day" | "focus_blocks" | "flexible")
+  shapes shape, not just timing: spread_through_day -> more, smaller tasks distributed across
+  the day; focus_blocks -> fewer, larger tasks concentrated in patternContext.preferredFocusWindow
+  (when set) with recovery elsewhere; flexible -> a balanced default.
+- patternContext.wakeRhythm.consistentWakeTimeEstimate, if present, is roughly when the user
+  actually wakes up — don't suggest morning tasks earlier than that.
 - Every suggestion you produce is only a SUGGESTION — the app will ask the user to approve
   each one individually before anything becomes an active quest or habit.
 - Respect any provided constraints (max minutes today, sleep window, school/work
@@ -211,6 +230,7 @@ function buildUserContent(input: EvieAiPathPipelineRequest): string {
     currentMode: input.currentMode,
     availableDays: input.availableDays ?? [],
     constraints: input.constraints ?? {},
+    patternContext: input.patternContext ?? {},
   };
   return JSON.stringify(compact);
 }
@@ -251,13 +271,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     currentMode,
     availableDays: body.availableDays,
     constraints: body.constraints,
+    patternContext: body.patternContext,
   };
   const userContent = buildUserContent(request);
 
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     logAiUsage({ route: ROUTE_NAME, promptChars: userContent.length, ok: false, reason: "missing_key" });
-    const fallback = buildSafeFallbackEviePipeline({ userPrompt, lifeProfile, currentEnergy, currentMode }, "missing_key");
+    const fallback = buildSafeFallbackEviePipeline({ userPrompt, lifeProfile, currentEnergy, currentMode, patternContext: request.patternContext }, "missing_key");
     res.status(200).json(fallback);
     return;
   }
@@ -289,7 +310,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const reason = classifyAiError(error);
     console.warn("evie-path-pipeline model call failed:", error instanceof Error ? error.message : error);
     logAiUsage({ route: ROUTE_NAME, promptChars: userContent.length, ok: false, reason });
-    const fallback = buildSafeFallbackEviePipeline({ userPrompt, lifeProfile, currentEnergy, currentMode }, reason);
+    const fallback = buildSafeFallbackEviePipeline({ userPrompt, lifeProfile, currentEnergy, currentMode, patternContext: request.patternContext }, reason);
     res.status(200).json(fallback);
   }
 }

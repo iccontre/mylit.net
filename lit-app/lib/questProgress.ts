@@ -171,7 +171,7 @@ type RawChecklistItem = {
   weekdays?: WeekdayName[];
 };
 
-type RawTodayQuest = {
+export type RawTodayQuest = {
   id?: string;
   title?: string;
   startTime?: string;
@@ -402,6 +402,24 @@ const DEFAULT_TODAY_QUEST_TITLES = new Set(["choose one honest quest for today"]
 export function isDefaultTodayQuestTitle(title?: string | null): boolean {
   const trimmed = (title ?? "").trim().toLowerCase();
   return trimmed === "" || DEFAULT_TODAY_QUEST_TITLES.has(trimmed);
+}
+
+/**
+ * Single source of truth for "is there a Today's Quest actually live for `todayKey`" — used by
+ * both the Quest Board (normalizeQuestItems, below) and the home screen's "SET TODAY'S QUEST"
+ * prompt, so the two can never disagree. A quest with a real title can still be inactive: its
+ * completed/missed status only carries over from the SAME day (a status saved on a prior day
+ * must not block a fresh quest), and it drops off after its 24h rollover window either way.
+ */
+export function isTodayQuestActiveForToday(
+  todayQuest: RawTodayQuest | null | undefined,
+  todayKey: string
+): todayQuest is RawTodayQuest & { title: string } {
+  if (!todayQuest?.title?.trim() || isDefaultTodayQuestTitle(todayQuest.title)) return false;
+  const status = !todayQuest.date || todayQuest.date === todayKey ? todayQuest.status : undefined;
+  if (status === "completed" || String(status) === "missed") return false;
+  if (isScheduledItemExpired({ date: todayQuest.date, startTime: todayQuest.startTime })) return false;
+  return true;
 }
 
 /** Day Plan today's quest or checklist habits scheduled for today. */
@@ -688,20 +706,7 @@ export function normalizeQuestItems(input: {
   }
 
   const todayQuest = input.todayQuest;
-  // A status of "completed"/"missed" saved on a PRIOR day must not carry over — otherwise a
-  // freshly-saved Today's Quest would silently be filtered out as "already resolved".
-  const todayQuestStatus = !todayQuest?.date || todayQuest.date === input.todayKey ? todayQuest?.status : undefined;
-  // 24-hour rollover: an unresolved Today's Quest stays actionable through the day after
-  // its scheduled start time, then drops off the active board (it still lives on in the
-  // saved Day Plan record — nothing is deleted, it just stops cluttering the board).
-  const todayQuestExpired = isScheduledItemExpired({ date: todayQuest?.date, startTime: todayQuest?.startTime });
-  if (
-    todayQuest?.title?.trim() &&
-    !isDefaultTodayQuestTitle(todayQuest.title) &&
-    todayQuestStatus !== "completed" &&
-    String(todayQuestStatus) !== "missed" &&
-    !todayQuestExpired
-  ) {
+  if (isTodayQuestActiveForToday(todayQuest, input.todayKey)) {
     const durationMinutes = parseDurationMinutes(todayQuest.durationMinutes ?? todayQuest.duration, TODAY_QUEST_DURATION_MINUTES);
     // Kind comes only from the explicit toggle the user saved — never re-inferred from title text.
     const kind: QuestKind = todayQuest.kind === "recovery" ? "recovery" : "progress";

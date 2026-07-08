@@ -94,7 +94,7 @@ export function EvieAiPathCard() {
 
   return (
     <View style={styles.panel}>
-      <Text style={styles.panelTitle}>✦ EVIE'S AI PATH</Text>
+      <Text style={styles.panelTitle}>✦ EVIE'S PATH</Text>
       <Text style={styles.helperText}>
         Write exactly what you're building toward — the more specific, the more tailored Evie's plan can be.
       </Text>

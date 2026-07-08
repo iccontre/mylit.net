@@ -11,6 +11,7 @@ import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { recordAgentEvent } from "../lib/mylitAgents";
+import type { QuestCategory } from "../lib/agentTypes";
 import {
   DAY_PLAN_KEY,
   MAX_CHECKLIST_MINUTES_PER_DAY,
@@ -67,6 +68,15 @@ type ChecklistItem = {
   status: ScheduledStatus;
   kind: "progress" | "recovery";
   weekdays: WeekdayName[];
+  /**
+   * Checklist items are recurring quests, so they must be timed: false for any item saved
+   * before this field existed (even though durationMinutes silently defaults to 30 on load),
+   * true once the user has explicitly picked a duration for it (new items default true — they
+   * already show a real duration the user can see/adjust). Completion is blocked until true.
+   */
+  durationConfirmed: boolean;
+  /** Work/Social/Health/Purpose — absent on items created before categories existed. */
+  category?: QuestCategory;
 };
 
 type TodayQuest = {
@@ -81,6 +91,8 @@ type TodayQuest = {
   status: ScheduledStatus;
   kind: "progress" | "recovery";
   source: "todayQuest";
+  /** Work/Social/Health/Purpose — absent on quests created before categories existed. */
+  category?: QuestCategory;
 };
 
 type DayPlan = {
@@ -115,6 +127,12 @@ const TIME_SLOTS = generateTimeSlots(7, 23.5, 30);
 const CHECKLIST_DURATIONS = ["15 min", "30 min", "45 min", "1 hr"];
 /** Today's Quest additionally offers a 2 hr option — not available to checklist/quick-thought items. */
 const TODAY_QUEST_DURATIONS = ["15 min", "30 min", "45 min", "1 hr", "2 hr"];
+const CATEGORY_OPTIONS: { value: QuestCategory; label: string }[] = [
+  { value: "work", label: "Work" },
+  { value: "social", label: "Social" },
+  { value: "health", label: "Health" },
+  { value: "purpose", label: "Purpose" },
+];
 const WEEKDAYS: WeekdayName[] = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const DEFAULT_ROLES: Record<WeekdayName, string> = {
   Monday: "",
@@ -263,6 +281,8 @@ function createChecklist(day: WeekdayName, saved: Partial<ChecklistItem>[] = [])
       status: item.status || (item.checked ? "completed" : "scheduled"),
       kind,
       weekdays,
+      durationConfirmed: Boolean(item.durationConfirmed),
+      category: item.category,
     };
   });
 }
@@ -343,6 +363,7 @@ function normalizePlan(raw: Partial<DayPlan>): DayPlan {
       status: isNewDay ? "scheduled" : quest.status || "scheduled",
       kind,
       source: "todayQuest",
+      category: (quest as Partial<TodayQuest>).category,
     },
     weekdayRoles: roles,
     weekdayChecklists: checklists,
@@ -672,6 +693,13 @@ export default function DayPlanScreen() {
     if (!bucketDay || !item) return;
 
     const nextChecked = !item.checked;
+    // Checklist items are recurring quests, so they must be timed — completing one (not
+    // un-completing, which is just undoing a mistake) is blocked until the user has actually
+    // confirmed a duration, even if durationMinutes already silently defaulted to 30.
+    if (nextChecked && !item.durationConfirmed) {
+      setSavedMessage("Checklist items are recurring quests. Set a time so MYLIT can track them fairly.");
+      return;
+    }
     const patch = {
       checked: nextChecked,
       checkedDate: nextChecked ? getDateKey() : undefined,
@@ -700,6 +728,7 @@ export default function DayPlanScreen() {
           mode: item.kind,
           durationMinutes: item.durationMinutes,
           stepDelta: item.steps,
+          category: item.category,
           metadata: { title: item.text },
         });
       }
@@ -787,6 +816,14 @@ export default function DayPlanScreen() {
         },
       };
     });
+  }
+
+  function updateTodayQuestCategory(category: QuestCategory) {
+    setSavedMessage("");
+    setDayPlan((current: DayPlan) => ({
+      ...current,
+      todayQuest: { ...current.todayQuest, category: current.todayQuest.category === category ? undefined : category },
+    }));
   }
 
   function updateTodayQuestDuration(duration: string) {
@@ -913,6 +950,7 @@ export default function DayPlanScreen() {
         status: "scheduled",
         kind,
         weekdays: [selectedDay],
+        durationConfirmed: true,
       };
       return {
         ...current,
@@ -1052,6 +1090,17 @@ export default function DayPlanScreen() {
                 <TouchableOpacity style={[styles.kindMiniButton, dayPlan.todayQuest.kind === "progress" && styles.kindProgressActive]} onPress={() => updateTodayQuestKind("progress")}><Text style={styles.kindMiniText}>PROGRESS</Text></TouchableOpacity>
                 <TouchableOpacity style={[styles.kindMiniButton, dayPlan.todayQuest.kind === "recovery" && styles.kindRecoveryActive]} onPress={() => updateTodayQuestKind("recovery")}><Text style={styles.kindMiniText}>RECOVERY</Text></TouchableOpacity>
               </View>
+              <View style={styles.categoryRow}>
+                {CATEGORY_OPTIONS.map((option) => (
+                  <TouchableOpacity
+                    key={option.value}
+                    style={[styles.categoryButton, dayPlan.todayQuest.category === option.value && styles.categoryButtonActive]}
+                    onPress={() => updateTodayQuestCategory(option.value)}
+                  >
+                    <Text style={[styles.categoryButtonText, dayPlan.todayQuest.category === option.value && styles.categoryButtonTextActive]}>{option.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
               <View style={styles.durationRow}>
                 {TODAY_QUEST_DURATIONS.filter((duration) => duration !== "2 hr" || dayPlan.todayQuest.kind === "progress").map((duration) => (
                   <TouchableOpacity key={duration} style={[styles.durationButton, dayPlan.todayQuest.duration === duration && styles.durationButtonActive]} onPress={() => updateTodayQuestDuration(duration)}>
@@ -1098,10 +1147,12 @@ export default function DayPlanScreen() {
                   <View style={styles.rowBetween}>
                     <View style={styles.checkboxGroup}>
                       <TouchableOpacity onPress={() => toggleChecklistItemChecked(item.id)}>
-                        <Text style={styles.checkToggle}>{item.checked ? "☑" : "☐"}</Text>
+                        <Text style={[styles.checkToggle, !item.checked && !item.durationConfirmed && styles.checkToggleDisabled]}>
+                          {item.checked ? "☑" : "☐"}
+                        </Text>
                       </TouchableOpacity>
                       <Text style={[styles.checkHelperText, item.checked && styles.checkHelperTextDone]}>
-                        {item.checked ? "Completed" : "Check if completed"}
+                        {item.checked ? "Completed" : item.durationConfirmed ? "Check if completed" : "Add time to complete"}
                       </Text>
                     </View>
                     <View style={styles.kindSwitchRow}>
@@ -1110,11 +1161,25 @@ export default function DayPlanScreen() {
                       <TouchableOpacity style={styles.deleteButton} onPress={() => deleteChecklistItem(item.id)}><Text style={styles.deleteButtonText}>🗑</Text></TouchableOpacity>
                     </View>
                   </View>
+                  {!item.durationConfirmed ? (
+                    <Text style={styles.timerRequiredText}>Checklist items are recurring quests. Set a time so MYLIT can track them fairly.</Text>
+                  ) : null}
+                  <View style={styles.categoryRow}>
+                    {CATEGORY_OPTIONS.map((option) => (
+                      <TouchableOpacity
+                        key={option.value}
+                        style={[styles.categoryButton, item.category === option.value && styles.categoryButtonActive]}
+                        onPress={() => updateChecklistItem(item.id, { category: item.category === option.value ? undefined : option.value })}
+                      >
+                        <Text style={[styles.categoryButtonText, item.category === option.value && styles.categoryButtonTextActive]}>{option.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
                   <TextInput style={[formStyles.input, styles.itemInput]} value={item.text} onChangeText={(text: string) => updateChecklistItem(item.id, { text })} placeholder="Ex: Study 30 min" placeholderTextColor="#94A3B8" />
                   <TimeStepper value={item.startTime} onChange={(next) => updateChecklistItem(item.id, { startTime: next })} />
                   <View style={styles.durationRow}>
                     {CHECKLIST_DURATIONS.map((duration) => (
-                      <TouchableOpacity key={duration} style={[styles.durationButton, item.duration === duration && styles.durationButtonActive]} onPress={() => updateChecklistItem(item.id, { duration, durationMinutes: parseDurationMinutes(duration, 30) })}>
+                      <TouchableOpacity key={duration} style={[styles.durationButton, item.duration === duration && styles.durationButtonActive]} onPress={() => updateChecklistItem(item.id, { duration, durationMinutes: parseDurationMinutes(duration, 30), durationConfirmed: true })}>
                         <Text style={[styles.durationText, item.duration === duration && styles.optionTextActive]}>{duration}</Text>
                       </TouchableOpacity>
                     ))}
@@ -1298,14 +1363,21 @@ const styles = StyleSheet.create({
   progressBorder: { borderColor: "#FBBF24" },
   recoveryBorder: { borderColor: "#A78BFA" },
   checkToggle: { color: "#F8FAFC", fontSize: 24, marginRight: 8 },
+  checkToggleDisabled: { color: "#64748B" },
   checkboxGroup: { flexDirection: "row", alignItems: "center", flexShrink: 1 },
   checkHelperText: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 10, fontWeight: "700" },
   checkHelperTextDone: { color: "#86EFAC" },
+  timerRequiredText: { color: "#FCD34D", fontSize: 10, lineHeight: 14, fontWeight: "700", marginTop: 4 },
   kindSwitchRow: { flexDirection: "row", gap: 6 },
   kindMiniButton: { borderWidth: 1, borderColor: "#475569", paddingVertical: 5, paddingHorizontal: 7, backgroundColor: "rgba(30, 41, 59, 0.82)" },
   kindProgressActive: { borderColor: "#FBBF24", backgroundColor: "rgba(113,63,18,0.8)" },
   kindRecoveryActive: { borderColor: "#A78BFA", backgroundColor: "rgba(88,28,135,0.8)" },
   kindMiniText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 9, fontWeight: "900" },
+  categoryRow: { flexDirection: "row", gap: 6, marginTop: 6, flexWrap: "wrap" },
+  categoryButton: { borderWidth: 1, borderColor: "#475569", borderRadius: 4, paddingVertical: 5, paddingHorizontal: 8, backgroundColor: "rgba(30, 41, 59, 0.82)" },
+  categoryButtonActive: { borderColor: "#38BDF8", backgroundColor: "rgba(12,74,110,0.8)" },
+  categoryButtonText: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 9, fontWeight: "900" },
+  categoryButtonTextActive: { color: "#F8FAFC" },
   deleteButton: { width: 34, height: 30, borderWidth: 1, borderColor: "#FCA5A5", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(127,29,29,0.45)" },
   deleteButtonText: { fontSize: 14 },
   durationRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 8 },
