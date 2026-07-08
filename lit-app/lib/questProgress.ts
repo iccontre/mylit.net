@@ -422,6 +422,17 @@ export function isTodayQuestActiveForToday(
   return true;
 }
 
+/**
+ * True only when today's Today Quest was completed TODAY — distinct from "not active", which
+ * is also true once completed. Without this, "SET TODAY'S QUEST" would reappear immediately
+ * after finishing today's quest instead of waiting until the next day.
+ */
+export function isTodayQuestCompletedToday(todayQuest: RawTodayQuest | null | undefined, todayKey: string): boolean {
+  if (!todayQuest?.title?.trim() || isDefaultTodayQuestTitle(todayQuest.title)) return false;
+  const status = !todayQuest.date || todayQuest.date === todayKey ? todayQuest.status : undefined;
+  return status === "completed";
+}
+
 /** Day Plan today's quest or checklist habits scheduled for today. */
 export function hasUserDayPlanItems(input: {
   todayQuest?: RawTodayQuest | null;

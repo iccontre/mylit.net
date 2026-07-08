@@ -69,6 +69,8 @@ export const LEARNING_MEMORY_KEY = "lit_learning_memory";
 export const WEEKLY_AGENT_REVIEWS_KEY = "lit_weekly_agent_reviews";
 /** LunaDayReminder[] — user-created reminders, scoped to a single day; +1 step once per reminder. */
 export const LUNA_DAY_REMINDERS_KEY = "lit_luna_day_reminders";
+/** LdmModeState | null — one Lucid Dreaming Mode night session, keyed by nightKey; never duplicated per night. */
+export const LDM_MODE_STATE_KEY = "lit_ldm_mode_state";
 /** EvieAiPathPipelineRecord[] — one per "Ask Evie to Build My Path" run, newest-first, capped history. */
 export const AI_EVIE_PATH_PIPELINES_KEY = "lit_ai_evie_path_pipelines";
 /** LunaSupportModifierRecord[] — one per "Ask Luna to help me adjust" run, newest-first, capped history. */
@@ -136,6 +138,7 @@ export const SYNCABLE_PROGRESS_KEYS = [
   GUIDE_CONVERSATIONS_KEY,
   GUIDE_MEMORY_UPDATES_KEY,
   LUNA_DAY_REMINDERS_KEY,
+  LDM_MODE_STATE_KEY,
 ] as const;
 
 export type SyncableProgressKey = (typeof SYNCABLE_PROGRESS_KEYS)[number];

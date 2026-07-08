@@ -36,6 +36,7 @@ import {
   getTodayKey,
   getWeekdayName,
   isTodayQuestActiveForToday,
+  isTodayQuestCompletedToday,
   kindAccent,
   loadFocusBlockLog,
   loadTodayCompletions,
@@ -53,8 +54,19 @@ import {
   type MissedEntry,
   type QuestKind,
 } from "../../lib/questProgress";
-import { formatDurationLabel, formatEnergyDelta, getEnergyDelta, getMandatoryQuestRestoreEnergy, MANDATORY_QUEST_TITLE, parseTimeToMinutes } from "../../lib/scheduling";
-import { LATEST_PRE_SLEEP_INTENTION_KEY } from "../../lib/storageKeys";
+import {
+  formatDurationLabel,
+  formatEnergyDelta,
+  getEnergyDelta,
+  getMandatoryQuestRestoreEnergy,
+  LDM_HYGIENE_TITLE,
+  LDM_JOURNALING_TITLE,
+  LDM_READING_TITLE,
+  MANDATORY_QUEST_TITLE,
+  parseTimeToMinutes,
+} from "../../lib/scheduling";
+import { LATEST_PRE_SLEEP_INTENTION_KEY, LDM_MODE_STATE_KEY } from "../../lib/storageKeys";
+import { readJson } from "../../lib/readJson";
 
 const mylitLogo = uiAssets.logo.mylit;
 const fireAssets = uiAssets.fires;
@@ -224,8 +236,72 @@ const WIND_DOWN_QUEST_TITLE = "Start your pre-sleep routine";
 const DEFAULT_WIND_DOWN_MINUTES = 30;
 const MAX_WIND_DOWN_MINUTES = 60;
 
+// Guide message rotation — deterministic, local, no AI. A new message every 30-minute slot
+// during active hours (7 AM–12 AM); the same slot always yields the same message so a refresh
+// mid-window doesn't change what's shown.
+const LUNA_ROTATING_MESSAGES = [
+  "It's okay to take it slow, stargazer. Rest is part of becoming your brightest self.",
+  "Drink some water — your body is doing recovery work too.",
+  "You don't have to earn rest. You already have.",
+  "Small comfort counts: a blanket, a song, a slow breath.",
+  "One gentle thing today — stretch, journal, or just sit quietly.",
+  "You're allowed a slow day. The path is still there tomorrow.",
+  "Even resting is progress when your flame needed it.",
+  "Maybe today's hobby is just doing nothing for a bit.",
+];
+const EVIE_ROTATING_MESSAGES = [
+  "You're on fire! Keep building momentum. Your best day is ahead.",
+  "Drink some water — keep your focus sharp.",
+  "One more honest step counts more than a perfect plan.",
+  "Progress isn't always loud. Keep showing up.",
+  "Take a breath, then get back after it.",
+  "You chose to show up today. That's the hard part.",
+  "Momentum builds from small honest steps.",
+  "A quick hobby break can refill you for the next push.",
+];
+const NEUTRAL_ROTATING_MESSAGES = [
+  "A new day awaits. Small steps today, bright tomorrows.",
+  "Drink some water to start the day right.",
+  "Check in when you're ready — there's no rush.",
+  "Whatever today holds, you get to choose your pace.",
+  "A calm start is still a start.",
+];
+const GUIDE_MESSAGE_ACTIVE_START_MINUTES = 7 * 60;
+const GUIDE_MESSAGE_ACTIVE_END_MINUTES = 24 * 60;
+
+function pickRotatingGuideMessage(pool: string[], now: Date): string {
+  const minutesSinceMidnight = now.getHours() * 60 + now.getMinutes();
+  const clamped = Math.min(
+    Math.max(minutesSinceMidnight, GUIDE_MESSAGE_ACTIVE_START_MINUTES),
+    GUIDE_MESSAGE_ACTIVE_END_MINUTES - 1
+  );
+  const slot = Math.floor((clamped - GUIDE_MESSAGE_ACTIVE_START_MINUTES) / 30);
+  return pool[slot % pool.length];
+}
+
 function clampEnergy(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+// Lucid Dreaming Mode — a user-initiated NIGHT overlay, deliberately separate from the
+// day's Progress/Recovery/Neutral mode. Entry is only offered 9 PM–12 AM; once entered it
+// persists (Dream Journal quick-access, etc.) until 7 AM the next morning regardless of when
+// within that window it was started.
+type LdmModeState = {
+  nightKey: string;
+  enteredAt: string;
+  rewardApplied: boolean;
+};
+const LDM_ENTRY_WINDOW_START_MINUTES = 21 * 60;
+const LDM_ENTRY_WINDOW_END_MINUTES = 24 * 60;
+const LDM_ROUTINE_DURATION_MS = 60 * 60 * 1000;
+const LDM_COMPLETION_STEPS = 8;
+
+function computeLdmSevenAmCutoff(enteredAt: Date): Date {
+  const cutoff = new Date(enteredAt);
+  cutoff.setHours(7, 0, 0, 0);
+  if (cutoff.getTime() <= enteredAt.getTime()) cutoff.setDate(cutoff.getDate() + 1);
+  return cutoff;
 }
 
 // Maps the energy reserve to one of the five emotive fire PNG assets.
@@ -324,6 +400,8 @@ export default function HomeScreen() {
 
   const [dayPlanRaw, setDayPlanRaw] = useState<DayPlanRaw | null>(null);
   const [preSleepDoneToday, setPreSleepDoneToday] = useState(false);
+  const [ldmState, setLdmState] = useState<LdmModeState | null>(null);
+  const [ldmBusy, setLdmBusy] = useState(false);
   const [activeItem, setActiveItem] = useState<ActiveTimedItem | null>(null);
   const [selectedItem, setSelectedItem] = useState<HomeQuestItem | null>(null);
   const [lockMessage, setLockMessage] = useState("");
@@ -367,6 +445,7 @@ export default function HomeScreen() {
       loadDayPlan();
       loadActiveItem();
       loadPreSleepStatus();
+      loadLdmState();
     }, [])
   );
 
@@ -378,6 +457,7 @@ export default function HomeScreen() {
     loadDayPlan();
     loadActiveItem();
     loadPreSleepStatus();
+    loadLdmState();
   }, []);
 
   // Keep the Day / Time Track marker on the real local time (refresh every 30s).
@@ -557,6 +637,22 @@ export default function HomeScreen() {
       setPreSleepDoneToday(parsed?.date === getTodayKey());
     } catch {
       setPreSleepDoneToday(false);
+    }
+  }
+
+  async function loadLdmState() {
+    const saved = await AsyncStorage.getItem(LDM_MODE_STATE_KEY);
+    if (!saved) {
+      setLdmState(null);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(saved) as LdmModeState;
+      // Only ever one night's LDM session lives here — a stale night's record from a
+      // previous night (past its 7 AM cutoff) is treated as if LDM were never entered.
+      setLdmState(Date.now() < computeLdmSevenAmCutoff(new Date(parsed.enteredAt)).getTime() ? parsed : null);
+    } catch {
+      setLdmState(null);
     }
   }
 
@@ -889,9 +985,8 @@ export default function HomeScreen() {
 
   const guideName = isRecovery ? "Luna" : "Evie";
   const guideImage = isRecovery ? uiAssets.guides.luna : uiAssets.guides.evie;
-  const guideMessage = isRecovery
-    ? "It's okay to take it slow, stargazer. Rest is part of becoming your brightest self."
-    : "You're on fire! Keep building momentum. Your best day is ahead.";
+  const guideMessage = pickRotatingGuideMessage(isRecovery ? LUNA_ROTATING_MESSAGES : EVIE_ROTATING_MESSAGES, timeNow);
+  const neutralGuideMessage = pickRotatingGuideMessage(NEUTRAL_ROTATING_MESSAGES, timeNow);
 
   const theme = isRecovery
     ? {
@@ -922,15 +1017,19 @@ export default function HomeScreen() {
         dark: "rgba(11, 17, 22, 0.92)",
         panel: "rgba(8, 14, 18, 0.94)",
         soft: "#F8E7A1",
-        status: "STEADY",
-        mode: "BALANCED MODE",
+        status: "NEUTRAL",
+        mode: "NEUTRAL MODE",
       };
 
   function generateQuests(): Quest[] {
+    // LDM routine quests show regardless of Progress/Recovery/Neutral — it's a separate night
+    // overlay, not part of the day mode system.
+    const ldmRoutineQuests = getLdmRoutineQuests();
+
     const mandatoryQuest = getMandatoryQuest() ?? getWindDownQuest();
 
     if (isNeutral) {
-      return [{ title: "Complete Morning Check-In", type: "Start", steps: 1 }];
+      return ldmRoutineQuests.length > 0 ? ldmRoutineQuests : [{ title: "Complete Morning Check-In", type: "Start", steps: 1 }];
     }
 
     const completedTitles = new Set(completedQuests.map((entry) => entry.title));
@@ -950,6 +1049,7 @@ export default function HomeScreen() {
         : null;
 
     return [
+      ...ldmRoutineQuests,
       ...(mandatoryQuest ? [mandatoryQuest] : []),
       ...(suggestedQuest ? [suggestedQuest] : []),
       ...(recoveryStarterActive ? [recoveryStarterActive] : []),
@@ -992,6 +1092,9 @@ export default function HomeScreen() {
    */
   function getWindDownQuest(): Quest | null {
     if (isNeutral) return null;
+    // LDM's own routine quests already cover "start your pre-sleep routine" for tonight —
+    // showing both would duplicate the same intent as two separate board entries.
+    if (ldmState && ldmState.nightKey === todayKey) return null;
     const sleepTime = latestCheckIn?.desiredSleepTime;
     if (!sleepTime) return null;
 
@@ -1026,6 +1129,24 @@ export default function HomeScreen() {
     };
   }
 
+  // LDM (Lucid Dreaming Mode) — see type/constants above. Entered state persists until 7 AM;
+  // the 1-hour routine window is a subset of that, checked separately. Computed here (using
+  // timeNow directly, not the nowMinutes/todayKey declared below) because generateQuests()
+  // — called just below — already needs ldmRoutineWindowOpen.
+  const ldmNowMinutes = timeNow.getHours() * 60 + timeNow.getMinutes();
+  const ldmEnteredAtMs = ldmState ? new Date(ldmState.enteredAt).getTime() : null;
+  const ldmRoutineEndsAtMs = ldmEnteredAtMs !== null ? ldmEnteredAtMs + LDM_ROUTINE_DURATION_MS : null;
+  const ldmActive =
+    ldmState !== null && ldmEnteredAtMs !== null && timeNow.getTime() < computeLdmSevenAmCutoff(new Date(ldmEnteredAtMs)).getTime();
+  const ldmRoutineWindowOpen = ldmActive && ldmRoutineEndsAtMs !== null && timeNow.getTime() < ldmRoutineEndsAtMs;
+  const ldmPostRoutine = ldmActive && !ldmRoutineWindowOpen;
+  const canEnterLdm = !ldmActive && ldmNowMinutes >= LDM_ENTRY_WINDOW_START_MINUTES && ldmNowMinutes < LDM_ENTRY_WINDOW_END_MINUTES;
+  const ldmHygieneDone = completedQuests.some((entry) => entry.title === LDM_HYGIENE_TITLE);
+  const ldmJournalingDone = completedQuests.some((entry) => entry.title === LDM_JOURNALING_TITLE);
+  const ldmReadingDone = completedQuests.some((entry) => entry.title === LDM_READING_TITLE);
+  const ldmPreSleepIntentionDone = preSleepDoneToday;
+  const ldmRoutineFullyComplete = ldmHygieneDone && ldmJournalingDone && ldmReadingDone && ldmPreSleepIntentionDone;
+
   const todayKey = getTodayKey();
   const todayChecklist: RawChecklistItem[] = getChecklistItemsForDay(dayPlanRaw, todayName);
   const quests = generateQuests();
@@ -1035,7 +1156,7 @@ export default function HomeScreen() {
   const boardMode: "Progress" | "Recovery" = isRecovery ? "Recovery" : "Progress";
 
   const allHomeItems: HomeQuestItem[] =
-    hasEnergyData && !isNeutral
+    (hasEnergyData && !isNeutral) || ldmRoutineWindowOpen
       ? normalizeQuestItems({
           quests,
           todayQuest: dayPlanRaw?.todayQuest ?? null,
@@ -1059,10 +1180,64 @@ export default function HomeScreen() {
   const remainingMs = activeItem ? Math.max(0, activeItem.endsAt - countdownNow) : 0;
   const timerFinished = activeItem !== null && remainingMs <= 0;
   const isBoardLocked = activeItem !== null;
-  const todayQuestUnset = !isTodayQuestActiveForToday(dayPlanRaw?.todayQuest ?? null, todayKey);
+  // Completed-today is distinct from "not active" — without excluding it, SET TODAY'S QUEST
+  // would reappear immediately after finishing today's quest instead of waiting for tomorrow.
+  const todayQuestUnset =
+    !isTodayQuestActiveForToday(dayPlanRaw?.todayQuest ?? null, todayKey) &&
+    !isTodayQuestCompletedToday(dayPlanRaw?.todayQuest ?? null, todayKey);
 
   const nowMinutes = timeNow.getHours() * 60 + timeNow.getMinutes();
   const timeTrackPosition = getCurrentTimeTrackPosition(timeNow);
+
+  async function enterLdmMode() {
+    if (ldmBusy || ldmActive || !canEnterLdm) return;
+    setLdmBusy(true);
+    try {
+      const state: LdmModeState = { nightKey: todayKey, enteredAt: new Date().toISOString(), rewardApplied: false };
+      await persistProgressKeys({ [LDM_MODE_STATE_KEY]: JSON.stringify(state) });
+      setLdmState(state);
+      void trackEvent(ANALYTICS_EVENTS.quest_completed, { id: "ldm-entered", title: "Enter LDM Mode", steps: 0 });
+    } finally {
+      setLdmBusy(false);
+    }
+  }
+
+  async function awardLdmCompletionIfReady() {
+    if (!ldmState || ldmState.rewardApplied || !ldmRoutineFullyComplete) return;
+    const nextState: LdmModeState = { ...ldmState, rewardApplied: true };
+    await persistProgressKeys({ [LDM_MODE_STATE_KEY]: JSON.stringify(nextState) });
+    setLdmState(nextState);
+    const stats = await readJson<{ totalSteps?: number }>(USER_STATS_KEY, {});
+    await persistProgressKeys({ [USER_STATS_KEY]: JSON.stringify({ ...stats, totalSteps: Number(stats.totalSteps ?? 0) + LDM_COMPLETION_STEPS }) });
+  }
+
+  function getLdmRoutineQuests(): Quest[] {
+    if (!ldmRoutineWindowOpen) return [];
+    const quests: Quest[] = [];
+    if (!ldmHygieneDone) {
+      quests.push({ title: LDM_HYGIENE_TITLE, type: "LDM", steps: 0, durationMinutes: 15, kind: "recovery", description: "Brush teeth, wash up, and get your body ready for sleep." });
+    }
+    if (!ldmJournalingDone) {
+      quests.push({ title: LDM_JOURNALING_TITLE, type: "LDM", steps: 0, durationMinutes: 15, kind: "recovery", description: "Write down what you're carrying so your mind can rest." });
+    }
+    if (!ldmReadingDone) {
+      quests.push({ title: LDM_READING_TITLE, type: "LDM", steps: 0, durationMinutes: 15, kind: "recovery", description: "Read something calm or light. No pressure to finish." });
+    }
+    // "Set Pre-Sleep Intention" is NOT added here — normalizeQuestItems already injects that
+    // exact item (same title, source: "Sleep", routes to /pre-sleep-intention) every night
+    // from 9 PM–7 AM. Pushing a second one here would duplicate it on the board; its
+    // completion is tracked below via ldmPreSleepIntentionDone (= preSleepDoneToday) instead.
+    return quests;
+  }
+
+  // Fires the +8 completion bonus exactly once, the moment the last of the four routine
+  // pieces finishes — whichever one that happens to be (including Pre-Sleep Intention, which
+  // completes through a totally different screen/flow than the other three).
+  useEffect(() => {
+    if (ldmRoutineFullyComplete) void awardLdmCompletionIfReady();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ldmRoutineFullyComplete]);
+
   const nextItem = activeItem ? findNextScheduledItem(availableItems, activeItem.id, nowMinutes) : null;
 
   // Luna's Forced Recovery is derived purely from COMPLETED Progress work today (never from
@@ -1122,7 +1297,7 @@ export default function HomeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queueItems, todayKey]);
 
-  const currentBackground = isRecovery
+  const currentBackground = ldmPostRoutine || isRecovery
     ? uiAssets.backgrounds.recovery
     : isProgress
     ? uiAssets.backgrounds.progress
@@ -1222,8 +1397,32 @@ export default function HomeScreen() {
               </View>
 
               <Text style={[styles.modeLabel, { color: theme.accent }]}>
-                {isNeutral ? "STEADY MODE" : isRecovery ? "RECOVERY MODE" : "PROGRESS MODE"}
+                {isNeutral ? "NEUTRAL MODE" : isRecovery ? "RECOVERY MODE" : "PROGRESS MODE"}
               </Text>
+
+              {!isNeutral ? (
+                <View style={styles.guideScene}>
+                  <Image source={guideImage} style={[styles.guideEmblem, { borderColor: theme.accent }]} resizeMode="contain" />
+                  <View style={styles.guideTextColumn}>
+                    <View style={[styles.speechBubble, { borderColor: theme.accent }]}>
+                      <Text style={styles.speechText}>{guideMessage}</Text>
+                      <Text style={[styles.speechName, { color: theme.accent }]}>{guideName} {isRecovery ? "💜" : "💚"}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.talkToGuideBtn, { backgroundColor: theme.accent }]}
+                      onPress={() => (isRecovery ? setShowHomeLunaModal(true) : setShowHomeEvieModal(true))}
+                    >
+                      <Text style={styles.talkToGuideBtnText}>
+                        {isRecovery ? "Talk to Luna" : "Talk to Evie"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ) : (
+                <View style={styles.neutralStatusPanel}>
+                  <Text style={[styles.neutralStatusText, { color: theme.glow }]}>{neutralGuideMessage}</Text>
+                </View>
+              )}
 
               <View style={styles.flameSection}>
                 {hasEnergyData && flameState.image ? (
@@ -1275,28 +1474,6 @@ export default function HomeScreen() {
                 ) : null}
               </View>
 
-              {!isNeutral ? (
-                <View style={styles.guideScene}>
-                  <Image source={guideImage} style={[styles.guideEmblem, { borderColor: theme.accent }]} resizeMode="contain" />
-                  <View style={[styles.speechBubble, { borderColor: theme.accent }]}>
-                    <Text style={styles.speechText}>{guideMessage}</Text>
-                    <Text style={[styles.speechName, { color: theme.accent }]}>{guideName} {isRecovery ? "💜" : "💚"}</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={[styles.talkToGuideBtn, { borderColor: theme.accent }]}
-                    onPress={() => (isRecovery ? setShowHomeLunaModal(true) : setShowHomeEvieModal(true))}
-                  >
-                    <Text style={[styles.talkToGuideBtnText, { color: theme.accent }]}>
-                      {isRecovery ? "Talk to Luna" : "Talk to Evie"}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <View style={styles.neutralStatusPanel}>
-                  <Text style={[styles.neutralStatusText, { color: theme.glow }]}>{modeInstruction}</Text>
-                </View>
-              )}
-
               <LunaGuideModal visible={showHomeLunaModal} onClose={() => setShowHomeLunaModal(false)} />
               <EvieGuideModal visible={showHomeEvieModal} onClose={() => setShowHomeEvieModal(false)} />
 
@@ -1327,6 +1504,32 @@ export default function HomeScreen() {
                   <Text style={[styles.checkArrow, { color: theme.accent }]}>›</Text>
                 </TouchableOpacity>
               </View>
+
+              <TouchableOpacity style={styles.createQuestBtn} onPress={() => navigateWithHaptic("/tomorrow-queue")}>
+                <Text style={styles.createQuestBtnText}>+ CREATE A QUEST</Text>
+              </TouchableOpacity>
+              <Text style={styles.createQuestNote}>Create a quest for today or a day you choose.</Text>
+
+              {canEnterLdm ? (
+                <>
+                  <TouchableOpacity style={[styles.ldmBtn, ldmBusy && styles.ldmBtnDisabled]} disabled={ldmBusy} onPress={() => void enterLdmMode()}>
+                    <Text style={styles.ldmBtnText}>🌌 ENTER LDM MODE</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.createQuestNote}>Start 1-hour pre-sleep routine</Text>
+                </>
+              ) : null}
+
+              {ldmActive ? (
+                <TouchableOpacity style={styles.dreamJournalBtn} onPress={() => navigateWithHaptic("/dream-journal")}>
+                  <Text style={styles.dreamJournalBtnText}>🌙 DREAM JOURNAL</Text>
+                </TouchableOpacity>
+              ) : null}
+
+              {ldmPostRoutine ? (
+                <View style={styles.ldmDoneCard}>
+                  <Text style={styles.ldmDoneText}>Luna: Your routine is done. Try to let the night carry you now — you can write dreams if you wake up.</Text>
+                </View>
+              ) : null}
 
               <View style={[styles.questBoard, { borderColor: isBoardLocked && activeItem ? kindAccent(activeItem.kind) : isRecoveryLocked ? "#C4A7FF" : theme.accent }]}>
                 <View style={styles.questHeaderRow}>
@@ -1674,9 +1877,10 @@ const styles = StyleSheet.create({
     textShadowRadius: 0,
   },
   timePanel: {
-    backgroundColor: "rgba(6, 10, 18, 0.78)",
-    borderWidth: 3,
-    borderRadius: 4,
+    // Lighter/no-fill — Day Track integrates with the background instead of sitting in a
+    // heavy black box, matching the flame section's treatment.
+    backgroundColor: "transparent",
+    borderWidth: 0,
     paddingVertical: 6,
     paddingHorizontal: 9,
   },
@@ -1690,6 +1894,9 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "900",
     letterSpacing: 1,
+    textShadowColor: "#000",
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
   },
   statusPill: {
     borderWidth: 2,
@@ -1818,7 +2025,29 @@ const styles = StyleSheet.create({
     letterSpacing: 1.5,
     marginBottom: 4,
     textTransform: "uppercase",
+    // Black outline/shadow so the label stays legible over any background color.
+    textShadowColor: "#000",
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
   },
+  createQuestBtn: {
+    borderWidth: 2,
+    borderColor: "#334155",
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: "center",
+    backgroundColor: "#1E293B",
+    marginBottom: 4,
+  },
+  createQuestBtnText: { color: "#F8FAFC", fontFamily: "monospace", fontSize: 13, fontWeight: "900", letterSpacing: 0.5 },
+  createQuestNote: { color: "#94A3B8", fontSize: 10, fontWeight: "700", textAlign: "center", marginTop: 6, marginBottom: 10 },
+  ldmBtn: { borderWidth: 2, borderColor: "#4338CA", borderRadius: 8, paddingVertical: 12, alignItems: "center", backgroundColor: "#312E81", marginBottom: 4 },
+  ldmBtnDisabled: { opacity: 0.5 },
+  ldmBtnText: { color: "#E0E7FF", fontFamily: "monospace", fontSize: 13, fontWeight: "900", letterSpacing: 0.5 },
+  dreamJournalBtn: { borderWidth: 2, borderColor: "#4338CA", borderRadius: 8, paddingVertical: 12, alignItems: "center", backgroundColor: "rgba(49,46,129,0.5)", marginBottom: 10 },
+  dreamJournalBtnText: { color: "#C7D2FE", fontFamily: "monospace", fontSize: 13, fontWeight: "900", letterSpacing: 0.5 },
+  ldmDoneCard: { borderWidth: 2, borderColor: "#A78BFA", borderRadius: 8, padding: 12, backgroundColor: "rgba(88,28,135,0.35)", marginBottom: 10 },
+  ldmDoneText: { color: "#E9D5FF", fontSize: 12, lineHeight: 17, fontWeight: "700", textAlign: "center" },
   // No outer card — the flame sits directly on the background with just its own glow (see
   // shadowColor/shadowRadius on the Image itself) instead of a heavy black box.
   flameSection: {
@@ -1830,18 +2059,19 @@ const styles = StyleSheet.create({
   },
   talkToGuideBtn: {
     marginTop: 6,
-    borderWidth: 2,
     borderRadius: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    alignSelf: "center",
+    paddingVertical: 9,
+    alignItems: "center",
+    alignSelf: "stretch",
   },
   talkToGuideBtnText: {
     fontFamily: "monospace",
     fontSize: 11,
     fontWeight: "900",
     letterSpacing: 0.5,
+    color: "#0B0F16",
   },
+  guideTextColumn: { flex: 1 },
   energyCard: {
     width: "64%",
     minHeight: 202,

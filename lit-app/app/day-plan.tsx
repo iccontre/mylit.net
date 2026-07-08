@@ -940,7 +940,7 @@ export default function DayPlanScreen() {
     return TIME_SLOTS[0] ?? "8:30 AM";
   }
 
-  function addChecklistItem(kind: "progress" | "recovery") {
+  function addChecklistItem(kind: "progress" | "recovery", hobby?: boolean) {
     const committedMinutes = computeChecklistMinutesForDay(committedPlanRef.current, selectedDay);
     if (committedMinutes + 30 > MAX_CHECKLIST_MINUTES_PER_DAY) {
       setSavedMessage(`${selectedDay} is already at the ${formatPlannedDurationLabel(MAX_CHECKLIST_MINUTES_PER_DAY)} checklist limit — free up time before adding more.`);
@@ -958,6 +958,7 @@ export default function DayPlanScreen() {
         durationMinutes: 30,
         status: "scheduled",
         kind,
+        hobby,
         weekdays: [selectedDay],
         durationConfirmed: true,
       };
@@ -1082,7 +1083,7 @@ export default function DayPlanScreen() {
               isToday={(date) => getDateKey(date) === getDateKey(new Date())}
             />
 
-            <LunaReminderCard selectedDateKey={resolveDateForWeekday(selectedDay)} />
+            <LunaReminderCard selectedDay={selectedDay} selectedDateKey={resolveDateForWeekday(selectedDay)} />
 
             <View style={styles.panelGreen}>
               <Text style={styles.sectionTitle}>WEEKLY HABIT</Text>
@@ -1176,6 +1177,15 @@ export default function DayPlanScreen() {
                   <Text style={styles.checkCardCompactArrow}>›</Text>
                 </TouchableOpacity>
               ))}
+
+              <TouchableOpacity
+                style={[styles.setHobbyButton, selectedDayChecklistAtLimit && styles.addButtonDisabled]}
+                disabled={selectedDayChecklistAtLimit}
+                onPress={() => addChecklistItem("recovery", true)}
+              >
+                <Text style={styles.setHobbyButtonText}>+ SET A HOBBY</Text>
+              </TouchableOpacity>
+              <Text style={styles.setChecklistItemNote}>Pick something for yourself and choose the days it should repeat.</Text>
 
               <TouchableOpacity
                 style={[styles.setChecklistItemButton, selectedDayChecklistAtLimit && styles.addButtonDisabled]}
@@ -1459,6 +1469,8 @@ const styles = StyleSheet.create({
   checkCardCompactArrow: { color: "#FDE68A", fontSize: 22, fontWeight: "900", marginLeft: 6 },
   setChecklistItemButton: { borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, paddingVertical: 12, alignItems: "center", backgroundColor: "rgba(69,43,8,0.65)", marginTop: 4 },
   setChecklistItemButtonText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", letterSpacing: 0.5 },
+  setHobbyButton: { borderWidth: 2, borderColor: "#DB2777", borderRadius: 8, paddingVertical: 12, alignItems: "center", backgroundColor: "#F9A8D4", marginTop: 4 },
+  setHobbyButtonText: { color: "#500724", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", letterSpacing: 0.5 },
   setChecklistItemNote: { color: "#94A3B8", fontSize: 10, fontWeight: "700", textAlign: "center", marginTop: 6 },
   checklistModalBackdrop: { flex: 1, backgroundColor: "rgba(2,4,10,0.88)", padding: 18, paddingTop: 60, paddingBottom: 40 },
   checklistModalPanel: { flex: 1, backgroundColor: "rgba(8,13,24,0.98)", borderWidth: 3, borderColor: "#334155", borderRadius: 12 },

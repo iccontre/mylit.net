@@ -23,6 +23,7 @@ import {
   USER_LIFE_PROFILE_KEY,
   GUIDE_MEMORY_KEY,
   LEARNING_MEMORY_KEY,
+  LDM_MODE_STATE_KEY,
 } from "./storageKeys";
 import { getDateKey } from "./scheduling";
 import { sanitizeDayPlanChecklists } from "./dayPlanChecklist";
@@ -74,6 +75,7 @@ const OBJECT_MERGE_PROGRESS_KEYS = new Set<SyncableProgressKey>([
   USER_LIFE_PROFILE_KEY,
   GUIDE_MEMORY_KEY,
   LEARNING_MEMORY_KEY,
+  LDM_MODE_STATE_KEY,
 ]);
 
 let pushTimer: ReturnType<typeof setTimeout> | null = null;

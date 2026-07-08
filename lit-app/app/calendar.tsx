@@ -25,10 +25,11 @@ import {
   type ScheduledClassification,
   type ScheduledQuestLike,
 } from "../lib/scheduling";
-import { COMPLETED_QUESTS_KEY } from "../lib/storageKeys";
+import { COMPLETED_QUESTS_KEY, LUNA_DAY_REMINDERS_KEY } from "../lib/storageKeys";
+import { isReminderScheduledForDay, type LunaDayReminder } from "../lib/lunaReminders";
 
 type WeekdayName = "Sunday" | "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "Saturday";
-type EventTone = "gold" | "purple" | "blue" | "green";
+type EventTone = "gold" | "purple" | "blue" | "green" | "pinkLight" | "pinkDark";
 type ViewMode = "week" | "day";
 
 type CheckIn = {
@@ -313,6 +314,7 @@ export default function CalendarScreen() {
   const [dayPlan, setDayPlan] = useState<DayPlan | null>(null);
   const [latestCheckIn, setLatestCheckIn] = useState<CheckIn | null>(null);
   const [mandatoryCompletions, setMandatoryCompletions] = useState<{ id: string; dateKey: string; completedAt: string; durationMinutes?: number; steps: number }[]>([]);
+  const [reminders, setReminders] = useState<LunaDayReminder[]>([]);
   const [weekOffset, setWeekOffset] = useState(0);
   const [selectedDayIndex, setSelectedDayIndex] = useState(() => new Date().getDay());
   const [viewMode, setViewMode] = useState<ViewMode>("week");
@@ -332,11 +334,12 @@ export default function CalendarScreen() {
   );
 
   async function loadCalendarData() {
-    const [queue, plan, checkIn, completed] = await Promise.all([
+    const [queue, plan, checkIn, completed, dayReminders] = await Promise.all([
       readJson<unknown[]>(TOMORROW_QUEUE_KEY, []),
       readJson<DayPlan | null>(DAY_PLAN_KEY, null),
       readJson<CheckIn | null>(CHECKIN_KEY, null),
       readJson<{ id: string; title: string; dateKey: string; completedAt: string; durationMinutes?: number; steps: number }[]>(COMPLETED_QUESTS_KEY, []),
+      readJson<LunaDayReminder[]>(LUNA_DAY_REMINDERS_KEY, []),
     ]);
     setQueueItems(Array.isArray(queue) ? queue : []);
     setDayPlan(plan);
@@ -345,6 +348,11 @@ export default function CalendarScreen() {
     // so it would otherwise leave no trace here once completed — pull it from the completion
     // log specifically so it still shows up on the day it happened.
     setMandatoryCompletions(Array.isArray(completed) ? completed.filter((entry) => entry.title === MANDATORY_QUEST_TITLE) : []);
+    setReminders(Array.isArray(dayReminders) ? dayReminders : []);
+  }
+
+  function reminderItemsForDay(dateKey: string, weekday: WeekdayName): LunaDayReminder[] {
+    return reminders.filter((entry) => isReminderScheduledForDay(entry, weekday, dateKey));
   }
 
   const today = useMemo(() => new Date(), []);
@@ -451,7 +459,7 @@ export default function CalendarScreen() {
       events.push({
         id: item.id,
         title: item.title || "Checklist item",
-        cellLabel: classification === "recovery" ? "Recovery" : "Progress",
+        cellLabel: item.hobby ? "Hobby" : classification === "recovery" ? "Recovery" : "Progress",
         source: "Day Plan Checklist",
         date: dateKey,
         dayLabel,
@@ -460,10 +468,30 @@ export default function CalendarScreen() {
         durationMinutes: item.durationMinutes,
         steps: item.steps ?? getStepsForItem(item.durationMinutes, classification),
         classification,
-        tone: eventTone(classification),
+        tone: item.hobby ? "pinkLight" : eventTone(classification),
         status: item.status,
         note: item.checked ? "Checked recurring Day Plan habit." : "Recurring Day Plan habit.",
         priority: 3,
+      });
+    });
+
+    reminderItemsForDay(dateKey, dayName).forEach((entry) => {
+      events.push({
+        id: entry.id,
+        title: entry.text,
+        cellLabel: "Reminder",
+        source: "Luna Reminder",
+        date: dateKey,
+        dayLabel,
+        startTime: entry.time,
+        duration: entry.durationMinutes ? formatDurationLabel(entry.durationMinutes, 15) : undefined,
+        durationMinutes: entry.durationMinutes,
+        steps: 0,
+        classification: "recovery",
+        tone: "pinkDark",
+        status: "scheduled",
+        note: entry.until ? `Until ${entry.until}.` : "User-created reminder.",
+        priority: 3.5,
       });
     });
 
@@ -828,6 +856,8 @@ function getEventToneStyle(tone: EventTone) {
     case "blue": return styles.eventBlue;
     case "purple": return styles.eventPurple;
     case "green": return styles.eventGreen;
+    case "pinkLight": return styles.eventPinkLight;
+    case "pinkDark": return styles.eventPinkDark;
     case "gold": default: return styles.eventGold;
   }
 }
@@ -883,6 +913,8 @@ function getPopupBorder(tone: EventTone) {
   if (tone === "blue") return styles.popupBlue;
   if (tone === "purple") return styles.popupPurple;
   if (tone === "green") return styles.popupGreen;
+  if (tone === "pinkLight") return styles.popupPinkLight;
+  if (tone === "pinkDark") return styles.popupPinkDark;
   return styles.popupGold;
 }
 
@@ -1021,9 +1053,9 @@ const styles = StyleSheet.create({
   dayViewEventTime: { color: "#F8FAFC", fontSize: 10, fontWeight: "900" },
   dayViewEventTitle: { color: "#F8FAFC", fontSize: 11, lineHeight: 14, fontWeight: "800", marginTop: 2 },
 
-  eventGold: { backgroundColor: "rgba(113,63,18,0.85)", borderColor: "#FBBF24" }, eventPurple: { backgroundColor: "rgba(88,28,135,0.85)", borderColor: "#A78BFA" }, eventBlue: { backgroundColor: "rgba(14,116,144,0.85)", borderColor: "#67E8F9" }, eventGreen: { backgroundColor: "rgba(20,83,45,0.65)", borderColor: "#86EFAC" },
+  eventGold: { backgroundColor: "rgba(113,63,18,0.85)", borderColor: "#FBBF24" }, eventPurple: { backgroundColor: "rgba(88,28,135,0.85)", borderColor: "#A78BFA" }, eventBlue: { backgroundColor: "rgba(14,116,144,0.85)", borderColor: "#67E8F9" }, eventGreen: { backgroundColor: "rgba(20,83,45,0.65)", borderColor: "#86EFAC" }, eventPinkLight: { backgroundColor: "rgba(157,23,77,0.4)", borderColor: "#F9A8D4" }, eventPinkDark: { backgroundColor: "rgba(80,7,36,0.85)", borderColor: "#DB2777" },
 
-  popupOverlay: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "center", padding: 18, zIndex: 10 }, popupCard: { backgroundColor: "rgba(8,13,24,0.98)", borderWidth: 3, borderRadius: 12, padding: 16 }, popupGold: { borderColor: "#FBBF24" }, popupPurple: { borderColor: "#A78BFA" }, popupBlue: { borderColor: "#67E8F9" }, popupGreen: { borderColor: "#86EFAC" }, popupTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 20, fontWeight: "900", marginBottom: 4 }, popupSource: { color: "#FDE047", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", marginBottom: 12 }, popupRow: { flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: "#1F2937", paddingVertical: 6 }, popupLabel: { color: "#94A3B8", fontSize: 12, fontWeight: "800" }, popupValue: { color: "#F8FAFC", fontSize: 12, fontWeight: "900", maxWidth: "60%", textAlign: "right" }, popupNote: { color: "#CBD5E1", fontSize: 13, lineHeight: 19, marginTop: 12 }, popupButton: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", paddingVertical: 12, alignItems: "center", marginTop: 14 }, popupButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900" },
+  popupOverlay: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "center", padding: 18, zIndex: 10 }, popupCard: { backgroundColor: "rgba(8,13,24,0.98)", borderWidth: 3, borderRadius: 12, padding: 16 }, popupGold: { borderColor: "#FBBF24" }, popupPurple: { borderColor: "#A78BFA" }, popupBlue: { borderColor: "#67E8F9" }, popupGreen: { borderColor: "#86EFAC" }, popupPinkLight: { borderColor: "#F9A8D4" }, popupPinkDark: { borderColor: "#DB2777" }, popupTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 20, fontWeight: "900", marginBottom: 4 }, popupSource: { color: "#FDE047", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", marginBottom: 12 }, popupRow: { flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: "#1F2937", paddingVertical: 6 }, popupLabel: { color: "#94A3B8", fontSize: 12, fontWeight: "800" }, popupValue: { color: "#F8FAFC", fontSize: 12, fontWeight: "900", maxWidth: "60%", textAlign: "right" }, popupNote: { color: "#CBD5E1", fontSize: 13, lineHeight: 19, marginTop: 12 }, popupButton: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", paddingVertical: 12, alignItems: "center", marginTop: 14 }, popupButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900" },
 
   infoOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.82)", justifyContent: "center", alignItems: "center", padding: 20, zIndex: 25 },
   infoCard: { backgroundColor: "rgba(8,13,24,0.99)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 12, padding: 16, width: "100%" },

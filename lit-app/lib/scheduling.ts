@@ -42,6 +42,8 @@ export type ScheduledQuestLike = {
   completedAt?: string;
   createdAt?: string;
   isMandatoryRecovery?: boolean;
+  /** User-set hobby/self-care checklist item — display-only marker (see day-plan.tsx). */
+  hobby?: boolean;
 };
 
 export type WeekdayName =
@@ -199,12 +201,27 @@ export const FORCED_RECOVERY_MESSAGE =
  * mandatory → +5, nap → +5/+10, Forced Recovery → +10, recovery → +2/+4/+6/+8,
  * progress → -1/-3/-5/-7, 2 hr Progress Today's Quest → flat -12.
  */
+// Lucid Dreaming Mode's pre-sleep routine quests — no recovery energy, no progress cost. The
+// user is winding down, not doing a scheduled task; only the one-time +8 completion bonus
+// (awarded in index.tsx once all four are done) matters here.
+export const LDM_HYGIENE_TITLE = "Hygiene";
+export const LDM_JOURNALING_TITLE = "Journaling";
+export const LDM_READING_TITLE = "Reading";
+export const LDM_PRE_SLEEP_INTENTION_TITLE = "Set Pre-Sleep Intention";
+export const LDM_ROUTINE_TITLES = [LDM_HYGIENE_TITLE, LDM_JOURNALING_TITLE, LDM_READING_TITLE, LDM_PRE_SLEEP_INTENTION_TITLE] as const;
+const LDM_ROUTINE_TITLE_SET = new Set<string>(LDM_ROUTINE_TITLES);
+
+export function isLdmRoutineTitle(title?: string | null): boolean {
+  return Boolean(title && LDM_ROUTINE_TITLE_SET.has(title));
+}
+
 export function getEnergyDelta(opts: {
   kind?: ScheduledClassification | "progress" | "recovery" | string | null;
   durationMinutes?: string | number | null;
   title?: string | null;
   mandatory?: boolean;
 }): number {
+  if (isLdmRoutineTitle(opts.title)) return 0;
   if (opts.mandatory) return getMandatoryQuestRestoreEnergy(opts.durationMinutes);
   if (opts.title === FORCED_RECOVERY_TITLE) return FORCED_RECOVERY_RESTORE_ENERGY;
   if (isNapTitle(opts.title)) return getNapEnergyRestore(opts.durationMinutes);
@@ -644,6 +661,7 @@ export function collectDayPlanScheduledItems(plan: unknown, resolveDateForWeekda
           checked: Boolean(item.checked),
           createdAt: item.createdAt,
           completedAt: item.completedAt,
+          hobby: Boolean((item as { hobby?: boolean }).hobby),
         });
       });
     }
