@@ -68,7 +68,6 @@ import {
 import { LATEST_PRE_SLEEP_INTENTION_KEY, LDM_MODE_STATE_KEY } from "../../lib/storageKeys";
 import { readJson } from "../../lib/readJson";
 
-const mylitLogo = uiAssets.logo.mylit;
 const fireAssets = uiAssets.fires;
 
 type Quest = {
@@ -1357,14 +1356,24 @@ export default function HomeScreen() {
               showsVerticalScrollIndicator={false}
               bounces={false}
             >
-              <View style={styles.topHud}>
-                <Image source={mylitLogo} style={styles.heroLogo} resizeMode="contain" />
+              <View style={styles.pageHeader}>
+                <Text style={styles.pageKicker}>QUEST BOARD</Text>
+                <Text style={styles.pageTitle}>QUESTS</Text>
+                <Text style={styles.pageSubtitle}>Today&apos;s contracts from your path.</Text>
               </View>
 
               <View style={styles.modeRow}>
                 <Text style={[styles.modeTitle, { color: theme.accent }]}>{theme.mode}</Text>
                 <Text style={styles.modeSubtitle} numberOfLines={1}>{modeInstruction}</Text>
               </View>
+
+              {!isNeutral ? (
+                <View style={styles.capBannerRow}>
+                  <Text style={[styles.capBannerText, { color: theme.soft }]} numberOfLines={1}>
+                    {hasEnergyData ? `Energy ${energyYield}/100` : "Energy —"} · {isBoardLocked ? "Board locked" : isRecoveryLocked ? "Recovery required" : capacityLabel}
+                  </Text>
+                </View>
+              ) : null}
 
               <View style={[styles.timePanel, { borderColor: theme.accent }]}>
                 <View style={styles.panelHeaderRow}>
@@ -1510,6 +1519,21 @@ export default function HomeScreen() {
               </TouchableOpacity>
               <Text style={styles.createQuestNote}>Create a quest for today or a day you choose.</Text>
 
+              <View style={styles.hubGrid}>
+                <TouchableOpacity style={styles.hubGridBtn} onPress={() => navigateWithHaptic("/path")}>
+                  <Text style={styles.hubGridBtnText}>🌲 PATH SUGGESTIONS</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.hubGridBtn} onPress={() => navigateWithHaptic("/tomorrow-queue")}>
+                  <Text style={styles.hubGridBtnText}>😴 RECOVERY / NAP</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.hubGridBtn} onPress={() => navigateWithHaptic("/calendar")}>
+                  <Text style={styles.hubGridBtnText}>📜 QUEST HISTORY</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.hubGridBtn} onPress={() => navigateWithHaptic("/tomorrow-queue")}>
+                  <Text style={styles.hubGridBtnText}>🗒️ TOMORROW'S QUEUE</Text>
+                </TouchableOpacity>
+              </View>
+
               {canEnterLdm ? (
                 <>
                   <TouchableOpacity style={[styles.ldmBtn, ldmBusy && styles.ldmBtnDisabled]} disabled={ldmBusy} onPress={() => void enterLdmMode()}>
@@ -1534,7 +1558,7 @@ export default function HomeScreen() {
               <View style={[styles.questBoard, { borderColor: isBoardLocked && activeItem ? kindAccent(activeItem.kind) : isRecoveryLocked ? "#C4A7FF" : theme.accent }]}>
                 <View style={styles.questHeaderRow}>
                   <View style={styles.questTitleRow}>
-                    <Text style={[styles.questTitle, { color: theme.accent }]}>{isRecovery ? "+ QUEST BOARD +" : "⚔ QUEST BOARD"}</Text>
+                    <Text style={[styles.questTitle, { color: theme.accent }]}>{isRecovery ? "+ TODAY'S QUESTS +" : "⚔ TODAY'S QUESTS"}</Text>
                     {!isNeutral ? (
                       <TouchableOpacity style={[styles.questHelpBtn, { borderColor: theme.accent }]} onPress={() => setShowQuestHelp(true)}>
                         <Text style={[styles.questHelpBtnText, { color: theme.accent }]}>?</Text>
@@ -1849,6 +1873,46 @@ const styles = StyleSheet.create({
     width: 250,
     marginTop: -2,
   },
+  pageHeader: {
+    alignItems: "center",
+    marginBottom: 4,
+  },
+  pageKicker: {
+    color: "#FBBF24",
+    fontFamily: "monospace",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 2,
+    textTransform: "uppercase",
+  },
+  pageTitle: {
+    color: "#F8FAFC",
+    fontFamily: "monospace",
+    fontSize: 24,
+    fontWeight: "900",
+    letterSpacing: 1,
+    textShadowColor: "#000",
+    textShadowOffset: { width: 1, height: 2 },
+    textShadowRadius: 2,
+  },
+  pageSubtitle: {
+    color: "#CBD5E1",
+    fontSize: 11,
+    fontWeight: "700",
+    marginTop: 2,
+    textAlign: "center",
+  },
+  capBannerRow: {
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  capBannerText: {
+    fontSize: 11,
+    fontWeight: "800",
+    textShadowColor: "#000",
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
+  },
   modeRow: {
     marginTop: -10,
     marginBottom: 4,
@@ -2041,6 +2105,18 @@ const styles = StyleSheet.create({
   },
   createQuestBtnText: { color: "#F8FAFC", fontFamily: "monospace", fontSize: 13, fontWeight: "900", letterSpacing: 0.5 },
   createQuestNote: { color: "#94A3B8", fontSize: 10, fontWeight: "700", textAlign: "center", marginTop: 6, marginBottom: 10 },
+  hubGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 10 },
+  hubGridBtn: {
+    flexBasis: "48%",
+    flexGrow: 1,
+    borderWidth: 2,
+    borderColor: "#334155",
+    borderRadius: 8,
+    paddingVertical: 11,
+    alignItems: "center",
+    backgroundColor: "#1E293B",
+  },
+  hubGridBtnText: { color: "#E2E8F0", fontFamily: "monospace", fontSize: 11, fontWeight: "900", letterSpacing: 0.3, textAlign: "center" },
   ldmBtn: { borderWidth: 2, borderColor: "#4338CA", borderRadius: 8, paddingVertical: 12, alignItems: "center", backgroundColor: "#312E81", marginBottom: 4 },
   ldmBtnDisabled: { opacity: 0.5 },
   ldmBtnText: { color: "#E0E7FF", fontFamily: "monospace", fontSize: 13, fontWeight: "900", letterSpacing: 0.5 },
@@ -2216,7 +2292,9 @@ const styles = StyleSheet.create({
   },
   questBoard: {
     minHeight: 142,
-    backgroundColor: "rgba(5, 9, 17, 0.96)",
+    // Lighter than the quest-row cards it contains — avoids a dark box nested inside a
+    // dark box; the rows still read as distinct slips against this lighter backing.
+    backgroundColor: "rgba(5, 9, 17, 0.4)",
     borderWidth: 3,
     borderRadius: 4,
     padding: 8,

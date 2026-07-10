@@ -423,6 +423,10 @@ export default function DayPlanScreen() {
   const [pendingRecoveryConfirmId, setPendingRecoveryConfirmId] = useState<string | null>(null);
   const [showInfo, setShowInfo] = useState(false);
   const [checklistModalItemId, setChecklistModalItemId] = useState<string | null>(null);
+  const [showWeeklyHabitModal, setShowWeeklyHabitModal] = useState(false);
+  const [showTodayQuestModal, setShowTodayQuestModal] = useState(false);
+  const [showChecklistHubModal, setShowChecklistHubModal] = useState(false);
+  const [showCalendarPreviewModal, setShowCalendarPreviewModal] = useState(false);
   const [quickThoughts, setQuickThoughts] = useState<QuickThoughtLike[]>([]);
   const committedPlanRef = useRef<DayPlan>(createDefaultPlan());
 
@@ -767,6 +771,18 @@ export default function DayPlanScreen() {
     void syncDayPlanScheduledItems();
   }
 
+  // Convenience action — calls the existing per-section saves that are always safe to call
+  // (idempotent weekly habit save; today's-quest save only when dirty and valid). Checklist
+  // items are intentionally left out: they have their own conflict/cap/recovery-confirm
+  // validation per item, which isn't safe to auto-drive for several items at once.
+  async function lockInMyDay() {
+    await saveWeeklyHabit();
+    if (isTodayQuestDirty() && dayPlan.todayQuest.title.trim()) {
+      await saveTodayQuest();
+    }
+    setSavedMessage("Day locked in. Checklist items still save individually.");
+  }
+
   function updateSelectedRole(value: string) {
     setSavedMessage("");
     setDayPlan((current: DayPlan) => ({
@@ -1057,9 +1073,9 @@ export default function DayPlanScreen() {
           <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.hudContent]}>
             <View style={styles.heroPanel}>
               <View style={styles.heroCopy}>
-                <Text style={styles.heroKicker}>DAY PLAN</Text>
+                <Text style={styles.heroKicker}>PLANNING BOARD</Text>
                 <Text style={styles.title}>DAY PLAN</Text>
-                <Text style={styles.summary}>Choose your weekly habit and optional checklist items.</Text>
+                <Text style={styles.summary}>Shape the day before it starts.</Text>
               </View>
             </View>
 
@@ -1083,20 +1099,61 @@ export default function DayPlanScreen() {
               isToday={(date) => getDateKey(date) === getDateKey(new Date())}
             />
 
-            <LunaReminderCard selectedDay={selectedDay} selectedDateKey={resolveDateForWeekday(selectedDay)} />
-
-            <View style={styles.panelGreen}>
-              <Text style={styles.sectionTitle}>WEEKLY HABIT</Text>
-              <Text style={styles.helperText}>Set a recurring role for the days you choose. It repeats every week until changed.</Text>
-              <Text style={styles.helperTextSubtle}>Editing {selectedDay} — shown on Calendar as a green marker. No steps awarded.</Text>
-              <TextInput style={formStyles.input} value={dayPlan.weekdayRoles[selectedDay]} onChangeText={updateSelectedRole} placeholder="e.g. Coding Day" placeholderTextColor="#94A3B8" />
-              <TouchableOpacity style={styles.saveButton} onPress={saveWeeklyHabit}><Text style={styles.saveButtonText}>{weeklyHabitSaved ? "SAVED" : "SAVE WEEKLY HABIT"}</Text></TouchableOpacity>
-              {weeklyHabitSaved ? <Text style={styles.inlineSavedMessage}>Saved</Text> : null}
+            <View style={styles.daySummaryStrip}>
+              <Text style={styles.daySummaryText}>
+                Editing: {selectedDay} · {new Date(`${selectedDayDateKey}T00:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+              </Text>
+              <Text style={styles.daySummarySubtext}>
+                {formatPlannedDurationLabel(selectedDayRemainingMinutes)} left today · {boardMode} ({boardMode === "Recovery" ? "5h" : "8h"} limit)
+              </Text>
             </View>
 
-            <View style={styles.todayQuestOuterBorder}>
-            <View style={[dayPlan.todayQuest.kind === "recovery" ? styles.panelPurple : styles.panelGold, { marginBottom: 0 }]}>
-              <Text style={styles.sectionTitle}>TODAY’S QUEST</Text>
+            <LunaReminderCard selectedDay={selectedDay} selectedDateKey={resolveDateForWeekday(selectedDay)} />
+
+            <TouchableOpacity style={styles.hubCard} onPress={() => setShowWeeklyHabitModal(true)}>
+              <Text style={styles.hubCardTitle}>EDIT WEEKLY HABIT</Text>
+              <Text style={styles.hubCardPreview} numberOfLines={1}>
+                {dayPlan.weekdayRoles[selectedDay]?.trim() ? dayPlan.weekdayRoles[selectedDay] : "No weekly habit set for this day."}
+              </Text>
+              <Text style={styles.hubCardArrow}>›</Text>
+            </TouchableOpacity>
+
+            <Modal visible={showWeeklyHabitModal} transparent animationType="fade" onRequestClose={() => setShowWeeklyHabitModal(false)}>
+              <View style={styles.checklistModalBackdrop}>
+                <ScrollView style={styles.checklistModalPanel} contentContainerStyle={styles.checklistModalContent}>
+                  <View style={styles.panelGreen}>
+                    <Text style={styles.sectionTitle}>WEEKLY HABIT</Text>
+                    <Text style={styles.helperText}>Set a recurring role for the days you choose. It repeats every week until changed.</Text>
+                    <Text style={styles.helperTextSubtle}>Editing {selectedDay} — shown on Calendar as a green marker. No steps awarded.</Text>
+                    <TextInput style={formStyles.input} value={dayPlan.weekdayRoles[selectedDay]} onChangeText={updateSelectedRole} placeholder="e.g. Coding Day" placeholderTextColor="#94A3B8" />
+                    <TouchableOpacity style={styles.saveButton} onPress={saveWeeklyHabit}><Text style={styles.saveButtonText}>{weeklyHabitSaved ? "SAVED" : "SAVE WEEKLY HABIT"}</Text></TouchableOpacity>
+                    {weeklyHabitSaved ? <Text style={styles.inlineSavedMessage}>Saved</Text> : null}
+                  </View>
+                  <TouchableOpacity style={styles.checklistModalCloseBtn} onPress={() => setShowWeeklyHabitModal(false)}>
+                    <Text style={styles.checklistModalCloseBtnText}>CLOSE</Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              </View>
+            </Modal>
+
+            <TouchableOpacity style={styles.hubCard} onPress={() => setShowTodayQuestModal(true)}>
+              <Text style={styles.hubCardTitle}>TODAY’S QUEST</Text>
+              <Text style={styles.hubCardPreview} numberOfLines={1}>
+                {!isTodayQuestDirty() && dayPlan.todayQuest.status === "completed"
+                  ? `✓ Completed: ${dayPlan.todayQuest.title}`
+                  : dayPlan.todayQuest.title.trim()
+                    ? `${dayPlan.todayQuest.title} · ${dayPlan.todayQuest.duration}`
+                    : "Not set for this day."}
+              </Text>
+              <Text style={styles.hubCardArrow}>›</Text>
+            </TouchableOpacity>
+
+            <Modal visible={showTodayQuestModal} transparent animationType="fade" onRequestClose={() => setShowTodayQuestModal(false)}>
+              <View style={styles.checklistModalBackdrop}>
+                <ScrollView style={styles.checklistModalPanel} contentContainerStyle={styles.checklistModalContent}>
+                  <View style={styles.todayQuestOuterBorder}>
+                  <View style={[dayPlan.todayQuest.kind === "recovery" ? styles.panelPurple : styles.panelGold, { marginBottom: 0 }]}>
+                    <Text style={styles.sectionTitle}>TODAY’S QUEST</Text>
               <Text style={styles.sectionMeta}>{dayPlan.todayQuest.duration} • +{dayPlan.todayQuest.steps} steps</Text>
               <Text style={styles.helperText}>This is the actual quest for today. It appears on Calendar and Quest Board and earns +{dayPlan.todayQuest.steps} steps only when completed.</Text>
               <TextInput style={formStyles.input} value={dayPlan.todayQuest.title} onChangeText={updateTodayQuestTitle} placeholder="Finish profile page layout" placeholderTextColor="#94A3B8" />
@@ -1142,64 +1199,96 @@ export default function DayPlanScreen() {
                   <Text style={styles.reflectButtonText}>REFLECT ON TODAY’S QUEST</Text>
                 </TouchableOpacity>
               ) : null}
-            </View>
-            </View>
-
-            <View style={styles.panelPurple}>
-              <View style={styles.rowBetween}>
-                <Text style={[styles.sectionTitle, styles.sectionTitleInRow]}>CHECKLIST ITEMS</Text>
-                <Text style={styles.helperPill}>{isLowEnergy ? "Recovery mode suggested" : "Optional"}</Text>
-              </View>
-              <Text style={styles.helperText}>Set items that you want repeated throughout the week.</Text>
-              <Text style={styles.remainingTimeText}>
-                {formatChecklistTimeLabel(selectedDayChecklistMinutes)} · {formatPlannedDurationLabel(selectedDayRemainingMinutes)} left today · {boardMode} ({boardMode === "Recovery" ? "5h" : "8h"} limit)
-              </Text>
-              {visibleChecklist.length === 0 ? (
-                <Text style={styles.emptyChecklist}>{EMPTY_CHECKLIST_COPY}</Text>
-              ) : null}
-              {visibleChecklist.map((item: ChecklistItem) => (
-                <TouchableOpacity
-                  key={item.id}
-                  style={[styles.checkCardCompact, item.hobby ? styles.hobbyBorder : item.kind === "recovery" ? styles.recoveryBorder : styles.progressBorder]}
-                  onPress={() => setChecklistModalItemId(item.id)}
-                >
-                  <TouchableOpacity onPress={() => toggleChecklistItemChecked(item.id)}>
-                    <Text style={[styles.checkToggle, !item.checked && !item.durationConfirmed && styles.checkToggleDisabled]}>
-                      {item.checked ? "☑" : "☐"}
-                    </Text>
-                  </TouchableOpacity>
-                  <View style={styles.checkCardCompactBody}>
-                    <Text style={styles.checkCardCompactTitle} numberOfLines={1}>{item.text || "Untitled item"}</Text>
-                    <Text style={styles.checkCardCompactMeta} numberOfLines={1}>
-                      {item.hobby ? "HOBBY" : item.kind === "recovery" ? "RECOVERY" : "PROGRESS"} · {item.startTime} · {item.duration}
-                    </Text>
                   </View>
-                  <Text style={styles.checkCardCompactArrow}>›</Text>
-                </TouchableOpacity>
-              ))}
+                  </View>
+                  <TouchableOpacity style={styles.checklistModalCloseBtn} onPress={() => setShowTodayQuestModal(false)}>
+                    <Text style={styles.checklistModalCloseBtnText}>CLOSE</Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              </View>
+            </Modal>
 
-              <TouchableOpacity
-                style={[styles.setHobbyButton, selectedDayChecklistAtLimit && styles.addButtonDisabled]}
-                disabled={selectedDayChecklistAtLimit}
-                onPress={() => addChecklistItem("recovery", true)}
-              >
-                <Text style={styles.setHobbyButtonText}>+ SET A HOBBY</Text>
-              </TouchableOpacity>
-              <Text style={styles.setChecklistItemNote}>Pick something for yourself and choose the days it should repeat.</Text>
+            <TouchableOpacity
+              style={[styles.setHobbyButton, selectedDayChecklistAtLimit && styles.addButtonDisabled]}
+              disabled={selectedDayChecklistAtLimit}
+              onPress={() => addChecklistItem("recovery", true)}
+            >
+              <Text style={styles.setHobbyButtonText}>
+                {visibleChecklist.some((item) => item.hobby)
+                  ? `+ SET A HOBBY (${visibleChecklist.filter((item) => item.hobby).length} set)`
+                  : "+ SET A HOBBY"}
+              </Text>
+            </TouchableOpacity>
+            <Text style={styles.setChecklistItemNote}>Pick something for yourself and choose the days it should repeat.</Text>
 
-              <TouchableOpacity
-                style={[styles.setChecklistItemButton, selectedDayChecklistAtLimit && styles.addButtonDisabled]}
-                disabled={selectedDayChecklistAtLimit}
-                onPress={() => addChecklistItem("progress")}
-              >
-                <Text style={styles.setChecklistItemButtonText}>+ SET A CHECKLIST ITEM</Text>
-              </TouchableOpacity>
-              <Text style={styles.setChecklistItemNote}>Create repeated items for the days you choose.</Text>
+            <TouchableOpacity style={styles.hubCard} onPress={() => setShowChecklistHubModal(true)}>
+              <Text style={styles.hubCardTitle}>MANAGE CHECKLIST ITEMS</Text>
+              <Text style={styles.hubCardPreview} numberOfLines={1}>
+                {visibleChecklist.length} item{visibleChecklist.length === 1 ? "" : "s"} · {formatPlannedDurationLabel(selectedDayRemainingMinutes)} left today
+              </Text>
+              <Text style={styles.hubCardArrow}>›</Text>
+            </TouchableOpacity>
+            {visibleChecklist.slice(0, 3).map((item) => (
+              <Text key={`preview-${item.id}`} style={styles.checklistMiniPreview} numberOfLines={1}>
+                {item.checked ? "☑" : "☐"} {item.text || "Untitled item"} · {item.startTime}
+              </Text>
+            ))}
 
-              {selectedDayChecklistAtLimit ? (
-                <Text style={styles.capMessage}>{formatPlannedDurationLabel(MAX_CHECKLIST_MINUTES_PER_DAY)} of checklist time is the daily max for {selectedDay} — that&apos;s enough to build the habit without overloading the day.</Text>
-              ) : null}
-            </View>
+            <Modal visible={showChecklistHubModal} transparent animationType="fade" onRequestClose={() => setShowChecklistHubModal(false)}>
+              <View style={styles.checklistModalBackdrop}>
+                <ScrollView style={styles.checklistModalPanel} contentContainerStyle={styles.checklistModalContent}>
+                  <View style={styles.panelPurple}>
+                    <View style={styles.rowBetween}>
+                      <Text style={[styles.sectionTitle, styles.sectionTitleInRow]}>CHECKLIST ITEMS</Text>
+                      <Text style={styles.helperPill}>{isLowEnergy ? "Recovery mode suggested" : "Optional"}</Text>
+                    </View>
+                    <Text style={styles.helperText}>Set items that you want repeated throughout the week.</Text>
+                    <Text style={styles.remainingTimeText}>
+                      {formatChecklistTimeLabel(selectedDayChecklistMinutes)} · {formatPlannedDurationLabel(selectedDayRemainingMinutes)} left today · {boardMode} ({boardMode === "Recovery" ? "5h" : "8h"} limit)
+                    </Text>
+                    {visibleChecklist.length === 0 ? (
+                      <Text style={styles.emptyChecklist}>{EMPTY_CHECKLIST_COPY}</Text>
+                    ) : null}
+                    {visibleChecklist.map((item: ChecklistItem) => (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={[styles.checkCardCompact, item.hobby ? styles.hobbyBorder : item.kind === "recovery" ? styles.recoveryBorder : styles.progressBorder]}
+                        onPress={() => setChecklistModalItemId(item.id)}
+                      >
+                        <TouchableOpacity onPress={() => toggleChecklistItemChecked(item.id)}>
+                          <Text style={[styles.checkToggle, !item.checked && !item.durationConfirmed && styles.checkToggleDisabled]}>
+                            {item.checked ? "☑" : "☐"}
+                          </Text>
+                        </TouchableOpacity>
+                        <View style={styles.checkCardCompactBody}>
+                          <Text style={styles.checkCardCompactTitle} numberOfLines={1}>{item.text || "Untitled item"}</Text>
+                          <Text style={styles.checkCardCompactMeta} numberOfLines={1}>
+                            {item.hobby ? "HOBBY" : item.kind === "recovery" ? "RECOVERY" : "PROGRESS"} · {item.startTime} · {item.duration}
+                          </Text>
+                        </View>
+                        <Text style={styles.checkCardCompactArrow}>›</Text>
+                      </TouchableOpacity>
+                    ))}
+
+                    <TouchableOpacity
+                      style={[styles.setChecklistItemButton, selectedDayChecklistAtLimit && styles.addButtonDisabled]}
+                      disabled={selectedDayChecklistAtLimit}
+                      onPress={() => addChecklistItem("progress")}
+                    >
+                      <Text style={styles.setChecklistItemButtonText}>+ SET A CHECKLIST ITEM</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.setChecklistItemNote}>Create repeated items for the days you choose.</Text>
+
+                    {selectedDayChecklistAtLimit ? (
+                      <Text style={styles.capMessage}>{formatPlannedDurationLabel(MAX_CHECKLIST_MINUTES_PER_DAY)} of checklist time is the daily max for {selectedDay} — that&apos;s enough to build the habit without overloading the day.</Text>
+                    ) : null}
+                  </View>
+                  <TouchableOpacity style={styles.checklistModalCloseBtn} onPress={() => setShowChecklistHubModal(false)}>
+                    <Text style={styles.checklistModalCloseBtnText}>CLOSE</Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              </View>
+            </Modal>
 
             <Modal
               visible={checklistModalItemId !== null}
@@ -1293,26 +1382,45 @@ export default function DayPlanScreen() {
               </View>
             </Modal>
 
-            <View style={styles.previewPanel}>
-              <Text style={styles.sectionTitle}>CALENDAR PREVIEW</Text>
-              <Text style={styles.sectionMeta}>{currentInterval.label}</Text>
-              <Text style={styles.previewFocus}>
-                {selectedRole ? `Weekly Habit: ${selectedRole} — calendar marker only` : "No weekly habit set for this day."}
-              </Text>
-              {selectedDay === todayWeekday() && questInInterval ? <Text style={styles.previewQuest}>Today’s Quest: {committedTodayQuest.title} • {committedTodayQuest.startTime} • +{committedTodayQuest.steps} steps</Text> : null}
-              {intervalItems.length === 0 && !(selectedDay === todayWeekday() && questInInterval) && !recoveryInInterval ? <Text style={styles.emptyPreview}>No planned items in this time block.</Text> : null}
-              {intervalItems.map((item: ChecklistItem) => (
-                <Text key={`preview-${item.id}`} style={item.kind === "recovery" ? styles.previewRecovery : styles.previewProgress}>{item.startTime} • {item.text} • {item.duration} • +{item.steps}</Text>
-              ))}
-              {recoveryInInterval && requiredRecoveryForSelectedDay ? (
-                <Text style={styles.previewRecoveryLock}>
-                  🔒 {requiredRecoveryForSelectedDay.startTime} • Required Recovery • 1 hr — Quest Board locks, no tasks scheduled here.
-                </Text>
-              ) : null}
-            </View>
+            <TouchableOpacity style={styles.hubCard} onPress={() => setShowCalendarPreviewModal(true)}>
+              <Text style={styles.hubCardTitle}>CALENDAR PREVIEW</Text>
+              <Text style={styles.hubCardPreview} numberOfLines={1}>{currentInterval.label}</Text>
+              <Text style={styles.hubCardArrow}>›</Text>
+            </TouchableOpacity>
+
+            <Modal visible={showCalendarPreviewModal} transparent animationType="fade" onRequestClose={() => setShowCalendarPreviewModal(false)}>
+              <View style={styles.checklistModalBackdrop}>
+                <ScrollView style={styles.checklistModalPanel} contentContainerStyle={styles.checklistModalContent}>
+                  <View style={styles.previewPanel}>
+                    <Text style={styles.sectionTitle}>CALENDAR PREVIEW</Text>
+                    <Text style={styles.sectionMeta}>{currentInterval.label}</Text>
+                    <Text style={styles.previewFocus}>
+                      {selectedRole ? `Weekly Habit: ${selectedRole} — calendar marker only` : "No weekly habit set for this day."}
+                    </Text>
+                    {selectedDay === todayWeekday() && questInInterval ? <Text style={styles.previewQuest}>Today’s Quest: {committedTodayQuest.title} • {committedTodayQuest.startTime} • +{committedTodayQuest.steps} steps</Text> : null}
+                    {intervalItems.length === 0 && !(selectedDay === todayWeekday() && questInInterval) && !recoveryInInterval ? <Text style={styles.emptyPreview}>No planned items in this time block.</Text> : null}
+                    {intervalItems.map((item: ChecklistItem) => (
+                      <Text key={`preview-${item.id}`} style={item.kind === "recovery" ? styles.previewRecovery : styles.previewProgress}>{item.startTime} • {item.text} • {item.duration} • +{item.steps}</Text>
+                    ))}
+                    {recoveryInInterval && requiredRecoveryForSelectedDay ? (
+                      <Text style={styles.previewRecoveryLock}>
+                        🔒 {requiredRecoveryForSelectedDay.startTime} • Required Recovery • 1 hr — Quest Board locks, no tasks scheduled here.
+                      </Text>
+                    ) : null}
+                  </View>
+                  <TouchableOpacity style={styles.checklistModalCloseBtn} onPress={() => setShowCalendarPreviewModal(false)}>
+                    <Text style={styles.checklistModalCloseBtnText}>CLOSE</Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              </View>
+            </Modal>
 
             {conflictMessage ? <Text style={styles.conflictMessage}>{conflictMessage}</Text> : null}
             {savedMessage ? <Text style={styles.savedMessage}>{savedMessage}</Text> : null}
+            <TouchableOpacity style={styles.lockInBtn} onPress={() => void lockInMyDay()}>
+              <Text style={styles.lockInBtnText}>🔒 LOCK IN MY DAY</Text>
+            </TouchableOpacity>
+
             <TouchableOpacity style={styles.backButton} onPress={() => router.push("/calendar")}><Text style={styles.backButtonText}>BACK TO CALENDAR</Text></TouchableOpacity>
           </FormScreen>
           <BottomNav activeRoute="calendar" bottomOffset={mobile.bottomNavOffset} />
@@ -1393,6 +1501,9 @@ const styles = StyleSheet.create({
   heroKicker: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", letterSpacing: 1.2, marginBottom: 5 },
   title: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 27, fontWeight: "900", letterSpacing: 1, lineHeight: 32, textAlign: "center" },
   summary: { color: "#F8E7A1", fontFamily: pixelFont, fontSize: 12, fontWeight: "800", lineHeight: 17, marginTop: 5 },
+  daySummaryStrip: { alignItems: "center", marginBottom: 10 },
+  daySummaryText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900" },
+  daySummarySubtext: { color: "#94A3B8", fontSize: 10, fontWeight: "700", marginTop: 2 },
   panel: { backgroundColor: "rgba(8, 13, 24, 0.95)", borderRadius: 8, padding: 12, marginBottom: 12, borderWidth: 3, borderColor: "#334155" },
   panelGold: { backgroundColor: "rgba(8, 13, 24, 0.95)", borderRadius: 8, padding: 12, marginBottom: 12, borderWidth: 3, borderColor: "#FBBF24" },
   panelPurple: { backgroundColor: "rgba(31, 18, 56, 0.95)", borderRadius: 8, padding: 12, marginBottom: 12, borderWidth: 3, borderColor: "#A78BFA" },
@@ -1472,6 +1583,21 @@ const styles = StyleSheet.create({
   setHobbyButton: { borderWidth: 2, borderColor: "#DB2777", borderRadius: 8, paddingVertical: 12, alignItems: "center", backgroundColor: "#F9A8D4", marginTop: 4 },
   setHobbyButtonText: { color: "#500724", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", letterSpacing: 0.5 },
   setChecklistItemNote: { color: "#94A3B8", fontSize: 10, fontWeight: "700", textAlign: "center", marginTop: 6 },
+  hubCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(58, 42, 21, 0.85)",
+    borderWidth: 2,
+    borderColor: "#FBBF24",
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 10,
+  },
+  hubCardTitle: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", marginRight: 8 },
+  hubCardPreview: { flex: 1, color: "#F1F5F9", fontSize: 11, fontWeight: "700" },
+  hubCardArrow: { color: "#FDE68A", fontSize: 22, fontWeight: "900", marginLeft: 6 },
+  checklistMiniPreview: { color: "#94A3B8", fontSize: 10, fontWeight: "700", marginBottom: 3, paddingHorizontal: 4 },
   checklistModalBackdrop: { flex: 1, backgroundColor: "rgba(2,4,10,0.88)", padding: 18, paddingTop: 60, paddingBottom: 40 },
   checklistModalPanel: { flex: 1, backgroundColor: "rgba(8,13,24,0.98)", borderWidth: 3, borderColor: "#334155", borderRadius: 12 },
   checklistModalContent: { padding: 16 },
@@ -1491,6 +1617,8 @@ const styles = StyleSheet.create({
   saveButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900", letterSpacing: 1 },
   backButton: { borderWidth: 2, borderColor: "#FBBF24", backgroundColor: "rgba(69,43,8,0.6)", paddingVertical: 13, alignItems: "center", marginBottom: 10 },
   backButtonText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 14, fontWeight: "900", letterSpacing: 1 },
+  lockInBtn: { borderWidth: 2, borderColor: "#22C55E", backgroundColor: "#14532D", paddingVertical: 14, alignItems: "center", marginBottom: 10, borderRadius: 8 },
+  lockInBtnText: { color: "#F0FDF4", fontFamily: pixelFont, fontSize: 14, fontWeight: "900", letterSpacing: 1 },
   eviePanel: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(8,13,24,0.95)", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, padding: 10, marginBottom: 12 },
   evieAvatar: { width: 44, height: 52, marginRight: 10 },
   evieCopy: { flex: 1 },

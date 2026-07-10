@@ -76,7 +76,7 @@ export function LunaGuideModal({ visible, onClose }: { visible: boolean; onClose
         <ScrollView style={styles.panel} contentContainerStyle={styles.content}>
           <Text style={styles.title}>LUNA</Text>
           <Text style={styles.intro}>
-            Recovery support, sleep support, and reminders — all in one place. Luna won't judge you for a
+            Recovery support, sleep support, and reminders — all in one place. Luna won&apos;t judge you for a
             hard week. This is supportive guidance, not therapy or medical advice.
           </Text>
 
