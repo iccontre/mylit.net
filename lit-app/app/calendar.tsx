@@ -620,6 +620,14 @@ export default function CalendarScreen() {
               </View>
             </View>
 
+            <View style={styles.legendRow}>
+              <Legend tone="green" label="Habit/Quest" />
+              <Legend tone="gold" label="Progress" />
+              <Legend tone="purple" label="Recovery" />
+              <Legend tone="pinkLight" label="Hobby" />
+              <Legend tone="pinkDark" label="Reminder" />
+            </View>
+
             {viewMode === "week" ? (
               <View style={styles.eviePanel}>
                 <Image source={uiAssets.guides.evie} style={styles.evieAvatar} resizeMode="contain" />
@@ -1049,7 +1057,9 @@ const styles = StyleSheet.create({
   dayViewTimeLabel: { height: HOUR_HEIGHT, color: "#94A3B8", fontFamily: pixelFont, fontSize: 10, textAlign: "center", paddingTop: 4 },
   dayViewGrid: { position: "relative", flex: 1, height: GRID_HEIGHT },
   dayViewHourRowBg: { height: HOUR_HEIGHT, borderTopWidth: 1, borderTopColor: "rgba(51,65,85,0.55)" },
-  dayViewEventBlock: { position: "absolute", borderWidth: 1, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 4, overflow: "hidden" },
+  // Colored left edge (thicker than the rest of the border) so type is readable at a glance,
+  // matching Calendar's color-coding legend.
+  dayViewEventBlock: { position: "absolute", borderWidth: 1, borderLeftWidth: 4, borderRadius: 5, paddingHorizontal: 6, paddingVertical: 4, overflow: "hidden" },
   dayViewEventTime: { color: "#F8FAFC", fontSize: 10, fontWeight: "900" },
   dayViewEventTitle: { color: "#F8FAFC", fontSize: 11, lineHeight: 14, fontWeight: "800", marginTop: 2 },
 

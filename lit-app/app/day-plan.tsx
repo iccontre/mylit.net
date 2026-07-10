@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Image, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
@@ -108,6 +108,8 @@ type DayPlan = {
   todayQuest: TodayQuest;
   weekdayRoles: Record<WeekdayName, string>;
   weekdayChecklists: Record<WeekdayName, ChecklistItem[]>;
+  /** Per-weekday Progress/Recovery designation — Day Plan only, never set during onboarding. */
+  weekdayModes?: Partial<Record<WeekdayName, "progress" | "recovery">>;
 };
 
 type CheckIn = { mode?: string; energy?: number };
@@ -318,6 +320,7 @@ function createDefaultPlan(): DayPlan {
     },
     weekdayRoles: { ...DEFAULT_ROLES },
     weekdayChecklists,
+    weekdayModes: {},
   };
 }
 
@@ -391,6 +394,7 @@ function checklistItemSignature(item: ChecklistItem): string {
 
 export default function DayPlanScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ openTodayQuest?: string; openHobby?: string }>();
   const mobile = useMobileFrame();
   const [dayPlan, setDayPlan] = useState<DayPlan>(() => createDefaultPlan());
   const [selectedDay, setSelectedDay] = useState<WeekdayName>(todayWeekday());
@@ -427,13 +431,23 @@ export default function DayPlanScreen() {
   const [showTodayQuestModal, setShowTodayQuestModal] = useState(false);
   const [showChecklistHubModal, setShowChecklistHubModal] = useState(false);
   const [showCalendarPreviewModal, setShowCalendarPreviewModal] = useState(false);
+  const openedFromParamsRef = useRef(false);
   const [quickThoughts, setQuickThoughts] = useState<QuickThoughtLike[]>([]);
   const committedPlanRef = useRef<DayPlan>(createDefaultPlan());
 
   useEffect(() => {
-    loadDayPlan();
-    loadLatestCheckIn();
-    loadQuickThoughts();
+    void (async () => {
+      await loadDayPlan();
+      loadLatestCheckIn();
+      loadQuickThoughts();
+      // Deep-linked from Quests' quest-chooser modal — open the matching editor once the
+      // real plan (not the default empty one) has loaded, so a new hobby item lands in the
+      // committed plan instead of getting overwritten by the load that follows it.
+      if (openedFromParamsRef.current) return;
+      openedFromParamsRef.current = true;
+      if (params.openTodayQuest) setShowTodayQuestModal(true);
+      if (params.openHobby) addChecklistItem("recovery", true);
+    })();
   }, []);
 
   useEffect(() => {
@@ -771,6 +785,19 @@ export default function DayPlanScreen() {
     void syncDayPlanScheduledItems();
   }
 
+  // Chips commit immediately (no separate Save step) — matches the existing checklist
+  // kind-toggle pattern. Day Plan only; never surfaced during onboarding.
+  async function setWeekdayMode(day: WeekdayName, mode: "progress" | "recovery") {
+    const nextCommitted: DayPlan = {
+      ...committedPlanRef.current,
+      weekdayModes: { ...committedPlanRef.current.weekdayModes, [day]: mode },
+    };
+    committedPlanRef.current = nextCommitted;
+    setDayPlan((current) => ({ ...current, weekdayModes: { ...current.weekdayModes, [day]: mode } }));
+    await persistProgressKeys({ [DAY_PLAN_KEY]: JSON.stringify(nextCommitted) });
+    void trackEvent(ANALYTICS_EVENTS.day_plan_saved, { scope: "weekdayMode" });
+  }
+
   // Convenience action — calls the existing per-section saves that are always safe to call
   // (idempotent weekly habit save; today's-quest save only when dirty and valid). Checklist
   // items are intentionally left out: they have their own conflict/cap/recovery-confirm
@@ -1088,6 +1115,31 @@ export default function DayPlanScreen() {
               <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
                 <Text style={styles.infoBtnText}>?</Text>
               </TouchableOpacity>
+            </View>
+
+            <View style={styles.weeklyHabitModeSection}>
+              <Text style={styles.weeklyHabitModeTitle}>WEEKLY HABIT</Text>
+              <Text style={styles.weeklyHabitModeSubtitle}>Progress or Recovery day?</Text>
+              <View style={styles.weeklyHabitModeRow}>
+                {WEEKDAYS.map((day) => {
+                  const mode = dayPlan.weekdayModes?.[day];
+                  return (
+                    <View key={day} style={styles.weeklyHabitModeChipGroup}>
+                      <Text style={styles.weeklyHabitModeChipLabel}>{day.slice(0, 3)}</Text>
+                      <TouchableOpacity
+                        style={[
+                          styles.weeklyHabitModeChip,
+                          mode === "progress" && styles.weeklyHabitModeChipProgress,
+                          mode === "recovery" && styles.weeklyHabitModeChipRecovery,
+                        ]}
+                        onPress={() => void setWeekdayMode(day, mode === "progress" ? "recovery" : "progress")}
+                      >
+                        <Text style={styles.weeklyHabitModeChipText}>{mode === "recovery" ? "REC" : mode === "progress" ? "PROG" : "—"}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })}
+              </View>
             </View>
 
             <WeekDaySelector
@@ -1583,6 +1635,17 @@ const styles = StyleSheet.create({
   setHobbyButton: { borderWidth: 2, borderColor: "#DB2777", borderRadius: 8, paddingVertical: 12, alignItems: "center", backgroundColor: "#F9A8D4", marginTop: 4 },
   setHobbyButtonText: { color: "#500724", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", letterSpacing: 0.5 },
   setChecklistItemNote: { color: "#94A3B8", fontSize: 10, fontWeight: "700", textAlign: "center", marginTop: 6 },
+  weeklyHabitModeSection: { alignItems: "center", marginBottom: 10 },
+  weeklyHabitModeTitle: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 1 },
+  weeklyHabitModeSubtitle: { color: "#94A3B8", fontSize: 10, fontWeight: "700", marginTop: 2, marginBottom: 8 },
+  weeklyHabitModeRow: { flexDirection: "row", gap: 4, flexWrap: "wrap", justifyContent: "center" },
+  weeklyHabitModeChipGroup: { alignItems: "center" },
+  weeklyHabitModeChipLabel: { color: "#94A3B8", fontSize: 9, fontWeight: "800", marginBottom: 3 },
+  weeklyHabitModeChip: { width: 40, paddingVertical: 6, borderWidth: 2, borderColor: "#475569", borderRadius: 6, alignItems: "center", backgroundColor: "rgba(30,41,59,0.82)" },
+  // Gold = Progress day, Purple = Recovery day — never green (green is reserved for habit/quest tasks).
+  weeklyHabitModeChipProgress: { borderColor: "#FBBF24", backgroundColor: "rgba(113,63,18,0.85)" },
+  weeklyHabitModeChipRecovery: { borderColor: "#A78BFA", backgroundColor: "rgba(88,28,135,0.85)" },
+  weeklyHabitModeChipText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 9, fontWeight: "900" },
   hubCard: {
     flexDirection: "row",
     alignItems: "center",

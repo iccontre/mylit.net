@@ -207,8 +207,15 @@ export const FORCED_RECOVERY_MESSAGE =
 export const LDM_HYGIENE_TITLE = "Hygiene";
 export const LDM_JOURNALING_TITLE = "Journaling";
 export const LDM_READING_TITLE = "Reading";
+export const LDM_NIGHT_REFLECTION_TITLE = "Night Reflection";
 export const LDM_PRE_SLEEP_INTENTION_TITLE = "Set Pre-Sleep Intention";
-export const LDM_ROUTINE_TITLES = [LDM_HYGIENE_TITLE, LDM_JOURNALING_TITLE, LDM_READING_TITLE, LDM_PRE_SLEEP_INTENTION_TITLE] as const;
+export const LDM_ROUTINE_TITLES = [
+  LDM_HYGIENE_TITLE,
+  LDM_JOURNALING_TITLE,
+  LDM_READING_TITLE,
+  LDM_NIGHT_REFLECTION_TITLE,
+  LDM_PRE_SLEEP_INTENTION_TITLE,
+] as const;
 const LDM_ROUTINE_TITLE_SET = new Set<string>(LDM_ROUTINE_TITLES);
 
 export function isLdmRoutineTitle(title?: string | null): boolean {

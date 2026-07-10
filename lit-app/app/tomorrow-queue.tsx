@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 import { FormScreen } from "../components/FormScreen";
+import { ThreeHourPreviewModal, type PreviewSlot } from "../components/ThreeHourPreviewModal";
 import { BottomNav } from "../components/BottomNav";
 import { WeekDaySelector } from "../components/WeekDaySelector";
 import { formPageContent } from "../constants/formStyles";
@@ -38,6 +39,7 @@ import {
   getStepsForItem,
   inferScheduledClassification,
   parseDurationMinutes,
+  parseTimeToMinutes,
   shiftTimeSlot,
   wouldCrossMidnight,
   wouldTriggerRecoveryLock,
@@ -218,6 +220,7 @@ export default function TomorrowQueueScreen() {
   const [recoveryWarning, setRecoveryWarning] = useState("");
   const [pendingRecoveryConfirm, setPendingRecoveryConfirm] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
+  const [previewModal, setPreviewModal] = useState<{ anchorTime: string; items: PreviewSlot[] } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [showInfo, setShowInfo] = useState(false);
   const [timeInputDraft, setTimeInputDraft] = useState("9:00 AM");
@@ -336,12 +339,25 @@ export default function TomorrowQueueScreen() {
       .filter((item) => item.id !== excludeId)
       .map((item) => ({ id: item.id, title: item.title, date: item.date, startTime: item.startTime, durationMinutes: item.durationMinutes }));
     const existing = [...dayPlanItems, ...questItems];
-    for (const slot of TIME_SLOTS) {
+
+    // For today, only offer slots that haven't already passed — without this, creating a
+    // quest late at night (e.g. 11 PM) fell through every remaining slot (all would cross
+    // midnight) and rolled back to the FIRST slot of the day (7 AM), silently proposing an
+    // already-past time instead of "now-ish" or the last slot before midnight.
+    const isToday = dateKey === getDateKey(new Date());
+    const nowMinutes = isToday ? new Date().getHours() * 60 + new Date().getMinutes() : 0;
+    const candidateSlots = isToday
+      ? TIME_SLOTS.filter((slot) => (parseTimeToMinutes(slot) ?? 0) >= nowMinutes)
+      : TIME_SLOTS;
+
+    for (const slot of candidateSlots) {
       if (wouldCrossMidnight(slot, durationMinutes)) continue;
       const candidate = { id: "__probe__", date: dateKey, startTime: slot, durationMinutes };
       if (!findScheduleOverlap(candidate, existing, "__probe__")) return slot;
     }
-    return TIME_SLOTS[0] ?? "9:00 AM";
+    // Nothing left today that both fits before midnight and doesn't conflict — offer the
+    // last slot of the day (closest to now) rather than defaulting back to early morning.
+    return TIME_SLOTS[TIME_SLOTS.length - 1] ?? "9:00 AM";
   }
 
   function applyDefaultStartTime(dateKey: string, itemsList: QueueItem[], planArg: Record<string, unknown> | null) {
@@ -451,6 +467,10 @@ export default function TomorrowQueueScreen() {
       await saveQueue(nextItems);
       setMessage("Quest updated.");
       void trackEvent(ANALYTICS_EVENTS.quick_thought_saved, { id: editingId, kind: selectedKind, edited: true });
+      setPreviewModal({
+        anchorTime: selectedTime,
+        items: nextItems.filter((item) => item.date === selectedDay.dateKey).map((item) => ({ id: item.id, title: item.title || item.text || "Quest", startTime: item.startTime, duration: item.duration, kind: item.classification })),
+      });
     } else {
       const nextItem: QueueItem = {
         id: candidateId,
@@ -474,6 +494,10 @@ export default function TomorrowQueueScreen() {
       await saveQueue(nextList);
       setMessage(`Saved ${selectedKind} quest to Calendar.`);
       void trackEvent(ANALYTICS_EVENTS.quick_thought_saved, { id: nextItem.id, kind: selectedKind });
+      setPreviewModal({
+        anchorTime: selectedTime,
+        items: nextList.filter((item) => item.date === selectedDay.dateKey).map((item) => ({ id: item.id, title: item.title || item.text || "Quest", startTime: item.startTime, duration: item.duration, kind: item.classification })),
+      });
       // Advance the default time past the quest just added so the next new quest
       // lands on a free slot instead of colliding at the same time.
       applyDefaultStartTime(selectedDay.dateKey, nextList, dayPlan);
@@ -535,9 +559,14 @@ export default function TomorrowQueueScreen() {
     setConflictMessage("");
     setRecoveryWarning("");
     setPendingRecoveryConfirm(false);
-    await saveQueue([napItem, ...items]);
+    const nextList = [napItem, ...items];
+    await saveQueue(nextList);
     setMessage(`Saved nap to Calendar. ${formatEnergyDelta(getNapEnergyRestore(minutes))} when completed.`);
     void trackEvent(ANALYTICS_EVENTS.quick_thought_saved, { id: napItem.id, kind: "recovery" });
+    setPreviewModal({
+      anchorTime: startTime,
+      items: nextList.filter((item) => item.date === selectedDay.dateKey).map((item) => ({ id: item.id, title: item.title || item.text || "Quest", startTime: item.startTime, duration: item.duration, kind: item.classification })),
+    });
     void syncQuickThoughtItems();
   }
 
@@ -769,6 +798,12 @@ export default function TomorrowQueueScreen() {
           </FormScreen>
           <BottomNav activeRoute="calendar" bottomOffset={mobile.bottomNavOffset} />
           {showInfo ? <InfoOverlay onClose={() => setShowInfo(false)} /> : null}
+          <ThreeHourPreviewModal
+            visible={previewModal !== null}
+            onClose={() => setPreviewModal(null)}
+            anchorTime={previewModal?.anchorTime}
+            items={previewModal?.items ?? []}
+          />
         </View>
       </View>
     </View>

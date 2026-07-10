@@ -61,6 +61,7 @@ import {
   getMandatoryQuestRestoreEnergy,
   LDM_HYGIENE_TITLE,
   LDM_JOURNALING_TITLE,
+  LDM_NIGHT_REFLECTION_TITLE,
   LDM_READING_TITLE,
   MANDATORY_QUEST_TITLE,
   parseTimeToMinutes,
@@ -68,6 +69,7 @@ import {
 import { LATEST_PRE_SLEEP_INTENTION_KEY, LDM_MODE_STATE_KEY } from "../../lib/storageKeys";
 import { readJson } from "../../lib/readJson";
 
+const mylitLogo = uiAssets.logo.mylit;
 const fireAssets = uiAssets.fires;
 
 type Quest = {
@@ -407,6 +409,7 @@ export default function HomeScreen() {
   const [showQuestHelp, setShowQuestHelp] = useState(false);
   const [showHomeLunaModal, setShowHomeLunaModal] = useState(false);
   const [showHomeEvieModal, setShowHomeEvieModal] = useState(false);
+  const [showQuestChooserModal, setShowQuestChooserModal] = useState(false);
   const [timeNow, setTimeNow] = useState<Date>(() => new Date());
   const [countdownNow, setCountdownNow] = useState<number>(() => Date.now());
   const [recoveryNow, setRecoveryNow] = useState<number>(() => Date.now());
@@ -1022,13 +1025,15 @@ export default function HomeScreen() {
 
   function generateQuests(): Quest[] {
     // LDM routine quests show regardless of Progress/Recovery/Neutral — it's a separate night
-    // overlay, not part of the day mode system.
+    // overlay, not part of the day mode system. While the 1-hour routine window is open, the
+    // board shows ONLY these — no mandatory/suggested/recovery-starter quests mixed in.
     const ldmRoutineQuests = getLdmRoutineQuests();
+    if (ldmRoutineWindowOpen) return ldmRoutineQuests;
 
     const mandatoryQuest = getMandatoryQuest() ?? getWindDownQuest();
 
     if (isNeutral) {
-      return ldmRoutineQuests.length > 0 ? ldmRoutineQuests : [{ title: "Complete Morning Check-In", type: "Start", steps: 1 }];
+      return [{ title: "Complete Morning Check-In", type: "Start", steps: 1 }];
     }
 
     const completedTitles = new Set(completedQuests.map((entry) => entry.title));
@@ -1048,7 +1053,6 @@ export default function HomeScreen() {
         : null;
 
     return [
-      ...ldmRoutineQuests,
       ...(mandatoryQuest ? [mandatoryQuest] : []),
       ...(suggestedQuest ? [suggestedQuest] : []),
       ...(recoveryStarterActive ? [recoveryStarterActive] : []),
@@ -1143,8 +1147,9 @@ export default function HomeScreen() {
   const ldmHygieneDone = completedQuests.some((entry) => entry.title === LDM_HYGIENE_TITLE);
   const ldmJournalingDone = completedQuests.some((entry) => entry.title === LDM_JOURNALING_TITLE);
   const ldmReadingDone = completedQuests.some((entry) => entry.title === LDM_READING_TITLE);
+  const ldmNightReflectionDone = completedQuests.some((entry) => entry.title === LDM_NIGHT_REFLECTION_TITLE);
   const ldmPreSleepIntentionDone = preSleepDoneToday;
-  const ldmRoutineFullyComplete = ldmHygieneDone && ldmJournalingDone && ldmReadingDone && ldmPreSleepIntentionDone;
+  const ldmRoutineFullyComplete = ldmHygieneDone && ldmJournalingDone && ldmReadingDone && ldmNightReflectionDone && ldmPreSleepIntentionDone;
 
   const todayKey = getTodayKey();
   const todayChecklist: RawChecklistItem[] = getChecklistItemsForDay(dayPlanRaw, todayName);
@@ -1222,6 +1227,9 @@ export default function HomeScreen() {
     if (!ldmReadingDone) {
       quests.push({ title: LDM_READING_TITLE, type: "LDM", steps: 0, durationMinutes: 15, kind: "recovery", description: "Read something calm or light. No pressure to finish." });
     }
+    if (!ldmNightReflectionDone) {
+      quests.push({ title: LDM_NIGHT_REFLECTION_TITLE, type: "LDM", steps: 0, durationMinutes: 15, kind: "recovery", description: "Look back on today with kindness — no judgment, just noticing." });
+    }
     // "Set Pre-Sleep Intention" is NOT added here — normalizeQuestItems already injects that
     // exact item (same title, source: "Sleep", routes to /pre-sleep-intention) every night
     // from 9 PM–7 AM. Pushing a second one here would duplicate it on the board; its
@@ -1296,7 +1304,7 @@ export default function HomeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queueItems, todayKey]);
 
-  const currentBackground = ldmPostRoutine || isRecovery
+  const currentBackground = ldmActive || isRecovery
     ? uiAssets.backgrounds.recovery
     : isProgress
     ? uiAssets.backgrounds.progress
@@ -1356,24 +1364,9 @@ export default function HomeScreen() {
               showsVerticalScrollIndicator={false}
               bounces={false}
             >
-              <View style={styles.pageHeader}>
-                <Text style={styles.pageKicker}>QUEST BOARD</Text>
-                <Text style={styles.pageTitle}>QUESTS</Text>
-                <Text style={styles.pageSubtitle}>Today&apos;s contracts from your path.</Text>
+              <View style={styles.topHud}>
+                <Image source={mylitLogo} style={styles.heroLogo} resizeMode="contain" />
               </View>
-
-              <View style={styles.modeRow}>
-                <Text style={[styles.modeTitle, { color: theme.accent }]}>{theme.mode}</Text>
-                <Text style={styles.modeSubtitle} numberOfLines={1}>{modeInstruction}</Text>
-              </View>
-
-              {!isNeutral ? (
-                <View style={styles.capBannerRow}>
-                  <Text style={[styles.capBannerText, { color: theme.soft }]} numberOfLines={1}>
-                    {hasEnergyData ? `Energy ${energyYield}/100` : "Energy —"} · {isBoardLocked ? "Board locked" : isRecoveryLocked ? "Recovery required" : capacityLabel}
-                  </Text>
-                </View>
-              ) : null}
 
               <View style={[styles.timePanel, { borderColor: theme.accent }]}>
                 <View style={styles.panelHeaderRow}>
@@ -1405,9 +1398,23 @@ export default function HomeScreen() {
                 </View>
               </View>
 
-              <Text style={[styles.modeLabel, { color: theme.accent }]}>
-                {isNeutral ? "NEUTRAL MODE" : isRecovery ? "RECOVERY MODE" : "PROGRESS MODE"}
+              <Text style={[styles.modeLabel, { color: ldmActive ? "#C4B5FD" : theme.accent }]}>
+                {ldmActive ? "LUCID DREAMING MODE" : isNeutral ? "NEUTRAL MODE" : isRecovery ? "RECOVERY MODE" : "PROGRESS MODE"}
               </Text>
+
+              {ldmRoutineWindowOpen && ldmRoutineEndsAtMs !== null ? (
+                <View style={styles.capBannerRow}>
+                  <Text style={[styles.capBannerText, { color: "#E9D5FF" }]} numberOfLines={2}>
+                    You have 1 hour to finish all pre-sleep tasks. {formatCountdown(Math.max(0, ldmRoutineEndsAtMs - timeNow.getTime()))}
+                  </Text>
+                </View>
+              ) : !isNeutral && !ldmActive ? (
+                <View style={styles.capBannerRow}>
+                  <Text style={[styles.capBannerText, { color: theme.soft }]} numberOfLines={1}>
+                    {isBoardLocked ? "Board locked" : isRecoveryLocked ? "Recovery required" : capacityLabel}
+                  </Text>
+                </View>
+              ) : null}
 
               {!isNeutral ? (
                 <View style={styles.guideScene}>
@@ -1440,11 +1447,12 @@ export default function HomeScreen() {
                     style={[
                       styles.energyFlame,
                       {
-                        height: flameState.size + 58,
-                        width: flameState.size + 58,
+                        // Flame is the hero of the screen — noticeably larger than before.
+                        height: flameState.size + 96,
+                        width: flameState.size + 96,
                         shadowColor: theme.glow,
-                        shadowOpacity: 0.8,
-                        shadowRadius: 14,
+                        shadowOpacity: 0.85,
+                        shadowRadius: 18,
                         shadowOffset: { width: 0, height: 0 },
                       },
                     ]}
@@ -1456,8 +1464,8 @@ export default function HomeScreen() {
                     style={[
                       styles.energyFlame,
                       {
-                        height: 112,
-                        width: 112,
+                        height: 150,
+                        width: 150,
                       },
                     ]}
                     resizeMode="contain"
@@ -1514,18 +1522,12 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               </View>
 
-              <TouchableOpacity style={styles.createQuestBtn} onPress={() => navigateWithHaptic("/tomorrow-queue")}>
+              <TouchableOpacity style={styles.createQuestBtn} onPress={() => setShowQuestChooserModal(true)}>
                 <Text style={styles.createQuestBtnText}>+ CREATE A QUEST</Text>
               </TouchableOpacity>
               <Text style={styles.createQuestNote}>Create a quest for today or a day you choose.</Text>
 
               <View style={styles.hubGrid}>
-                <TouchableOpacity style={styles.hubGridBtn} onPress={() => navigateWithHaptic("/path")}>
-                  <Text style={styles.hubGridBtnText}>🌲 PATH SUGGESTIONS</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.hubGridBtn} onPress={() => navigateWithHaptic("/tomorrow-queue")}>
-                  <Text style={styles.hubGridBtnText}>😴 RECOVERY / NAP</Text>
-                </TouchableOpacity>
                 <TouchableOpacity style={styles.hubGridBtn} onPress={() => navigateWithHaptic("/calendar")}>
                   <Text style={styles.hubGridBtnText}>📜 QUEST HISTORY</Text>
                 </TouchableOpacity>
@@ -1533,6 +1535,57 @@ export default function HomeScreen() {
                   <Text style={styles.hubGridBtnText}>🗒️ TOMORROW'S QUEUE</Text>
                 </TouchableOpacity>
               </View>
+
+              <Modal visible={showQuestChooserModal} transparent animationType="fade" onRequestClose={() => setShowQuestChooserModal(false)}>
+                <View style={styles.chooserBackdrop}>
+                  <View style={styles.chooserPanel}>
+                    <Text style={styles.chooserTitle}>CREATE A QUEST</Text>
+                    <TouchableOpacity
+                      style={[styles.chooserRow, styles.chooserRowGold]}
+                      onPress={() => { setShowQuestChooserModal(false); router.push({ pathname: "/day-plan", params: { openTodayQuest: "1" } }); }}
+                    >
+                      <Text style={styles.chooserRowIcon}>⭐</Text>
+                      <View style={styles.chooserRowCopy}>
+                        <Text style={styles.chooserRowName}>Today Quest</Text>
+                        <Text style={styles.chooserRowExplain}>Your one main quest for today</Text>
+                      </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.chooserRow, styles.chooserRowGreen]}
+                      onPress={() => { setShowQuestChooserModal(false); router.push("/tomorrow-queue"); }}
+                    >
+                      <Text style={styles.chooserRowIcon}>🍃</Text>
+                      <View style={styles.chooserRowCopy}>
+                        <Text style={styles.chooserRowName}>Path Quest</Text>
+                        <Text style={styles.chooserRowExplain}>A step toward your long-term path</Text>
+                      </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.chooserRow, styles.chooserRowPurple]}
+                      onPress={() => { setShowQuestChooserModal(false); router.push({ pathname: "/tomorrow-queue", params: { focus: "nap" } }); }}
+                    >
+                      <Text style={styles.chooserRowIcon}>🕯</Text>
+                      <View style={styles.chooserRowCopy}>
+                        <Text style={styles.chooserRowName}>Recovery / Nap</Text>
+                        <Text style={styles.chooserRowExplain}>Restore energy, guided by Luna</Text>
+                      </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.chooserRow, styles.chooserRowPink]}
+                      onPress={() => { setShowQuestChooserModal(false); router.push({ pathname: "/day-plan", params: { openHobby: "1" } }); }}
+                    >
+                      <Text style={styles.chooserRowIcon}>🌸</Text>
+                      <View style={styles.chooserRowCopy}>
+                        <Text style={styles.chooserRowName}>Hobby</Text>
+                        <Text style={styles.chooserRowExplain}>Something you enjoy, no pressure</Text>
+                      </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.chooserCloseBtn} onPress={() => setShowQuestChooserModal(false)}>
+                      <Text style={styles.chooserCloseBtnText}>CLOSE</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </Modal>
 
               {canEnterLdm ? (
                 <>
@@ -1555,6 +1608,14 @@ export default function HomeScreen() {
                 </View>
               ) : null}
 
+              {isNeutral ? (
+                <View style={styles.lockedBoardStrip}>
+                  <Text style={styles.lockedBoardStripText}>Complete morning check-in to unlock</Text>
+                  <TouchableOpacity style={styles.lockedBoardStripBtn} onPress={() => navigateWithHaptic("/sleep-checkin")}>
+                    <Text style={styles.lockedBoardStripBtnText}>START CHECK-IN</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
               <View style={[styles.questBoard, { borderColor: isBoardLocked && activeItem ? kindAccent(activeItem.kind) : isRecoveryLocked ? "#C4A7FF" : theme.accent }]}>
                 <View style={styles.questHeaderRow}>
                   <View style={styles.questTitleRow}>
@@ -1570,7 +1631,7 @@ export default function HomeScreen() {
                   </Text>
                 </View>
 
-                {!isNeutral && todayQuestUnset ? (
+                {!isNeutral && todayQuestUnset && ldmNowMinutes < LDM_ENTRY_WINDOW_START_MINUTES ? (
                   <TouchableOpacity style={styles.setMainQuestBtn} onPress={() => navigateWithHaptic("/day-plan")}>
                     <Text style={styles.setMainQuestBtnTitle}>SET TODAY’S QUEST</Text>
                     <Text style={styles.setMainQuestBtnHint}>Choose your main quest for today.</Text>
@@ -1701,6 +1762,7 @@ export default function HomeScreen() {
                   </>
                 )}
               </View>
+              )}
 
               <View style={[styles.statsBar, { borderColor: theme.accent }]}>
                 <View style={styles.statCell}>
@@ -2117,6 +2179,20 @@ const styles = StyleSheet.create({
     backgroundColor: "#1E293B",
   },
   hubGridBtnText: { color: "#E2E8F0", fontFamily: "monospace", fontSize: 11, fontWeight: "900", letterSpacing: 0.3, textAlign: "center" },
+  chooserBackdrop: { flex: 1, backgroundColor: "rgba(2,4,10,0.88)", alignItems: "center", justifyContent: "center", padding: 18 },
+  chooserPanel: { width: "100%", maxWidth: 380, backgroundColor: "rgba(8,13,24,0.98)", borderWidth: 3, borderColor: "#334155", borderRadius: 12, padding: 16 },
+  chooserTitle: { color: "#F8FAFC", fontFamily: "monospace", fontSize: 16, fontWeight: "900", textAlign: "center", marginBottom: 12, letterSpacing: 1 },
+  chooserRow: { flexDirection: "row", alignItems: "center", borderWidth: 2, borderRadius: 8, padding: 12, marginBottom: 10, backgroundColor: "rgba(15,23,42,0.9)" },
+  chooserRowGold: { borderColor: "#FBBF24" },
+  chooserRowGreen: { borderColor: "#22C55E" },
+  chooserRowPurple: { borderColor: "#A78BFA" },
+  chooserRowPink: { borderColor: "#F472B6" },
+  chooserRowIcon: { fontSize: 26, marginRight: 12 },
+  chooserRowCopy: { flex: 1 },
+  chooserRowName: { color: "#F8FAFC", fontFamily: "monospace", fontSize: 13, fontWeight: "900" },
+  chooserRowExplain: { color: "#94A3B8", fontSize: 11, fontWeight: "700", marginTop: 2 },
+  chooserCloseBtn: { marginTop: 4, alignItems: "center", paddingVertical: 10 },
+  chooserCloseBtnText: { color: "#94A3B8", fontFamily: "monospace", fontSize: 11, fontWeight: "900" },
   ldmBtn: { borderWidth: 2, borderColor: "#4338CA", borderRadius: 8, paddingVertical: 12, alignItems: "center", backgroundColor: "#312E81", marginBottom: 4 },
   ldmBtnDisabled: { opacity: 0.5 },
   ldmBtnText: { color: "#E0E7FF", fontFamily: "monospace", fontSize: 13, fontWeight: "900", letterSpacing: 0.5 },
@@ -2334,6 +2410,22 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "900",
   },
+  lockedBoardStrip: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#EAD9B6",
+    borderWidth: 2,
+    borderColor: "#5C4425",
+    borderRadius: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 10,
+    gap: 8,
+  },
+  lockedBoardStripText: { flex: 1, color: "#3F2E14", fontSize: 11, fontWeight: "800" },
+  lockedBoardStripBtn: { backgroundColor: "#B3261E", borderWidth: 2, borderColor: "#5C4425", borderRadius: 6, paddingVertical: 7, paddingHorizontal: 10 },
+  lockedBoardStripBtnText: { color: "#FDE68A", fontFamily: "monospace", fontSize: 10, fontWeight: "900", letterSpacing: 0.5 },
   questLockedCard: {
     flex: 1,
     minHeight: 86,
