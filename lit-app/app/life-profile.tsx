@@ -40,7 +40,15 @@ const FOCUS_WINDOW_OPTIONS: { value: FocusWindow; label: string }[] = [
 
 type TextField = Exclude<
   keyof UserLifeProfile,
-  "motivationStyle" | "currentStage" | "updatedAt" | "workRhythmPreference" | "preferredFocusWindow"
+  | "motivationStyle"
+  | "currentStage"
+  | "updatedAt"
+  | "workRhythmPreference"
+  | "preferredFocusWindow"
+  // Edited on Set My Path (onboarding.tsx), not this screen — see SkillCategory in agentTypes.ts.
+  | "strongestSkillCategory"
+  | "secondarySkillCategories"
+  | "customSkillCategoryText"
 >;
 
 function normalizeDraft(profile: UserLifeProfile): Record<TextField, string> {

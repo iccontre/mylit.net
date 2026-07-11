@@ -522,6 +522,10 @@ export async function pushAllProgressToCloud(): Promise<void> {
   await forceUploadLocalProgressToCloud();
 }
 
+// Never overwrite non-empty cloud progress with empty local data.
+// Cross-device sync must merge by key/id and preserve newest meaningful user progress.
+// Runs blocking (see AuthBootstrap) on every app open/sign-in before Home/Stats can read
+// local storage, so both pages always hydrate from the same already-merged snapshot.
 export async function mergeCloudIntoLocalSafely(): Promise<MergeResult> {
   if (!isSupabaseConfigured()) {
     return { ok: true, message: "Offline mode — local progress kept.", localKeys: 0, cloudKeys: 0, backupKey: null };

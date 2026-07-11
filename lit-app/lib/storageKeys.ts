@@ -71,6 +71,8 @@ export const WEEKLY_AGENT_REVIEWS_KEY = "lit_weekly_agent_reviews";
 export const LUNA_DAY_REMINDERS_KEY = "lit_luna_day_reminders";
 /** LdmModeState | null — one Lucid Dreaming Mode night session, keyed by nightKey; never duplicated per night. */
 export const LDM_MODE_STATE_KEY = "lit_ldm_mode_state";
+/** QuickThoughtNote[] — MYLIT-themed general notes, distinct from journal/dream/reflection logs. */
+export const QUICK_THOUGHT_NOTES_KEY = "lit_quick_thought_notes";
 /** EvieAiPathPipelineRecord[] — one per "Ask Evie to Build My Path" run, newest-first, capped history. */
 export const AI_EVIE_PATH_PIPELINES_KEY = "lit_ai_evie_path_pipelines";
 /** LunaSupportModifierRecord[] — one per "Ask Luna to help me adjust" run, newest-first, capped history. */
@@ -139,6 +141,7 @@ export const SYNCABLE_PROGRESS_KEYS = [
   GUIDE_MEMORY_UPDATES_KEY,
   LUNA_DAY_REMINDERS_KEY,
   LDM_MODE_STATE_KEY,
+  QUICK_THOUGHT_NOTES_KEY,
 ] as const;
 
 export type SyncableProgressKey = (typeof SYNCABLE_PROGRESS_KEYS)[number];
@@ -164,6 +167,7 @@ export const ARRAY_MERGE_PROGRESS_KEYS = new Set<SyncableProgressKey>([
   GUIDE_CONVERSATIONS_KEY,
   GUIDE_MEMORY_UPDATES_KEY,
   LUNA_DAY_REMINDERS_KEY,
+  QUICK_THOUGHT_NOTES_KEY,
 ]);
 
 export function isSyncableProgressKey(key: string): key is SyncableProgressKey {

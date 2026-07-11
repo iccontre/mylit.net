@@ -28,6 +28,8 @@ import { persistProgressKeys } from "../lib/progressStore";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { isSupabaseConfigured } from "../lib/supabase";
 import { logGoalFeedback } from "../lib/feedbackLog";
+import { loadUserLifeProfile, saveUserLifeProfile } from "../lib/mylitAgents";
+import { SKILL_CATEGORIES, type SkillCategory } from "../lib/agentTypes";
 import {
   generateFromDatabase,
   variantCountFor,
@@ -244,10 +246,26 @@ export default function OnboardingScreen() {
   const [hasFoodControl, setHasFoodControl] = useState(false);
   const [validationMessage, setValidationMessage] = useState("");
   const [showInfo, setShowInfo] = useState(false);
+  const [strongestSkillCategory, setStrongestSkillCategory] = useState<SkillCategory | "">("");
+  const [secondarySkillCategories, setSecondarySkillCategories] = useState<SkillCategory[]>([]);
+  const [customSkillCategoryText, setCustomSkillCategoryText] = useState("");
+  const [pathGenerating, setPathGenerating] = useState(false);
 
   useEffect(() => {
     loadProfile();
   }, []);
+
+  function selectStrongestSkillCategory(category: SkillCategory) {
+    setStrongestSkillCategory(category);
+    setSecondarySkillCategories((current) => current.filter((entry) => entry !== category));
+  }
+
+  function toggleSecondarySkillCategory(category: SkillCategory) {
+    if (category === strongestSkillCategory) return;
+    setSecondarySkillCategories((current) =>
+      current.includes(category) ? current.filter((entry) => entry !== category) : [...current, category]
+    );
+  }
 
   const milestonesEmpty = useMemo(
     () => !shortTermGoal.trim() && !midTermGoal.trim() && !longTermGoal.trim(),
@@ -348,6 +366,12 @@ export default function OnboardingScreen() {
     if (betaProfile?.display_name) {
       setName((current) => current || betaProfile.display_name || "");
     }
+
+    // Optional/additive — an existing user who never answered this simply sees nothing preselected.
+    const lifeProfile = await loadUserLifeProfile();
+    if (lifeProfile.strongestSkillCategory) setStrongestSkillCategory(lifeProfile.strongestSkillCategory);
+    if (lifeProfile.secondarySkillCategories) setSecondarySkillCategories(lifeProfile.secondarySkillCategories);
+    if (lifeProfile.customSkillCategoryText) setCustomSkillCategoryText(lifeProfile.customSkillCategoryText);
   }
 
   async function saveProfile() {
@@ -367,7 +391,15 @@ export default function OnboardingScreen() {
     }
 
     setValidationMessage("");
+    setPathGenerating(true);
+    try {
+      await saveProfileInternal(trimmedName, trimmedDream);
+    } finally {
+      setPathGenerating(false);
+    }
+  }
 
+  async function saveProfileInternal(trimmedName: string, trimmedDream: string) {
     const existingRaw = await AsyncStorage.getItem(PROFILE_KEY);
     let existingProfile: Partial<UserProfile> | null = null;
     if (existingRaw) {
@@ -415,6 +447,15 @@ export default function OnboardingScreen() {
     };
 
     await persistProgressKeys({ [PROFILE_KEY]: JSON.stringify(profile) });
+
+    // Optional/additive — only written when the user actually picked one, never forced.
+    if (strongestSkillCategory) {
+      await saveUserLifeProfile({
+        strongestSkillCategory,
+        secondarySkillCategories,
+        customSkillCategoryText: customSkillCategoryText.trim() || undefined,
+      });
+    }
 
     if (isSupabaseConfigured()) {
       await updateProfile({
@@ -651,10 +692,61 @@ export default function OnboardingScreen() {
             <Text style={styles.helperText}>Name the obstacle so your path can work around it.</Text>
           </SectionShell>
 
+          <SectionShell number="9" title="WHICH AREA FEELS STRONGEST FOR YOU RIGHT NOW?">
+            <Text style={styles.helperText}>Start with what already feels natural. Evie can help you expand from there.</Text>
+            <Text style={styles.helperText}>Luna can support the parts that feel harder.</Text>
+            <View style={styles.skillChipGrid}>
+              {SKILL_CATEGORIES.map((category) => {
+                const selected = strongestSkillCategory === category;
+                return (
+                  <TouchableOpacity
+                    key={category}
+                    style={[styles.skillChip, selected && styles.skillChipActive]}
+                    onPress={() => selectStrongestSkillCategory(category)}
+                  >
+                    <Text style={[styles.skillChipText, selected && styles.skillChipTextActive]}>{category}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {strongestSkillCategory ? (
+              <>
+                <Text style={[styles.helperText, styles.skillSecondaryLabel]}>Feels strong too? (optional)</Text>
+                <View style={styles.skillChipGrid}>
+                  {SKILL_CATEGORIES.filter((category) => category !== strongestSkillCategory).map((category) => {
+                    const selected = secondarySkillCategories.includes(category);
+                    return (
+                      <TouchableOpacity
+                        key={category}
+                        style={[styles.skillChip, selected && styles.skillChipSecondaryActive]}
+                        onPress={() => toggleSecondarySkillCategory(category)}
+                      >
+                        <Text style={[styles.skillChipText, selected && styles.skillChipTextActive]}>{category}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
+            ) : null}
+
+            {strongestSkillCategory === "Custom" || secondarySkillCategories.includes("Custom") ? (
+              <TextInput
+                style={styles.input}
+                placeholder="Name your own area"
+                placeholderTextColor="#8A5D2B"
+                value={customSkillCategoryText}
+                onChangeText={setCustomSkillCategoryText}
+              />
+            ) : null}
+          </SectionShell>
+
           {validationMessage ? <Text style={styles.validationText}>{validationMessage}</Text> : null}
 
-          <TouchableOpacity style={styles.saveButton} onPress={saveProfile}>
-            <Text style={styles.saveButtonText}>{isEditPath ? "UPDATE MY PATH" : "SAVE MY PATH"}</Text>
+          <TouchableOpacity style={styles.saveButton} onPress={saveProfile} disabled={pathGenerating}>
+            <Text style={styles.saveButtonText}>
+              {pathGenerating ? "Path Generating..." : isEditPath ? "UPDATE MY PATH" : "SAVE MY PATH"}
+            </Text>
           </TouchableOpacity>
         </FormScreen>
 
@@ -881,6 +973,40 @@ const styles = StyleSheet.create({
   },
   categoryMeaningTextActive: {
     color: "#17260D",
+  },
+  skillChipGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 6,
+    marginTop: 6,
+  },
+  skillChip: {
+    backgroundColor: "rgba(255, 236, 185, 0.86)",
+    borderWidth: 2,
+    borderColor: "#A46B1C",
+    borderRadius: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 9,
+  },
+  skillChipActive: {
+    backgroundColor: "rgba(255, 214, 114, 0.95)",
+    borderColor: "#166534",
+  },
+  skillChipSecondaryActive: {
+    backgroundColor: "rgba(214, 236, 255, 0.95)",
+    borderColor: "#1D4ED8",
+  },
+  skillChipText: {
+    color: "#2A1707",
+    fontFamily: pixelFont,
+    fontWeight: "900",
+    fontSize: 11,
+  },
+  skillChipTextActive: {
+    color: "#0F3D18",
+  },
+  skillSecondaryLabel: {
+    marginTop: 10,
   },
   milestoneHint: {
     color: "#3D2408",

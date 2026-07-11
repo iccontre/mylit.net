@@ -4,6 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { BottomNav } from "../components/BottomNav";
+import { QuickThoughtsModal } from "../components/QuickThoughtsModal";
+import { LunaGuideModal } from "../components/LunaGuideModal";
+import { EvieGuideModal } from "../components/EvieGuideModal";
 import { uiAssets } from "../constants/uiAssets";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
@@ -320,6 +323,9 @@ export default function CalendarScreen() {
   const [viewMode, setViewMode] = useState<ViewMode>("week");
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   const [showInfo, setShowInfo] = useState(false);
+  const [showQuickThoughts, setShowQuickThoughts] = useState(false);
+  const [showQuickLuna, setShowQuickLuna] = useState(false);
+  const [showQuickEvie, setShowQuickEvie] = useState(false);
 
   useEffect(() => {
     void trackEvent(ANALYTICS_EVENTS.calendar_opened);
@@ -627,6 +633,21 @@ export default function CalendarScreen() {
               <Legend tone="pinkLight" label="Hobby" />
               <Legend tone="pinkDark" label="Reminder" />
             </View>
+
+            <TouchableOpacity style={styles.quickThoughtsBtn} onPress={() => setShowQuickThoughts(true)}>
+              <Text style={styles.quickThoughtsBtnText}>📝 QUICK THOUGHTS</Text>
+            </TouchableOpacity>
+            <Text style={styles.quickThoughtsNote}>Capture reminders, thoughts, and notes for this day.</Text>
+
+            <QuickThoughtsModal
+              visible={showQuickThoughts}
+              onClose={() => setShowQuickThoughts(false)}
+              selectedDateKey={selectedDateKey}
+              onOpenLuna={() => setShowQuickLuna(true)}
+              onOpenEvie={() => setShowQuickEvie(true)}
+            />
+            <LunaGuideModal visible={showQuickLuna} onClose={() => setShowQuickLuna(false)} />
+            <EvieGuideModal visible={showQuickEvie} onClose={() => setShowQuickEvie(false)} />
 
             {viewMode === "week" ? (
               <View style={styles.eviePanel}>
@@ -1040,6 +1061,9 @@ const styles = StyleSheet.create({
   dayViewHeadingRow: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(8,13,24,0.94)", borderWidth: 2, borderColor: "#334155", borderRadius: 8, padding: 10, marginBottom: 10 },
 
   legendRow: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginBottom: 8 }, legendItem: { flexDirection: "row", alignItems: "center" }, legendDot: { width: 12, height: 12, borderRadius: 2, marginRight: 4 }, legendText: { color: "#CBD5E1", fontSize: 10, fontWeight: "800" },
+  quickThoughtsBtn: { borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, paddingVertical: 12, alignItems: "center", backgroundColor: "rgba(69,43,8,0.65)", marginBottom: 4 },
+  quickThoughtsBtnText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", letterSpacing: 0.5 },
+  quickThoughtsNote: { color: "#94A3B8", fontSize: 10, fontWeight: "700", textAlign: "center", marginBottom: 10 },
 
   // Day View — dark RPG timeline board.
   dayViewPanel: { backgroundColor: "rgba(8,13,24,0.92)", borderWidth: 2, borderColor: "#334155", borderRadius: 8, padding: 8, marginBottom: 8 },

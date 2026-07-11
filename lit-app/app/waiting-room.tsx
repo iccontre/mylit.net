@@ -69,7 +69,7 @@ const TIPS = [
 const WAITING_ROOM_INFO_BULLETS = [
   "The Waiting Room keeps your current quest in one focused place.",
   "The timer stays synced with the Quest Board — leaving and coming back won't lose your place.",
-  "Boost starts a 15-min timer — finish it before your quest ends for a 1.5x reward. One use per task.",
+  "Boost extends your current quest by 15 or 30 minutes — finish it for 1.25x or 1.5x steps. One use per task.",
   "When time ends, choose Completed or Missed?",
   "Completed awards the task's normal steps. Missed? helps you reflect without punishment.",
 ];
@@ -95,24 +95,33 @@ function formatCountdown(ms: number): string {
 }
 
 function boostKeyFor(item: ActiveTimedItem): string {
+  // startedAt (not endsAt) so the key stays stable across a boost extending endsAt.
   return `${item.id}:${item.startedAt}`;
 }
 
-const BOOST_TIMER_MS = 15 * 60 * 1000;
-const BOOST_MULTIPLIER = 1.5;
+const BOOST_OPTIONS = [
+  { minutes: 15, multiplier: 1.25 },
+  { minutes: 30, multiplier: 1.5 },
+] as const;
+type BoostMinutes = (typeof BOOST_OPTIONS)[number]["minutes"];
 
+/**
+ * Boost extends the active quest timer and applies a one-time step multiplier only on
+ * completion. It is a modification of the SAME timer (endsAt is pushed back), not a second
+ * independent timer — the multiplier is earned the instant the user picks an option and stays
+ * valid until the quest is completed or missed (missing never awards it).
+ */
 type BoostRecord = {
-  boostStartedAt: number;
-  boostCompletedAt?: number;
-  boostMultiplier: number;
-  boostUsed: boolean;
-  /** True once the 1.5x reward has actually been credited on quest completion — guards against double-award on refresh/duplicate taps. */
-  boostedRewardApplied: boolean;
+  extensionMinutes: BoostMinutes;
+  multiplier: number;
+  appliedAt: number;
+  /** True once the multiplied reward has actually been credited — guards against double-award on refresh/duplicate taps. */
+  rewardApplied: boolean;
 };
 
-/** Tolerates the old shape (plain ISO-string values) from before Boost became timer-based — treated as "no usable record", never crashes. */
+/** Tolerates any older/unrelated shape saved under this key — treated as "no usable record", never crashes. */
 function isBoostRecord(value: unknown): value is BoostRecord {
-  return Boolean(value) && typeof value === "object" && typeof (value as BoostRecord).boostStartedAt === "number";
+  return Boolean(value) && typeof value === "object" && typeof (value as BoostRecord).extensionMinutes === "number";
 }
 
 function toHomeQuestItem(item: ActiveTimedItem): HomeQuestItem {
@@ -287,25 +296,14 @@ export default function WaitingRoomScreen() {
     : "Nice. You chose to stay with your goal. That counts.";
   const accent = isRecoveryMode ? "#C4A7FF" : "#84CC16";
   const background = isRecoveryMode ? uiAssets.backgrounds.recovery : uiAssets.backgrounds.progress;
-  // Boost is a 15-min side-timer, independent of the quest's own timer: tap it once to start,
-  // and if it finishes before the quest is marked complete, that completion earns 1.5x. Elapsed
-  // time is always recomputed from boostStartedAt (not a running interval), so leaving and
-  // returning to the Waiting Room never loses or resets progress — same pattern as the main
-  // quest countdown above.
-  const canBoost = activeItem !== null && !timerFinished;
-  const boostElapsedMs = boostRecord ? Math.max(0, nowMs - boostRecord.boostStartedAt) : 0;
-  const boostRemainingMs = boostRecord ? Math.max(0, BOOST_TIMER_MS - boostElapsedMs) : 0;
-  const boostReady = Boolean(boostRecord) && boostElapsedMs >= BOOST_TIMER_MS;
-  const boostLabel = !boostRecord
-    ? "Boost"
-    : boostRecord.boostedRewardApplied
-      ? "Boost Used"
-      : boostReady
-        ? "Boost Ready: 1.5x"
-        : `Boost Timer: ${formatCountdown(boostRemainingMs)}`;
+  // Boost extends the active quest timer and applies a one-time step multiplier only on
+  // completion — it modifies the SAME countdown (endsAt pushed back), not a second timer.
+  const canBoost = activeItem !== null && !timerFinished && !boostRecord;
 
-  async function handleBoost() {
-    if (!activeItem || boostRecord || boostBusy || !canBoost) return;
+  async function handleBoost(minutes: BoostMinutes) {
+    if (!activeItem || boostRecord || boostBusy || timerFinished) return;
+    const option = BOOST_OPTIONS.find((entry) => entry.minutes === minutes);
+    if (!option) return;
     setBoostBusy(true);
     try {
       const key = boostKeyFor(activeItem);
@@ -315,44 +313,57 @@ export default function WaitingRoomScreen() {
         return;
       }
       const record: BoostRecord = {
-        boostStartedAt: Date.now(),
-        boostMultiplier: BOOST_MULTIPLIER,
-        boostUsed: true,
-        boostedRewardApplied: false,
+        extensionMinutes: option.minutes,
+        multiplier: option.multiplier,
+        appliedAt: Date.now(),
+        rewardApplied: false,
       };
-      const nextBoosts = { ...boosts, [key]: record };
-      await persistProgressKeys({ [WAITING_ROOM_BOOSTS_KEY]: JSON.stringify(nextBoosts) });
+      const extendedItem: ActiveTimedItem = { ...activeItem, endsAt: activeItem.endsAt + option.minutes * 60 * 1000 };
+      await persistProgressKeys({
+        [WAITING_ROOM_BOOSTS_KEY]: JSON.stringify({ ...boosts, [key]: record }),
+        [ACTIVE_TIMED_ITEM_KEY]: JSON.stringify(extendedItem),
+      });
       setBoostRecord(record);
+      setActiveItem(extendedItem);
       void trackEvent(ANALYTICS_EVENTS.waiting_room_boost_used, {
         id: activeItem.id,
         durationMinutes: activeItem.durationMinutes,
+        extensionMinutes: option.minutes,
+        multiplier: option.multiplier,
       });
     } finally {
       setBoostBusy(false);
     }
   }
 
+
   async function handleComplete() {
     if (!activeItem || busy) return;
     setBusy(true);
     try {
-      const rewardApplied = Boolean(boostRecord?.boostedRewardApplied);
-      const eligibleForBoost = boostReady && boostRecord && !rewardApplied;
+      const rewardApplied = Boolean(boostRecord?.rewardApplied);
+      const eligibleForBoost = Boolean(boostRecord) && !rewardApplied;
       const homeItem = toHomeQuestItem(activeItem);
-      const boostedHomeItem = eligibleForBoost ? { ...homeItem, steps: Math.round(homeItem.steps * BOOST_MULTIPLIER) } : homeItem;
+      // baseSteps * multiplier, nearest whole number, minimum +1 if a base reward exists.
+      const boostedSteps = eligibleForBoost
+        ? homeItem.steps > 0
+          ? Math.max(1, Math.round(homeItem.steps * (boostRecord as BoostRecord).multiplier))
+          : 0
+        : homeItem.steps;
+      const boostedHomeItem = eligibleForBoost ? { ...homeItem, steps: boostedSteps } : homeItem;
 
       if (completedQuests.some((entry) => entry.id === homeItem.id)) {
         setCongrats({ steps: homeItem.steps, boost: rewardApplied });
         return;
       }
 
-      // Persist boostedRewardApplied BEFORE marking complete so a refresh mid-save can never
-      // re-apply the multiplier a second time — the "steps" that get written are already the
-      // boosted amount, and this flag is what prevents that from happening twice.
+      // Persist rewardApplied BEFORE marking complete so a refresh mid-save can never re-apply
+      // the multiplier a second time — the "steps" written are already the boosted amount, and
+      // this flag is what prevents that from happening twice.
       if (eligibleForBoost && activeItem) {
         const key = boostKeyFor(activeItem);
         const boosts = await readJson<Record<string, unknown>>(WAITING_ROOM_BOOSTS_KEY, {});
-        const nextRecord: BoostRecord = { ...(boostRecord as BoostRecord), boostedRewardApplied: true };
+        const nextRecord: BoostRecord = { ...(boostRecord as BoostRecord), rewardApplied: true };
         await persistProgressKeys({ [WAITING_ROOM_BOOSTS_KEY]: JSON.stringify({ ...boosts, [key]: nextRecord }) });
         setBoostRecord(nextRecord);
       }
@@ -491,19 +502,30 @@ export default function WaitingRoomScreen() {
                     {timerFinished ? "TIME'S UP" : formatCountdown(remainingMs)}
                   </Text>
 
-                  {boostRecord?.boostedRewardApplied ? (
+                  {boostRecord?.rewardApplied ? (
                     <View style={styles.boostDoneCard}>
-                      <Text style={styles.boostDoneText}>Boost Used — 1.5x applied</Text>
+                      <Text style={styles.boostDoneText}>Boost used — {boostRecord.multiplier}x applied</Text>
                       <Text style={styles.complimentText}>{complimentMessage}</Text>
                     </View>
+                  ) : boostRecord ? (
+                    <View style={styles.boostDoneCard}>
+                      <Text style={[styles.boostDoneText, { color: accent }]}>
+                        Boost active: +{boostRecord.extensionMinutes} min · {boostRecord.multiplier}x
+                      </Text>
+                    </View>
                   ) : canBoost ? (
-                    <TouchableOpacity
-                      style={[styles.boostBtn, { borderColor: accent }, (boostBusy || Boolean(boostRecord)) && styles.boostBtnDisabled]}
-                      onPress={handleBoost}
-                      disabled={boostBusy || Boolean(boostRecord)}
-                    >
-                      <Text style={[styles.boostBtnText, { color: accent }]}>{boostLabel}</Text>
-                    </TouchableOpacity>
+                    <View style={styles.boostChoiceRow}>
+                      {BOOST_OPTIONS.map((option) => (
+                        <TouchableOpacity
+                          key={option.minutes}
+                          style={[styles.boostBtn, { borderColor: accent }, boostBusy && styles.boostBtnDisabled]}
+                          onPress={() => void handleBoost(option.minutes)}
+                          disabled={boostBusy}
+                        >
+                          <Text style={[styles.boostBtnText, { color: accent }]}>Add {option.minutes} min · {option.multiplier}x</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
                   ) : null}
 
                   {timerFinished ? (
@@ -617,7 +639,8 @@ const styles = StyleSheet.create({
   questTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", flexShrink: 1 },
   questMeta: { color: "#CBD5E1", fontSize: 11, fontWeight: "700", alignSelf: "stretch", marginBottom: 2 },
   countdown: { fontFamily: pixelFont, fontSize: 44, fontWeight: "900", marginVertical: 14, letterSpacing: 1 },
-  boostBtn: { borderWidth: 2, borderRadius: 6, paddingVertical: 10, paddingHorizontal: 18, alignSelf: "stretch", alignItems: "center" },
+  boostChoiceRow: { flexDirection: "row", gap: 8, alignSelf: "stretch" },
+  boostBtn: { flex: 1, borderWidth: 2, borderRadius: 6, paddingVertical: 10, paddingHorizontal: 10, alignItems: "center" },
   boostBtnDisabled: { opacity: 0.5 },
   boostBtnText: { fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
   boostDoneCard: { alignItems: "center", alignSelf: "stretch" },

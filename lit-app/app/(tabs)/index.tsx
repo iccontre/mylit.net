@@ -1472,7 +1472,7 @@ export default function HomeScreen() {
                     rows={FLAME_SHEET_ROWS}
                     sheetWidth={flameState.animated === fireAnimations.brightSheet ? FLAME_BRIGHT_SHEET_WIDTH : FLAME_STEADY_SHEET_WIDTH}
                     sheetHeight={FLAME_SHEET_HEIGHT}
-                    fps={9}
+                    fps={11}
                     size={flameState.size + 96}
                     glowStyle={{
                       shadowColor: theme.glow,
@@ -1504,7 +1504,9 @@ export default function HomeScreen() {
                   <Text style={[styles.energyScore, { color: theme.glow }]}>{hasEnergyData ? energyYield : "—"}</Text>
                   <Text style={styles.energyOutOf}> / 100</Text>
                 </View>
-                <Text style={[styles.flameMeterText, { color: theme.soft }]}>{hasEnergyData ? flameLabel : "CHECK-IN NEEDED"}</Text>
+                <Text style={[styles.flameMeterText, { color: theme.soft }]}>
+                  {hasEnergyData ? flameLabel : ldmActive ? "Luna is preparing your pre-sleep routine..." : "CHECK-IN NEEDED"}
+                </Text>
                 {hasEnergyData ? (
                   <Text style={[styles.flameProtectText, { color: theme.accent }]} numberOfLines={2}>
                     {isProgress
@@ -1622,7 +1624,11 @@ export default function HomeScreen() {
                 </View>
               ) : null}
 
-              {isNeutral ? (
+              {isNeutral && !ldmRoutineWindowOpen ? (
+                // LDM's quest board must never fall behind the "do a morning check-in" lock —
+                // entry happens late at night, when the day's check-in-derived mode has often
+                // already reverted to Neutral, which otherwise hid the whole LDM routine board
+                // behind this prompt (reported as a "black page" for the full LDM hour).
                 <View style={styles.lockedBoardStrip}>
                   <Text style={styles.lockedBoardStripText}>Complete morning check-in to unlock</Text>
                   <TouchableOpacity style={styles.lockedBoardStripBtn} onPress={() => navigateWithHaptic("/sleep-checkin")}>
@@ -1641,7 +1647,7 @@ export default function HomeScreen() {
                     ) : null}
                   </View>
                   <Text style={[styles.questCount, { color: theme.accent }]}>
-                    {isNeutral ? "LOCKED" : isBoardLocked ? "LOCKED" : isRecoveryLocked ? "RECOVERY" : capacityLabel}
+                    {isNeutral && !ldmRoutineWindowOpen ? "LOCKED" : isBoardLocked ? "LOCKED" : isRecoveryLocked ? "RECOVERY" : ldmRoutineWindowOpen ? "LDM" : capacityLabel}
                   </Text>
                 </View>
 
@@ -1652,7 +1658,7 @@ export default function HomeScreen() {
                   </TouchableOpacity>
                 ) : null}
 
-                {isNeutral ? (
+                {isNeutral && !ldmRoutineWindowOpen ? (
                   <View style={styles.questLockedCard}>
                     <Text style={styles.questLockedTitle}>Quest Board Locked</Text>
                     <Text style={styles.questLockedText} numberOfLines={2}>Complete a check-in to reveal energy-aware quests for your path.</Text>

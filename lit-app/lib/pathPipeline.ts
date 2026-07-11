@@ -78,6 +78,13 @@ function buildThreeMonthDirection(dreamGoal: UserDreamGoal, profile: UserLifePro
   if (profile.bodyHealthGoals?.trim() && dreamGoal.source !== "bodyHealthGoals") {
     focusAreas.push(`Body/health: ${profile.bodyHealthGoals.trim()}`);
   }
+  if (profile.strongestSkillCategory) {
+    const label =
+      profile.strongestSkillCategory === "Custom" && profile.customSkillCategoryText?.trim()
+        ? profile.customSkillCategoryText.trim()
+        : profile.strongestSkillCategory;
+    focusAreas.push(`Strongest area right now: ${label} — lean into this first, expand from there.`);
+  }
 
   return {
     headline: `Over the next 3 months, keep moving toward: ${dreamGoal.goalText}${obstacleNote}.`,

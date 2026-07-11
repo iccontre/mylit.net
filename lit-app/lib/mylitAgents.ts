@@ -86,6 +86,13 @@ export function summarizeUserLifeProfile(profile: UserLifeProfile): string[] {
   if (profile.confidenceGoals) lines.push(`Confidence: ${profile.confidenceGoals}`);
   if (profile.currentObstacles) lines.push(`Current obstacle: ${profile.currentObstacles}`);
   if (profile.longTermDreamStatement) lines.push(`Long-term dream: ${profile.longTermDreamStatement}`);
+  if (profile.strongestSkillCategory) {
+    const label =
+      profile.strongestSkillCategory === "Custom" && profile.customSkillCategoryText
+        ? profile.customSkillCategoryText
+        : profile.strongestSkillCategory;
+    lines.push(`Strongest area right now: ${label}`);
+  }
   return lines;
 }
 
@@ -661,7 +668,8 @@ export function buildEviePathSummary(profile: UserLifeProfile, insights: StatsIn
       profile.purposeGoals ||
       profile.confidenceGoals ||
       profile.futureSelfStatement ||
-      profile.longTermDreamStatement
+      profile.longTermDreamStatement ||
+      profile.strongestSkillCategory
   );
 
   const supportingLines = pickInsightSummaries(insights, EVIE_INSIGHT_CATEGORIES, 2);

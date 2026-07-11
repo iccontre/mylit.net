@@ -52,9 +52,43 @@ export type UserLifeProfile = {
   preferredFocusWindow?: FocusWindow;
   /** User's own target wake time from Sleep Guide, e.g. "7:00 AM" — falls back to the learned wake rhythm in GuideMemory when unset. */
   plannedWakeTime?: string;
+  /** "Which area feels strongest for you right now?" — optional, self-selected starting strength. Feeds Life Profile, Guide Memory, and quest-suggestion focus areas. */
+  strongestSkillCategory?: SkillCategory;
+  /** Additional areas that also feel strong, besides strongestSkillCategory. */
+  secondarySkillCategories?: SkillCategory[];
+  /** Free text used when strongestSkillCategory (or a secondary entry) is "Custom". */
+  customSkillCategoryText?: string;
   /** ISO timestamp of the last edit — used for merge bookkeeping, not shown to the user. */
   updatedAt?: string;
 };
+
+/** "Which area feels strongest for you right now?" — see UserLifeProfile.strongestSkillCategory. */
+export type SkillCategory =
+  | "School/Learning"
+  | "Career/Path"
+  | "Creativity"
+  | "Fitness/Body"
+  | "Friendship/Social"
+  | "Discipline/Focus"
+  | "Reflection/Mind"
+  | "Sleep/Recovery"
+  | "Confidence"
+  | "Purpose"
+  | "Custom";
+
+export const SKILL_CATEGORIES: SkillCategory[] = [
+  "School/Learning",
+  "Career/Path",
+  "Creativity",
+  "Fitness/Body",
+  "Friendship/Social",
+  "Discipline/Focus",
+  "Reflection/Mind",
+  "Sleep/Recovery",
+  "Confidence",
+  "Purpose",
+  "Custom",
+];
 
 /**
  * Small, structured "what the guides remember" object. Deliberately NOT a

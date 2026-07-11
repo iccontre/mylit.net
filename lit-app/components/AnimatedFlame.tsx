@@ -15,7 +15,7 @@ export function AnimatedFlame({
   rows,
   sheetWidth,
   sheetHeight,
-  fps = 9,
+  fps = 11,
   size,
   reducedMotion,
   glowStyle,
@@ -73,22 +73,34 @@ export function AnimatedFlame({
     return <Image source={fallbackSource} style={[{ width: size, height: size }, glowStyle]} resizeMode="contain" />;
   }
 
-  const scale = size / frameHeight;
-  const scaledFrameWidth = frameWidth * scale;
-  const scaledSheetWidth = sheetWidth * scale;
-  const scaledSheetHeight = sheetHeight * scale;
+  // Viewport keeps the frame's real aspect ratio (frames are narrower than tall). Everything
+  // is rounded to whole pixels and the sheet is scaled ~1.5% larger than the viewport needs —
+  // without both of these, sub-pixel rounding between the viewport size and the translate
+  // offset let a sliver of the neighboring frame (and its background) bleed in at the edges.
+  const scale = (size / frameHeight) * 1.015;
+  const viewportWidth = Math.round((frameWidth / frameHeight) * size);
+  const scaledFrameWidth = Math.round(frameWidth * scale);
+  const scaledFrameHeight = Math.round(frameHeight * scale);
+  const scaledSheetWidth = Math.round(sheetWidth * scale);
+  const scaledSheetHeight = Math.round(sheetHeight * scale);
   const col = frame % columns;
   const row = Math.floor(frame / columns) % rows;
+  // Center the oversized frame within the viewport so the extra 1.5% crops evenly on all
+  // sides instead of only bleeding into the bottom-right neighbor.
+  const insetX = Math.round((scaledFrameWidth - viewportWidth) / 2);
+  const insetY = Math.round((scaledFrameHeight - size) / 2);
 
   return (
-    <View style={[{ width: scaledFrameWidth, height: size, overflow: "hidden" }, glowStyle]}>
+    <View style={[{ width: viewportWidth, height: size, overflow: "hidden", backgroundColor: "transparent" }, glowStyle]}>
       <Image
         source={source}
         onError={() => setFailed(true)}
         style={{
+          position: "absolute",
           width: scaledSheetWidth,
           height: scaledSheetHeight,
-          transform: [{ translateX: -col * scaledFrameWidth }, { translateY: -row * size }],
+          left: -col * scaledFrameWidth - insetX,
+          top: -row * scaledFrameHeight - insetY,
         }}
         resizeMode="stretch"
       />
