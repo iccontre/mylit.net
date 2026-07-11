@@ -1,0 +1,24 @@
+---
+description: MYLIT test, commit, push, deploy workflow
+alwaysApply: true
+---
+
+Before shipping, run:
+
+cd /workspace/lit-app
+npx tsc --noEmit
+npx expo export -p web
+
+Then commit safe files only, push to main, and deploy production:
+
+cd /workspace
+git status
+git add .
+git reset -- .env .env.local .vercel lit-app/.env lit-app/.env.local lit-app/.vercel || true
+git commit -m "Describe the MYLIT update clearly"
+GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519_mylit -o IdentitiesOnly=yes" git push origin main
+
+cd /workspace/lit-app
+npx --yes vercel@latest --prod --yes
+
+Do not ask Isaac to push or deploy unless authentication fails.

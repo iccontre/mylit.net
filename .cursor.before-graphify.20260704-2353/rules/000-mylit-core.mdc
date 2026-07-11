@@ -1,0 +1,23 @@
+---
+description: Core MYLIT safety and architecture rules
+alwaysApply: true
+---
+
+You are working on MYLIT in /workspace.
+
+Production deploys from main. Do not leave finished work only on a feature branch.
+
+Never reset user progress, clear AsyncStorage/localStorage, overwrite non-empty local/cloud data with empty data, use Supabase service_role in frontend code, or commit secrets.
+
+Do not commit:
+.env
+.env.local
+.vercel
+lit-app/.env
+lit-app/.env.local
+lit-app/.vercel
+node_modules
+tokens
+service_role keys
+
+Keep the app mobile-first, iPhone/PWA-safe, and consistent with the MYLIT pixel/RPG style.

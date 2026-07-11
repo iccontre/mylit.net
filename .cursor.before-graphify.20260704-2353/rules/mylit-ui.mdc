@@ -1,0 +1,43 @@
+---
+description: MYLIT UI and workflow rules
+alwaysApply: true
+---
+
+# MYLIT Cursor Rules
+
+MYLIT is a mobile-first pixel/RPG productivity and sleep app.
+
+## Product style
+- MYLIT means Living in Truth.
+- Recovery is valid progress.
+- Missed goals are data, not failure.
+- Avoid shame-based productivity language.
+
+## UI rules
+- Preserve the current dark pixel/RPG/adventure aesthetic.
+- Do not restore old bright/yellow UI.
+- Keep layouts mobile-first and iPhone-friendly.
+- Avoid giant empty spaces and horizontal overflow.
+- Keep the actual bottom nav intact.
+- Use existing assets from `lit-app/assets/ui` and `lit-app/constants/uiAssets.ts`.
+
+## Workflow rules
+- Inspect current files before editing.
+- Modify only files required for the task.
+- Do not redesign unrelated screens.
+- Preserve routes and AsyncStorage keys unless explicitly asked.
+- **Never reset user progress** — no clears, no empty-over-rich sync, no re-seeding
+  that overwrites saved data; new defaults only when a key has no saved value.
+- Avoid broad rewrites.
+- Use TypeScript safely.
+- Avoid implicit any.
+
+## Required after edits
+Run:
+cd lit-app && npx tsc --noEmit
+
+Report:
+- changed files
+- behavior changes
+- TypeScript result
+- manual tests needed
