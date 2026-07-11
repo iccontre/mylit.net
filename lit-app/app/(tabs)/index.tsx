@@ -6,6 +6,7 @@ import { Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } fr
 
 import { BottomNav } from "../../components/BottomNav";
 import { LunaGuideModal } from "../../components/LunaGuideModal";
+import { AnimatedFlame } from "../../components/AnimatedFlame";
 import { EvieGuideModal } from "../../components/EvieGuideModal";
 import { uiAssets } from "../../constants/uiAssets";
 import { useMobileFrame } from "../../constants/mobileLayout";
@@ -66,11 +67,18 @@ import {
   MANDATORY_QUEST_TITLE,
   parseTimeToMinutes,
 } from "../../lib/scheduling";
-import { LATEST_PRE_SLEEP_INTENTION_KEY, LDM_MODE_STATE_KEY } from "../../lib/storageKeys";
+import { LATEST_PRE_SLEEP_INTENTION_KEY, LDM_MODE_STATE_KEY, TOTAL_STEPS_FLOOR_KEY } from "../../lib/storageKeys";
 import { readJson } from "../../lib/readJson";
 
 const mylitLogo = uiAssets.logo.mylit;
 const fireAssets = uiAssets.fires;
+const fireAnimations = uiAssets.fireAnimations;
+const FLAME_SHEET_COLUMNS = 6;
+const FLAME_SHEET_ROWS = 6;
+const FLAME_SHEET_FRAME_COUNT = FLAME_SHEET_COLUMNS * FLAME_SHEET_ROWS;
+const FLAME_STEADY_SHEET_WIDTH = 1116;
+const FLAME_BRIGHT_SHEET_WIDTH = 1056;
+const FLAME_SHEET_HEIGHT = 1536;
 
 type Quest = {
   title: string;
@@ -309,22 +317,24 @@ function computeLdmSevenAmCutoff(enteredAt: Date): Date {
 // Bands: 0–24 ember · 25–44 low · 45–64 steady · 65–84 bright · 85–100 blazing.
 function getFireAssetForEnergy(score: number) {
   if (score >= 85) {
-    return { image: fireAssets.blazingFlame, emoji: "🔥", label: "Blazing Flame", size: 74 };
+    // No spritesheet yet for Blazing — static fallback only.
+    return { image: fireAssets.blazingFlame, animated: undefined, emoji: "🔥", label: "Blazing Flame", size: 74 };
   }
 
   if (score >= 65) {
-    return { image: fireAssets.brightFlame, emoji: "🔥", label: "Bright Flame", size: 62 };
+    return { image: fireAssets.brightFlame, animated: fireAnimations.brightSheet, emoji: "🔥", label: "Bright Flame", size: 62 };
   }
 
   if (score >= 45) {
-    return { image: fireAssets.steadyFlame, emoji: "🔥", label: "Steady Flame", size: 50 };
+    return { image: fireAssets.steadyFlame, animated: fireAnimations.steadySheet, emoji: "🔥", label: "Steady Flame", size: 50 };
   }
 
   if (score >= 25) {
-    return { image: fireAssets.lowFlame, emoji: "🔥", label: "Low Flame", size: 40 };
+    // No spritesheet yet for Low — static fallback only.
+    return { image: fireAssets.lowFlame, animated: undefined, emoji: "🔥", label: "Low Flame", size: 40 };
   }
 
-  return { image: fireAssets.ember, emoji: "✨", label: "Ember", size: 30 };
+  return { image: fireAssets.ember, animated: undefined, emoji: "✨", label: "Ember", size: 30 };
 }
 
 // Day / Time Track spans 6 AM → 12 PM → 6 PM → 12 AM (an 18-hour window).
@@ -585,11 +595,12 @@ export default function HomeScreen() {
   }
 
   async function loadProgressState() {
-    const [completions, missed, stats, focusLogEntries] = await Promise.all([
+    const [completions, missed, stats, focusLogEntries, savedFloor] = await Promise.all([
       loadTodayCompletions(),
       loadTodayMissed(),
       AsyncStorage.getItem(USER_STATS_KEY),
       loadFocusBlockLog(),
+      AsyncStorage.getItem(TOTAL_STEPS_FLOOR_KEY),
     ]);
     setCompletedQuests(completions);
     setMissedQuests(missed);
@@ -599,6 +610,17 @@ export default function HomeScreen() {
         setUserStats(JSON.parse(stats));
       } catch {
         setUserStats({});
+      }
+    }
+    // Home and Stats must read total steps from the same canonical source. Seed the floor
+    // from storage immediately (not just from the totalEarnedSteps-triggered effect below) so
+    // Home never flashes a lower number than Stats while today's completions are still loading.
+    if (savedFloor) {
+      try {
+        const parsedFloor = Number(JSON.parse(savedFloor));
+        if (Number.isFinite(parsedFloor)) setStepsFloor((current) => Math.max(current, parsedFloor));
+      } catch {
+        // Ignore malformed floor data — the totalEarnedSteps effect will still reconcile it.
       }
     }
   }
@@ -1442,21 +1464,22 @@ export default function HomeScreen() {
 
               <View style={styles.flameSection}>
                 {hasEnergyData && flameState.image ? (
-                  <Image
-                    source={flameState.image}
-                    style={[
-                      styles.energyFlame,
-                      {
-                        // Flame is the hero of the screen — noticeably larger than before.
-                        height: flameState.size + 96,
-                        width: flameState.size + 96,
-                        shadowColor: theme.glow,
-                        shadowOpacity: 0.85,
-                        shadowRadius: 18,
-                        shadowOffset: { width: 0, height: 0 },
-                      },
-                    ]}
-                    resizeMode="contain"
+                  <AnimatedFlame
+                    source={flameState.animated}
+                    fallbackSource={flameState.image}
+                    frameCount={FLAME_SHEET_FRAME_COUNT}
+                    columns={FLAME_SHEET_COLUMNS}
+                    rows={FLAME_SHEET_ROWS}
+                    sheetWidth={flameState.animated === fireAnimations.brightSheet ? FLAME_BRIGHT_SHEET_WIDTH : FLAME_STEADY_SHEET_WIDTH}
+                    sheetHeight={FLAME_SHEET_HEIGHT}
+                    fps={9}
+                    size={flameState.size + 96}
+                    glowStyle={{
+                      shadowColor: theme.glow,
+                      shadowOpacity: 0.85,
+                      shadowRadius: 18,
+                      shadowOffset: { width: 0, height: 0 },
+                    }}
                   />
                 ) : !hasEnergyData && fireAssets.steadyFlame ? (
                   <Image
@@ -1526,15 +1549,6 @@ export default function HomeScreen() {
                 <Text style={styles.createQuestBtnText}>+ CREATE A QUEST</Text>
               </TouchableOpacity>
               <Text style={styles.createQuestNote}>Create a quest for today or a day you choose.</Text>
-
-              <View style={styles.hubGrid}>
-                <TouchableOpacity style={styles.hubGridBtn} onPress={() => navigateWithHaptic("/calendar")}>
-                  <Text style={styles.hubGridBtnText}>📜 QUEST HISTORY</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.hubGridBtn} onPress={() => navigateWithHaptic("/tomorrow-queue")}>
-                  <Text style={styles.hubGridBtnText}>🗒️ TOMORROW'S QUEUE</Text>
-                </TouchableOpacity>
-              </View>
 
               <Modal visible={showQuestChooserModal} transparent animationType="fade" onRequestClose={() => setShowQuestChooserModal(false)}>
                 <View style={styles.chooserBackdrop}>
@@ -1776,7 +1790,7 @@ export default function HomeScreen() {
                 <View style={styles.statCell}>
                   <Text style={styles.statIcon}>🥾</Text>
                   <View>
-                    <Text style={[styles.statLabel, { color: theme.accent }]}>STEPS</Text>
+                    <Text style={[styles.statLabel, { color: theme.accent }]} numberOfLines={1}>TOTAL STEPS</Text>
                     <Text style={styles.statValue}>{displayedTotalSteps}</Text>
                   </View>
                 </View>

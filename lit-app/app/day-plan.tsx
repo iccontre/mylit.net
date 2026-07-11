@@ -377,6 +377,9 @@ function normalizePlan(raw: Partial<DayPlan>): DayPlan {
     },
     weekdayRoles: roles,
     weekdayChecklists: checklists,
+    // Was previously dropped here — normalizePlan rebuilds a fresh object on every load, so
+    // any weekdayModes saved to storage was silently discarded on refresh.
+    weekdayModes: raw.weekdayModes ?? {},
   };
 }
 
@@ -718,7 +721,11 @@ export default function DayPlanScreen() {
     const item = bucketDay ? dayPlan.weekdayChecklists[bucketDay].find((entry) => entry.id === itemId) : null;
     if (!bucketDay || !item) return;
 
-    const nextChecked = !item.checked;
+    // A recurring item's `checked` field is a single mutable flag, not one per day — without
+    // comparing checkedDate to the day actually being viewed, toggling it on Monday would also
+    // read (and un-toggle) as "checked" on Wednesday/Friday for the same repeating item.
+    const wasCheckedForSelectedDay = Boolean(item.checked) && item.checkedDate === selectedDayDateKey;
+    const nextChecked = !wasCheckedForSelectedDay;
     // Checklist items are recurring quests, so they must be timed — completing one (not
     // un-completing, which is just undoing a mistake) is blocked until the user has actually
     // confirmed a duration, even if durationMinutes already silently defaulted to 30.
@@ -785,15 +792,19 @@ export default function DayPlanScreen() {
     void syncDayPlanScheduledItems();
   }
 
-  // Chips commit immediately (no separate Save step) — matches the existing checklist
-  // kind-toggle pattern. Day Plan only; never surfaced during onboarding.
-  async function setWeekdayMode(day: WeekdayName, mode: "progress" | "recovery") {
+  // Local-only until Save is pressed — matches the explicit Save/Saved pattern used
+  // elsewhere on this page (see saveWeeklyHabit) rather than auto-committing per tap.
+  function setWeekdayMode(day: WeekdayName, mode: "progress" | "recovery") {
+    setSavedMessage("");
+    setDayPlan((current) => ({ ...current, weekdayModes: { ...current.weekdayModes, [day]: mode } }));
+  }
+
+  async function saveWeekdayModes() {
     const nextCommitted: DayPlan = {
       ...committedPlanRef.current,
-      weekdayModes: { ...committedPlanRef.current.weekdayModes, [day]: mode },
+      weekdayModes: dayPlan.weekdayModes,
     };
     committedPlanRef.current = nextCommitted;
-    setDayPlan((current) => ({ ...current, weekdayModes: { ...current.weekdayModes, [day]: mode } }));
     await persistProgressKeys({ [DAY_PLAN_KEY]: JSON.stringify(nextCommitted) });
     void trackEvent(ANALYTICS_EVENTS.day_plan_saved, { scope: "weekdayMode" });
   }
@@ -1075,6 +1086,11 @@ export default function DayPlanScreen() {
   const selectedDayChecklistMinutes = computeChecklistMinutesForDay(committedPlanRef.current, selectedDay);
   const selectedDayChecklistAtLimit = selectedDayChecklistMinutes >= MAX_CHECKLIST_MINUTES_PER_DAY;
   const selectedDayDateKey = useMemo(() => resolveDateForWeekday(selectedDay), [selectedDay]);
+  // `checked` is a single mutable flag on a recurring item, not one per day — display must
+  // compare checkedDate to the day being viewed, or a repeating item completed once shows
+  // checked on every day it repeats on. Ambiguous/legacy data (checked but no checkedDate)
+  // defaults to unchecked rather than incorrectly checked.
+  const isCheckedForSelectedDay = (item: ChecklistItem) => Boolean(item.checked) && item.checkedDate === selectedDayDateKey;
   const selectedDayPlannedMinutes = computeUserScheduledMinutesForDay({
     dateKey: selectedDayDateKey,
     weekday: selectedDay,
@@ -1132,7 +1148,7 @@ export default function DayPlanScreen() {
                           mode === "progress" && styles.weeklyHabitModeChipProgress,
                           mode === "recovery" && styles.weeklyHabitModeChipRecovery,
                         ]}
-                        onPress={() => void setWeekdayMode(day, mode === "progress" ? "recovery" : "progress")}
+                        onPress={() => setWeekdayMode(day, mode === "progress" ? "recovery" : "progress")}
                       >
                         <Text style={styles.weeklyHabitModeChipText}>{mode === "recovery" ? "REC" : mode === "progress" ? "PROG" : "—"}</Text>
                       </TouchableOpacity>
@@ -1140,6 +1156,18 @@ export default function DayPlanScreen() {
                   );
                 })}
               </View>
+              {(() => {
+                const isDirty = JSON.stringify(dayPlan.weekdayModes ?? {}) !== JSON.stringify(committedPlanRef.current.weekdayModes ?? {});
+                return (
+                  <TouchableOpacity
+                    style={[styles.saveButton, !isDirty && styles.saveQuestButtonDisabled]}
+                    disabled={!isDirty}
+                    onPress={() => void saveWeekdayModes()}
+                  >
+                    <Text style={styles.saveButtonText}>{isDirty ? "SAVE" : "SAVED"}</Text>
+                  </TouchableOpacity>
+                );
+              })()}
             </View>
 
             <WeekDaySelector
@@ -1282,7 +1310,7 @@ export default function DayPlanScreen() {
             </TouchableOpacity>
             {visibleChecklist.slice(0, 3).map((item) => (
               <Text key={`preview-${item.id}`} style={styles.checklistMiniPreview} numberOfLines={1}>
-                {item.checked ? "☑" : "☐"} {item.text || "Untitled item"} · {item.startTime}
+                {isCheckedForSelectedDay(item) ? "☑" : "☐"} {item.text || "Untitled item"} · {item.startTime}
               </Text>
             ))}
 
@@ -1308,8 +1336,8 @@ export default function DayPlanScreen() {
                         onPress={() => setChecklistModalItemId(item.id)}
                       >
                         <TouchableOpacity onPress={() => toggleChecklistItemChecked(item.id)}>
-                          <Text style={[styles.checkToggle, !item.checked && !item.durationConfirmed && styles.checkToggleDisabled]}>
-                            {item.checked ? "☑" : "☐"}
+                          <Text style={[styles.checkToggle, !isCheckedForSelectedDay(item) && !item.durationConfirmed && styles.checkToggleDisabled]}>
+                            {isCheckedForSelectedDay(item) ? "☑" : "☐"}
                           </Text>
                         </TouchableOpacity>
                         <View style={styles.checkCardCompactBody}>
@@ -1358,12 +1386,12 @@ export default function DayPlanScreen() {
                         <View style={styles.rowBetween}>
                           <View style={styles.checkboxGroup}>
                             <TouchableOpacity onPress={() => toggleChecklistItemChecked(item.id)}>
-                              <Text style={[styles.checkToggle, !item.checked && !item.durationConfirmed && styles.checkToggleDisabled]}>
-                                {item.checked ? "☑" : "☐"}
+                              <Text style={[styles.checkToggle, !isCheckedForSelectedDay(item) && !item.durationConfirmed && styles.checkToggleDisabled]}>
+                                {isCheckedForSelectedDay(item) ? "☑" : "☐"}
                               </Text>
                             </TouchableOpacity>
-                            <Text style={[styles.checkHelperText, item.checked && styles.checkHelperTextDone]}>
-                              {item.checked ? "Completed" : item.durationConfirmed ? "Check if completed" : "Add time to complete"}
+                            <Text style={[styles.checkHelperText, isCheckedForSelectedDay(item) && styles.checkHelperTextDone]}>
+                              {isCheckedForSelectedDay(item) ? "Completed" : item.durationConfirmed ? "Check if completed" : "Add time to complete"}
                             </Text>
                           </View>
                           <View style={styles.kindSwitchRow}>
@@ -1419,7 +1447,7 @@ export default function DayPlanScreen() {
                             {!isChecklistItemDirty(item) ? "SAVED" : pendingRecoveryConfirmId === item.id ? "CONFIRM & SAVE" : "SAVE QUEST"}
                           </Text>
                         </TouchableOpacity>
-                        {!item.checked && selectedDay === todayWeekday() ? (
+                        {!isCheckedForSelectedDay(item) && selectedDay === todayWeekday() ? (
                           <TouchableOpacity style={styles.reflectButton} onPress={() => router.push("/reflection")}>
                             <Text style={styles.reflectButtonText}>REFLECT</Text>
                           </TouchableOpacity>

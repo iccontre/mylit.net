@@ -17,6 +17,12 @@ export const uiAssets = {
     brightFlame: require("../assets/ui/fires/bright-flame.png"),
     blazingFlame: require("../assets/ui/fires/blazing-flame.png"),
   },
+  fireAnimations: {
+    // 6x6 grid spritesheets (36 frames each). Other flame states (ember/low/blazing) have no
+    // spritesheet yet — Home falls back to their static images for those.
+    steadySheet: require("../assets/ui/animations/flame/mylit-flame-steady-spritesheet.png"),
+    brightSheet: require("../assets/ui/animations/flame/mylit-flame-bright-spritesheet.png"),
+  },
   logo: {
     mylit: require("../assets/ui/logo/mylit-logo.png"),
   },
