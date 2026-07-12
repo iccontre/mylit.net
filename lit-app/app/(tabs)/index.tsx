@@ -8,6 +8,7 @@ import { BottomNav } from "../../components/BottomNav";
 import { LunaGuideModal } from "../../components/LunaGuideModal";
 import { AnimatedFlame } from "../../components/AnimatedFlame";
 import { EvieGuideModal } from "../../components/EvieGuideModal";
+import { LdmErrorBoundary } from "../../components/LdmErrorBoundary";
 import { uiAssets } from "../../constants/uiAssets";
 import { useMobileFrame } from "../../constants/mobileLayout";
 import {
@@ -60,6 +61,7 @@ import {
   formatEnergyDelta,
   getEnergyDelta,
   getMandatoryQuestRestoreEnergy,
+  getStepsForItem,
   LDM_HYGIENE_TITLE,
   LDM_JOURNALING_TITLE,
   LDM_NIGHT_REFLECTION_TITLE,
@@ -308,6 +310,7 @@ const LDM_ENTRY_WINDOW_START_MINUTES = 21 * 60;
 const LDM_ENTRY_WINDOW_END_MINUTES = 24 * 60;
 const LDM_ROUTINE_DURATION_MS = 60 * 60 * 1000;
 const LDM_COMPLETION_STEPS = 8;
+const LDM_ROUTINE_TASK_DURATION_MINUTES = 15;
 
 function computeLdmSevenAmCutoff(enteredAt: Date): Date {
   const cutoff = new Date(enteredAt);
@@ -423,6 +426,7 @@ export default function HomeScreen() {
   const [showQuestChooserModal, setShowQuestChooserModal] = useState(false);
   const [timeNow, setTimeNow] = useState<Date>(() => new Date());
   const [countdownNow, setCountdownNow] = useState<number>(() => Date.now());
+  const [ldmCountdownNow, setLdmCountdownNow] = useState<number>(() => Date.now());
   const [recoveryNow, setRecoveryNow] = useState<number>(() => Date.now());
   const lockMessageTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -1167,6 +1171,19 @@ export default function HomeScreen() {
   const ldmRoutineWindowOpen = ldmActive && ldmRoutineEndsAtMs !== null && timeNow.getTime() < ldmRoutineEndsAtMs;
   const ldmPostRoutine = ldmActive && !ldmRoutineWindowOpen;
   const canEnterLdm = !ldmActive && ldmNowMinutes >= LDM_ENTRY_WINDOW_START_MINUTES && ldmNowMinutes < LDM_ENTRY_WINDOW_END_MINUTES;
+
+  // Ticks the LDM 60-min countdown once per second while its window is open — separate from
+  // the 30s day/time-track heartbeat so "MM:SS" reads smoothly. The end time itself is derived
+  // from ldmState.enteredAt (an absolute timestamp persisted to AsyncStorage, see loadLdmState),
+  // not from this interval, so backgrounding/rerenders/tab changes never reset or drift it —
+  // this state only controls how often the already-correct remaining time is redisplayed.
+  useEffect(() => {
+    if (!ldmRoutineWindowOpen) return;
+    setLdmCountdownNow(Date.now());
+    const id = setInterval(() => setLdmCountdownNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [ldmRoutineWindowOpen]);
+
   const ldmHygieneDone = completedQuests.some((entry) => entry.title === LDM_HYGIENE_TITLE);
   const ldmJournalingDone = completedQuests.some((entry) => entry.title === LDM_JOURNALING_TITLE);
   const ldmReadingDone = completedQuests.some((entry) => entry.title === LDM_READING_TITLE);
@@ -1240,18 +1257,24 @@ export default function HomeScreen() {
 
   function getLdmRoutineQuests(): Quest[] {
     if (!ldmRoutineWindowOpen) return [];
+    // Each 15-min routine task awards its own steps via the existing duration-to-steps
+    // utility (recovery: max(1, ceil(minutes/15))) instead of the old flat 0 — the +8 LDM
+    // completion bonus (awardLdmCompletionIfReady) is separate and still fires once for
+    // finishing the whole routine. Per-task dedup against double-award already comes from
+    // the same completedIds/markItemComplete path every other quest board item uses.
+    const ldmTaskSteps = getStepsForItem(LDM_ROUTINE_TASK_DURATION_MINUTES, "recovery");
     const quests: Quest[] = [];
     if (!ldmHygieneDone) {
-      quests.push({ title: LDM_HYGIENE_TITLE, type: "LDM", steps: 0, durationMinutes: 15, kind: "recovery", description: "Brush teeth, wash up, and get your body ready for sleep." });
+      quests.push({ title: LDM_HYGIENE_TITLE, type: "LDM", steps: ldmTaskSteps, durationMinutes: LDM_ROUTINE_TASK_DURATION_MINUTES, kind: "recovery", description: "Brush teeth, wash up, and get your body ready for sleep." });
     }
     if (!ldmJournalingDone) {
-      quests.push({ title: LDM_JOURNALING_TITLE, type: "LDM", steps: 0, durationMinutes: 15, kind: "recovery", description: "Write down what you're carrying so your mind can rest." });
+      quests.push({ title: LDM_JOURNALING_TITLE, type: "LDM", steps: ldmTaskSteps, durationMinutes: LDM_ROUTINE_TASK_DURATION_MINUTES, kind: "recovery", description: "Write down what you're carrying so your mind can rest." });
     }
     if (!ldmReadingDone) {
-      quests.push({ title: LDM_READING_TITLE, type: "LDM", steps: 0, durationMinutes: 15, kind: "recovery", description: "Read something calm or light. No pressure to finish." });
+      quests.push({ title: LDM_READING_TITLE, type: "LDM", steps: ldmTaskSteps, durationMinutes: LDM_ROUTINE_TASK_DURATION_MINUTES, kind: "recovery", description: "Read something calm or light. No pressure to finish." });
     }
     if (!ldmNightReflectionDone) {
-      quests.push({ title: LDM_NIGHT_REFLECTION_TITLE, type: "LDM", steps: 0, durationMinutes: 15, kind: "recovery", description: "Look back on today with kindness — no judgment, just noticing." });
+      quests.push({ title: LDM_NIGHT_REFLECTION_TITLE, type: "LDM", steps: ldmTaskSteps, durationMinutes: LDM_ROUTINE_TASK_DURATION_MINUTES, kind: "recovery", description: "Look back on today with kindness — no judgment, just noticing." });
     }
     // "Set Pre-Sleep Intention" is NOT added here — normalizeQuestItems already injects that
     // exact item (same title, source: "Sleep", routes to /pre-sleep-intention) every night
@@ -1426,11 +1449,13 @@ export default function HomeScreen() {
               </Text>
 
               {ldmRoutineWindowOpen && ldmRoutineEndsAtMs !== null ? (
-                <View style={styles.capBannerRow}>
-                  <Text style={[styles.capBannerText, { color: "#E9D5FF" }]} numberOfLines={2}>
-                    You have 1 hour to finish all pre-sleep tasks. {formatCountdown(Math.max(0, ldmRoutineEndsAtMs - timeNow.getTime()))}
-                  </Text>
-                </View>
+                <LdmErrorBoundary>
+                  <View style={styles.capBannerRow}>
+                    <Text style={[styles.capBannerText, { color: "#E9D5FF" }]} numberOfLines={2}>
+                      You have 1 hour to finish all pre-sleep tasks. {formatCountdown(Math.max(0, ldmRoutineEndsAtMs - ldmCountdownNow))}
+                    </Text>
+                  </View>
+                </LdmErrorBoundary>
               ) : !isNeutral && !ldmActive ? (
                 <View style={styles.capBannerRow}>
                   <Text style={[styles.capBannerText, { color: theme.soft }]} numberOfLines={1}>
@@ -1637,15 +1662,19 @@ export default function HomeScreen() {
               ) : null}
 
               {ldmActive ? (
-                <TouchableOpacity style={styles.dreamJournalBtn} onPress={() => navigateWithHaptic("/dream-journal")}>
-                  <Text style={styles.dreamJournalBtnText}>🌙 DREAM JOURNAL</Text>
-                </TouchableOpacity>
+                <LdmErrorBoundary>
+                  <TouchableOpacity style={styles.dreamJournalBtn} onPress={() => navigateWithHaptic("/dream-journal")}>
+                    <Text style={styles.dreamJournalBtnText}>🌙 DREAM JOURNAL</Text>
+                  </TouchableOpacity>
+                </LdmErrorBoundary>
               ) : null}
 
               {ldmPostRoutine ? (
-                <View style={styles.ldmDoneCard}>
-                  <Text style={styles.ldmDoneText}>Luna: Your routine is done. Try to let the night carry you now — you can write dreams if you wake up.</Text>
-                </View>
+                <LdmErrorBoundary>
+                  <View style={styles.ldmDoneCard}>
+                    <Text style={styles.ldmDoneText}>Luna: Your routine is done. Try to let the night carry you now — you can write dreams if you wake up.</Text>
+                  </View>
+                </LdmErrorBoundary>
               ) : null}
 
               {isNeutral && !ldmRoutineWindowOpen ? (
