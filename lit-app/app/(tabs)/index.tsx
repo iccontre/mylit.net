@@ -76,6 +76,7 @@ const fireAnimations = uiAssets.fireAnimations;
 const FLAME_SHEET_COLUMNS = 6;
 const FLAME_SHEET_ROWS = 6;
 const FLAME_SHEET_FRAME_COUNT = FLAME_SHEET_COLUMNS * FLAME_SHEET_ROWS;
+const FLAME_LOW_SHEET_WIDTH = 1032;
 const FLAME_STEADY_SHEET_WIDTH = 1116;
 const FLAME_BRIGHT_SHEET_WIDTH = 1056;
 const FLAME_BLAZING_SHEET_WIDTH = 936;
@@ -330,8 +331,7 @@ function getFireAssetForEnergy(score: number) {
   }
 
   if (score >= 25) {
-    // No spritesheet yet for Low — static fallback only.
-    return { image: fireAssets.lowFlame, animated: undefined, emoji: "🔥", label: "Low Flame", size: 40 };
+    return { image: fireAssets.lowFlame, animated: fireAnimations.lowSheet, emoji: "🔥", label: "Low Flame", size: 40 };
   }
 
   return { image: fireAssets.ember, animated: undefined, emoji: "✨", label: "Ember", size: 30 };
@@ -1486,7 +1486,9 @@ export default function HomeScreen() {
                         ? FLAME_BRIGHT_SHEET_WIDTH
                         : flameState.animated === fireAnimations.blazingSheet
                           ? FLAME_BLAZING_SHEET_WIDTH
-                          : FLAME_STEADY_SHEET_WIDTH
+                          : flameState.animated === fireAnimations.lowSheet
+                            ? FLAME_LOW_SHEET_WIDTH
+                            : FLAME_STEADY_SHEET_WIDTH
                     }
                     sheetHeight={FLAME_SHEET_HEIGHT}
                     fps={11}
