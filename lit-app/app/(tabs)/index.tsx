@@ -78,6 +78,7 @@ const FLAME_SHEET_ROWS = 6;
 const FLAME_SHEET_FRAME_COUNT = FLAME_SHEET_COLUMNS * FLAME_SHEET_ROWS;
 const FLAME_STEADY_SHEET_WIDTH = 1116;
 const FLAME_BRIGHT_SHEET_WIDTH = 1056;
+const FLAME_BLAZING_SHEET_WIDTH = 936;
 const FLAME_SHEET_HEIGHT = 1536;
 
 type Quest = {
@@ -317,8 +318,7 @@ function computeLdmSevenAmCutoff(enteredAt: Date): Date {
 // Bands: 0–24 ember · 25–44 low · 45–64 steady · 65–84 bright · 85–100 blazing.
 function getFireAssetForEnergy(score: number) {
   if (score >= 85) {
-    // No spritesheet yet for Blazing — static fallback only.
-    return { image: fireAssets.blazingFlame, animated: undefined, emoji: "🔥", label: "Blazing Flame", size: 74 };
+    return { image: fireAssets.blazingFlame, animated: fireAnimations.blazingSheet, emoji: "🔥", label: "Blazing Flame", size: 74 };
   }
 
   if (score >= 65) {
@@ -1481,7 +1481,13 @@ export default function HomeScreen() {
                     frameCount={FLAME_SHEET_FRAME_COUNT}
                     columns={FLAME_SHEET_COLUMNS}
                     rows={FLAME_SHEET_ROWS}
-                    sheetWidth={flameState.animated === fireAnimations.brightSheet ? FLAME_BRIGHT_SHEET_WIDTH : FLAME_STEADY_SHEET_WIDTH}
+                    sheetWidth={
+                      flameState.animated === fireAnimations.brightSheet
+                        ? FLAME_BRIGHT_SHEET_WIDTH
+                        : flameState.animated === fireAnimations.blazingSheet
+                          ? FLAME_BLAZING_SHEET_WIDTH
+                          : FLAME_STEADY_SHEET_WIDTH
+                    }
                     sheetHeight={FLAME_SHEET_HEIGHT}
                     fps={11}
                     size={flameState.size + 96}
