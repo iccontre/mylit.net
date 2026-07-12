@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { AccessibilityInfo, Image, View, type ImageSourcePropType, type ImageStyle } from "react-native";
+import { AccessibilityInfo, Image, Platform, View, type ImageSourcePropType, type ImageStyle } from "react-native";
+
+// Web-only: keeps the pixel-art sheet crisp instead of letting the browser smooth/blur it while
+// scaled — native Image already samples pixel art without this hint, and RN ignores unknown
+// style keys on other platforms, so this is safe to always spread in.
+const pixelatedStyle = Platform.OS === "web" ? ({ imageRendering: "pixelated" } as ImageStyle) : {};
 
 /**
  * Sprite-sheet frame cycling for the Home flame — not GIF/video. The full grid sheet renders
@@ -72,7 +77,7 @@ export function AnimatedFlame({
   if (!shouldAnimate || frameWidth <= 0 || frameHeight <= 0) {
     return (
       <View style={[{ width: size, height: size, backgroundColor: "transparent", borderRadius: size }, glowStyle]}>
-        <Image source={fallbackSource} style={{ width: size, height: size }} resizeMode="contain" />
+        <Image source={fallbackSource} style={[{ width: size, height: size }, pixelatedStyle]} resizeMode="contain" />
       </View>
     );
   }
@@ -106,13 +111,16 @@ export function AnimatedFlame({
         <Image
           source={source}
           onError={() => setFailed(true)}
-          style={{
-            position: "absolute",
-            width: scaledSheetWidth,
-            height: scaledSheetHeight,
-            left: -col * scaledFrameWidth - insetX,
-            top: -row * scaledFrameHeight - insetY,
-          }}
+          style={[
+            {
+              position: "absolute",
+              width: scaledSheetWidth,
+              height: scaledSheetHeight,
+              left: -col * scaledFrameWidth - insetX,
+              top: -row * scaledFrameHeight - insetY,
+            },
+            pixelatedStyle,
+          ]}
           resizeMode="stretch"
         />
       </View>
