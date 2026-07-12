@@ -29,7 +29,7 @@ import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { isSupabaseConfigured } from "../lib/supabase";
 import { logGoalFeedback } from "../lib/feedbackLog";
 import { loadUserLifeProfile, saveUserLifeProfile } from "../lib/mylitAgents";
-import { SKILL_CATEGORIES, type SkillCategory } from "../lib/agentTypes";
+import { MAX_STRONGEST_SKILL_CATEGORIES, SKILL_CATEGORIES, type SkillCategory } from "../lib/agentTypes";
 import {
   generateFromDatabase,
   variantCountFor,
@@ -246,8 +246,7 @@ export default function OnboardingScreen() {
   const [hasFoodControl, setHasFoodControl] = useState(false);
   const [validationMessage, setValidationMessage] = useState("");
   const [showInfo, setShowInfo] = useState(false);
-  const [strongestSkillCategory, setStrongestSkillCategory] = useState<SkillCategory | "">("");
-  const [secondarySkillCategories, setSecondarySkillCategories] = useState<SkillCategory[]>([]);
+  const [strongestSkillCategories, setStrongestSkillCategories] = useState<SkillCategory[]>([]);
   const [customSkillCategoryText, setCustomSkillCategoryText] = useState("");
   const [pathGenerating, setPathGenerating] = useState(false);
 
@@ -255,16 +254,12 @@ export default function OnboardingScreen() {
     loadProfile();
   }, []);
 
-  function selectStrongestSkillCategory(category: SkillCategory) {
-    setStrongestSkillCategory(category);
-    setSecondarySkillCategories((current) => current.filter((entry) => entry !== category));
-  }
-
-  function toggleSecondarySkillCategory(category: SkillCategory) {
-    if (category === strongestSkillCategory) return;
-    setSecondarySkillCategories((current) =>
-      current.includes(category) ? current.filter((entry) => entry !== category) : [...current, category]
-    );
+  function toggleStrongestSkillCategory(category: SkillCategory) {
+    setStrongestSkillCategories((current) => {
+      if (current.includes(category)) return current.filter((entry) => entry !== category);
+      if (current.length >= MAX_STRONGEST_SKILL_CATEGORIES) return current;
+      return [...current, category];
+    });
   }
 
   const milestonesEmpty = useMemo(
@@ -368,9 +363,14 @@ export default function OnboardingScreen() {
     }
 
     // Optional/additive — an existing user who never answered this simply sees nothing preselected.
+    // Migration: profiles saved before multi-select existed only have the legacy singular field —
+    // treat it as the first (primary) selection rather than dropping it.
     const lifeProfile = await loadUserLifeProfile();
-    if (lifeProfile.strongestSkillCategory) setStrongestSkillCategory(lifeProfile.strongestSkillCategory);
-    if (lifeProfile.secondarySkillCategories) setSecondarySkillCategories(lifeProfile.secondarySkillCategories);
+    if (lifeProfile.strongestSkillCategories && lifeProfile.strongestSkillCategories.length > 0) {
+      setStrongestSkillCategories(lifeProfile.strongestSkillCategories);
+    } else if (lifeProfile.strongestSkillCategory) {
+      setStrongestSkillCategories([lifeProfile.strongestSkillCategory]);
+    }
     if (lifeProfile.customSkillCategoryText) setCustomSkillCategoryText(lifeProfile.customSkillCategoryText);
   }
 
@@ -448,11 +448,12 @@ export default function OnboardingScreen() {
 
     await persistProgressKeys({ [PROFILE_KEY]: JSON.stringify(profile) });
 
-    // Optional/additive — only written when the user actually picked one, never forced.
-    if (strongestSkillCategory) {
+    // Optional/additive — only written when the user actually picked at least one, never forced.
+    if (strongestSkillCategories.length > 0) {
       await saveUserLifeProfile({
-        strongestSkillCategory,
-        secondarySkillCategories,
+        strongestSkillCategories,
+        // Legacy singular field, kept as the primary (first) selection for older code that reads one.
+        strongestSkillCategory: strongestSkillCategories[0],
         customSkillCategoryText: customSkillCategoryText.trim() || undefined,
       });
     }
@@ -692,17 +693,20 @@ export default function OnboardingScreen() {
             <Text style={styles.helperText}>Name the obstacle so your path can work around it.</Text>
           </SectionShell>
 
-          <SectionShell number="9" title="WHICH AREA FEELS STRONGEST FOR YOU RIGHT NOW?">
+          <SectionShell number="9" title={`CHOOSE UP TO ${MAX_STRONGEST_SKILL_CATEGORIES} AREAS THAT FEEL STRONGEST FOR YOU RIGHT NOW`}>
             <Text style={styles.helperText}>Start with what already feels natural. Evie can help you expand from there.</Text>
             <Text style={styles.helperText}>Luna can support the parts that feel harder.</Text>
+            <Text style={styles.skillCountLabel}>{strongestSkillCategories.length} / {MAX_STRONGEST_SKILL_CATEGORIES} selected</Text>
             <View style={styles.skillChipGrid}>
               {SKILL_CATEGORIES.map((category) => {
-                const selected = strongestSkillCategory === category;
+                const selected = strongestSkillCategories.includes(category);
+                const atLimit = !selected && strongestSkillCategories.length >= MAX_STRONGEST_SKILL_CATEGORIES;
                 return (
                   <TouchableOpacity
                     key={category}
-                    style={[styles.skillChip, selected && styles.skillChipActive]}
-                    onPress={() => selectStrongestSkillCategory(category)}
+                    style={[styles.skillChip, selected && styles.skillChipActive, atLimit && styles.skillChipDisabled]}
+                    disabled={atLimit}
+                    onPress={() => toggleStrongestSkillCategory(category)}
                   >
                     <Text style={[styles.skillChipText, selected && styles.skillChipTextActive]}>{category}</Text>
                   </TouchableOpacity>
@@ -710,27 +714,7 @@ export default function OnboardingScreen() {
               })}
             </View>
 
-            {strongestSkillCategory ? (
-              <>
-                <Text style={[styles.helperText, styles.skillSecondaryLabel]}>Feels strong too? (optional)</Text>
-                <View style={styles.skillChipGrid}>
-                  {SKILL_CATEGORIES.filter((category) => category !== strongestSkillCategory).map((category) => {
-                    const selected = secondarySkillCategories.includes(category);
-                    return (
-                      <TouchableOpacity
-                        key={category}
-                        style={[styles.skillChip, selected && styles.skillChipSecondaryActive]}
-                        onPress={() => toggleSecondarySkillCategory(category)}
-                      >
-                        <Text style={[styles.skillChipText, selected && styles.skillChipTextActive]}>{category}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </>
-            ) : null}
-
-            {strongestSkillCategory === "Custom" || secondarySkillCategories.includes("Custom") ? (
+            {strongestSkillCategories.includes("Custom") ? (
               <TextInput
                 style={styles.input}
                 placeholder="Name your own area"
@@ -992,9 +976,8 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255, 214, 114, 0.95)",
     borderColor: "#166534",
   },
-  skillChipSecondaryActive: {
-    backgroundColor: "rgba(214, 236, 255, 0.95)",
-    borderColor: "#1D4ED8",
+  skillChipDisabled: {
+    opacity: 0.4,
   },
   skillChipText: {
     color: "#2A1707",
@@ -1005,8 +988,13 @@ const styles = StyleSheet.create({
   skillChipTextActive: {
     color: "#0F3D18",
   },
-  skillSecondaryLabel: {
-    marginTop: 10,
+  skillCountLabel: {
+    color: "#166534",
+    fontFamily: pixelFont,
+    fontWeight: "900",
+    fontSize: 11,
+    textAlign: "center",
+    marginTop: 4,
   },
   milestoneHint: {
     color: "#3D2408",

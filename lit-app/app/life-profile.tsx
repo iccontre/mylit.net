@@ -9,7 +9,15 @@ import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { loadUserLifeProfile, saveUserLifeProfile } from "../lib/mylitAgents";
 import { loadLocalBetaProfile, updateProfile } from "../lib/auth";
-import type { FocusWindow, MotivationStyle, UserLifeProfile, WorkRhythmPreference } from "../lib/agentTypes";
+import {
+  MAX_STRONGEST_SKILL_CATEGORIES,
+  SKILL_CATEGORIES,
+  type FocusWindow,
+  type MotivationStyle,
+  type SkillCategory,
+  type UserLifeProfile,
+  type WorkRhythmPreference,
+} from "../lib/agentTypes";
 
 // Editable version of the UserLifeProfile the agent foundation (lib/mylitAgents.ts) already
 // reads. This is entirely separate from the existing Path onboarding profile — nothing here
@@ -45,9 +53,9 @@ type TextField = Exclude<
   | "updatedAt"
   | "workRhythmPreference"
   | "preferredFocusWindow"
-  // Edited on Set My Path (onboarding.tsx), not this screen — see SkillCategory in agentTypes.ts.
+  // Edited via the chip picker below, not a plain text field — see SkillCategory in agentTypes.ts.
+  | "strongestSkillCategories"
   | "strongestSkillCategory"
-  | "secondarySkillCategories"
   | "customSkillCategoryText"
 >;
 
@@ -78,8 +86,18 @@ export default function LifeProfileScreen() {
   const [motivationStyle, setMotivationStyle] = useState<MotivationStyle | "">("");
   const [workRhythmPreference, setWorkRhythmPreference] = useState<WorkRhythmPreference | "">("");
   const [preferredFocusWindow, setPreferredFocusWindow] = useState<FocusWindow | "">("");
+  const [strongestSkillCategories, setStrongestSkillCategories] = useState<SkillCategory[]>([]);
+  const [customSkillCategoryText, setCustomSkillCategoryText] = useState("");
   const savedSnapshotRef = useRef<string>(
-    JSON.stringify({ displayName: "", draft: normalizeDraft({}), motivationStyle: "", workRhythmPreference: "", preferredFocusWindow: "" })
+    JSON.stringify({
+      displayName: "",
+      draft: normalizeDraft({}),
+      motivationStyle: "",
+      workRhythmPreference: "",
+      preferredFocusWindow: "",
+      strongestSkillCategories: [] as SkillCategory[],
+      customSkillCategoryText: "",
+    })
   );
 
   useEffect(() => {
@@ -90,10 +108,21 @@ export default function LifeProfileScreen() {
       const nextWorkRhythm = profile.workRhythmPreference ?? "";
       const nextFocusWindow = profile.preferredFocusWindow ?? "";
       const nextDisplayName = localProfile?.display_name ?? "";
+      // Migration: profiles saved before multi-select existed only have the legacy singular
+      // field — treat it as the first (primary) selection rather than dropping it.
+      const nextStrongestSkills =
+        profile.strongestSkillCategories && profile.strongestSkillCategories.length > 0
+          ? profile.strongestSkillCategories
+          : profile.strongestSkillCategory
+            ? [profile.strongestSkillCategory]
+            : [];
+      const nextCustomSkillText = profile.customSkillCategoryText ?? "";
       setDraft(nextDraft);
       setMotivationStyle(nextMotivation);
       setWorkRhythmPreference(nextWorkRhythm);
       setPreferredFocusWindow(nextFocusWindow);
+      setStrongestSkillCategories(nextStrongestSkills);
+      setCustomSkillCategoryText(nextCustomSkillText);
       setDisplayName(nextDisplayName);
       savedSnapshotRef.current = JSON.stringify({
         displayName: nextDisplayName,
@@ -101,6 +130,8 @@ export default function LifeProfileScreen() {
         motivationStyle: nextMotivation,
         workRhythmPreference: nextWorkRhythm,
         preferredFocusWindow: nextFocusWindow,
+        strongestSkillCategories: nextStrongestSkills,
+        customSkillCategoryText: nextCustomSkillText,
       });
     })();
   }, []);
@@ -108,7 +139,15 @@ export default function LifeProfileScreen() {
   // Dirty-check against the last-saved snapshot (like Today's Quest / checklist items) rather
   // than a timed flag — fields stay populated after saving, so a timer would flip the button
   // back to "Save" a few seconds later even though nothing had changed.
-  const currentSnapshot = JSON.stringify({ displayName, draft, motivationStyle, workRhythmPreference, preferredFocusWindow });
+  const currentSnapshot = JSON.stringify({
+    displayName,
+    draft,
+    motivationStyle,
+    workRhythmPreference,
+    preferredFocusWindow,
+    strongestSkillCategories,
+    customSkillCategoryText,
+  });
   const isDirty = currentSnapshot !== savedSnapshotRef.current;
 
   function updateField(field: TextField, value: string) {
@@ -128,6 +167,14 @@ export default function LifeProfileScreen() {
     setPreferredFocusWindow((prev) => (prev === value ? "" : value));
   }
 
+  function toggleStrongestSkillCategory(category: SkillCategory) {
+    setStrongestSkillCategories((prev) => {
+      if (prev.includes(category)) return prev.filter((entry) => entry !== category);
+      if (prev.length >= MAX_STRONGEST_SKILL_CATEGORIES) return prev;
+      return [...prev, category];
+    });
+  }
+
   async function handleSave() {
     if (!isDirty) return;
     // Explicitly include motivationStyle/workRhythmPreference/preferredFocusWindow (even as
@@ -138,6 +185,10 @@ export default function LifeProfileScreen() {
       motivationStyle: motivationStyle || undefined,
       workRhythmPreference: workRhythmPreference || undefined,
       preferredFocusWindow: preferredFocusWindow || undefined,
+      strongestSkillCategories: strongestSkillCategories.length > 0 ? strongestSkillCategories : undefined,
+      // Legacy singular field, kept as the primary (first) selection for older code that reads one.
+      strongestSkillCategory: strongestSkillCategories[0] || undefined,
+      customSkillCategoryText: customSkillCategoryText.trim() || undefined,
     };
     await saveUserLifeProfile(partial);
     // display_name lives in the existing onboarding profile system (LOCAL_PROFILE_KEY), not
@@ -168,7 +219,7 @@ export default function LifeProfileScreen() {
             <View style={styles.guideRow}>
               <Image source={uiAssets.guides.evie} style={styles.guideAvatar} resizeMode="contain" />
               <Text style={styles.guideText}>
-                Your path is starting to form. I'll use your goals, obstacles, and progress patterns to help you build forward.
+                Your path is starting to form. I&apos;ll use your goals, obstacles, and progress patterns to help you build forward.
               </Text>
             </View>
 
@@ -241,6 +292,39 @@ export default function LifeProfileScreen() {
                 value={draft.plannedWakeTime}
                 onChangeText={(text) => updateField("plannedWakeTime", text)}
               />
+            </View>
+
+            <View style={styles.panel}>
+              <Text style={styles.sectionTitle}>STRONGEST AREAS</Text>
+              <Text style={styles.helperText}>Choose up to {MAX_STRONGEST_SKILL_CATEGORIES} areas that feel strongest for you right now.</Text>
+              <Text style={styles.helperText}>Start with what already feels natural. Evie can help you expand from there.</Text>
+              <Text style={styles.helperText}>Luna can support the parts that feel harder.</Text>
+              <Text style={styles.skillCountLabel}>{strongestSkillCategories.length} / {MAX_STRONGEST_SKILL_CATEGORIES} selected</Text>
+              <View style={styles.choiceRow}>
+                {SKILL_CATEGORIES.map((category) => {
+                  const selected = strongestSkillCategories.includes(category);
+                  const atLimit = !selected && strongestSkillCategories.length >= MAX_STRONGEST_SKILL_CATEGORIES;
+                  return (
+                    <TouchableOpacity
+                      key={category}
+                      style={[styles.choiceButton, selected && styles.choiceButtonActive, atLimit && styles.choiceButtonDisabled]}
+                      disabled={atLimit}
+                      onPress={() => toggleStrongestSkillCategory(category)}
+                    >
+                      <Text style={[styles.choiceText, selected && styles.choiceTextActive]}>{category}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              {strongestSkillCategories.includes("Custom") ? (
+                <TextInput
+                  style={styles.textInputSmall}
+                  placeholder="Name your own area"
+                  placeholderTextColor="#94A3B8"
+                  value={customSkillCategoryText}
+                  onChangeText={setCustomSkillCategoryText}
+                />
+              ) : null}
             </View>
 
             <View style={[styles.panel, styles.evieAccent]}>
@@ -448,8 +532,10 @@ const styles = StyleSheet.create({
   choiceButton: { flex: 1, borderWidth: 2, borderColor: "#475569", borderRadius: 6, paddingVertical: 10, alignItems: "center", backgroundColor: "rgba(15,23,42,0.9)", minWidth: 90 },
   choiceButtonWide: { borderWidth: 2, borderColor: "#475569", borderRadius: 6, paddingVertical: 10, paddingHorizontal: 10, alignItems: "center", backgroundColor: "rgba(15,23,42,0.9)" },
   choiceButtonActive: { borderColor: "#FBBF24", backgroundColor: "rgba(69,43,8,0.7)" },
+  choiceButtonDisabled: { opacity: 0.4 },
   choiceText: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", textAlign: "center" },
   choiceTextActive: { color: "#FDE68A" },
+  skillCountLabel: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", textAlign: "center", marginBottom: 8 },
   textInputSmall: {
     backgroundColor: "rgba(15, 23, 42, 0.96)",
     borderWidth: 2,

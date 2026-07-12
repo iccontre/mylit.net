@@ -70,7 +70,11 @@ export function AnimatedFlame({
   const frameHeight = sheetHeight / rows;
 
   if (!shouldAnimate || frameWidth <= 0 || frameHeight <= 0) {
-    return <Image source={fallbackSource} style={[{ width: size, height: size }, glowStyle]} resizeMode="contain" />;
+    return (
+      <View style={[{ width: size, height: size, backgroundColor: "transparent", borderRadius: size }, glowStyle]}>
+        <Image source={fallbackSource} style={{ width: size, height: size }} resizeMode="contain" />
+      </View>
+    );
   }
 
   // Viewport keeps the frame's real aspect ratio (frames are narrower than tall). Everything
@@ -91,19 +95,27 @@ export function AnimatedFlame({
   const insetY = Math.round((scaledFrameHeight - size) / 2);
 
   return (
-    <View style={[{ width: viewportWidth, height: size, overflow: "hidden", backgroundColor: "transparent" }, glowStyle]}>
-      <Image
-        source={source}
-        onError={() => setFailed(true)}
-        style={{
-          position: "absolute",
-          width: scaledSheetWidth,
-          height: scaledSheetHeight,
-          left: -col * scaledFrameWidth - insetX,
-          top: -row * scaledFrameHeight - insetY,
-        }}
-        resizeMode="stretch"
-      />
+    // The glow (shadowColor/shadowOpacity/shadowRadius) is applied to THIS outer wrapper, not
+    // the clipping view below — a box-shadow on a hard-cornered rectangle renders as a visible
+    // rectangular white/gold halo on web. Giving the wrapper a large borderRadius turns that
+    // halo into a soft round glow instead of a "white border/rectangle" around the flame. The
+    // wrapper has no overflow/clip of its own, so the shadow is free to bleed outward; the
+    // actual pixel-perfect frame clipping still happens on the inner view.
+    <View style={[{ width: viewportWidth, height: size, borderRadius: Math.max(viewportWidth, size) }, glowStyle]}>
+      <View style={{ width: viewportWidth, height: size, overflow: "hidden", backgroundColor: "transparent" }}>
+        <Image
+          source={source}
+          onError={() => setFailed(true)}
+          style={{
+            position: "absolute",
+            width: scaledSheetWidth,
+            height: scaledSheetHeight,
+            left: -col * scaledFrameWidth - insetX,
+            top: -row * scaledFrameHeight - insetY,
+          }}
+          resizeMode="stretch"
+        />
+      </View>
     </View>
   );
 }

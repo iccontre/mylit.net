@@ -29,7 +29,7 @@ import {
   type ScheduledQuestLike,
 } from "../lib/scheduling";
 import { COMPLETED_QUESTS_KEY, LUNA_DAY_REMINDERS_KEY } from "../lib/storageKeys";
-import { isReminderScheduledForDay, type LunaDayReminder } from "../lib/lunaReminders";
+import { isReminderScheduledForDay, reminderGuide, type LunaDayReminder } from "../lib/lunaReminders";
 
 type WeekdayName = "Sunday" | "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "Saturday";
 type EventTone = "gold" | "purple" | "blue" | "green" | "pinkLight" | "pinkDark";
@@ -482,19 +482,20 @@ export default function CalendarScreen() {
     });
 
     reminderItemsForDay(dateKey, dayName).forEach((entry) => {
+      const guide = reminderGuide(entry);
       events.push({
         id: entry.id,
         title: entry.text,
-        cellLabel: "Reminder",
-        source: "Luna Reminder",
+        cellLabel: guide === "evie" ? "Evie Reminder" : "Luna Reminder",
+        source: guide === "evie" ? "Evie Reminder" : "Luna Reminder",
         date: dateKey,
         dayLabel,
         startTime: entry.time,
         duration: entry.durationMinutes ? formatDurationLabel(entry.durationMinutes, 15) : undefined,
         durationMinutes: entry.durationMinutes,
         steps: 0,
-        classification: "recovery",
-        tone: "pinkDark",
+        classification: guide === "evie" ? "progress" : "recovery",
+        tone: guide === "evie" ? "gold" : "pinkDark",
         status: "scheduled",
         note: entry.until ? `Until ${entry.until}.` : "User-created reminder.",
         priority: 3.5,
@@ -628,10 +629,10 @@ export default function CalendarScreen() {
 
             <View style={styles.legendRow}>
               <Legend tone="green" label="Habit/Quest" />
-              <Legend tone="gold" label="Progress" />
+              <Legend tone="gold" label="Progress / Evie" />
               <Legend tone="purple" label="Recovery" />
               <Legend tone="pinkLight" label="Hobby" />
-              <Legend tone="pinkDark" label="Reminder" />
+              <Legend tone="pinkDark" label="Luna Reminder" />
             </View>
 
             <TouchableOpacity style={styles.quickThoughtsBtn} onPress={() => setShowQuickThoughts(true)}>

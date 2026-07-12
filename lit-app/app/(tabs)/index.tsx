@@ -1454,6 +1454,17 @@ export default function HomeScreen() {
                         {isRecovery ? "Talk to Luna" : "Talk to Evie"}
                       </Text>
                     </TouchableOpacity>
+                    {isRecovery ? (
+                      <>
+                        <TouchableOpacity
+                          style={styles.addNapBtn}
+                          onPress={() => router.push({ pathname: "/tomorrow-queue", params: { focus: "nap" } })}
+                        >
+                          <Text style={styles.addNapBtnText}>😴 Add a Nap</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.addNapNote}>Add a recovery nap to restore energy when completed.</Text>
+                      </>
+                    ) : null}
                   </View>
                 </View>
               ) : (
@@ -1476,43 +1487,45 @@ export default function HomeScreen() {
                     size={flameState.size + 96}
                     glowStyle={{
                       shadowColor: theme.glow,
-                      shadowOpacity: 0.85,
-                      shadowRadius: 18,
+                      shadowOpacity: 0.5,
+                      shadowRadius: 14,
                       shadowOffset: { width: 0, height: 0 },
                     }}
                   />
-                ) : !hasEnergyData && fireAssets.steadyFlame ? (
-                  <Image
-                    source={fireAssets.steadyFlame}
-                    style={[
-                      styles.energyFlame,
-                      {
-                        height: 150,
-                        width: 150,
-                      },
-                    ]}
-                    resizeMode="contain"
-                  />
                 ) : (
-                  <View style={styles.energyFlameFallback}>
-                    <Text style={styles.energyFlameFallbackText}>
-                      {hasEnergyData ? flameState.emoji : "🔥"}
-                    </Text>
-                  </View>
+                  // Neutral (no check-in yet): calm steady-flame animation as a default visual —
+                  // no energy score/label attached, see the isNeutral guard below.
+                  <AnimatedFlame
+                    source={fireAnimations.steadySheet}
+                    fallbackSource={fireAssets.steadyFlame}
+                    frameCount={FLAME_SHEET_FRAME_COUNT}
+                    columns={FLAME_SHEET_COLUMNS}
+                    rows={FLAME_SHEET_ROWS}
+                    sheetWidth={FLAME_STEADY_SHEET_WIDTH}
+                    sheetHeight={FLAME_SHEET_HEIGHT}
+                    fps={11}
+                    size={50 + 96}
+                    glowStyle={{
+                      shadowColor: theme.glow,
+                      shadowOpacity: 0.5,
+                      shadowRadius: 14,
+                      shadowOffset: { width: 0, height: 0 },
+                    }}
+                  />
                 )}
-                <View style={styles.energyScoreLine}>
-                  <Text style={[styles.energyScore, { color: theme.glow }]}>{hasEnergyData ? energyYield : "—"}</Text>
-                  <Text style={styles.energyOutOf}> / 100</Text>
-                </View>
-                <Text style={[styles.flameMeterText, { color: theme.soft }]}>
-                  {hasEnergyData ? flameLabel : ldmActive ? "Luna is preparing your pre-sleep routine..." : "CHECK-IN NEEDED"}
-                </Text>
-                {hasEnergyData ? (
-                  <Text style={[styles.flameProtectText, { color: theme.accent }]} numberOfLines={2}>
-                    {isProgress
-                      ? "Protect your flame — don't let it drop below 60."
-                      : "Protect your flame — don't let it drop below 30."}
-                  </Text>
+                {!isNeutral ? (
+                  <>
+                    <View style={styles.energyScoreLine}>
+                      <Text style={[styles.energyScore, { color: theme.glow }]}>{energyYield}</Text>
+                      <Text style={styles.energyOutOf}> / 100</Text>
+                    </View>
+                    <Text style={[styles.flameMeterText, { color: theme.soft }]}>{flameLabel}</Text>
+                    <Text style={[styles.flameProtectText, { color: theme.accent }]} numberOfLines={2}>
+                      {isProgress
+                        ? "Protect your flame — don't let it drop below 60."
+                        : "Protect your flame — don't let it drop below 30."}
+                    </Text>
+                  </>
                 ) : null}
               </View>
 
@@ -1639,7 +1652,7 @@ export default function HomeScreen() {
               <View style={[styles.questBoard, { borderColor: isBoardLocked && activeItem ? kindAccent(activeItem.kind) : isRecoveryLocked ? "#C4A7FF" : theme.accent }]}>
                 <View style={styles.questHeaderRow}>
                   <View style={styles.questTitleRow}>
-                    <Text style={[styles.questTitle, { color: theme.accent }]}>{isRecovery ? "+ TODAY'S QUESTS +" : "⚔ TODAY'S QUESTS"}</Text>
+                    <Text style={[styles.questTitle, { color: theme.accent }]}>{isRecovery ? "+ RECOVERY BOARD +" : "⚔ TODAY'S QUESTS"}</Text>
                     {!isNeutral ? (
                       <TouchableOpacity style={[styles.questHelpBtn, { borderColor: theme.accent }]} onPress={() => setShowQuestHelp(true)}>
                         <Text style={[styles.questHelpBtnText, { color: theme.accent }]}>?</Text>
@@ -1661,7 +1674,7 @@ export default function HomeScreen() {
                 {isNeutral && !ldmRoutineWindowOpen ? (
                   <View style={styles.questLockedCard}>
                     <Text style={styles.questLockedTitle}>Quest Board Locked</Text>
-                    <Text style={styles.questLockedText} numberOfLines={2}>Complete a check-in to reveal energy-aware quests for your path.</Text>
+                    <Text style={styles.questLockedText} numberOfLines={2}>Check in to reveal today&apos;s quests.</Text>
                     <TouchableOpacity style={[styles.questLockedButton, { borderColor: theme.accent }]} onPress={() => navigateWithHaptic("/sleep-checkin")}>
                       <Text style={styles.questLockedButtonText}>START CHECK-IN</Text>
                     </TouchableOpacity>
@@ -2243,6 +2256,31 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     color: "#0B0F16",
   },
+  addNapBtn: {
+    marginTop: 8,
+    borderRadius: 6,
+    paddingVertical: 9,
+    alignItems: "center",
+    alignSelf: "stretch",
+    backgroundColor: "#7E22CE",
+    borderWidth: 2,
+    borderColor: "#C4B5FD",
+  },
+  addNapBtnText: {
+    fontFamily: "monospace",
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+    color: "#F5F3FF",
+  },
+  addNapNote: {
+    marginTop: 5,
+    fontFamily: "monospace",
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#E9D5FF",
+    textAlign: "center",
+  },
   guideTextColumn: { flex: 1 },
   energyCard: {
     width: "64%",
@@ -2451,7 +2489,8 @@ const styles = StyleSheet.create({
     minHeight: 86,
     borderWidth: 2,
     borderColor: "#334155",
-    backgroundColor: "rgba(15, 23, 42, 0.9)",
+    // Lighter than before — one less nested dark box inside the already-dark questBoard.
+    backgroundColor: "rgba(15, 23, 42, 0.72)",
     alignItems: "center",
     justifyContent: "center",
     padding: 10,
@@ -2585,7 +2624,8 @@ const styles = StyleSheet.create({
     minHeight: 120,
     borderWidth: 2,
     borderRadius: 4,
-    backgroundColor: "rgba(10, 14, 26, 0.96)",
+    // Lighter than before — one less nested dark box inside the already-dark questBoard.
+    backgroundColor: "rgba(10, 14, 26, 0.78)",
     paddingHorizontal: 10,
     paddingVertical: 9,
   },

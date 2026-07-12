@@ -86,14 +86,26 @@ export function summarizeUserLifeProfile(profile: UserLifeProfile): string[] {
   if (profile.confidenceGoals) lines.push(`Confidence: ${profile.confidenceGoals}`);
   if (profile.currentObstacles) lines.push(`Current obstacle: ${profile.currentObstacles}`);
   if (profile.longTermDreamStatement) lines.push(`Long-term dream: ${profile.longTermDreamStatement}`);
-  if (profile.strongestSkillCategory) {
-    const label =
-      profile.strongestSkillCategory === "Custom" && profile.customSkillCategoryText
-        ? profile.customSkillCategoryText
-        : profile.strongestSkillCategory;
-    lines.push(`Strongest area right now: ${label}`);
-  }
+  const skillLabels = resolveStrongestSkillLabels(profile);
+  if (skillLabels.length > 0) lines.push(`Strongest areas right now: ${skillLabels.join(", ")}`);
   return lines;
+}
+
+/**
+ * Resolves the up-to-5 selected categories to display labels, substituting the free-text
+ * value wherever "Custom" was picked. Falls back to the legacy single `strongestSkillCategory`
+ * field for profiles saved before multi-select existed — never drops that old data.
+ */
+export function resolveStrongestSkillLabels(profile: UserLifeProfile): string[] {
+  const categories =
+    profile.strongestSkillCategories && profile.strongestSkillCategories.length > 0
+      ? profile.strongestSkillCategories
+      : profile.strongestSkillCategory
+        ? [profile.strongestSkillCategory]
+        : [];
+  return categories.map((category) =>
+    category === "Custom" && profile.customSkillCategoryText ? profile.customSkillCategoryText : category
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -669,6 +681,7 @@ export function buildEviePathSummary(profile: UserLifeProfile, insights: StatsIn
       profile.confidenceGoals ||
       profile.futureSelfStatement ||
       profile.longTermDreamStatement ||
+      (profile.strongestSkillCategories && profile.strongestSkillCategories.length > 0) ||
       profile.strongestSkillCategory
   );
 

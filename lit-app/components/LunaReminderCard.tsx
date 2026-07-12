@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useMemo, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
-import { isReminderActiveNow, isReminderScheduledForDay, type LunaDayReminder } from "../lib/lunaReminders";
+import { isReminderActiveNow, isReminderScheduledForDay, reminderGuide, type LunaDayReminder } from "../lib/lunaReminders";
 import type { WeekdayName } from "../lib/scheduling";
 import { LUNA_DAY_REMINDERS_KEY } from "../lib/storageKeys";
 
@@ -50,7 +50,7 @@ export function LunaReminderCard({ selectedDay, selectedDateKey }: { selectedDay
   }, [selectedDateKey]);
 
   const activeUserReminder = useMemo(() => {
-    const forDay = reminders.filter((r) => isReminderScheduledForDay(r, selectedDay, selectedDateKey));
+    const forDay = reminders.filter((r) => reminderGuide(r) === "luna" && isReminderScheduledForDay(r, selectedDay, selectedDateKey));
     return forDay.find(isReminderActiveNow) ?? null;
   }, [reminders, selectedDay, selectedDateKey]);
 

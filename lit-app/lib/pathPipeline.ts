@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { persistProgressKeys } from "./progressStore";
-import { recordAgentEvent } from "./mylitAgents";
+import { recordAgentEvent, resolveStrongestSkillLabels } from "./mylitAgents";
 import { DAY_PLAN_KEY, TOMORROW_QUEUE_KEY } from "./storageKeys";
 import { checkUserScheduledQuestCapacity } from "./questProgress";
 import { formatDurationLabel, getDateKey, getStepsForItem, type WeekdayName } from "./scheduling";
@@ -78,12 +78,9 @@ function buildThreeMonthDirection(dreamGoal: UserDreamGoal, profile: UserLifePro
   if (profile.bodyHealthGoals?.trim() && dreamGoal.source !== "bodyHealthGoals") {
     focusAreas.push(`Body/health: ${profile.bodyHealthGoals.trim()}`);
   }
-  if (profile.strongestSkillCategory) {
-    const label =
-      profile.strongestSkillCategory === "Custom" && profile.customSkillCategoryText?.trim()
-        ? profile.customSkillCategoryText.trim()
-        : profile.strongestSkillCategory;
-    focusAreas.push(`Strongest area right now: ${label} — lean into this first, expand from there.`);
+  const strongestSkillLabels = resolveStrongestSkillLabels(profile);
+  if (strongestSkillLabels.length > 0) {
+    focusAreas.push(`Strongest areas right now: ${strongestSkillLabels.join(", ")} — lean into these first, expand from there.`);
   }
 
   return {

@@ -1,14 +1,17 @@
 import { useRouter } from "expo-router";
+import { useState } from "react";
 import { Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
-import { PathPipelineCard } from "./PathPipelineCard";
 import { EvieAiPathCard } from "./EvieAiPathCard";
+import { GuideReminderModal } from "./GuideReminderModal";
+import { PathPipelineCard } from "./PathPipelineCard";
 
 const pixelFont = Platform.select({ ios: "Menlo", android: "monospace", web: "monospace", default: "monospace" });
 
 /** Shared Evie support modal — used by Path's Evie button and Home's Progress-mode affirmation. */
 export function EvieGuideModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const router = useRouter();
+  const [showReminderModal, setShowReminderModal] = useState(false);
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -26,6 +29,12 @@ export function EvieGuideModal({ visible, onClose }: { visible: boolean; onClose
           <PathPipelineCard />
           <EvieAiPathCard />
 
+          <TouchableOpacity style={styles.reminderButton} onPress={() => setShowReminderModal(true)}>
+            <Text style={styles.actionIcon}>🎯</Text>
+            <Text style={styles.actionText}>Set Reminder</Text>
+            <Text style={styles.actionArrow}>›</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.actionButton} onPress={() => { onClose(); router.push("/talk-to-evie"); }}>
             <Text style={styles.actionIcon}>💬</Text>
             <Text style={styles.actionText}>Talk to Evie about my path</Text>
@@ -37,6 +46,8 @@ export function EvieGuideModal({ visible, onClose }: { visible: boolean; onClose
           </TouchableOpacity>
         </ScrollView>
       </View>
+
+      <GuideReminderModal visible={showReminderModal} onClose={() => setShowReminderModal(false)} guide="evie" />
     </Modal>
   );
 }
@@ -56,6 +67,18 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(15, 23, 42, 0.96)",
     borderWidth: 3,
     borderColor: "#22C55E",
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    marginBottom: 10,
+  },
+  // Gold, filled — Set Reminder is visually distinct from the other (green outline) links, mirroring Luna's dark-pink reminder button.
+  reminderButton: {
+    minHeight: 54,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#B45309",
+    borderWidth: 3,
+    borderColor: "#FBBF24",
     borderRadius: 8,
     paddingHorizontal: 14,
     marginBottom: 10,

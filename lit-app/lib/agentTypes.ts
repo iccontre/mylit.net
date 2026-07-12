@@ -52,11 +52,15 @@ export type UserLifeProfile = {
   preferredFocusWindow?: FocusWindow;
   /** User's own target wake time from Sleep Guide, e.g. "7:00 AM" — falls back to the learned wake rhythm in GuideMemory when unset. */
   plannedWakeTime?: string;
-  /** "Which area feels strongest for you right now?" — optional, self-selected starting strength. Feeds Life Profile, Guide Memory, and quest-suggestion focus areas. */
+  /** "Choose up to 5 areas that feel strongest for you right now." Feeds Life Profile, Guide Memory, and quest-suggestion focus areas. */
+  strongestSkillCategories?: SkillCategory[];
+  /**
+   * Legacy single-value field, kept as `strongestSkillCategories[0]` (the "primary" selection)
+   * for older code that reads one category — never deleted abruptly. Also the migration source:
+   * any pre-multi-select data that only has this field gets it treated as the first selection.
+   */
   strongestSkillCategory?: SkillCategory;
-  /** Additional areas that also feel strong, besides strongestSkillCategory. */
-  secondarySkillCategories?: SkillCategory[];
-  /** Free text used when strongestSkillCategory (or a secondary entry) is "Custom". */
+  /** Free text used when "Custom" is one of the selected strongestSkillCategories. */
   customSkillCategoryText?: string;
   /** ISO timestamp of the last edit — used for merge bookkeeping, not shown to the user. */
   updatedAt?: string;
@@ -74,7 +78,11 @@ export type SkillCategory =
   | "Sleep/Recovery"
   | "Confidence"
   | "Purpose"
+  | "Self-Care/Hobbies"
   | "Custom";
+
+/** Max simultaneous selections for strongestSkillCategories — see onboarding.tsx. */
+export const MAX_STRONGEST_SKILL_CATEGORIES = 5;
 
 export const SKILL_CATEGORIES: SkillCategory[] = [
   "School/Learning",
@@ -86,6 +94,7 @@ export const SKILL_CATEGORIES: SkillCategory[] = [
   "Reflection/Mind",
   "Sleep/Recovery",
   "Confidence",
+  "Self-Care/Hobbies",
   "Purpose",
   "Custom",
 ];
