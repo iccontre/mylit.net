@@ -18,8 +18,8 @@ export const uiAssets = {
     blazingFlame: require("../assets/ui/fires/blazing-flame.png"),
   },
   fireAnimations: {
-    // 6x6 grid spritesheets (36 frames each). Ember has no spritesheet yet — Home falls
-    // back to its static image for that state.
+    // 6x6 grid spritesheets (36 frames each), all sharing the same layout convention.
+    emberSheet: require("../assets/ui/animations/flame/mylit-flame-ember-spritesheet.png"),
     lowSheet: require("../assets/ui/animations/flame/mylit-flame-low-spritesheet.png"),
     steadySheet: require("../assets/ui/animations/flame/mylit-flame-steady-spritesheet.png"),
     brightSheet: require("../assets/ui/animations/flame/mylit-flame-bright-spritesheet.png"),

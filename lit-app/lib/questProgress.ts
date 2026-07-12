@@ -538,8 +538,24 @@ export function applyQuestBoardCapacity(
     }
   }
 
+  // Checklist habits must appear whenever they individually fit the window (5h Recovery /
+  // 8h Progress), not only when there's leftover room after higher-priority quests/quick
+  // thoughts already claimed the shared pool — a single long non-checklist item (e.g. a big
+  // Today's Quest) could otherwise starve out every recurring habit even though each one
+  // easily fits on its own. This only ADDS checklist items that fit their own duration; it
+  // never removes or reorders anything the packing loop above already decided.
+  const visibleIds = new Set(visibleItems.map((item) => item.id));
+  for (const item of sorted) {
+    if (visibleIds.has(item.id)) continue;
+    if (item.source !== "Checklist") continue;
+    if (itemDurationMinutes(item) > capacityMinutes) continue;
+    visibleItems.push(item);
+    visibleIds.add(item.id);
+    plannedMinutes += itemDurationMinutes(item);
+  }
+
   return {
-    visibleItems,
+    visibleItems: sortQuestItemsByPriority(visibleItems),
     hiddenCount: Math.max(0, sorted.length - visibleItems.length),
     plannedMinutes,
     capacityMinutes,

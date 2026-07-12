@@ -76,6 +76,7 @@ const fireAnimations = uiAssets.fireAnimations;
 const FLAME_SHEET_COLUMNS = 6;
 const FLAME_SHEET_ROWS = 6;
 const FLAME_SHEET_FRAME_COUNT = FLAME_SHEET_COLUMNS * FLAME_SHEET_ROWS;
+const FLAME_EMBER_SHEET_WIDTH = 1488;
 const FLAME_LOW_SHEET_WIDTH = 1032;
 const FLAME_STEADY_SHEET_WIDTH = 1116;
 const FLAME_BRIGHT_SHEET_WIDTH = 1056;
@@ -334,7 +335,7 @@ function getFireAssetForEnergy(score: number) {
     return { image: fireAssets.lowFlame, animated: fireAnimations.lowSheet, emoji: "🔥", label: "Low Flame", size: 40 };
   }
 
-  return { image: fireAssets.ember, animated: undefined, emoji: "✨", label: "Ember", size: 30 };
+  return { image: fireAssets.ember, animated: fireAnimations.emberSheet, emoji: "✨", label: "Ember", size: 30 };
 }
 
 // Day / Time Track spans 6 AM → 12 PM → 6 PM → 12 AM (an 18-hour window).
@@ -1488,7 +1489,9 @@ export default function HomeScreen() {
                           ? FLAME_BLAZING_SHEET_WIDTH
                           : flameState.animated === fireAnimations.lowSheet
                             ? FLAME_LOW_SHEET_WIDTH
-                            : FLAME_STEADY_SHEET_WIDTH
+                            : flameState.animated === fireAnimations.emberSheet
+                              ? FLAME_EMBER_SHEET_WIDTH
+                              : FLAME_STEADY_SHEET_WIDTH
                     }
                     sheetHeight={FLAME_SHEET_HEIGHT}
                     fps={11}
