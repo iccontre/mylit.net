@@ -10,8 +10,8 @@
     "semantic_hash": ""
   },
   "app.json": {
-    "mtime": 1783723086.0119228,
-    "ast_hash": "9c443a8aea0d234ec1c2652fee3a1412",
+    "mtime": 1783815755.9537652,
+    "ast_hash": "016f47c80e56947ddc1807f16c8ca88b",
     "semantic_hash": ""
   },
   "app/(tabs)/_layout.tsx": {
@@ -25,8 +25,8 @@
     "semantic_hash": ""
   },
   "app/(tabs)/index.tsx": {
-    "mtime": 1783722635.5037975,
-    "ast_hash": "91f493bcea327371e4dcc6f94ba07b34",
+    "mtime": 1783816168.7445104,
+    "ast_hash": "2f6e61d8ceb8c416bc205359be24eaea",
     "semantic_hash": ""
   },
   "app/+html.tsx": {
@@ -55,13 +55,13 @@
     "semantic_hash": ""
   },
   "app/calendar.tsx": {
-    "mtime": 1783722975.8452754,
-    "ast_hash": "8909dd5f96833e07478888ae50fa2795",
+    "mtime": 1783814728.8753378,
+    "ast_hash": "03f892bbb3813dc9e73b697d02fdac46",
     "semantic_hash": ""
   },
   "app/day-plan.tsx": {
-    "mtime": 1783722722.2951372,
-    "ast_hash": "48d128f030c8b3189e1374c4ee277748",
+    "mtime": 1783804915.3091333,
+    "ast_hash": "6332c3be5a11b0d1e05daab3f72d2c1a",
     "semantic_hash": ""
   },
   "app/dream-journal.tsx": {
@@ -105,8 +105,8 @@
     "semantic_hash": ""
   },
   "app/onboarding.tsx": {
-    "mtime": 1783474962.0498097,
-    "ast_hash": "0bbecbaa1b2102b268575c2ed56e6b98",
+    "mtime": 1783815736.0056314,
+    "ast_hash": "a9897315ef2c9cc9de85f2cff18d0c8f",
     "semantic_hash": ""
   },
   "app/path.tsx": {
@@ -155,8 +155,8 @@
     "semantic_hash": ""
   },
   "app/waiting-room.tsx": {
-    "mtime": 1783478747.9049401,
-    "ast_hash": "73dc7b3218dbaf517a584d04375c1147",
+    "mtime": 1783812053.7165313,
+    "ast_hash": "10f6ee181cf345aba164ca42ace6493b",
     "semantic_hash": ""
   },
   "app/weekly-summary.tsx": {
@@ -295,8 +295,8 @@
     "semantic_hash": ""
   },
   "constants/uiAssets.ts": {
-    "mtime": 1783037047.6173515,
-    "ast_hash": "dc86ed81f6c0f0c3217e853b2331f69a",
+    "mtime": 1783804759.7954102,
+    "ast_hash": "75b4f278baa5bd80304651d1ccf8b9c6",
     "semantic_hash": ""
   },
   "eslint.config.js": {
@@ -375,8 +375,8 @@
     "semantic_hash": ""
   },
   "lib/progressStore.ts": {
-    "mtime": 1783542812.4206264,
-    "ast_hash": "112e1ed76d8c05c0007c8b041df46ce0",
+    "mtime": 1783812188.6839797,
+    "ast_hash": "fda66482e5f007cb3b9010c923d593da",
     "semantic_hash": ""
   },
   "lib/progressSync.ts": {
@@ -410,8 +410,8 @@
     "semantic_hash": ""
   },
   "lib/storageKeys.ts": {
-    "mtime": 1783542788.3970995,
-    "ast_hash": "4a5cd6e48f089bd15c20402936d024e1",
+    "mtime": 1783812248.2597861,
+    "ast_hash": "f9fc24aa6a2d270b30409692f2f72a19",
     "semantic_hash": ""
   },
   "lib/supabase.ts": {
@@ -435,8 +435,8 @@
     "semantic_hash": ""
   },
   "public/version.json": {
-    "mtime": 1783723089.8002024,
-    "ast_hash": "afc121f6397372a6a3506008444774cd",
+    "mtime": 1783815758.5377824,
+    "ast_hash": "c2f7871aedac3f836249d0158170c4c3",
     "semantic_hash": ""
   },
   "scripts/generate-pwa-icons.mjs": {
@@ -680,18 +680,18 @@
     "semantic_hash": ""
   },
   "lib/agentTypes.ts": {
-    "mtime": 1783391208.1455858,
-    "ast_hash": "c3218f6b3b4d40b87f7a654852a857fb",
+    "mtime": 1783815541.4843378,
+    "ast_hash": "072bd39648e20c7c04a4a22fe85d5bd9",
     "semantic_hash": ""
   },
   "lib/mylitAgents.ts": {
-    "mtime": 1783392066.3490381,
-    "ast_hash": "c8556ebc1a3acb25eded89782638980c",
+    "mtime": 1783815568.0645134,
+    "ast_hash": "888ad0404d780ec8937d46c5f7a7061d",
     "semantic_hash": ""
   },
   "app/life-profile.tsx": {
-    "mtime": 1783475857.9293325,
-    "ast_hash": "cd38154dcb4d4b082b20b1f4f63253d0",
+    "mtime": 1783816181.0005066,
+    "ast_hash": "fb998e9cb2ae0cff899a2a4461f95f06",
     "semantic_hash": ""
   },
   "components/PathPipelineCard.tsx": {
@@ -700,8 +700,8 @@
     "semantic_hash": ""
   },
   "lib/pathPipeline.ts": {
-    "mtime": 1783391884.7811897,
-    "ast_hash": "b61f255726354fa7bb5d123574f28cd0",
+    "mtime": 1783815577.980579,
+    "ast_hash": "e00647c7cf0f7e5781cd65fac1437df4",
     "semantic_hash": ""
   },
   "components/WeeklyAgentReviewCard.tsx": {
@@ -805,23 +805,23 @@
     "semantic_hash": ""
   },
   "components/LunaReminderCard.tsx": {
-    "mtime": 1783542236.9739375,
-    "ast_hash": "3e526ed9bbcbb3cb9c1ad67ab4234d6f",
+    "mtime": 1783814678.9190702,
+    "ast_hash": "4080c89fa67ecd92ef98fedc18a5fe4d",
     "semantic_hash": ""
   },
   "components/EvieGuideModal.tsx": {
-    "mtime": 1783478840.1246088,
-    "ast_hash": "ed345a5012e2af331d407f613bd7d842",
+    "mtime": 1783814671.599032,
+    "ast_hash": "383f07296650cf312612c87d72165864",
     "semantic_hash": ""
   },
   "components/LunaGuideModal.tsx": {
-    "mtime": 1783647513.1687613,
-    "ast_hash": "61c6eb58d2a6f7e1bf9c202ff62b1d73",
+    "mtime": 1783814657.0309556,
+    "ast_hash": "0921366ec3f7e49d2b5f61e1b13003b3",
     "semantic_hash": ""
   },
   "lib/lunaReminders.ts": {
-    "mtime": 1783542221.1381075,
-    "ast_hash": "adcaea5974bb3610458c66ed4844814d",
+    "mtime": 1783814592.7386284,
+    "ast_hash": "947c5427f08c1b56ef1203bb7958f33a",
     "semantic_hash": ""
   },
   "lib/readJson.ts": {
@@ -837,6 +837,31 @@
   "scripts/test-energy-delta.mjs": {
     "mtime": 1783721774.5645614,
     "ast_hash": "d147804a0455c1c3c249ae93decdd39d",
+    "semantic_hash": ""
+  },
+  "components/AnimatedFlame.tsx": {
+    "mtime": 1783815394.3913746,
+    "ast_hash": "8ae41306dfd582483e5d2f59ad1da77c",
+    "semantic_hash": ""
+  },
+  "assets/ui/animations/flame/mylit-flame-bright-spritesheet.png": {
+    "mtime": 1783742220.307251,
+    "ast_hash": "0c8e31e691205e52dcb88682ef79862e",
+    "semantic_hash": ""
+  },
+  "assets/ui/animations/flame/mylit-flame-steady-spritesheet.png": {
+    "mtime": 1783738666.2807176,
+    "ast_hash": "719ae5daf2fc1a5d565fd2c8f77f6640",
+    "semantic_hash": ""
+  },
+  "components/QuickThoughtsModal.tsx": {
+    "mtime": 1783812670.956057,
+    "ast_hash": "b409f0080c10ffbd9f8559b83621ba91",
+    "semantic_hash": ""
+  },
+  "components/GuideReminderModal.tsx": {
+    "mtime": 1783814640.822872,
+    "ast_hash": "c372509f554aa4b30536591cfb19d48d",
     "semantic_hash": ""
   }
 }
