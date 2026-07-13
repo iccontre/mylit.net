@@ -707,11 +707,20 @@ export default function HomeScreen() {
     }
     try {
       const parsed = JSON.parse(saved) as LdmModeState;
+      const enteredAtMs = new Date(parsed.enteredAt).getTime();
       // Only ever one night's LDM session lives here — a stale night's record from a
-      // previous night (past its 7 AM cutoff) is treated as if LDM were never entered.
-      setLdmState(Date.now() < computeNextQuestDayBoundary(new Date(parsed.enteredAt)).getTime() ? parsed : null);
+      // previous night (past its 6 AM cutoff), or one with an invalid timestamp, is treated
+      // as if LDM were never entered AND actively cleared from storage — a stale session left
+      // behind by an old client build must never resurface once a current build loads.
+      if (Number.isFinite(enteredAtMs) && Date.now() < computeNextQuestDayBoundary(new Date(enteredAtMs)).getTime()) {
+        setLdmState(parsed);
+      } else {
+        setLdmState(null);
+        await clearProgressKey(LDM_MODE_STATE_KEY);
+      }
     } catch {
       setLdmState(null);
+      await clearProgressKey(LDM_MODE_STATE_KEY);
     }
   }
 

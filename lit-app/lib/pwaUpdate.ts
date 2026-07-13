@@ -1,3 +1,4 @@
+import Constants from "expo-constants";
 import { Platform } from "react-native";
 
 type VersionPayload = {
@@ -8,6 +9,9 @@ type VersionPayload = {
 let activeBuiltAt: string | null = null;
 let pendingReload = false;
 let started = false;
+
+/** Guards the one-time startup reload below so a flaky version.json fetch can never loop it. */
+const STARTUP_RELOAD_GUARD_KEY = "mylit_pwa_startup_reload_done";
 
 async function fetchBuildVersion(): Promise<VersionPayload | null> {
   if (Platform.OS !== "web" || typeof window === "undefined") return null;
@@ -30,6 +34,29 @@ function applyPendingReload() {
   window.location.reload();
 }
 
+/**
+ * Catches a client that is ALREADY stale the moment it starts — e.g. a browser/PWA HTTP cache
+ * or an old service worker served yesterday's index.html+JS even though version.json (fetched
+ * with cache: "no-store") reports today's build. Poll-to-poll drift comparison alone can never
+ * see this, since it only compares consecutive checks to each other, not to what's actually
+ * running. Safe to reload immediately here (unlike the drift case) — cold start is definitionally
+ * a fresh, foregrounded launch with no in-progress interaction to interrupt. Guarded by
+ * sessionStorage so a flaky/inconsistent version.json response can never cause a reload loop;
+ * if sessionStorage is unavailable we skip the forced reload rather than risk looping.
+ */
+function reloadOnceIfStartupStale(serverVersion: string): void {
+  const runningVersion = Constants.expoConfig?.version;
+  if (!runningVersion || runningVersion === serverVersion) return;
+  if (typeof window === "undefined") return;
+  try {
+    if (window.sessionStorage.getItem(STARTUP_RELOAD_GUARD_KEY) === "1") return;
+    window.sessionStorage.setItem(STARTUP_RELOAD_GUARD_KEY, "1");
+  } catch {
+    return;
+  }
+  window.location.reload();
+}
+
 export async function checkForPwaUpdate(): Promise<void> {
   if (Platform.OS !== "web") return;
 
@@ -43,6 +70,10 @@ export async function checkForPwaUpdate(): Promise<void> {
     // as a NEW session starts, never while backgrounded (see onVisible).
     pendingReload = true;
     return;
+  }
+
+  if (!activeBuiltAt && payload.version) {
+    reloadOnceIfStartupStale(payload.version);
   }
 
   activeBuiltAt = payload.builtAt;
