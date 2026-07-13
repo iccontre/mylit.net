@@ -21,6 +21,7 @@ import {
   FORCED_RECOVERY_TITLE,
   formatDurationLabel,
   getDateKey,
+  getQuestDayKey,
   getStepsForDuration,
   getStepsForItem,
   inferScheduledClassification,
@@ -139,6 +140,7 @@ export type HomeQuestItem = {
   mandatory?: boolean;
   starter?: boolean;
   suggested?: boolean;
+  ldmRoutine?: boolean;
 };
 
 type QuestLike = {
@@ -151,6 +153,8 @@ type QuestLike = {
   suggested?: boolean;
   durationMinutes?: number;
   kind?: QuestKind;
+  /** LDM routine task — see Quest.ldmRoutine in app/(tabs)/index.tsx. */
+  ldmRoutine?: boolean;
 };
 
 type RawChecklistItem = {
@@ -215,8 +219,9 @@ function safeNumber(value: unknown, fallback = 0): number {
   return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
 
+/** The logical quest day (6 AM boundary) — see getQuestDayKey in scheduling.ts. */
 export function getTodayKey(): string {
-  return getDateKey();
+  return getQuestDayKey();
 }
 
 export function getWeekdayName(date = new Date()): WeekdayName {
@@ -469,7 +474,7 @@ export function hasUserCreatedQuestItems(input: {
 
 /** Starter + mandatory + app-suggested MYLIT quests, or items the user added via Day Plan / Quick Thoughts. */
 export function isQuestBoardItemAllowed(item: HomeQuestItem): boolean {
-  if (item.mandatory || item.starter || item.suggested) return true;
+  if (item.mandatory || item.starter || item.suggested || item.ldmRoutine) return true;
   if (
     item.source === "Today's Quest" ||
     item.source === "Checklist" ||
@@ -845,6 +850,7 @@ export function normalizeQuestItems(input: {
       mandatory: quest.mandatory,
       starter: quest.starter,
       suggested: quest.suggested,
+      ldmRoutine: quest.ldmRoutine,
     });
   });
 

@@ -57,6 +57,7 @@ import {
   type QuestKind,
 } from "../../lib/questProgress";
 import {
+  computeNextQuestDayBoundary,
   formatDurationLabel,
   formatEnergyDelta,
   getEnergyDelta,
@@ -96,6 +97,8 @@ type Quest = {
   suggested?: boolean;
   durationMinutes?: number;
   kind?: QuestKind;
+  /** LDM routine task (hygiene/journaling/reading/night reflection) — see getLdmRoutineQuests. */
+  ldmRoutine?: boolean;
 };
 
 type QueueItem = {
@@ -312,12 +315,6 @@ const LDM_ROUTINE_DURATION_MS = 60 * 60 * 1000;
 const LDM_COMPLETION_STEPS = 8;
 const LDM_ROUTINE_TASK_DURATION_MINUTES = 15;
 
-function computeLdmSevenAmCutoff(enteredAt: Date): Date {
-  const cutoff = new Date(enteredAt);
-  cutoff.setHours(7, 0, 0, 0);
-  if (cutoff.getTime() <= enteredAt.getTime()) cutoff.setDate(cutoff.getDate() + 1);
-  return cutoff;
-}
 
 // Maps the energy reserve to one of the five emotive fire PNG assets.
 // Bands: 0–24 ember · 25–44 low · 45–64 steady · 65–84 bright · 85–100 blazing.
@@ -339,6 +336,39 @@ function getFireAssetForEnergy(score: number) {
   }
 
   return { image: fireAssets.ember, animated: fireAnimations.emberSheet, emoji: "✨", label: "Ember", size: 30 };
+}
+
+/**
+ * Quest visual system — separates WHAT a quest means (modeType: item.kind, already tracked)
+ * from HOW it's drawn (sourceType, derived here, purely presentational). Never inferred the
+ * other way around: a card's color never changes what mode/energy effect it actually has.
+ */
+type QuestSourceType = "regular" | "today" | "path";
+
+function getQuestSourceType(item: HomeQuestItem): QuestSourceType {
+  if (item.source === "Today's Quest") return "today";
+  // "Path Quest" = quests the path/pipeline system itself surfaced (Evie's suggested quest,
+  // the post-progress recovery starter) — not a separately stored field, just what
+  // suggested/starter already mean.
+  if (item.suggested || item.starter) return "path";
+  return "regular";
+}
+
+function getQuestVisual(item: HomeQuestItem): { fill: string; text: string; border: string; meta: string; badge?: string } {
+  const sourceType = getQuestSourceType(item);
+  const modeColor = item.kind === "recovery" ? "#7C3AED" : "#FBBF24";
+
+  if (sourceType === "today") {
+    // White fill regardless of Progress/Recovery — the small badge dot carries the mode.
+    return { fill: "#FFFFFF", text: "#1F2937", border: "#1F2937", meta: "#4B5563", badge: modeColor };
+  }
+  if (sourceType === "path") {
+    // Green fill regardless of Progress/Recovery — same badge convention as Today.
+    return { fill: "#22C55E", text: "#052E14", border: "#14532D", meta: "#0B3B1E", badge: modeColor };
+  }
+  return item.kind === "recovery"
+    ? { fill: "#7C3AED", text: "#FFFFFF", border: "#4C1D95", meta: "#E9D5FF" }
+    : { fill: "#FBBF24", text: "#241A00", border: "#92610A", meta: "#4A3200" };
 }
 
 // Day / Time Track spans 6 AM → 12 PM → 6 PM → 12 AM (an 18-hour window).
@@ -679,7 +709,7 @@ export default function HomeScreen() {
       const parsed = JSON.parse(saved) as LdmModeState;
       // Only ever one night's LDM session lives here — a stale night's record from a
       // previous night (past its 7 AM cutoff) is treated as if LDM were never entered.
-      setLdmState(Date.now() < computeLdmSevenAmCutoff(new Date(parsed.enteredAt)).getTime() ? parsed : null);
+      setLdmState(Date.now() < computeNextQuestDayBoundary(new Date(parsed.enteredAt)).getTime() ? parsed : null);
     } catch {
       setLdmState(null);
     }
@@ -1167,7 +1197,7 @@ export default function HomeScreen() {
   const ldmEnteredAtMs = ldmState ? new Date(ldmState.enteredAt).getTime() : null;
   const ldmRoutineEndsAtMs = ldmEnteredAtMs !== null ? ldmEnteredAtMs + LDM_ROUTINE_DURATION_MS : null;
   const ldmActive =
-    ldmState !== null && ldmEnteredAtMs !== null && timeNow.getTime() < computeLdmSevenAmCutoff(new Date(ldmEnteredAtMs)).getTime();
+    ldmState !== null && ldmEnteredAtMs !== null && timeNow.getTime() < computeNextQuestDayBoundary(new Date(ldmEnteredAtMs)).getTime();
   const ldmRoutineWindowOpen = ldmActive && ldmRoutineEndsAtMs !== null && timeNow.getTime() < ldmRoutineEndsAtMs;
   const ldmPostRoutine = ldmActive && !ldmRoutineWindowOpen;
   const canEnterLdm = !ldmActive && ldmNowMinutes >= LDM_ENTRY_WINDOW_START_MINUTES && ldmNowMinutes < LDM_ENTRY_WINDOW_END_MINUTES;
@@ -1265,16 +1295,16 @@ export default function HomeScreen() {
     const ldmTaskSteps = getStepsForItem(LDM_ROUTINE_TASK_DURATION_MINUTES, "recovery");
     const quests: Quest[] = [];
     if (!ldmHygieneDone) {
-      quests.push({ title: LDM_HYGIENE_TITLE, type: "LDM", steps: ldmTaskSteps, durationMinutes: LDM_ROUTINE_TASK_DURATION_MINUTES, kind: "recovery", description: "Brush teeth, wash up, and get your body ready for sleep." });
+      quests.push({ title: LDM_HYGIENE_TITLE, type: "LDM", steps: ldmTaskSteps, durationMinutes: LDM_ROUTINE_TASK_DURATION_MINUTES, kind: "recovery", ldmRoutine: true, description: "Brush teeth, wash up, and get your body ready for sleep." });
     }
     if (!ldmJournalingDone) {
-      quests.push({ title: LDM_JOURNALING_TITLE, type: "LDM", steps: ldmTaskSteps, durationMinutes: LDM_ROUTINE_TASK_DURATION_MINUTES, kind: "recovery", description: "Write down what you're carrying so your mind can rest." });
+      quests.push({ title: LDM_JOURNALING_TITLE, type: "LDM", steps: ldmTaskSteps, durationMinutes: LDM_ROUTINE_TASK_DURATION_MINUTES, kind: "recovery", ldmRoutine: true, description: "Write down what you're carrying so your mind can rest." });
     }
     if (!ldmReadingDone) {
-      quests.push({ title: LDM_READING_TITLE, type: "LDM", steps: ldmTaskSteps, durationMinutes: LDM_ROUTINE_TASK_DURATION_MINUTES, kind: "recovery", description: "Read something calm or light. No pressure to finish." });
+      quests.push({ title: LDM_READING_TITLE, type: "LDM", steps: ldmTaskSteps, durationMinutes: LDM_ROUTINE_TASK_DURATION_MINUTES, kind: "recovery", ldmRoutine: true, description: "Read something calm or light. No pressure to finish." });
     }
     if (!ldmNightReflectionDone) {
-      quests.push({ title: LDM_NIGHT_REFLECTION_TITLE, type: "LDM", steps: ldmTaskSteps, durationMinutes: LDM_ROUTINE_TASK_DURATION_MINUTES, kind: "recovery", description: "Look back on today with kindness — no judgment, just noticing." });
+      quests.push({ title: LDM_NIGHT_REFLECTION_TITLE, type: "LDM", steps: ldmTaskSteps, durationMinutes: LDM_ROUTINE_TASK_DURATION_MINUTES, kind: "recovery", ldmRoutine: true, description: "Look back on today with kindness — no judgment, just noticing." });
     }
     // "Set Pre-Sleep Intention" is NOT added here — normalizeQuestItems already injects that
     // exact item (same title, source: "Sleep", routes to /pre-sleep-intention) every night
@@ -1652,15 +1682,6 @@ export default function HomeScreen() {
                 </View>
               </Modal>
 
-              {canEnterLdm ? (
-                <>
-                  <TouchableOpacity style={[styles.ldmBtn, ldmBusy && styles.ldmBtnDisabled]} disabled={ldmBusy} onPress={() => void enterLdmMode()}>
-                    <Text style={styles.ldmBtnText}>🌌 ENTER LDM MODE</Text>
-                  </TouchableOpacity>
-                  <Text style={styles.createQuestNote}>Start 1-hour pre-sleep routine</Text>
-                </>
-              ) : null}
-
               {ldmActive ? (
                 <LdmErrorBoundary>
                   <TouchableOpacity style={styles.dreamJournalBtn} onPress={() => navigateWithHaptic("/dream-journal")}>
@@ -1677,11 +1698,13 @@ export default function HomeScreen() {
                 </LdmErrorBoundary>
               ) : null}
 
-              {isNeutral && !ldmRoutineWindowOpen ? (
+              {isNeutral && !ldmRoutineWindowOpen && !canEnterLdm ? (
                 // LDM's quest board must never fall behind the "do a morning check-in" lock —
                 // entry happens late at night, when the day's check-in-derived mode has often
                 // already reverted to Neutral, which otherwise hid the whole LDM routine board
-                // behind this prompt (reported as a "black page" for the full LDM hour).
+                // behind this prompt (reported as a "black page" for the full LDM hour). Also
+                // gated on !canEnterLdm — the LDM entry quest card below must stay reachable for
+                // a Neutral user in the 9PM-midnight entry window, not hidden behind this lock.
                 <View style={styles.lockedBoardStrip}>
                   <Text style={styles.lockedBoardStripText}>Complete morning check-in to unlock</Text>
                   <TouchableOpacity style={styles.lockedBoardStripBtn} onPress={() => navigateWithHaptic("/sleep-checkin")}>
@@ -1703,6 +1726,28 @@ export default function HomeScreen() {
                     {isNeutral && !ldmRoutineWindowOpen ? "LOCKED" : isBoardLocked ? "LOCKED" : isRecoveryLocked ? "RECOVERY" : ldmRoutineWindowOpen ? "LDM" : capacityLabel}
                   </Text>
                 </View>
+
+                {canEnterLdm ? (
+                  <LdmErrorBoundary>
+                    <TouchableOpacity
+                      style={[styles.ldmQuestCard, ldmBusy && styles.ldmBtnDisabled]}
+                      disabled={ldmBusy}
+                      onPress={() => void enterLdmMode()}
+                      activeOpacity={0.85}
+                    >
+                      <View style={styles.questIconSlot}>
+                        <Text style={styles.questIcon}>🌌</Text>
+                      </View>
+                      <View style={styles.questCopy}>
+                        <Text style={styles.ldmQuestText} numberOfLines={1}>✦ Enter LDM ✦</Text>
+                        <Text style={styles.ldmQuestMeta} numberOfLines={1}>1-hour pre-sleep routine</Text>
+                      </View>
+                      <View style={styles.ldmQuestStartBtn}>
+                        <Text style={styles.ldmQuestStartBtnText}>START</Text>
+                      </View>
+                    </TouchableOpacity>
+                  </LdmErrorBoundary>
+                ) : null}
 
                 {!isNeutral && todayQuestUnset && ldmNowMinutes < LDM_ENTRY_WINDOW_START_MINUTES ? (
                   <TouchableOpacity style={styles.setMainQuestBtn} onPress={() => navigateWithHaptic("/day-plan")}>
@@ -1794,6 +1839,17 @@ export default function HomeScreen() {
                       <Text style={[styles.waitingRoomBtnText, { color: "#C4A7FF" }]}>🕯️ Wait in Study Room</Text>
                     </TouchableOpacity>
                   </View>
+                ) : ldmRoutineWindowOpen && availableItems.length === 0 ? (
+                  // Never invent routine tasks — if tonight's routine is already fully done
+                  // (or never had anything to show), Luna's bubble replaces the empty board
+                  // instead of the generic "No quests yet" message.
+                  <TouchableOpacity
+                    style={[styles.speechBubble, { borderColor: "#A78BFA" }]}
+                    onPress={() => navigateWithHaptic("/sleep-calendar")}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.speechText}>Set up your pre-sleep routine</Text>
+                  </TouchableOpacity>
                 ) : availableItems.length === 0 ? (
                   <View style={styles.questLockedCard}>
                     <Text style={styles.questLockedTitle}>No quests yet</Text>
@@ -1801,33 +1857,37 @@ export default function HomeScreen() {
                   </View>
                 ) : (
                   <>
-                    {visibleItems.map((item) => (
-                      <TouchableOpacity
-                        key={item.id}
-                        style={[
-                          styles.questRow,
-                          item.source === "Today's Quest"
-                            ? styles.questRowTodayQuest
-                            : { borderColor: item.mandatory ? "#F87171" : "#2E3542" },
-                        ]}
-                        onPress={() => openQuestItem(item)}
-                        activeOpacity={0.85}
-                      >
-                        <View style={styles.questIconSlot}>
-                          <Text style={styles.questIcon}>{item.mandatory ? "!" : sourceIcon(item.source)}</Text>
-                        </View>
-                        <View style={styles.questCopy}>
-                          <Text style={styles.questText} numberOfLines={1}>{item.title}</Text>
-                          <View style={styles.questMetaRow}>
-                            <Text style={[styles.questMeta, { color: theme.soft }]} numberOfLines={1}>
-                              {questSourceLabel(item.source)} · {formatDurationLabel(item.durationMinutes)} · {energyLabelFor(item)}{item.scheduledTime ? ` · ${item.scheduledTime}` : ""}
-                            </Text>
-                            <Text style={[styles.questSteps, { color: kindAccent(item.kind) }]}>+{item.steps}</Text>
+                    {visibleItems.map((item) => {
+                      const visual = getQuestVisual(item);
+                      return (
+                        <TouchableOpacity
+                          key={item.id}
+                          style={[
+                            styles.questRow,
+                            { backgroundColor: visual.fill, borderColor: item.mandatory ? "#F87171" : visual.border },
+                          ]}
+                          onPress={() => openQuestItem(item)}
+                          activeOpacity={0.85}
+                        >
+                          <View style={styles.questIconSlot}>
+                            <Text style={styles.questIcon}>{item.mandatory ? "!" : sourceIcon(item.source)}</Text>
                           </View>
-                        </View>
-                        <Text style={[styles.startChevron, { color: theme.accent }]}>▶</Text>
-                      </TouchableOpacity>
-                    ))}
+                          <View style={styles.questCopy}>
+                            <View style={styles.questTitleWithBadge}>
+                              {visual.badge ? <View style={[styles.questModeBadge, { backgroundColor: visual.badge }]} /> : null}
+                              <Text style={[styles.questText, { color: visual.text }]} numberOfLines={1}>{item.title}</Text>
+                            </View>
+                            <View style={styles.questMetaRow}>
+                              <Text style={[styles.questMeta, { color: visual.meta }]} numberOfLines={1}>
+                                {questSourceLabel(item.source)} · {formatDurationLabel(item.durationMinutes)} · {energyLabelFor(item)}{item.scheduledTime ? ` · ${item.scheduledTime}` : ""}
+                              </Text>
+                              <Text style={[styles.questSteps, { color: visual.text }]}>+{item.steps}</Text>
+                            </View>
+                          </View>
+                          <Text style={[styles.startChevron, { color: visual.text }]}>▶</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
                     {lockMessage ? <Text style={styles.lockMessage}>{lockMessage}</Text> : null}
                     {extraItemCount > 0 ? (
                       <Text style={styles.moreHint}>+{extraItemCount} more beyond today&apos;s capacity</Text>
@@ -2266,9 +2326,29 @@ const styles = StyleSheet.create({
   chooserRowExplain: { color: "#94A3B8", fontSize: 11, fontWeight: "700", marginTop: 2 },
   chooserCloseBtn: { marginTop: 4, alignItems: "center", paddingVertical: 10 },
   chooserCloseBtnText: { color: "#94A3B8", fontFamily: "monospace", fontSize: 11, fontWeight: "900" },
-  ldmBtn: { borderWidth: 2, borderColor: "#4338CA", borderRadius: 8, paddingVertical: 12, alignItems: "center", backgroundColor: "#312E81", marginBottom: 4 },
   ldmBtnDisabled: { opacity: 0.5 },
-  ldmBtnText: { color: "#E0E7FF", fontFamily: "monospace", fontSize: 13, fontWeight: "900", letterSpacing: 0.5 },
+  // Purple-filled, white text, small star accents — visually distinct from a normal Recovery
+  // quest row (which is also purple but never has a solid fill + stars + dedicated START pill).
+  ldmQuestCard: {
+    minHeight: 44,
+    backgroundColor: "#6D28D9",
+    borderWidth: 2,
+    borderColor: "#4C1D95",
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    marginBottom: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.6,
+    shadowRadius: 0,
+    shadowOffset: { width: 2, height: 2 },
+  },
+  ldmQuestText: { color: "#FFFFFF", fontSize: 13, fontWeight: "900", letterSpacing: 0.5 },
+  ldmQuestMeta: { color: "#E9D5FF", fontSize: 10, fontWeight: "800", marginTop: 1 },
+  ldmQuestStartBtn: { backgroundColor: "#FFFFFF", borderRadius: 5, paddingHorizontal: 10, paddingVertical: 6, marginLeft: 6 },
+  ldmQuestStartBtnText: { color: "#4C1D95", fontFamily: "monospace", fontSize: 11, fontWeight: "900" },
   dreamJournalBtn: { borderWidth: 2, borderColor: "#4338CA", borderRadius: 8, paddingVertical: 12, alignItems: "center", backgroundColor: "rgba(49,46,129,0.5)", marginBottom: 10 },
   dreamJournalBtnText: { color: "#C7D2FE", fontFamily: "monospace", fontSize: 13, fontWeight: "900", letterSpacing: 0.5 },
   ldmDoneCard: { borderWidth: 2, borderColor: "#A78BFA", borderRadius: 8, padding: 12, backgroundColor: "rgba(88,28,135,0.35)", marginBottom: 10 },
@@ -2592,15 +2672,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
-  questRowDone: {
-    borderColor: "#22C55E",
-    backgroundColor: "rgba(20, 83, 45, 0.72)",
-  },
-  // Today's Quest always keeps a white border so it reads as "Today's Quest" regardless of its Progress/Recovery color.
-  questRowTodayQuest: {
-    borderColor: "#FFFFFF",
-    borderWidth: 2,
-  },
+  questTitleWithBadge: { flexDirection: "row", alignItems: "center", gap: 5 },
+  questModeBadge: { width: 8, height: 8, borderRadius: 4, borderWidth: 1, borderColor: "#00000055" },
   questIconSlot: {
     height: 28,
     width: 28,

@@ -69,6 +69,31 @@ export function getDateKey(date: Date | string = new Date()): string {
   return date.toLocaleDateString("en-CA");
 }
 
+/**
+ * The app's single logical "quest day" boundary — 6:00 AM local time, not midnight. Central
+ * helper reused everywhere a "today" needs to mean "today for quest purposes": quest
+ * generation, completion/missed grouping, checklist checked-state scoping, LDM expiration,
+ * and daily resets. Calendar's own day cells stay plain calendar dates (getDateKey) — items
+ * are simply stamped with this quest-day key at creation/completion time, so they land in the
+ * right calendar cell without Calendar needing to know about the 6 AM shift itself.
+ */
+export const QUEST_DAY_BOUNDARY_HOUR = 6;
+
+/** 12:00 AM–5:59 AM still belongs to the previous calendar day's quest set. */
+export function getQuestDayKey(date: Date = new Date()): string {
+  const shifted = new Date(date);
+  if (shifted.getHours() < QUEST_DAY_BOUNDARY_HOUR) shifted.setDate(shifted.getDate() - 1);
+  return getDateKey(shifted);
+}
+
+/** The next 6:00 AM strictly after `from` — e.g. LDM stays active until the first 6 AM after it starts. */
+export function computeNextQuestDayBoundary(from: Date): Date {
+  const cutoff = new Date(from);
+  cutoff.setHours(QUEST_DAY_BOUNDARY_HOUR, 0, 0, 0);
+  if (cutoff.getTime() <= from.getTime()) cutoff.setDate(cutoff.getDate() + 1);
+  return cutoff;
+}
+
 export function generateTimeSlots(startHour = 7, endHour = 22, stepMinutes = 30): string[] {
   const slots: string[] = [];
   for (let minutes = startHour * 60; minutes <= endHour * 60; minutes += stepMinutes) {
