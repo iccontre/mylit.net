@@ -280,10 +280,20 @@ export async function setChecklistItemChecked(itemId: string, checked: boolean):
         const row = entry as Record<string, unknown>;
         if (String(row.id ?? "") !== itemId) return row;
         found = true;
+        const nowIso = new Date().toISOString();
         // checkedDate lets the Quest Board tell "checked today" apart from "checked on an
         // earlier day" — `checked` itself never resets, so recurring habits need this to
-        // reappear the next day instead of staying hidden forever.
-        return { ...row, checked, checkedDate: checked ? getDateKey() : undefined, status: checked ? "completed" : "scheduled" };
+        // reappear the next day instead of staying hidden forever. checkedAt is the same
+        // completion as a precise timestamp, so the Quest Board's 6 AM quest-day boundary can
+        // be applied correctly even between midnight and 6 AM (see isChecklistCheckedForQuestDay).
+        return {
+          ...row,
+          checked,
+          checkedDate: checked ? getDateKey() : undefined,
+          checkedAt: checked ? nowIso : undefined,
+          updatedAt: nowIso,
+          status: checked ? "completed" : "scheduled",
+        };
       });
     }
     if (!found) return false;

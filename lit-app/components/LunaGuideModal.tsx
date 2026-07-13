@@ -34,6 +34,11 @@ export function LunaGuideModal({ visible, onClose }: { visible: boolean; onClose
             <Text style={styles.actionText}>Sleep support</Text>
             <Text style={styles.actionArrow}>›</Text>
           </TouchableOpacity>
+          <TouchableOpacity style={styles.actionButton} onPress={() => { onClose(); router.push("/affirmations"); }}>
+            <Text style={styles.actionIcon}>✦</Text>
+            <Text style={styles.actionText}>Affirmations</Text>
+            <Text style={styles.actionArrow}>›</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.reminderButton} onPress={() => setShowReminderModal(true)}>
             <Text style={styles.actionIcon}>💗</Text>
             <Text style={styles.actionText}>Set Reminder</Text>

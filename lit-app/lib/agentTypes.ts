@@ -250,6 +250,7 @@ export type AgentEventType =
   | "journal_saved"
   | "dream_saved"
   | "meditation_saved"
+  | "affirmation_saved"
   | "pre_sleep_intention_saved"
   | "energy_changed"
   | "recovery_completed"

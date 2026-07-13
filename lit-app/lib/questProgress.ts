@@ -165,6 +165,17 @@ type RawChecklistItem = {
   /** Date (YYYY-MM-DD) `checked` was last set true — lets the Quest Board tell "checked
    *  today" apart from "checked on some earlier day," since `checked` itself never resets. */
   checkedDate?: string;
+  /** Full ISO timestamp of the same completion as checkedDate — lets the Quest Board (which
+   *  scopes "today" to the 6 AM quest-day boundary) derive the correct quest-day independently
+   *  of checkedDate, which is a plain calendar date stamped by the Day Plan editor's own
+   *  per-weekday view. Falls back to checkedDate for items saved before this field existed. */
+  checkedAt?: string;
+  /** Last-modified timestamp — lets cross-device array merges break ties by real recency
+   *  instead of defaulting to "whichever side is iterated last." */
+  updatedAt?: string;
+  /** Tombstone — set instead of physically removing the entry, so a deletion survives merging
+   *  against a stale device/cloud copy that still has the item. Filtered out of every read path. */
+  deletedAt?: string;
   steps?: number;
   startTime?: string;
   time?: string;
@@ -672,6 +683,22 @@ export function stepsForChecklistItem(kind: QuestKind, durationMinutes: number):
   return getStepsForItem(durationMinutes, kind);
 }
 
+/**
+ * Whether a checklist item's `checked` flag was set for the CURRENT quest day (6 AM boundary),
+ * not just some earlier day — `checked` itself never resets, so this is what tells "done today"
+ * apart from "done once, a while ago." Prefers the precise `checkedAt` timestamp (quest-day-aware,
+ * correct across the midnight–6 AM window) and falls back to the plain `checkedDate` calendar
+ * date for items saved before checkedAt existed.
+ */
+export function isChecklistCheckedForQuestDay(raw: Pick<RawChecklistItem, "checked" | "checkedAt" | "checkedDate">, todayKey = getTodayKey()): boolean {
+  if (!raw.checked) return false;
+  if (raw.checkedAt) {
+    const parsed = new Date(raw.checkedAt);
+    if (!Number.isNaN(parsed.getTime())) return getQuestDayKey(parsed) === todayKey;
+  }
+  return raw.checkedDate === todayKey;
+}
+
 export function getChecklistItemsForDay(plan: DayPlanRaw | null | undefined, day: WeekdayName): RawChecklistItem[] {
   const lists = plan?.weekdayChecklists;
   if (!lists) return [];
@@ -681,6 +708,9 @@ export function getChecklistItemsForDay(plan: DayPlanRaw | null | undefined, day
     const bucketItems = lists[bucketDay];
     if (!Array.isArray(bucketItems)) continue;
     for (const raw of bucketItems) {
+      // Tombstoned (deleted) items must never resurface, on this or any other device —
+      // see deleteChecklistItem in day-plan.tsx and the deletedAt-aware array merge.
+      if (raw.deletedAt) continue;
       const weekdays = Array.isArray(raw.weekdays) && raw.weekdays.length > 0 ? raw.weekdays : [bucketDay];
       if (!weekdays.includes(day)) continue;
       const id = raw.id ?? `${bucketDay}-${raw.text ?? raw.title ?? "item"}`;
@@ -758,12 +788,13 @@ export function normalizeQuestItems(input: {
   }
 
   input.checklist.forEach((raw, index) => {
+    if (raw.deletedAt) return;
     const title = (raw.text || raw.title || "").trim();
     if (!title) return;
     // Checklist habits recur every day they're scheduled for, so only TODAY's
     // checked/missed state should hide them — `checked`/`status` alone never reset, so
     // trusting them permanently was hiding recurring habits from every later day.
-    if (raw.checked === true && raw.checkedDate === input.todayKey) return;
+    if (isChecklistCheckedForQuestDay(raw, input.todayKey)) return;
     if (String(raw.status) === "missed" && raw.checkedDate === input.todayKey) return;
     const durationMinutes = parseDurationMinutes(raw.durationMinutes ?? raw.duration, 30);
     const kind: QuestKind = resolveExplicitOrInferredKind({ kind: raw.kind, title });
@@ -918,9 +949,11 @@ export function computeItemStepsFromSources(dayPlan: unknown, quickThoughts: unk
     for (const dayItems of Object.values(plan.weekdayChecklists as Record<string, unknown>)) {
       if (!Array.isArray(dayItems)) continue;
       for (const raw of dayItems) {
-        const item = raw as Record<string, unknown>;
+        const item = raw as RawChecklistItem;
         const id = item.id ? String(item.id) : null;
-        if (item.checked && id && !seenIds.has(id)) {
+        // Day-scoped: a recurring habit's `checked` flag never resets on its own, so counting
+        // it unconditionally would keep awarding its steps forever after the first completion.
+        if (id && !seenIds.has(id) && isChecklistCheckedForQuestDay(item)) {
           seenIds.add(id);
           total += safeNumber(item.steps, 1);
         }
@@ -947,9 +980,14 @@ export function computeTotalEarnedSteps(input: {
   quickThoughts: unknown;
   todayCompletions: CompletionEntry[];
   userStats?: { totalSteps?: number };
+  /** Count of all-time saved affirmations — +1 step each, folded in the same way checklist/quest
+   *  completions are: recomputed fresh from the live source, then ratcheted by the monotonic
+   *  floor, so deleting/clearing affirmations later never subtracts steps already earned. */
+  affirmationsCount?: number;
 }): number {
   const seen = new Set<string>();
   let total = computeItemStepsFromSources(input.dayPlan, input.quickThoughts);
+  total += safeNumber(input.affirmationsCount, 0);
 
   const plan = input.dayPlan as Record<string, unknown> | null;
   if (plan?.todayQuest) {
@@ -970,8 +1008,8 @@ export function computeTotalEarnedSteps(input: {
     for (const dayItems of Object.values(plan.weekdayChecklists as Record<string, unknown>)) {
       if (!Array.isArray(dayItems)) continue;
       for (const raw of dayItems) {
-        const item = raw as Record<string, unknown>;
-        if (item.id && item.checked) seen.add(String(item.id));
+        const item = raw as RawChecklistItem;
+        if (item.id && isChecklistCheckedForQuestDay(item)) seen.add(String(item.id));
       }
     }
   }
@@ -1101,6 +1139,7 @@ async function syncSourceCompletion(item: HomeQuestItem): Promise<void> {
     const lists = plan?.weekdayChecklists;
     if (!plan || !lists || typeof lists !== "object") return;
     let changed = false;
+    const nowIso = new Date().toISOString();
     const nextLists = { ...(lists as Record<string, RawChecklistItem[]>) };
     for (const day of WEEKDAYS) {
       const bucket = nextLists[day];
@@ -1109,7 +1148,11 @@ async function syncSourceCompletion(item: HomeQuestItem): Promise<void> {
         const title = (entry.text || entry.title || "").trim();
         if (entry.id === item.id || title === item.title) {
           changed = true;
-          return { ...entry, checked: true, status: "completed" };
+          // Stamp checkedDate/checkedAt so this completion is correctly scoped to TODAY's
+          // quest day (see isChecklistCheckedForQuestDay) — completing from the Quest Board
+          // previously left these unset, which either hid the completion from Home/Stats step
+          // totals or let it silently reappear/miscount on a later day.
+          return { ...entry, checked: true, status: "completed", checkedDate: getTodayKey(), checkedAt: nowIso, updatedAt: nowIso };
         }
         return entry;
       });
@@ -1154,6 +1197,7 @@ async function syncSourceMissed(item: HomeQuestItem): Promise<void> {
     const lists = plan?.weekdayChecklists;
     if (!plan || !lists || typeof lists !== "object") return;
     let changed = false;
+    const nowIso = new Date().toISOString();
     const nextLists = { ...(lists as Record<string, RawChecklistItem[]>) };
     for (const day of WEEKDAYS) {
       const bucket = nextLists[day];
@@ -1162,7 +1206,7 @@ async function syncSourceMissed(item: HomeQuestItem): Promise<void> {
         const title = (entry.text || entry.title || "").trim();
         if (entry.id === item.id || title === item.title) {
           changed = true;
-          return { ...entry, status: "missed" };
+          return { ...entry, status: "missed", updatedAt: nowIso };
         }
         return entry;
       });

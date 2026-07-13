@@ -35,7 +35,7 @@ type MindCard = {
   description: string;
   buttonText: string;
   icon: string;
-  route: "/journal" | "/awareness-check" | "/reflection" | "/talk-to-luna";
+  route: "/journal" | "/awareness-check" | "/affirmations" | "/reflection" | "/talk-to-luna";
 };
 
 const MIND_CARDS: MindCard[] = [
@@ -52,6 +52,13 @@ const MIND_CARDS: MindCard[] = [
     buttonText: "Open Meditations",
     icon: "🕯️",
     route: "/awareness-check",
+  },
+  {
+    title: "Affirmations",
+    description: "Reaffirm yourself when you feel inspired or unmotivated.",
+    buttonText: "Open Affirmations",
+    icon: "✦",
+    route: "/affirmations",
   },
   {
     title: "Reflect, Don’t Judge",

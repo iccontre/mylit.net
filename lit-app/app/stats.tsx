@@ -1,7 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  AppState,
   Image,
   Modal,
   Platform,
@@ -12,6 +13,7 @@ import {
   View,
   useWindowDimensions,
   ActivityIndicator,
+  type AppStateStatus,
 } from "react-native";
 
 import { uiAssets } from "../constants/uiAssets";
@@ -27,8 +29,15 @@ import {
   SKILL_TIER_SIZE,
   USER_STATS_KEY,
 } from "../lib/questProgress";
-import { clearAllLocalProgressForSignOut, forceUploadLocalProgressToCloud, getSyncDiagnostics, persistProgressKeys } from "../lib/progressStore";
+import {
+  clearAllLocalProgressForSignOut,
+  forceUploadLocalProgressToCloud,
+  getSyncDiagnostics,
+  mergeCloudIntoLocalSafely,
+  persistProgressKeys,
+} from "../lib/progressStore";
 import { TODAY_QUEST_STEPS } from "../lib/scheduling";
+import { isSupabaseConfigured } from "../lib/supabase";
 import { syncAndGetStepRank, type StepRank } from "../lib/stepRank";
 import { APP_VERSION } from "../lib/appVersion.generated";
 import { fetchLiveVersion } from "../lib/pwaUpdate";
@@ -102,6 +111,7 @@ const MORNING_INTENTION_REFLECTIONS_KEY = "lit_morning_intention_reflections";
 const MEDITATIONS_KEY = "lit_awareness_checks";
 const REFLECTIONS_KEY = "lit_reflections";
 const SLEEP_CALENDAR_KEY = "lit_sleep_calendar";
+const AFFIRMATIONS_KEY = "lit_affirmations";
 
 const pixelFont = Platform.select({ ios: "Menlo", android: "monospace", web: "monospace", default: "monospace" });
 
@@ -291,6 +301,45 @@ export default function StatsScreen() {
     void trackEvent(ANALYTICS_EVENTS.stats_opened);
   }, []);
 
+  // Home and Stats must always show the same total. Home re-reads local storage every time
+  // the tab regains focus (see app/(tabs)/index.tsx) — Stats previously only loaded once on
+  // mount, so completing a quest on Home and switching to Stats (expo-router tabs stay mounted,
+  // they don't remount) kept showing a stale total until a full reload/logout. This mirrors
+  // Home's own focus-refresh so both screens read the same freshly-computed total immediately.
+  useFocusEffect(
+    useCallback(() => {
+      loadStats();
+    }, [])
+  );
+
+  // Cross-device convergence: the focus refresh above only re-reads LOCAL storage. If another
+  // device completed a quest/checklist item in the cloud since this device's last hydration,
+  // this device would otherwise never see it without a full reload. Mirrors Home's identical
+  // foreground-refetch + polling fallback (no realtime subscriptions exist in this codebase).
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+
+    async function rehydrateFromCloud() {
+      await mergeCloudIntoLocalSafely();
+      void loadStats();
+    }
+
+    const onAppStateChange = (nextState: AppStateStatus) => {
+      if (nextState === "active") void rehydrateFromCloud();
+    };
+    const subscription = AppState.addEventListener("change", onAppStateChange);
+
+    const CROSS_DEVICE_POLL_MS = 2 * 60 * 1000;
+    const pollId = setInterval(() => {
+      if (AppState.currentState === "active") void rehydrateFromCloud();
+    }, CROSS_DEVICE_POLL_MS);
+
+    return () => {
+      subscription.remove();
+      clearInterval(pollId);
+    };
+  }, []);
+
   async function handleQuickUpload() {
     setRecoveryBusy(true);
     setRecoveryMessage("");
@@ -346,7 +395,7 @@ export default function StatsScreen() {
   async function loadStats() {
     const [latestCheckIn, checkIns, completedQuests, quickThoughts, dayPlan, journalEntries,
       dreamJournalEntries, preSleepIntentions, morningReflections, alternateMorningReflections,
-      meditations, reflections, sleepCalendar, userStats] = await Promise.all([
+      meditations, reflections, sleepCalendar, userStats, affirmations] = await Promise.all([
       readJson<CheckIn | null>(CHECKIN_KEY, null),
       readJson<CheckIn[]>(CHECKIN_HISTORY_KEY, []),
       readJson<unknown>(COMPLETED_QUESTS_KEY, []),
@@ -361,6 +410,7 @@ export default function StatsScreen() {
       readJson<unknown>(REFLECTIONS_KEY, []),
       readJson<unknown>(SLEEP_CALENDAR_KEY, []),
       readJson<UserStats>(USER_STATS_KEY, {}),
+      readJson<unknown[]>(AFFIRMATIONS_KEY, []),
     ]);
 
     // Compute fresh from completed actions only — ignores any stale stored totals/bonuses.
@@ -372,6 +422,7 @@ export default function StatsScreen() {
       quickThoughts,
       todayCompletions,
       userStats,
+      affirmationsCount: Array.isArray(affirmations) ? affirmations.length : 0,
     });
     // Never show a total lower than the highest ever computed (shared floor with Home —
     // see reconcileMonotonicTotalSteps) so a transient source computing lower never reads

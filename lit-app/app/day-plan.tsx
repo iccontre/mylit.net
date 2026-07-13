@@ -62,6 +62,12 @@ type ChecklistItem = {
   checked: boolean;
   /** Date (YYYY-MM-DD) `checked` was last set true — see questProgress.ts RawChecklistItem. */
   checkedDate?: string;
+  /** Full ISO timestamp of the same completion as checkedDate — see questProgress.ts RawChecklistItem. */
+  checkedAt?: string;
+  /** Last-modified timestamp — lets cross-device merges break ties by real recency. */
+  updatedAt?: string;
+  /** Tombstone — set instead of physically removing the entry so deletion survives sync. */
+  deletedAt?: string;
   steps: number;
   startTime: string;
   duration: string;
@@ -641,7 +647,7 @@ export default function DayPlanScreen() {
         [bucketDay]: (() => {
           const existing = committedPlanRef.current.weekdayChecklists[bucketDay] ?? [];
           const withoutItem = existing.filter((entry) => entry.id !== itemId);
-          return [...withoutItem, item];
+          return [...withoutItem, { ...item, updatedAt: new Date().toISOString() }];
         })(),
       },
     };
@@ -733,9 +739,12 @@ export default function DayPlanScreen() {
       setSavedMessage("Checklist items are recurring quests. Set a time so MYLIT can track them fairly.");
       return;
     }
+    const now = new Date().toISOString();
     const patch = {
       checked: nextChecked,
       checkedDate: nextChecked ? getDateKey() : undefined,
+      checkedAt: nextChecked ? now : undefined,
+      updatedAt: now,
       status: (nextChecked ? "completed" : "scheduled") as ScheduledStatus,
     };
     updateChecklistItem(itemId, patch);
@@ -1043,15 +1052,22 @@ export default function DayPlanScreen() {
       };
     });
 
-    // If this item was already saved, remove it from the committed plan too —
-    // otherwise it would reappear on Calendar/Quest Board and come back on reload.
+    // If this item was already saved, tombstone it in the committed plan instead of physically
+    // removing it — a plain removal only wins locally; a stale device/cloud copy that still has
+    // the item would resurrect it on the next merge (mergeJsonArrays unions by id and has no
+    // concept of "gone"). Marking deletedAt lets the deletion itself propagate and always win
+    // (see the deletedAt-aware merge in progressStore.ts) while every read path (getChecklistItemsForDay)
+    // filters tombstoned items out, so it disappears immediately here and everywhere else.
     const committedBucket = findChecklistBucket(committedPlanRef.current, itemId);
     if (committedBucket) {
+      const now = new Date().toISOString();
       const nextCommitted: DayPlan = {
         ...committedPlanRef.current,
         weekdayChecklists: {
           ...committedPlanRef.current.weekdayChecklists,
-          [committedBucket]: committedPlanRef.current.weekdayChecklists[committedBucket].filter((item) => item.id !== itemId),
+          [committedBucket]: committedPlanRef.current.weekdayChecklists[committedBucket].map((item) =>
+            item.id === itemId ? { ...item, deletedAt: now, updatedAt: now } : item
+          ),
         },
       };
       committedPlanRef.current = nextCommitted;

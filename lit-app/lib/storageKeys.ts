@@ -41,6 +41,8 @@ export const LATEST_PRE_SLEEP_INTENTION_KEY = "lit_latest_pre_sleep_intention";
 export const MORNING_INTENTION_REFLECTIONS_KEY = "lit_morning_intention_reflections";
 export const AWARENESS_CHECKS_KEY = "lit_awareness_checks";
 export const REFLECTIONS_KEY = "lit_reflections";
+/** AffirmationEntry[] — user-written affirmations, Mind Hub. +1 step once per saved affirmation (never on edit/delete/replay). */
+export const AFFIRMATIONS_KEY = "lit_affirmations";
 export const GOAL_FEEDBACK_LOG_KEY = "lit_goal_feedback_log";
 /** One-time Waiting Room boost usage, keyed by `${activeItemId}:${startedAt}` -> ISO timestamp used. */
 export const WAITING_ROOM_BOOSTS_KEY = "lit_waiting_room_boosts";
@@ -96,6 +98,7 @@ export const LOG_HISTORY_KEYS = {
   meditation: AWARENESS_CHECKS_KEY,
   dream: DREAM_JOURNAL_KEY,
   preSleepIntention: PRE_SLEEP_INTENTIONS_KEY,
+  affirmation: AFFIRMATIONS_KEY,
 } as const;
 
 /** AsyncStorage keys mirrored to the signed-in user's cloud profile. */
@@ -142,6 +145,7 @@ export const SYNCABLE_PROGRESS_KEYS = [
   LUNA_DAY_REMINDERS_KEY,
   LDM_MODE_STATE_KEY,
   QUICK_THOUGHT_NOTES_KEY,
+  AFFIRMATIONS_KEY,
 ] as const;
 
 export type SyncableProgressKey = (typeof SYNCABLE_PROGRESS_KEYS)[number];
@@ -168,6 +172,7 @@ export const ARRAY_MERGE_PROGRESS_KEYS = new Set<SyncableProgressKey>([
   GUIDE_MEMORY_UPDATES_KEY,
   LUNA_DAY_REMINDERS_KEY,
   QUICK_THOUGHT_NOTES_KEY,
+  AFFIRMATIONS_KEY,
 ]);
 
 export function isSyncableProgressKey(key: string): key is SyncableProgressKey {

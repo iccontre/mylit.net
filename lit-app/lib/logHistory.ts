@@ -119,6 +119,23 @@ export const normalizeMeditationLogs: HistoryNormalizer = (items) =>
     })
     .filter((e): e is HistoryEntry => e !== null);
 
+export const normalizeAffirmationLogs: HistoryNormalizer = (items) =>
+  items
+    .map((it, index): HistoryEntry | null => {
+      const text = str(it.text);
+      if (!text) return null;
+      const at = toAt(it.createdAt, it.id);
+      return {
+        id: `affirmation-${str(it.id) || index}`,
+        at,
+        whenLabel: whenLabel(it.createdAt, at),
+        heading: "Affirmation",
+        preview: clip(text),
+        body: text,
+      };
+    })
+    .filter((e): e is HistoryEntry => e !== null);
+
 export const normalizeReflectionLogs: HistoryNormalizer = (items) =>
   items.map((it, index): HistoryEntry => {
     const quest = str(it.quest);

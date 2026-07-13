@@ -71,7 +71,7 @@ import {
   MANDATORY_QUEST_TITLE,
   parseTimeToMinutes,
 } from "../../lib/scheduling";
-import { LATEST_PRE_SLEEP_INTENTION_KEY, LDM_MODE_STATE_KEY, TOTAL_STEPS_FLOOR_KEY } from "../../lib/storageKeys";
+import { AFFIRMATIONS_KEY, LATEST_PRE_SLEEP_INTENTION_KEY, LDM_MODE_STATE_KEY, TOTAL_STEPS_FLOOR_KEY } from "../../lib/storageKeys";
 import { readJson } from "../../lib/readJson";
 
 const mylitLogo = uiAssets.logo.mylit;
@@ -437,6 +437,7 @@ export default function HomeScreen() {
   const [missedQuests, setMissedQuests] = useState<MissedEntry[]>([]);
   const [focusLog, setFocusLog] = useState<FocusBlockLogEntry[]>([]);
   const [userStats, setUserStats] = useState<{ totalSteps?: number }>({});
+  const [affirmationsCount, setAffirmationsCount] = useState(0);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileChecked, setProfileChecked] = useState(false);
   const [stepRank, setStepRank] = useState<StepRank | null>(null);
@@ -668,16 +669,23 @@ export default function HomeScreen() {
   }
 
   async function loadProgressState() {
-    const [completions, missed, stats, focusLogEntries, savedFloor] = await Promise.all([
+    const [completions, missed, stats, focusLogEntries, savedFloor, affirmationsRaw] = await Promise.all([
       loadTodayCompletions(),
       loadTodayMissed(),
       AsyncStorage.getItem(USER_STATS_KEY),
       loadFocusBlockLog(),
       AsyncStorage.getItem(TOTAL_STEPS_FLOOR_KEY),
+      AsyncStorage.getItem(AFFIRMATIONS_KEY),
     ]);
     setCompletedQuests(completions);
     setMissedQuests(missed);
     setFocusLog(focusLogEntries);
+    try {
+      const parsedAffirmations = affirmationsRaw ? JSON.parse(affirmationsRaw) : [];
+      setAffirmationsCount(Array.isArray(parsedAffirmations) ? parsedAffirmations.length : 0);
+    } catch {
+      setAffirmationsCount(0);
+    }
     if (stats) {
       try {
         setUserStats(JSON.parse(stats));
@@ -1448,6 +1456,7 @@ export default function HomeScreen() {
     quickThoughts: queueItems,
     todayCompletions: completedQuests,
     userStats,
+    affirmationsCount,
   });
   const completedCount = completedQuests.length;
   const totalCount = allHomeItems.length + completedCount;

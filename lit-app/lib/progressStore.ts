@@ -170,13 +170,21 @@ export function isPayloadEmpty(raw: string | null | undefined): boolean {
   }
 }
 
-function entryTimestamp(entry: Record<string, unknown>): number {
+/** Exported for regression testing only (see scripts/checklist-sync.regression.mjs). */
+export function entryTimestamp(entry: Record<string, unknown>): number {
   return Math.max(
     toTimestamp(entry.createdAt),
     toTimestamp(entry.completedAt),
     toTimestamp(entry.missedAt),
     toTimestamp(entry.date),
-    toTimestamp(entry.dateKey)
+    toTimestamp(entry.dateKey),
+    // Checklist-style mutable entries (see RawChecklistItem in questProgress.ts) carry these
+    // instead of createdAt/completedAt — without them, two edited copies of the same id both
+    // resolve to timestamp 0 and the merge falls back to "whichever side is iterated last",
+    // which silently let a stale cloud copy win over a fresher local edit (or vice versa).
+    toTimestamp(entry.updatedAt),
+    toTimestamp(entry.checkedAt),
+    toTimestamp(entry.deletedAt)
   );
 }
 
@@ -273,7 +281,8 @@ export async function backupLocalProgressNow(): Promise<string> {
   return backupKey;
 }
 
-function mergeJsonArrays(localRaw: string, cloudRaw: string): string {
+/** Exported for regression testing only (see scripts/checklist-sync.regression.mjs). */
+export function mergeJsonArrays(localRaw: string, cloudRaw: string): string {
   const local = parseJson<unknown[]>(localRaw, []);
   const cloud = parseJson<unknown[]>(cloudRaw, []);
   const merged = new Map<string, Record<string, unknown>>();
@@ -286,6 +295,18 @@ function mergeJsonArrays(localRaw: string, cloudRaw: string): string {
     const existing = merged.get(id);
     if (!existing) {
       merged.set(id, row);
+      return;
+    }
+    // A tombstoned (deleted) entry always wins, on either side — deletion is a one-way ratchet
+    // just like completion below, so a device that hasn't seen the deletion yet can never
+    // resurrect an item the user already removed elsewhere. See RawChecklistItem.deletedAt.
+    const existingDeleted = Boolean(existing.deletedAt);
+    const rowDeleted = Boolean(row.deletedAt);
+    if (rowDeleted && !existingDeleted) {
+      merged.set(id, row);
+      return;
+    }
+    if (existingDeleted && !rowDeleted) {
       return;
     }
     const existingCompleted = Boolean(existing.completedAt || existing.status === "completed");
