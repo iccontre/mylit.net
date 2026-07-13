@@ -16,16 +16,26 @@ export function AuthBootstrap({ children }: AuthBootstrapProps) {
   const [ready, setReady] = useState(false);
   const redirectingRef = useRef(false);
   const hasBootstrappedRef = useRef(false);
-  const hasSyncedProgressRef = useRef(false);
+  // Tracks WHICH user's cloud data was last hydrated, not just "has synced once ever" — a
+  // plain boolean guard meant sign-out + a different (or the same) account signing back in
+  // within the same long-lived app session never re-triggered the cloud merge, so the new
+  // session just kept reading whatever local snapshot was left over. Resetting to null when
+  // there's no session ensures the NEXT sign-in — same device, same or different account —
+  // always re-hydrates from that account's cloud data.
+  const syncedUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     async function syncProgressIfNeeded() {
-      if (!isSupabaseConfigured() || hasSyncedProgressRef.current) return;
+      if (!isSupabaseConfigured()) return;
       const session = await getSession();
-      if (!session || cancelled) return;
-      hasSyncedProgressRef.current = true;
+      if (!session || cancelled) {
+        syncedUserIdRef.current = null;
+        return;
+      }
+      if (syncedUserIdRef.current === session.user.id) return;
+      syncedUserIdRef.current = session.user.id;
       await bootstrapSignedInSession();
     }
 

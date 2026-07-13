@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { AppState, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View, type AppStateStatus } from "react-native";
 
 import { BottomNav } from "../../components/BottomNav";
 import { LunaGuideModal } from "../../components/LunaGuideModal";
@@ -18,7 +18,8 @@ import {
 } from "../../lib/questGeneration";
 import { ANALYTICS_EVENTS, trackEvent } from "../../lib/analytics";
 import { setChecklistItemChecked, syncQuestCompleted, syncQuestMissed, syncQuestStarted } from "../../lib/progressSync";
-import { clearProgressKey, persistProgressKeys } from "../../lib/progressStore";
+import { clearProgressKey, mergeCloudIntoLocalSafely, persistProgressKeys } from "../../lib/progressStore";
+import { isSupabaseConfigured } from "../../lib/supabase";
 import { recordAgentEvent } from "../../lib/mylitAgents";
 import { syncAndGetStepRank, type StepRank } from "../../lib/stepRank";
 import {
@@ -505,6 +506,43 @@ export default function HomeScreen() {
     loadActiveItem();
     loadPreSleepStatus();
     loadLdmState();
+  }, []);
+
+  // Cross-device convergence: useFocusEffect above only re-reads LOCAL storage, which still
+  // reflects whatever the one-time startup merge produced — if another device changes LDM/quest
+  // state in the cloud afterward, this device would otherwise never see it without a full
+  // reload. Re-runs the cloud merge (safe/idempotent, coalesced by mergeInFlight) whenever the
+  // app is foregrounded, plus a light poll while it stays foregrounded, then reloads local
+  // state from the freshly-merged snapshot. No realtime subscriptions exist in this codebase
+  // yet, so this is the narrow foreground refetch + polling fallback.
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+
+    async function rehydrateFromCloud() {
+      await mergeCloudIntoLocalSafely();
+      loadProgressState();
+      loadLatestCheckIn();
+      loadQuickThoughts();
+      loadDayPlan();
+      loadActiveItem();
+      loadPreSleepStatus();
+      loadLdmState();
+    }
+
+    const onAppStateChange = (nextState: AppStateStatus) => {
+      if (nextState === "active") void rehydrateFromCloud();
+    };
+    const subscription = AppState.addEventListener("change", onAppStateChange);
+
+    const CROSS_DEVICE_POLL_MS = 2 * 60 * 1000;
+    const pollId = setInterval(() => {
+      if (AppState.currentState === "active") void rehydrateFromCloud();
+    }, CROSS_DEVICE_POLL_MS);
+
+    return () => {
+      subscription.remove();
+      clearInterval(pollId);
+    };
   }, []);
 
   // Keep the Day / Time Track marker on the real local time (refresh every 30s).

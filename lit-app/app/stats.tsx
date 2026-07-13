@@ -17,7 +17,7 @@ import {
 import { uiAssets } from "../constants/uiAssets";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
-import { signOut } from "../lib/auth";
+import { getSession, signOut } from "../lib/auth";
 import {
   computeFreshRankBonuses,
   computeItemStepsFromSources,
@@ -27,9 +27,11 @@ import {
   SKILL_TIER_SIZE,
   USER_STATS_KEY,
 } from "../lib/questProgress";
-import { forceUploadLocalProgressToCloud, persistProgressKeys } from "../lib/progressStore";
+import { clearAllLocalProgressForSignOut, forceUploadLocalProgressToCloud, getSyncDiagnostics, persistProgressKeys } from "../lib/progressStore";
 import { TODAY_QUEST_STEPS } from "../lib/scheduling";
 import { syncAndGetStepRank, type StepRank } from "../lib/stepRank";
+import { APP_VERSION } from "../lib/appVersion.generated";
+import { fetchLiveVersion } from "../lib/pwaUpdate";
 import { ProgressRecoveryModal } from "../components/ProgressRecoveryModal";
 import { BottomNav } from "../components/BottomNav";
 import { GuideFoundationCard } from "../components/GuideFoundationCard";
@@ -274,6 +276,15 @@ export default function StatsScreen() {
   const [showLearningLoopModal, setShowLearningLoopModal] = useState(false);
   const [recoveryBusy, setRecoveryBusy] = useState(false);
   const [recoveryMessage, setRecoveryMessage] = useState("");
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<{
+    liveVersion: string | null;
+    swActive: boolean;
+    userIdSuffix: string | null;
+    lastCloudHydrationAt: string | null;
+    ldmStateSource: string | null;
+    schemaVersion: number;
+  } | null>(null);
 
   useEffect(() => {
     loadStats();
@@ -296,8 +307,39 @@ export default function StatsScreen() {
     }
   }
 
+  async function loadDiagnostics() {
+    const [live, sync, session, swReg] = await Promise.all([
+      fetchLiveVersion(),
+      getSyncDiagnostics(),
+      getSession(),
+      Platform.OS === "web" && typeof navigator !== "undefined" && "serviceWorker" in navigator
+        ? navigator.serviceWorker.getRegistration()
+        : Promise.resolve(null),
+    ]);
+    setDiagnostics({
+      liveVersion: live?.version ?? null,
+      swActive: Boolean(swReg?.active),
+      // Last 6 chars only — enough to correlate a support report with a specific account
+      // without displaying the full identifier.
+      userIdSuffix: session?.user?.id ? session.user.id.slice(-6) : null,
+      lastCloudHydrationAt: sync.lastCloudHydrationAt,
+      ldmStateSource: sync.ldmStateSource,
+      schemaVersion: sync.schemaVersion,
+    });
+  }
+
+  function toggleDiagnostics() {
+    const next = !showDiagnostics;
+    setShowDiagnostics(next);
+    if (next) void loadDiagnostics();
+  }
+
   async function handleLogout() {
     await signOut();
+    // Never let this account's cached state leak into whichever account signs in next on
+    // this device — the data isn't lost, it already lives in the cloud and rehydrates
+    // normally next time this user signs back in.
+    await clearAllLocalProgressForSignOut();
     router.replace("/auth");
   }
 
@@ -509,6 +551,27 @@ export default function StatsScreen() {
                   )}
                 </TouchableOpacity>
               </View>
+
+              <TouchableOpacity style={styles.diagnosticsToggle} onPress={toggleDiagnostics}>
+                <Text style={styles.diagnosticsToggleText}>{showDiagnostics ? "HIDE DIAGNOSTICS" : "DIAGNOSTICS (SUPPORT)"}</Text>
+              </TouchableOpacity>
+              {showDiagnostics ? (
+                <View style={styles.diagnosticsCard}>
+                  {diagnostics ? (
+                    <>
+                      <Text style={styles.diagnosticsRow}>Running version: {APP_VERSION}</Text>
+                      <Text style={styles.diagnosticsRow}>Live version: {diagnostics.liveVersion ?? "unknown"}</Text>
+                      <Text style={styles.diagnosticsRow}>Service worker active: {diagnostics.swActive ? "yes" : "no"}</Text>
+                      <Text style={styles.diagnosticsRow}>Account: {diagnostics.userIdSuffix ? `…${diagnostics.userIdSuffix}` : "not signed in"}</Text>
+                      <Text style={styles.diagnosticsRow}>Schema version: {diagnostics.schemaVersion}</Text>
+                      <Text style={styles.diagnosticsRow}>Last cloud hydration: {diagnostics.lastCloudHydrationAt ?? "never"}</Text>
+                      <Text style={styles.diagnosticsRow}>LDM state source: {diagnostics.ldmStateSource ?? "n/a"}</Text>
+                    </>
+                  ) : (
+                    <ActivityIndicator color="#94A3B8" />
+                  )}
+                </View>
+              ) : null}
 
               <TouchableOpacity style={styles.logoutButton} onPress={() => void handleLogout()}>
                 <Text style={styles.logoutButtonText}>SIGN OUT</Text>
@@ -960,6 +1023,37 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "900",
     letterSpacing: 0.5,
+  },
+  diagnosticsToggle: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: "#334155",
+    borderRadius: 6,
+    paddingVertical: 8,
+    alignItems: "center",
+    backgroundColor: "rgba(15,23,42,0.5)",
+  },
+  diagnosticsToggleText: {
+    color: "#64748B",
+    fontFamily: pixelFont,
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+  },
+  diagnosticsCard: {
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: "#334155",
+    borderRadius: 6,
+    padding: 10,
+    backgroundColor: "rgba(2,4,10,0.6)",
+    gap: 3,
+  },
+  diagnosticsRow: {
+    color: "#94A3B8",
+    fontFamily: pixelFont,
+    fontSize: 9,
+    fontWeight: "700",
   },
   logoutButton: {
     marginTop: 8,

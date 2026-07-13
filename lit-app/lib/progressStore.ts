@@ -25,7 +25,7 @@ import {
   LEARNING_MEMORY_KEY,
   LDM_MODE_STATE_KEY,
 } from "./storageKeys";
-import { getDateKey } from "./scheduling";
+import { computeNextQuestDayBoundary, getDateKey } from "./scheduling";
 import { sanitizeDayPlanChecklists } from "./dayPlanChecklist";
 import { getSupabaseClient, isSupabaseConfigured } from "./supabase";
 
@@ -66,6 +66,41 @@ export type MergeResult = {
   backupKey: string | null;
 };
 
+/**
+ * Bumped only when the SHAPE of synced local/cloud data changes meaningfully (new required
+ * fields, a changed merge strategy for an existing key, etc.) — not on every app release. Shown
+ * in the support diagnostics view (see app/stats.tsx) so a mismatched schema is visible without
+ * exposing any user content.
+ */
+export const PROGRESS_SCHEMA_VERSION = 1;
+
+/** Local-only (never synced) diagnostics keys — support visibility, not account data. */
+const LAST_CLOUD_HYDRATION_AT_KEY = "lit_last_cloud_hydration_at";
+const LDM_STATE_SOURCE_KEY = "lit_ldm_state_source";
+
+export type LdmStateSource = "cloud" | "local" | "migrated";
+
+async function recordLdmStateSource(source: LdmStateSource): Promise<void> {
+  await AsyncStorage.setItem(LDM_STATE_SOURCE_KEY, source);
+}
+
+/** For the support diagnostics view — never exposes user content, just sync bookkeeping. */
+export async function getSyncDiagnostics(): Promise<{
+  lastCloudHydrationAt: string | null;
+  ldmStateSource: LdmStateSource | null;
+  schemaVersion: number;
+}> {
+  const [lastCloudHydrationAt, ldmStateSource] = await Promise.all([
+    AsyncStorage.getItem(LAST_CLOUD_HYDRATION_AT_KEY),
+    AsyncStorage.getItem(LDM_STATE_SOURCE_KEY),
+  ]);
+  return {
+    lastCloudHydrationAt,
+    ldmStateSource: ldmStateSource as LdmStateSource | null,
+    schemaVersion: PROGRESS_SCHEMA_VERSION,
+  };
+}
+
 const OBJECT_MERGE_PROGRESS_KEYS = new Set<SyncableProgressKey>([
   LOCAL_PROFILE_KEY,
   DAY_PLAN_KEY,
@@ -75,7 +110,9 @@ const OBJECT_MERGE_PROGRESS_KEYS = new Set<SyncableProgressKey>([
   USER_LIFE_PROFILE_KEY,
   GUIDE_MEMORY_KEY,
   LEARNING_MEMORY_KEY,
-  LDM_MODE_STATE_KEY,
+  // LDM_MODE_STATE_KEY is deliberately NOT here — see mergeLdmModeState, dispatched explicitly
+  // in mergePayload. A single-session object (nightKey/enteredAt/rewardApplied) needs
+  // whole-object-freshest-valid-wins, not field-by-field merging.
 ]);
 
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -359,6 +396,35 @@ function mergeActiveTimedItem(localRaw: string, cloudRaw: string): string {
   return safeNumber(cloud.startedAt) > safeNumber(local.startedAt) ? cloudRaw : localRaw;
 }
 
+/**
+ * Same whole-object-wins reasoning as mergeActiveTimedItem — LdmModeState
+ * ({nightKey, enteredAt, rewardApplied}) was previously routed through the generic
+ * mergeDeepPreferNonEmpty field-by-field merger (OBJECT_MERGE_PROGRESS_KEYS), which — because
+ * every field is typically non-empty on both sides once a session exists — always resolved to
+ * "whichever side is LOCAL", regardless of which one was actually newer. A device with a
+ * stale, already-expired local LDM record would win over a genuinely fresh cloud session from
+ * another device, which is exactly the "same account shows different LDM state on different
+ * devices" class of bug. This picks whichever side represents a NEWER, still-valid (not past
+ * its 6 AM quest-day cutoff) session; an expired or invalid side never wins over a valid one
+ * from the other side, even if it's "local".
+ */
+function mergeLdmModeState(localRaw: string, cloudRaw: string): string {
+  if (isPayloadEmpty(cloudRaw)) return localRaw;
+  if (isPayloadEmpty(localRaw)) return cloudRaw;
+
+  const local = parseJson<{ enteredAt?: string }>(localRaw, {});
+  const cloud = parseJson<{ enteredAt?: string }>(cloudRaw, {});
+  const localAt = local.enteredAt ? new Date(local.enteredAt).getTime() : NaN;
+  const cloudAt = cloud.enteredAt ? new Date(cloud.enteredAt).getTime() : NaN;
+  const localValid = Number.isFinite(localAt) && Date.now() < computeNextQuestDayBoundary(new Date(localAt)).getTime();
+  const cloudValid = Number.isFinite(cloudAt) && Date.now() < computeNextQuestDayBoundary(new Date(cloudAt)).getTime();
+
+  if (localValid && !cloudValid) return localRaw;
+  if (cloudValid && !localValid) return cloudRaw;
+  if (!localValid && !cloudValid) return localRaw;
+  return cloudAt > localAt ? cloudRaw : localRaw;
+}
+
 function mergePayload(
   key: SyncableProgressKey,
   localRaw: string,
@@ -400,6 +466,12 @@ function mergePayload(
 
   if (key === ACTIVE_TIMED_ITEM_KEY) {
     const payload = mergeActiveTimedItem(localRaw, cloudRaw);
+    const chosenAt = payload === localRaw ? localAt : cloudAt;
+    return { payload, updatedAt: new Date(Math.max(chosenAt, localAt, cloudAt)).toISOString() };
+  }
+
+  if (key === LDM_MODE_STATE_KEY) {
+    const payload = mergeLdmModeState(localRaw, cloudRaw);
     const chosenAt = payload === localRaw ? localAt : cloudAt;
     return { payload, updatedAt: new Date(Math.max(chosenAt, localAt, cloudAt)).toISOString() };
   }
@@ -522,6 +594,21 @@ export async function pushAllProgressToCloud(): Promise<void> {
   await forceUploadLocalProgressToCloud();
 }
 
+/**
+ * Clears every account-scoped local key (progress, profile, LDM/quest state — everything in
+ * ALL_SCANNABLE_PROGRESS_KEYS) after sign-out. Without this, signOut() only ended the Supabase
+ * session — all local data stayed in AsyncStorage/localStorage, so the next login on the SAME
+ * device (same account signing back in, or a DIFFERENT account on a shared device) would
+ * immediately merge that leftover local data into whichever account logs in next, via the
+ * normal "prefer non-empty local" merge rules. The signed-out user's data isn't lost — it
+ * already lives in the cloud and rehydrates normally next time they sign back in.
+ */
+export async function clearAllLocalProgressForSignOut(): Promise<void> {
+  await Promise.all(
+    [...ALL_SCANNABLE_PROGRESS_KEYS, PROGRESS_SYNC_META_KEY].map((key) => AsyncStorage.removeItem(key))
+  );
+}
+
 // Never overwrite non-empty cloud progress with empty local data.
 // Cross-device sync must merge by key/id and preserve newest meaningful user progress.
 // Runs blocking (see AuthBootstrap) on every app open/sign-in before Home/Stats can read
@@ -578,6 +665,7 @@ export async function mergeCloudIntoLocalSafely(): Promise<MergeResult> {
 
       if (meaningfulCloudKeys === 0 && meaningfulLocalKeys > 0) {
         await forceUploadLocalProgressToCloud();
+        await AsyncStorage.setItem(LAST_CLOUD_HYDRATION_AT_KEY, new Date().toISOString());
         return {
           ok: true,
           message: "Local progress uploaded to your account.",
@@ -597,6 +685,7 @@ export async function mergeCloudIntoLocalSafely(): Promise<MergeResult> {
         if (!cloud || isPayloadEmpty(cloud.payload)) {
           if (localRaw && !isPayloadEmpty(localRaw)) {
             meta[key] = meta[key] ?? new Date().toISOString();
+            if (key === LDM_MODE_STATE_KEY) await recordLdmStateSource("local");
           }
           continue;
         }
@@ -615,6 +704,7 @@ export async function mergeCloudIntoLocalSafely(): Promise<MergeResult> {
           await AsyncStorage.setItem(key, payload);
           meta[key] = cloud.updated_at;
           debugLog("pull cloud → local", key);
+          if (key === LDM_MODE_STATE_KEY) await recordLdmStateSource("migrated");
           continue;
         }
 
@@ -623,9 +713,13 @@ export async function mergeCloudIntoLocalSafely(): Promise<MergeResult> {
         await AsyncStorage.setItem(key, merged.payload);
         meta[key] = merged.updatedAt;
         debugLog("merged", key);
+        if (key === LDM_MODE_STATE_KEY) {
+          await recordLdmStateSource(merged.payload === cloud.payload ? "cloud" : "local");
+        }
       }
 
       await saveSyncMeta(meta);
+      await AsyncStorage.setItem(LAST_CLOUD_HYDRATION_AT_KEY, new Date().toISOString());
 
       const profileRaw = await AsyncStorage.getItem(LOCAL_PROFILE_KEY);
       const profile = parseJson<{ onboardingComplete?: boolean }>(profileRaw, {});
