@@ -37,10 +37,11 @@ export async function checkForPwaUpdate(): Promise<void> {
   if (!payload?.builtAt) return;
 
   if (activeBuiltAt && payload.builtAt !== activeBuiltAt) {
+    // Flag only — never reload here. This runs on the 5-min timer and on
+    // visibilitychange/focus, which fire while the tab/PWA can still be
+    // foreground. The actual reload is applied only from onVisible below, right
+    // as a NEW session starts, never while backgrounded (see onVisible).
     pendingReload = true;
-    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
-      applyPendingReload();
-    }
     return;
   }
 
@@ -55,24 +56,21 @@ export function startPwaUpdateChecks(): void {
 
   const onVisible = () => {
     if (document.visibilityState !== "visible") return;
-    // Only check and flag here — never reload while the user is actively back
-    // in the app. Forcing a reload right as the app regains focus is exactly
-    // when a tap lands in a text box, which yanked users out of typing.
-    // The reload applies the next time the app is backgrounded (onHidden).
+    // Apply any update flagged while the app was away BEFORE re-checking — a
+    // reload fired while an iOS Home Screen PWA is backgrounded (no browser
+    // chrome to recover from a stalled/suspended navigation) can leave the
+    // WKWebView on a blank/black frame when the user returns. Reloading right
+    // as the app becomes visible again — the start of a fresh session, before
+    // any new interaction — is the safe point: never mid-use, never while the
+    // OS can suspend the reload in the background.
+    if (pendingReload) {
+      applyPendingReload();
+      return;
+    }
     void checkForPwaUpdate();
   };
 
-  const onHidden = () => {
-    if (document.visibilityState === "hidden" && pendingReload) {
-      applyPendingReload();
-    }
-  };
-
-  document.addEventListener("visibilitychange", () => {
-    onVisible();
-    onHidden();
-  });
-
+  document.addEventListener("visibilitychange", onVisible);
   window.addEventListener("focus", onVisible);
   window.setInterval(() => {
     void checkForPwaUpdate();
@@ -100,11 +98,9 @@ export async function registerPwaServiceWorker(): Promise<void> {
     });
 
     navigator.serviceWorker.addEventListener("controllerchange", () => {
-      if (document.visibilityState === "hidden") {
-        applyPendingReload();
-      } else {
-        pendingReload = true;
-      }
+      // Flag only — see onVisible in startPwaUpdateChecks for why the reload itself
+      // never fires while backgrounded.
+      pendingReload = true;
     });
   } catch {
     // Service worker registration is optional; version.json polling still works.
