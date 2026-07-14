@@ -21,10 +21,10 @@ export const formPageContent = {
 
 export const formStyles = StyleSheet.create({
   input: {
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
+    backgroundColor: "rgba(58, 42, 21, 0.92)",
     borderWidth: 2,
-    borderColor: "#475569",
-    borderRadius: 6,
+    borderColor: "#8B6B3D",
+    borderRadius: 8,
     color: "#F9FAFB",
     fontFamily: pixelFont,
     fontSize: FORM_INPUT_FONT_SIZE,
@@ -32,10 +32,10 @@ export const formStyles = StyleSheet.create({
     padding: 12,
   },
   textArea: {
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
+    backgroundColor: "rgba(58, 42, 21, 0.92)",
     borderWidth: 2,
-    borderColor: "#475569",
-    borderRadius: 6,
+    borderColor: "#8B6B3D",
+    borderRadius: 8,
     color: "#F9FAFB",
     fontFamily: pixelFont,
     fontSize: FORM_INPUT_FONT_SIZE,

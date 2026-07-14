@@ -463,11 +463,11 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   input: {
-    borderRadius: 4,
+    borderRadius: 8,
     marginBottom: 4,
   },
   textArea: {
-    borderRadius: 4,
+    borderRadius: 8,
     marginBottom: 4,
   },
   chipRow: {

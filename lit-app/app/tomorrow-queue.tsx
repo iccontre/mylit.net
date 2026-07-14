@@ -860,7 +860,7 @@ const styles = StyleSheet.create({
   bigSectionTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 16, fontWeight: "900", letterSpacing: 0.5, lineHeight: 20, marginBottom: 6, textAlign: "center" },
   cancelEditText: { color: "#FCA5A5", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
   sectionTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 0.5, lineHeight: 17, marginTop: 10, marginBottom: 8 },
-  input: { backgroundColor: "rgba(2, 6, 23, 0.95)", borderRadius: 5, padding: 13, fontSize: 15, color: "#F9FAFB", borderWidth: 2, borderColor: "#475569", fontWeight: "800" },
+  input: { backgroundColor: "rgba(58, 42, 21, 0.92)", borderRadius: 8, padding: 13, fontSize: 15, color: "#F9FAFB", borderWidth: 2, borderColor: "#8B6B3D", fontWeight: "800" },
   kindSelectorRow: { flexDirection: "row", gap: 10 },
   kindButton: { flex: 1, borderWidth: 2, paddingVertical: 11, alignItems: "center" },
   kindProgress: { borderColor: "#FBBF24", backgroundColor: "rgba(69,43,8,0.35)" },

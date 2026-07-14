@@ -66,8 +66,11 @@ import {
 } from "../../lib/questProgress";
 import {
   computeAfternoonUnlockLabel,
+  computeAfternoonUnlockTimestamp,
   DEFAULT_AFTERNOON_UNLOCK_TIME,
+  resolveWakeTimestamp,
   formatDurationLabel,
+  formatMinutesAsTime,
   formatEnergyDelta,
   getEnergyDelta,
   getGuideMessageSlot,
@@ -197,6 +200,9 @@ type CheckIn = {
   /** Sleep Guide fields — used only to compute the wind-down lock window (see getWindDownQuest). */
   desiredSleepTime?: string;
   windDownMinutes?: number;
+  /** Morning Check-In's recorded wake time — top priority source for the Afternoon Check-In 5-hour unlock. */
+  wakeTime?: string;
+  finalWakeTime?: string;
 };
 
 type WeekdayName = "Sunday" | "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "Saturday";
@@ -315,6 +321,8 @@ function clampEnergy(value: number) {
 // mode, derived purely from local time via isLdmActive (no button/session/route). Active
 // 9:00 PM through the shared 6:00 AM quest-day boundary.
 const PRE_SLEEP_ROUTINE_TITLE = "Start pre-sleep routine";
+/** Squarely in the existing Low Flame band (25-44) — see getFireAssetForEnergy. */
+const LDM_FORCED_FLAME_SCORE = 30;
 const PRE_SLEEP_ROUTINE_DURATION_MINUTES = 60;
 /** Total scheduled quest duration shown during LDM may never exceed this — the 60-min routine
  *  quest counts toward it, leaving at most 60 more minutes for other LDM-eligible quests. */
@@ -451,6 +459,7 @@ export default function HomeScreen() {
   const [affirmationTexts, setAffirmationTexts] = useState<string[]>([]);
   const [afternoonUnlockLabel, setAfternoonUnlockLabel] = useState(DEFAULT_AFTERNOON_UNLOCK_TIME);
   const [afternoonUnlockChecked, setAfternoonUnlockChecked] = useState(false);
+  const [afternoonWakeTimeLabel, setAfternoonWakeTimeLabel] = useState<string | undefined>(undefined);
   const [guideReaction, setGuideReaction] = useState<CompletionGuide | null>(null);
   const [flameReaction, setFlameReaction] = useState<CompletionEnergyEffect | null>(null);
   const [reducedMotion, setReducedMotion] = useState(false);
@@ -581,10 +590,29 @@ export default function HomeScreen() {
   }, []);
 
   /** Same computation sleep-checkin.tsx uses for its own lock screen — kept in sync via the
-   *  shared computeAfternoonUnlockLabel helper so Home's gate and the form's lock agree. */
+   *  shared computeAfternoonUnlockLabel helper so Home's gate and the form's lock agree.
+   *  Prefers today's actually-recorded wake time (Morning Check-In) over the general
+   *  planned/learned estimate, read directly rather than via `latestCheckIn` state to avoid a
+   *  load-order race within this same effect. */
   async function loadAfternoonUnlockLabel() {
-    const [lifeProfile, guideMemory] = await Promise.all([loadUserLifeProfile(), loadGuideMemory()]);
-    setAfternoonUnlockLabel(computeAfternoonUnlockLabel(lifeProfile.plannedWakeTime, guideMemory.wakeRhythm?.consistentWakeTimeEstimate));
+    const [lifeProfile, guideMemory, savedCheckInRaw] = await Promise.all([
+      loadUserLifeProfile(),
+      loadGuideMemory(),
+      AsyncStorage.getItem(CHECKIN_KEY),
+    ]);
+    let todayRecordedWakeTime: string | undefined;
+    try {
+      const saved = savedCheckInRaw ? (JSON.parse(savedCheckInRaw) as CheckIn) : null;
+      if (saved?.createdAt && getQuestDayKey(new Date(saved.createdAt)) === getQuestDayKey()) {
+        todayRecordedWakeTime = saved.wakeTime || saved.finalWakeTime;
+      }
+    } catch {
+      // Malformed saved check-in — fall back to the general estimate.
+    }
+    setAfternoonUnlockLabel(
+      computeAfternoonUnlockLabel(lifeProfile.plannedWakeTime, guideMemory.wakeRhythm?.consistentWakeTimeEstimate, todayRecordedWakeTime)
+    );
+    setAfternoonWakeTimeLabel(todayRecordedWakeTime || lifeProfile.plannedWakeTime || guideMemory.wakeRhythm?.consistentWakeTimeEstimate);
     setAfternoonUnlockChecked(true);
   }
 
@@ -1247,14 +1275,26 @@ export default function HomeScreen() {
   //   2. Afternoon Check-In said "didn't eat" — mandatory food quest.
   //   3. Energy below the existing low-energy threshold — mandatory energy/rest quest.
   //   4. Both 2 and 3 — both quests show; ordinary quests stay locked until both resolve.
-  const afternoonUnlockMinutesForGate = parseTimeToMinutes(afternoonUnlockLabel) ?? 14 * 60;
+  //
+  // afternoonUnlockAt = wakeTimestamp + 5 hours, using the real recorded wake time when known
+  // (see loadAfternoonUnlockLabel's priority chain) — resolveWakeTimestamp anchors it to the
+  // correct calendar date even for a wake time that crosses midnight. Falls back to the
+  // label-based minutes-of-day comparison only when no wake timestamp can be resolved at all.
+  const wakeTimestamp = resolveWakeTimestamp(afternoonWakeTimeLabel, timeNow);
+  const afternoonUnlockAt = computeAfternoonUnlockTimestamp(wakeTimestamp);
+  const afternoonUnlockFallbackMinutes = parseTimeToMinutes(afternoonUnlockLabel) ?? 14 * 60;
   const nowMinutesForGates = timeNow.getHours() * 60 + timeNow.getMinutes();
+  const afternoonUnlockReached = afternoonUnlockAt
+    ? timeNow.getTime() >= afternoonUnlockAt.getTime()
+    : nowMinutesForGates >= afternoonUnlockFallbackMinutes;
+  const afternoonUnlockDisplayLabel = afternoonUnlockAt ? formatMinutesAsTime(afternoonUnlockAt.getHours() * 60 + afternoonUnlockAt.getMinutes()) : afternoonUnlockLabel;
   const afternoonCheckInDoneToday =
     latestCheckIn?.afternoonCheckInCompletedToday === true && latestCheckIn?.afternoonCheckInQuestDayKey === getTodayKey();
+  // Never unlocks during LDM, even once 5 hours have elapsed since waking.
+  const afternoonCheckInUnlocked = !ldmActive && afternoonUnlockChecked && afternoonUnlockReached;
   // Only meaningful once Morning Check-In is already done (hasEnergyData) — Neutral mode has
   // its own separate "Complete Morning Check-In" prompt in generateQuests().
-  const isAfternoonCheckInGateActive =
-    hasEnergyData && afternoonUnlockChecked && nowMinutesForGates >= afternoonUnlockMinutesForGate && !afternoonCheckInDoneToday;
+  const isAfternoonCheckInGateActive = hasEnergyData && afternoonCheckInUnlocked && !afternoonCheckInDoneToday;
 
   const mandatoryFoodQuest = isAfternoonCheckInGateActive ? null : getMandatoryFoodQuest();
   const mandatoryEnergyQuest = isAfternoonCheckInGateActive ? null : getMandatoryEnergyQuest();
@@ -1270,8 +1310,15 @@ export default function HomeScreen() {
 
   const todayName = getWeekdayName();
 
-  const flameState = useMemo(() => getFireAssetForEnergy(energyYield), [energyYield]);
-  const flameLabel = hasEnergyData ? flameState.label : "Check-in needed";
+  // LDM forces the DISPLAYED flame to the existing Low Flame band (25-44) without touching
+  // energyYield itself — every other calculation (mandatory gates, energy costs/restores,
+  // Stats) keeps reading the real underlying stored value untouched. Normal flame selection
+  // resumes automatically once ldmActive goes false (this recomputes on the very next render).
+  const flameState = useMemo(
+    () => getFireAssetForEnergy(ldmActive ? LDM_FORCED_FLAME_SCORE : energyYield),
+    [energyYield, ldmActive]
+  );
+  const flameLabel = ldmActive ? flameState.label : hasEnergyData ? flameState.label : "Check-in needed";
 
   const modeInstruction = isNeutral
     ? "A new day awaits. Small steps today, bright tomorrows."
@@ -1279,8 +1326,11 @@ export default function HomeScreen() {
     ? "Gentle steps today. You're doing enough."
     : "Keep building momentum. Your best day is ahead.";
 
-  const guideName = isRecovery ? "Luna" : "Evie";
-  const guideImage = isRecovery ? uiAssets.guides.luna : uiAssets.guides.evie;
+  // LDM always uses Luna, regardless of the underlying stored day mode — previously this only
+  // checked isRecovery, so a user whose last check-in was Progress-mode would see Evie during
+  // LDM instead of Luna.
+  const guideName = ldmActive || isRecovery ? "Luna" : "Evie";
+  const guideImage = ldmActive || isRecovery ? uiAssets.guides.luna : uiAssets.guides.evie;
   // Deterministic by user + quest-day + 30-minute slot — every device on the same account
   // resolves the identical message at the identical slot without persisting "which message is
   // showing" anywhere (see getGuideMessageSlot/pickGuideMessage in lib/scheduling.ts).
@@ -1290,7 +1340,7 @@ export default function HomeScreen() {
   // Recovery mode mixes in the user's own saved affirmations alongside Luna's built-in
   // support messages; with none saved yet, Luna's built-ins are the whole pool.
   const lunaMessagePool = affirmationTexts.length > 0 ? [...LUNA_ROTATING_MESSAGES, ...affirmationTexts] : LUNA_ROTATING_MESSAGES;
-  const guideMessage = pickGuideMessage(isRecovery ? lunaMessagePool : EVIE_ROTATING_MESSAGES, guideMessageSalt);
+  const guideMessage = pickGuideMessage(ldmActive || isRecovery ? lunaMessagePool : EVIE_ROTATING_MESSAGES, guideMessageSalt);
   const guideMessageIsAffirmation = isRecovery && affirmationTexts.includes(guideMessage);
   const neutralGuideMessage = pickGuideMessage(NEUTRAL_ROTATING_MESSAGES, guideMessageSalt);
 
@@ -1720,7 +1770,7 @@ export default function HomeScreen() {
               </View>
 
               <Text style={[styles.modeLabel, { color: ldmActive ? "#C4B5FD" : theme.accent }]}>
-                {ldmActive ? "LUCID DREAMING MODE" : isNeutral ? "NEUTRAL MODE" : isRecovery ? "RECOVERY MODE" : "PROGRESS MODE"}
+                {ldmActive ? "Lucid Dreaming Mode" : isNeutral ? "NEUTRAL MODE" : isRecovery ? "RECOVERY MODE" : "PROGRESS MODE"}
               </Text>
 
               {ldmActive ? (
@@ -1739,7 +1789,7 @@ export default function HomeScreen() {
                 </View>
               ) : null}
 
-              {!isNeutral ? (
+              {!isNeutral || ldmActive ? (
                 <View style={styles.guideScene}>
                   <View style={styles.guideEmblemWrap}>
                     <Image source={guideImage} style={[styles.guideEmblem, { borderColor: theme.accent }]} resizeMode="contain" />
@@ -1753,15 +1803,15 @@ export default function HomeScreen() {
                     <View style={[styles.speechBubble, { borderColor: guideMessageIsAffirmation ? "#F472B6" : theme.accent }]}>
                       <Text style={styles.speechText}>{guideMessage}</Text>
                       <Text style={[styles.speechName, { color: guideMessageIsAffirmation ? "#F472B6" : theme.accent }]}>
-                        {guideMessageIsAffirmation ? "Luna · from your affirmations 💗" : `${guideName} ${isRecovery ? "💜" : "💚"}`}
+                        {guideMessageIsAffirmation ? "Luna · from your affirmations 💗" : `${guideName} ${ldmActive || isRecovery ? "💜" : "💚"}`}
                       </Text>
                     </View>
                     <TouchableOpacity
                       style={[styles.talkToGuideBtn, { backgroundColor: theme.accent }]}
-                      onPress={() => (isRecovery ? setShowHomeLunaModal(true) : setShowHomeEvieModal(true))}
+                      onPress={() => (ldmActive || isRecovery ? setShowHomeLunaModal(true) : setShowHomeEvieModal(true))}
                     >
                       <Text style={styles.talkToGuideBtnText}>
-                        {isRecovery ? "Talk to Luna" : "Talk to Evie"}
+                        {ldmActive || isRecovery ? "Talk to Luna" : "Talk to Evie"}
                       </Text>
                     </TouchableOpacity>
                     {isRecovery ? (
@@ -1784,7 +1834,7 @@ export default function HomeScreen() {
               )}
 
               <View style={styles.flameSection}>
-                {hasEnergyData && flameState.image ? (
+                {(hasEnergyData || ldmActive) && flameState.image ? (
                   <AnimatedFlame
                     source={flameState.animated}
                     fallbackSource={flameState.image}
@@ -1846,7 +1896,17 @@ export default function HomeScreen() {
                     )}
                   </View>
                 ) : null}
-                {!isNeutral ? (
+                {ldmActive ? (
+                  // The numeric score reflects the real underlying (untouched) energy value —
+                  // showing it next to the forced Low Flame label would look contradictory, so
+                  // LDM shows only the flame label plus a short night-appropriate caption.
+                  <>
+                    <Text style={[styles.flameMeterText, { color: theme.soft }]}>{flameLabel}</Text>
+                    <Text style={[styles.flameProtectText, { color: theme.accent }]} numberOfLines={2}>
+                      Rest now — your flame stays protected overnight.
+                    </Text>
+                  </>
+                ) : !isNeutral ? (
                   <>
                     <View style={styles.energyScoreLine}>
                       <Text style={[styles.energyScore, { color: theme.glow }]}>{energyYield}</Text>
@@ -1889,33 +1949,45 @@ export default function HomeScreen() {
               <LunaGuideModal visible={showHomeLunaModal} onClose={() => setShowHomeLunaModal(false)} />
               <EvieGuideModal visible={showHomeEvieModal} onClose={() => setShowHomeEvieModal(false)} />
 
-              <View style={styles.checkInRow}>
-                <TouchableOpacity style={[styles.checkInCard, { borderColor: theme.accent }]} onPress={() => navigateWithHaptic("/sleep-checkin")}>
-                  <View style={styles.checkIconBox}><Text style={styles.checkIcon}>🌄</Text></View>
-                  <View style={styles.checkTextBox}>
-                    <Text style={[styles.checkTitle, { color: theme.glow }]}>MORNING{"\n"}CHECK-IN</Text>
-                    <Text style={styles.checkSubtitle} numberOfLines={2}>{isRecovery ? "Start your day with kindness." : "Start strong. Set your focus."}</Text>
-                  </View>
-                  <Text style={[styles.checkArrow, { color: theme.accent }]}>›</Text>
-                </TouchableOpacity>
+              {!ldmActive ? (
+                <View style={styles.checkInRow}>
+                  <TouchableOpacity style={[styles.checkInCard, { borderColor: theme.accent }]} onPress={() => navigateWithHaptic("/sleep-checkin")}>
+                    <View style={styles.checkIconBox}><Text style={styles.checkIcon}>🌄</Text></View>
+                    <View style={styles.checkTextBox}>
+                      <Text style={[styles.checkTitle, { color: theme.glow }]}>MORNING{"\n"}CHECK-IN</Text>
+                      <Text style={styles.checkSubtitle} numberOfLines={2}>{isRecovery ? "Start your day with kindness." : "Start strong. Set your focus."}</Text>
+                    </View>
+                    <Text style={[styles.checkArrow, { color: theme.accent }]}>›</Text>
+                  </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={[styles.checkInCard, { borderColor: theme.accent }]}
-                  onPress={() =>
-                    router.push({
-                      pathname: "/sleep-checkin",
-                      params: { checkInType: "afternoon" },
-                    })
-                  }
-                >
-                  <View style={styles.checkIconBox}><Text style={styles.checkIcon}>{isRecovery ? "🌙" : "🌇"}</Text></View>
-                  <View style={styles.checkTextBox}>
-                    <Text style={[styles.checkTitle, { color: theme.glow }]}>AFTERNOON{"\n"}CHECK-IN</Text>
-                    <Text style={styles.checkSubtitle} numberOfLines={2}>{isRecovery ? "Pause, breathe, reset." : "Recalibrate. Keep going."}</Text>
-                  </View>
-                  <Text style={[styles.checkArrow, { color: theme.accent }]}>›</Text>
-                </TouchableOpacity>
-              </View>
+                  {afternoonCheckInUnlocked ? (
+                    <TouchableOpacity
+                      style={[styles.checkInCard, { borderColor: theme.accent }]}
+                      onPress={() =>
+                        router.push({
+                          pathname: "/sleep-checkin",
+                          params: { checkInType: "afternoon" },
+                        })
+                      }
+                    >
+                      <View style={styles.checkIconBox}><Text style={styles.checkIcon}>{isRecovery ? "🌙" : "🌇"}</Text></View>
+                      <View style={styles.checkTextBox}>
+                        <Text style={[styles.checkTitle, { color: theme.glow }]}>AFTERNOON{"\n"}CHECK-IN</Text>
+                        <Text style={styles.checkSubtitle} numberOfLines={2}>{isRecovery ? "Pause, breathe, reset." : "Recalibrate. Keep going."}</Text>
+                      </View>
+                      <Text style={[styles.checkArrow, { color: theme.accent }]}>›</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <View style={[styles.checkInCard, styles.checkInCardLocked]}>
+                      <View style={styles.checkIconBox}><Text style={styles.checkIcon}>🔒</Text></View>
+                      <View style={styles.checkTextBox}>
+                        <Text style={[styles.checkTitle, { color: "#94A3B8" }]}>AFTERNOON{"\n"}CHECK-IN</Text>
+                        <Text style={styles.checkSubtitle} numberOfLines={2}>Opens {afternoonUnlockDisplayLabel}</Text>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              ) : null}
 
               <TouchableOpacity style={styles.createQuestBtn} onPress={() => setShowQuestChooserModal(true)}>
                 <Text style={styles.createQuestBtnText}>+ CREATE A QUEST</Text>
@@ -2261,6 +2333,8 @@ export default function HomeScreen() {
                             ? "It's okay to take a break. Eat so you have enough energy to continue."
                             : selectedItem.title === MANDATORY_ENERGY_QUEST_TITLE
                             ? "It's okay to take a break. Rest so you have enough energy to continue."
+                            : selectedItem.title === PRE_SLEEP_ROUTINE_TITLE
+                            ? "Let's wind down together. Check off each step, then complete the routine."
                             : "Luna set this quest to help protect your flame."}
                         </Text>
                       </View>
@@ -2682,8 +2756,23 @@ const styles = StyleSheet.create({
   chooserRowExplain: { color: "#94A3B8", fontSize: 11, fontWeight: "700", marginTop: 2 },
   chooserCloseBtn: { marginTop: 4, alignItems: "center", paddingVertical: 10 },
   chooserCloseBtnText: { color: "#94A3B8", fontFamily: "monospace", fontSize: 11, fontWeight: "900" },
-  dreamJournalBtn: { borderWidth: 2, borderColor: "#4338CA", borderRadius: 8, paddingVertical: 12, alignItems: "center", backgroundColor: "rgba(49,46,129,0.5)", marginBottom: 10 },
-  dreamJournalBtnText: { color: "#C7D2FE", fontFamily: "monospace", fontSize: 13, fontWeight: "900", letterSpacing: 0.5 },
+  // Solid purple filled action button — the same fill/border pairing already used for
+  // Luna/Recovery-kind quest cards elsewhere on Home, per the shared purple filled-action
+  // treatment (no dedicated ActionButton component exists yet to import instead).
+  dreamJournalBtn: {
+    borderWidth: 3,
+    borderColor: "#4C1D95",
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: "center",
+    backgroundColor: "#7C3AED",
+    marginBottom: 10,
+    shadowColor: "#000",
+    shadowOpacity: 0.6,
+    shadowRadius: 0,
+    shadowOffset: { width: 3, height: 3 },
+  },
+  dreamJournalBtnText: { color: "#FFFFFF", fontFamily: "monospace", fontSize: 13, fontWeight: "900", letterSpacing: 0.5 },
   ldmDoneCard: { borderWidth: 2, borderColor: "#A78BFA", borderRadius: 8, padding: 12, backgroundColor: "rgba(88,28,135,0.35)", marginBottom: 10 },
   ldmDoneText: { color: "#E9D5FF", fontSize: 12, lineHeight: 17, fontWeight: "700", textAlign: "center" },
   // No outer card — the flame sits directly on the background with just its own glow (see
@@ -2928,6 +3017,10 @@ const styles = StyleSheet.create({
     padding: 7,
     flexDirection: "row",
     alignItems: "center",
+  },
+  checkInCardLocked: {
+    borderColor: "#334155",
+    opacity: 0.75,
   },
   checkIconBox: {
     height: 46,

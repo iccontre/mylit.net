@@ -492,19 +492,55 @@ export function formatMinutesAsTime(minutes: number): string {
 }
 
 export const DEFAULT_AFTERNOON_UNLOCK_TIME = "2:00 PM";
-export const AFTERNOON_UNLOCK_HOURS_AFTER_WAKE = 7;
+export const AFTERNOON_UNLOCK_HOURS_AFTER_WAKE = 5;
 
 /**
- * Afternoon Check-In unlocks 7h after the user's planned/learned wake time, or a safe 2 PM
- * default when neither exists. Shared by sleep-checkin.tsx (the form's own lock screen) and
+ * Afternoon Check-In unlocks exactly 5h after the user's wake time, or a safe 2 PM default
+ * when no wake data exists. Shared by sleep-checkin.tsx (the form's own lock screen) and
  * Home's mandatory-gate selector (index.tsx), so both agree on exactly when the gate applies.
  */
-export function computeAfternoonUnlockLabel(plannedWakeTime: string | undefined, consistentWakeTimeEstimate: string | undefined): string {
-  const wakeTime = plannedWakeTime?.trim() || consistentWakeTimeEstimate?.trim();
+/**
+ * Priority: (1) today's actually-recorded wake time (Morning Check-In/sleep log), (2) the
+ * user's configured/planned wake time, (3) a rolling learned estimate, (4) the safe default
+ * label. Todo's actual value is the whole point of "unlock 5 hours after the user's ACTUAL
+ * wake time" — the other tiers are legitimate estimates for when today's real value isn't
+ * known yet (e.g. before Morning Check-In).
+ */
+export function computeAfternoonUnlockLabel(
+  plannedWakeTime: string | undefined,
+  consistentWakeTimeEstimate: string | undefined,
+  todayRecordedWakeTime?: string
+): string {
+  const wakeTime = todayRecordedWakeTime?.trim() || plannedWakeTime?.trim() || consistentWakeTimeEstimate?.trim();
   if (!wakeTime) return DEFAULT_AFTERNOON_UNLOCK_TIME;
   const wakeMinutes = parseTimeToMinutes(wakeTime);
   if (wakeMinutes === null) return DEFAULT_AFTERNOON_UNLOCK_TIME;
   return formatMinutesAsTime(wakeMinutes + AFTERNOON_UNLOCK_HOURS_AFTER_WAKE * 60);
+}
+
+/**
+ * Resolves the actual Date the user woke up, anchored to the correct calendar date within the
+ * current quest day — a wake time before 6 AM belongs to the NEXT calendar date within the
+ * same quest day (the quest day that started at 6 AM the day before), so this handles
+ * midnight-crossing wake times correctly instead of just wrapping a bare minutes-of-day value.
+ */
+export function resolveWakeTimestamp(wakeTimeLabel: string | undefined, now: Date = new Date()): Date | null {
+  const trimmed = wakeTimeLabel?.trim();
+  if (!trimmed) return null;
+  const minutes = parseTimeToMinutes(trimmed);
+  if (minutes === null) return null;
+
+  const questDay = getQuestDayKey(now);
+  const anchor = new Date(`${questDay}T00:00:00`);
+  if (minutes < QUEST_DAY_BOUNDARY_HOUR * 60) anchor.setDate(anchor.getDate() + 1);
+  anchor.setMinutes(anchor.getMinutes() + minutes);
+  return anchor;
+}
+
+/** afternoonUnlockAt = wakeTimestamp + 5 hours (AFTERNOON_UNLOCK_HOURS_AFTER_WAKE). */
+export function computeAfternoonUnlockTimestamp(wakeTimestamp: Date | null): Date | null {
+  if (!wakeTimestamp) return null;
+  return new Date(wakeTimestamp.getTime() + AFTERNOON_UNLOCK_HOURS_AFTER_WAKE * 60 * 60 * 1000);
 }
 
 export function shiftTimeSlot(time: string, direction: -1 | 1, slots = generateTimeSlots()): string {

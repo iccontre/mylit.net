@@ -404,7 +404,7 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   textArea: {
-    borderRadius: 4,
+    borderRadius: 8,
     marginBottom: 6,
   },
   chipRow: {

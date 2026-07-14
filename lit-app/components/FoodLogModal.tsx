@@ -210,10 +210,10 @@ const styles = StyleSheet.create({
   choiceText: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
   choiceTextActive: { color: "#F9FAFB" },
   input: {
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
+    backgroundColor: "rgba(58, 42, 21, 0.92)",
     borderWidth: 2,
-    borderColor: "#334155",
-    borderRadius: 6,
+    borderColor: "#8B6B3D",
+    borderRadius: 8,
     paddingVertical: 10,
     paddingHorizontal: 12,
     color: "#F9FAFB",

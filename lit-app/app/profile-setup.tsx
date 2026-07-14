@@ -132,7 +132,7 @@ export default function ProfileSetupScreen() {
               value={displayName}
               onChangeText={setDisplayName}
               placeholder="Example: Isaac"
-              placeholderTextColor="#64748B"
+              placeholderTextColor="#8A5D2B"
             />
 
             <Text style={styles.fieldLabel}>AGE RANGE (OPTIONAL)</Text>
@@ -160,7 +160,7 @@ export default function ProfileSetupScreen() {
               onChangeText={setInviteCode}
               autoCapitalize="characters"
               placeholder="Enter code if you have one"
-              placeholderTextColor="#64748B"
+              placeholderTextColor="#8A5D2B"
             />
 
             {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -278,11 +278,11 @@ const styles = StyleSheet.create({
   },
   input: {
     minHeight: 44,
-    backgroundColor: "rgba(2, 6, 23, 0.9)",
+    backgroundColor: "rgba(255, 242, 201, 0.92)",
     borderWidth: 2,
-    borderColor: "#334155",
-    borderRadius: 6,
-    color: "#F8FAFC",
+    borderColor: "#6F4312",
+    borderRadius: 8,
+    color: "#1F1306",
     fontFamily: readableFont,
     fontSize: 16,
     fontWeight: "700",

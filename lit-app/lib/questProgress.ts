@@ -1096,6 +1096,18 @@ export function computeFreshRankBonuses(earnedSteps: number): { rankBonusPool: n
   return { rankBonusPool: awardedThresholds.length * 10, awardedThresholds };
 }
 
+/**
+ * ROOT CAUSE of "steps not being added" for recurring checklist habits: buildStableItemId
+ * returns the bare rawId (no date component) whenever one is supplied — which checklist,
+ * quick-thought, and calendar items all do — so the SAME item has the SAME id every day. A
+ * stale completion entry from days ago (left behind by a cross-device array-merge that unions
+ * by id, or any other path that doesn't go through the day-boundary reset below) would
+ * otherwise still satisfy `completedIds.has(item.id)` today, permanently hiding that recurring
+ * item from the board and silently no-op'ing markItemComplete's own dedup guard — the exact
+ * "I completed it but nothing happened" symptom. loadTodayMissed already filtered by
+ * dateKey === today for this same reason; loadTodayCompletions was missing the equivalent
+ * filter. Every caller of "today's completions" must only ever see entries actually dated today.
+ */
 export async function loadTodayCompletions(): Promise<CompletionEntry[]> {
   const today = getTodayKey();
   const savedDate = await AsyncStorage.getItem(TODAY_PROGRESS_DATE_KEY);
@@ -1107,14 +1119,18 @@ export async function loadTodayCompletions(): Promise<CompletionEntry[]> {
     });
     return [];
   }
-  return parseCompletions(savedQuests, today);
+  return parseCompletions(savedQuests, today).filter((entry) => entry.dateKey === today);
 }
 
 export async function saveTodayCompletions(entries: CompletionEntry[]): Promise<void> {
   const today = getTodayKey();
+  // Self-heals any stale cross-device leftovers already sitting in storage — every write
+  // re-asserts that COMPLETED_QUESTS_KEY only ever contains today's entries, so a merge can
+  // never permanently wedge a recurring item's id behind an old day's completion again.
+  const todayOnly = entries.filter((entry) => entry.dateKey === today);
   await persistProgressKeys({
     [TODAY_PROGRESS_DATE_KEY]: today,
-    [COMPLETED_QUESTS_KEY]: JSON.stringify(entries),
+    [COMPLETED_QUESTS_KEY]: JSON.stringify(todayOnly),
   });
 }
 

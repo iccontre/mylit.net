@@ -240,8 +240,25 @@ export default function SleepCheckInScreen() {
   useEffect(() => {
     loadLatestCheckIn();
     void (async () => {
-      const [lifeProfile, guideMemory] = await Promise.all([loadUserLifeProfile(), loadGuideMemory()]);
-      setAfternoonUnlockLabel(computeAfternoonUnlockLabel(lifeProfile.plannedWakeTime, guideMemory.wakeRhythm?.consistentWakeTimeEstimate));
+      const [lifeProfile, guideMemory, savedCheckInRaw] = await Promise.all([
+        loadUserLifeProfile(),
+        loadGuideMemory(),
+        AsyncStorage.getItem(LATEST_CHECKIN_KEY),
+      ]);
+      // Today's actually-recorded wake time (from this morning's real check-in) takes priority
+      // over the general planned/learned estimate — see computeAfternoonUnlockLabel.
+      let todayRecordedWakeTime: string | undefined;
+      try {
+        const saved = savedCheckInRaw ? (JSON.parse(savedCheckInRaw) as CheckIn) : null;
+        if (saved?.createdAt && new Date(saved.createdAt).toLocaleDateString("en-CA") === getTodayKeyLocal()) {
+          todayRecordedWakeTime = saved.wakeTime || saved.finalWakeTime;
+        }
+      } catch {
+        // Malformed saved check-in — fall back to the general estimate below.
+      }
+      setAfternoonUnlockLabel(
+        computeAfternoonUnlockLabel(lifeProfile.plannedWakeTime, guideMemory.wakeRhythm?.consistentWakeTimeEstimate, todayRecordedWakeTime)
+      );
       setAfternoonUnlockChecked(true);
     })();
   }, []);
@@ -950,14 +967,14 @@ const styles = StyleSheet.create({
     fontFamily: pixelFont,
   },
   input: {
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
-    borderRadius: 4,
+    backgroundColor: "rgba(58, 42, 21, 0.92)",
+    borderRadius: 8,
     padding: 12,
     fontSize: 16,
     fontWeight: "800",
     color: "#F9FAFB",
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#8B6B3D",
     fontFamily: pixelFont,
   },
   multilineInput: {

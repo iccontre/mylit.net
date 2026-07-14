@@ -740,7 +740,7 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   textArea: {
-    borderRadius: 4,
+    borderRadius: 8,
   },
   primaryButton: {
     backgroundColor: "#111827",
