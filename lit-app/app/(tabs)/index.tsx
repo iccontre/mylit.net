@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AppState, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View, type AppStateStatus } from "react-native";
+import { AccessibilityInfo, AppState, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View, type AppStateStatus } from "react-native";
 
 import { BottomNav } from "../../components/BottomNav";
 import { LunaGuideModal } from "../../components/LunaGuideModal";
@@ -20,7 +20,13 @@ import { ANALYTICS_EVENTS, trackEvent } from "../../lib/analytics";
 import { setChecklistItemChecked, syncQuestCompleted, syncQuestMissed, syncQuestStarted } from "../../lib/progressSync";
 import { clearProgressKey, mergeCloudIntoLocalSafely, persistProgressKeys } from "../../lib/progressStore";
 import { isSupabaseConfigured } from "../../lib/supabase";
-import { recordAgentEvent } from "../../lib/mylitAgents";
+import { loadGuideMemory, loadUserLifeProfile, recordAgentEvent } from "../../lib/mylitAgents";
+import {
+  emitQuestCompletionFeedback,
+  subscribeToCompletionFeedback,
+  type CompletionEnergyEffect,
+  type CompletionGuide,
+} from "../../lib/completionFeedback";
 import { syncAndGetStepRank, type StepRank } from "../../lib/stepRank";
 import {
   ACTIVE_TIMED_ITEM_KEY,
@@ -53,23 +59,31 @@ import {
   TODAY_QUEST_TWO_HOUR_MINUTES,
   type CompletionEntry,
   type FocusBlockLogEntry,
+  type GuideOwner,
   type HomeQuestItem,
   type MissedEntry,
   type QuestKind,
 } from "../../lib/questProgress";
 import {
+  computeAfternoonUnlockLabel,
   computeNextQuestDayBoundary,
+  DEFAULT_AFTERNOON_UNLOCK_TIME,
   formatDurationLabel,
   formatEnergyDelta,
   getEnergyDelta,
+  getGuideMessageSlot,
   getMandatoryQuestRestoreEnergy,
+  getQuestDayKey,
   getStepsForItem,
+  isMandatoryQuestTitle,
   LDM_HYGIENE_TITLE,
   LDM_JOURNALING_TITLE,
   LDM_NIGHT_REFLECTION_TITLE,
   LDM_READING_TITLE,
-  MANDATORY_QUEST_TITLE,
+  MANDATORY_ENERGY_QUEST_TITLE,
+  MANDATORY_FOOD_QUEST_TITLE,
   parseTimeToMinutes,
+  pickGuideMessage,
 } from "../../lib/scheduling";
 import { AFFIRMATIONS_KEY, LATEST_PRE_SLEEP_INTENTION_KEY, LDM_MODE_STATE_KEY, TOTAL_STEPS_FLOOR_KEY } from "../../lib/storageKeys";
 import { readJson } from "../../lib/readJson";
@@ -100,6 +114,7 @@ type Quest = {
   kind?: QuestKind;
   /** LDM routine task (hygiene/journaling/reading/night reflection) — see getLdmRoutineQuests. */
   ldmRoutine?: boolean;
+  guide?: GuideOwner;
 };
 
 type QueueItem = {
@@ -177,6 +192,9 @@ type CheckIn = {
   eatenSinceMorning?: boolean;
   foodSinceMorning?: string;
   createdAt?: string;
+  afternoonCheckInCompletedToday?: boolean;
+  /** Quest-day (6 AM boundary) the Afternoon Check-In was completed for — see sleep-checkin.tsx. */
+  afternoonCheckInQuestDayKey?: string;
   /** Sleep Guide fields — used only to compute the wind-down lock window (see getWindDownQuest). */
   desiredSleepTime?: string;
   windDownMinutes?: number;
@@ -254,9 +272,12 @@ const WIND_DOWN_QUEST_TITLE = "Start your pre-sleep routine";
 const DEFAULT_WIND_DOWN_MINUTES = 30;
 const MAX_WIND_DOWN_MINUTES = 60;
 
-// Guide message rotation — deterministic, local, no AI. A new message every 30-minute slot
-// during active hours (7 AM–12 AM); the same slot always yields the same message so a refresh
-// mid-window doesn't change what's shown.
+// Guide message rotation — deterministic, local, no AI. A new message every 30-minute slot from
+// 6:00 AM through 11:30 PM (see getGuideMessageSlot/pickGuideMessage in lib/scheduling.ts, which
+// own the actual slot math so it stays in one place and matches the 6 AM quest-day boundary).
+// Luna: mental/emotional support, rest/recovery, eating/restoring energy (mixed with the user's
+// own saved affirmations in Recovery mode — see guideMessage below). Evie: Path/progress
+// guidance and brief practical reminders (hydration, movement, ~45 min of exercise).
 const LUNA_ROTATING_MESSAGES = [
   "It's okay to take it slow, stargazer. Rest is part of becoming your brightest self.",
   "Drink some water — your body is doing recovery work too.",
@@ -276,6 +297,8 @@ const EVIE_ROTATING_MESSAGES = [
   "You chose to show up today. That's the hard part.",
   "Momentum builds from small honest steps.",
   "A quick hobby break can refill you for the next push.",
+  "Get moving today — even a short walk counts.",
+  "Aim for about 45 minutes of exercise today, if you can.",
 ];
 const NEUTRAL_ROTATING_MESSAGES = [
   "A new day awaits. Small steps today, bright tomorrows.",
@@ -284,18 +307,6 @@ const NEUTRAL_ROTATING_MESSAGES = [
   "Whatever today holds, you get to choose your pace.",
   "A calm start is still a start.",
 ];
-const GUIDE_MESSAGE_ACTIVE_START_MINUTES = 7 * 60;
-const GUIDE_MESSAGE_ACTIVE_END_MINUTES = 24 * 60;
-
-function pickRotatingGuideMessage(pool: string[], now: Date): string {
-  const minutesSinceMidnight = now.getHours() * 60 + now.getMinutes();
-  const clamped = Math.min(
-    Math.max(minutesSinceMidnight, GUIDE_MESSAGE_ACTIVE_START_MINUTES),
-    GUIDE_MESSAGE_ACTIVE_END_MINUTES - 1
-  );
-  const slot = Math.floor((clamped - GUIDE_MESSAGE_ACTIVE_START_MINUTES) / 30);
-  return pool[slot % pool.length];
-}
 
 function clampEnergy(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
@@ -438,6 +449,54 @@ export default function HomeScreen() {
   const [focusLog, setFocusLog] = useState<FocusBlockLogEntry[]>([]);
   const [userStats, setUserStats] = useState<{ totalSteps?: number }>({});
   const [affirmationsCount, setAffirmationsCount] = useState(0);
+  const [affirmationTexts, setAffirmationTexts] = useState<string[]>([]);
+  const [afternoonUnlockLabel, setAfternoonUnlockLabel] = useState(DEFAULT_AFTERNOON_UNLOCK_TIME);
+  const [afternoonUnlockChecked, setAfternoonUnlockChecked] = useState(false);
+  const [guideReaction, setGuideReaction] = useState<CompletionGuide | null>(null);
+  const [flameReaction, setFlameReaction] = useState<CompletionEnergyEffect | null>(null);
+  const [reducedMotion, setReducedMotion] = useState(false);
+  const reactionTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    AccessibilityInfo.isReduceMotionEnabled?.()
+      .then((enabled) => {
+        if (mounted) setReducedMotion(Boolean(enabled));
+      })
+      .catch(() => {});
+    const subscription = AccessibilityInfo.addEventListener?.("reduceMotionChanged", (enabled: boolean) =>
+      setReducedMotion(Boolean(enabled))
+    );
+    return () => {
+      mounted = false;
+      subscription?.remove?.();
+    };
+  }, []);
+
+  // Guide/flame REACT to every completion, then return to their prior idle state — the global
+  // "+N STEPS" toast (mounted at the app root) already covers the haptic + step confirmation
+  // for every completion path; this adds the Home-specific visual reaction on top whenever
+  // Home is the screen that's mounted. Skipped entirely with reduced motion (the toast's static
+  // text is the whole confirmation in that case).
+  useEffect(() => {
+    return subscribeToCompletionFeedback((event) => {
+      if (reducedMotion) return;
+      if (reactionTimeout.current) clearTimeout(reactionTimeout.current);
+      setGuideReaction(event.guide);
+      setFlameReaction(event.energyEffect);
+      reactionTimeout.current = setTimeout(() => {
+        setGuideReaction(null);
+        setFlameReaction(null);
+      }, 800);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reducedMotion]);
+
+  useEffect(() => {
+    return () => {
+      if (reactionTimeout.current) clearTimeout(reactionTimeout.current);
+    };
+  }, []);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [profileChecked, setProfileChecked] = useState(false);
   const [stepRank, setStepRank] = useState<StepRank | null>(null);
@@ -495,6 +554,7 @@ export default function HomeScreen() {
       loadActiveItem();
       loadPreSleepStatus();
       loadLdmState();
+      loadAfternoonUnlockLabel();
     }, [])
   );
 
@@ -507,7 +567,16 @@ export default function HomeScreen() {
     loadActiveItem();
     loadPreSleepStatus();
     loadLdmState();
+    loadAfternoonUnlockLabel();
   }, []);
+
+  /** Same computation sleep-checkin.tsx uses for its own lock screen — kept in sync via the
+   *  shared computeAfternoonUnlockLabel helper so Home's gate and the form's lock agree. */
+  async function loadAfternoonUnlockLabel() {
+    const [lifeProfile, guideMemory] = await Promise.all([loadUserLifeProfile(), loadGuideMemory()]);
+    setAfternoonUnlockLabel(computeAfternoonUnlockLabel(lifeProfile.plannedWakeTime, guideMemory.wakeRhythm?.consistentWakeTimeEstimate));
+    setAfternoonUnlockChecked(true);
+  }
 
   // Cross-device convergence: useFocusEffect above only re-reads LOCAL storage, which still
   // reflects whatever the one-time startup merge produced — if another device changes LDM/quest
@@ -546,10 +615,21 @@ export default function HomeScreen() {
     };
   }, []);
 
-  // Keep the Day / Time Track marker on the real local time (refresh every 30s).
+  // Keep the Day / Time Track marker (and the guide message slot, which is derived from
+  // timeNow) on the real local time — refreshed every 30s while foregrounded, and immediately
+  // on foreground itself so a backgrounded app never shows a stale slot for up to 30s after
+  // reopening. No permanent background interval: this timer only runs while the screen/app is
+  // actually mounted and active.
   useEffect(() => {
     const id = setInterval(() => setTimeNow(new Date()), 30000);
-    return () => clearInterval(id);
+    const onAppStateChange = (nextState: AppStateStatus) => {
+      if (nextState === "active") setTimeNow(new Date());
+    };
+    const subscription = AppState.addEventListener("change", onAppStateChange);
+    return () => {
+      clearInterval(id);
+      subscription.remove();
+    };
   }, []);
 
   // Tick the active countdown once per second while a timed item is running.
@@ -682,9 +762,16 @@ export default function HomeScreen() {
     setFocusLog(focusLogEntries);
     try {
       const parsedAffirmations = affirmationsRaw ? JSON.parse(affirmationsRaw) : [];
-      setAffirmationsCount(Array.isArray(parsedAffirmations) ? parsedAffirmations.length : 0);
+      const list = Array.isArray(parsedAffirmations) ? parsedAffirmations : [];
+      setAffirmationsCount(list.length);
+      setAffirmationTexts(
+        list
+          .map((entry) => (entry && typeof entry === "object" ? String((entry as { text?: unknown }).text ?? "").trim() : ""))
+          .filter((text): text is string => text.length > 0)
+      );
     } catch {
       setAffirmationsCount(0);
+      setAffirmationTexts([]);
     }
     if (stats) {
       try {
@@ -852,17 +939,42 @@ export default function HomeScreen() {
     setSelectedItem(item);
   }
 
+  /** Explicit guide metadata first (mandatory Luna gates, Evie Path quests); generic items fall
+   *  back to whichever guide is currently active — never inferred from card color. */
+  function resolveCompletionGuide(item: HomeQuestItem): CompletionGuide {
+    return item.guide ?? (isRecovery ? "luna" : "evie");
+  }
+
+  /** Checklist habits are simple/neutral; mandatory Luna quests and recovery-kind items restore;
+   *  everything else (demanding Path/progress tasks) consumes. Visual feedback only — never
+   *  changes the stored energy stage itself (that's still driven by getEnergyDelta elsewhere). */
+  function resolveCompletionEnergyEffect(item: HomeQuestItem): CompletionEnergyEffect {
+    if (item.source === "Checklist") return "neutral";
+    if (item.mandatory || item.kind === "recovery") return "restore";
+    return "consume";
+  }
+
   async function completeChecklistItem(item: HomeQuestItem) {
     const ok = await setChecklistItemChecked(item.id, true);
     if (!ok) return;
     // Also record a completion entry so this checklist item's duration/kind feeds
     // into today's energy math (progress spends energy, recovery restores it).
     const nextCompleted = await markItemComplete(item, completedQuests);
+    const wasNewCompletion = nextCompleted.length > completedQuests.length;
     setCompletedQuests(nextCompleted);
     setFocusLog(await loadFocusBlockLog());
     await successHaptic();
     setSelectedItem(null);
     await loadDayPlan();
+    if (wasNewCompletion) {
+      emitQuestCompletionFeedback({
+        completionId: item.id,
+        questId: item.id,
+        stepsAwarded: item.steps,
+        guide: resolveCompletionGuide(item),
+        energyEffect: resolveCompletionEnergyEffect(item),
+      });
+    }
     void trackEvent(ANALYTICS_EVENTS.quest_completed, { id: item.id, title: item.title, steps: item.steps, source: item.source });
   }
 
@@ -929,6 +1041,14 @@ export default function HomeScreen() {
     if (activeItem?.id === item.id) {
       await clearActiveItem();
     }
+
+    emitQuestCompletionFeedback({
+      completionId: item.id,
+      questId: item.id,
+      stepsAwarded: item.steps,
+      guide: resolveCompletionGuide(item),
+      energyEffect: resolveCompletionEnergyEffect(item),
+    });
 
     try {
       await successHaptic();
@@ -1010,8 +1130,8 @@ export default function HomeScreen() {
     longTermBenchmark: profile?.longTermGoal?.trim() || profile?.goalThree?.trim() || "",
   };
 
-  const completedMandatoryEntries = completedQuests.filter((entry) => entry.title === MANDATORY_QUEST_TITLE);
-  const completedNormalEntries = completedQuests.filter((entry) => entry.title !== MANDATORY_QUEST_TITLE);
+  const completedMandatoryEntries = completedQuests.filter((entry) => isMandatoryQuestTitle(entry.title));
+  const completedNormalEntries = completedQuests.filter((entry) => !isMandatoryQuestTitle(entry.title));
   // The flame is anchored to the latest check-in's energy. Only quests completed AFTER that
   // check-in should move it — anything finished earlier in the day is already baked into the
   // energy the user reported at check-in, so re-subtracting it double-counts and made a fresh
@@ -1070,21 +1190,38 @@ export default function HomeScreen() {
         durationMinutes: opts.durationMinutes,
         title: opts.title,
         // Title-specific, not "any mandatory item" — the wind-down quest is also
-        // `mandatory: true` (for its red-border/"!" styling) but restores energy through the
-        // normal Recovery formula, not the eat/rest quest's tiered restore.
-        mandatory: opts.title === MANDATORY_QUEST_TITLE,
+        // `mandatory: true` (for its "!" styling) but restores energy through the normal
+        // Recovery formula, not the food/energy gate quests' tiered restore.
+        mandatory: isMandatoryQuestTitle(opts.title),
       })
     );
 
-  // Mild (15-min, energy 30-59) only blocks new PROGRESS starts — Recovery items still open.
-  // Severe (30-min, energy < 30) locks the whole board until the mandatory quest resolves.
-  // Wind-down (time-based, see getWindDownQuest) only applies when no energy-mandatory is active.
-  const activeMandatoryQuest = getMandatoryQuest() ?? getWindDownQuest();
-  const mandatoryActive = activeMandatoryQuest !== null;
-  // Title-checked (not just duration) so the wind-down quest — which can also be 30 min —
-  // never accidentally locks Recovery too; only the energy-based severe tier does that.
+  // Centralized Luna gate selector (priority order):
+  //   1. Afternoon Check-In incomplete (past its unlock time) — full-board replacement, handled
+  //      in render below, not as a quest-board item.
+  //   2. Afternoon Check-In said "didn't eat" — mandatory food quest.
+  //   3. Energy below the existing low-energy threshold — mandatory energy/rest quest.
+  //   4. Both 2 and 3 — both quests show; ordinary quests stay locked until both resolve.
+  const afternoonUnlockMinutesForGate = parseTimeToMinutes(afternoonUnlockLabel) ?? 14 * 60;
+  const nowMinutesForGates = timeNow.getHours() * 60 + timeNow.getMinutes();
+  const afternoonCheckInDoneToday =
+    latestCheckIn?.afternoonCheckInCompletedToday === true && latestCheckIn?.afternoonCheckInQuestDayKey === getTodayKey();
+  // Only meaningful once Morning Check-In is already done (hasEnergyData) — Neutral mode has
+  // its own separate "Complete Morning Check-In" prompt in generateQuests().
+  const isAfternoonCheckInGateActive =
+    hasEnergyData && afternoonUnlockChecked && nowMinutesForGates >= afternoonUnlockMinutesForGate && !afternoonCheckInDoneToday;
+
+  const mandatoryFoodQuest = isAfternoonCheckInGateActive ? null : getMandatoryFoodQuest();
+  const mandatoryEnergyQuest = isAfternoonCheckInGateActive ? null : getMandatoryEnergyQuest();
+  const mandatoryGateQuestCount = (mandatoryFoodQuest ? 1 : 0) + (mandatoryEnergyQuest ? 1 : 0);
+  // Wind-down (time-based, see getWindDownQuest) only applies when no Luna gate quest is active.
+  const windDownQuestActive = mandatoryGateQuestCount === 0 ? getWindDownQuest() : null;
+  const mandatoryActive = isAfternoonCheckInGateActive || mandatoryGateQuestCount > 0 || windDownQuestActive !== null;
+  // The food gate and the severe energy tier both lock Recovery-kind items too — the mild
+  // energy tier and wind-down leave Recovery open.
   const mandatoryLocksRecoveryToo =
-    activeMandatoryQuest?.title === MANDATORY_QUEST_TITLE && activeMandatoryQuest?.durationMinutes === MANDATORY_SEVERE_DURATION_MINUTES;
+    Boolean(mandatoryFoodQuest) ||
+    (mandatoryEnergyQuest?.title === MANDATORY_ENERGY_QUEST_TITLE && mandatoryEnergyQuest?.durationMinutes === MANDATORY_SEVERE_DURATION_MINUTES);
 
   const todayName = getWeekdayName();
 
@@ -1099,8 +1236,18 @@ export default function HomeScreen() {
 
   const guideName = isRecovery ? "Luna" : "Evie";
   const guideImage = isRecovery ? uiAssets.guides.luna : uiAssets.guides.evie;
-  const guideMessage = pickRotatingGuideMessage(isRecovery ? LUNA_ROTATING_MESSAGES : EVIE_ROTATING_MESSAGES, timeNow);
-  const neutralGuideMessage = pickRotatingGuideMessage(NEUTRAL_ROTATING_MESSAGES, timeNow);
+  // Deterministic by user + quest-day + 30-minute slot — every device on the same account
+  // resolves the identical message at the identical slot without persisting "which message is
+  // showing" anywhere (see getGuideMessageSlot/pickGuideMessage in lib/scheduling.ts).
+  const guideMessageSlot = getGuideMessageSlot(timeNow);
+  const guideMessageUserSalt = profile?.name?.trim() || "guest";
+  const guideMessageSalt = `${guideMessageUserSalt}-${getQuestDayKey(timeNow)}-${guideMessageSlot}`;
+  // Recovery mode mixes in the user's own saved affirmations alongside Luna's built-in
+  // support messages; with none saved yet, Luna's built-ins are the whole pool.
+  const lunaMessagePool = affirmationTexts.length > 0 ? [...LUNA_ROTATING_MESSAGES, ...affirmationTexts] : LUNA_ROTATING_MESSAGES;
+  const guideMessage = pickGuideMessage(isRecovery ? lunaMessagePool : EVIE_ROTATING_MESSAGES, guideMessageSalt);
+  const guideMessageIsAffirmation = isRecovery && affirmationTexts.includes(guideMessage);
+  const neutralGuideMessage = pickGuideMessage(NEUTRAL_ROTATING_MESSAGES, guideMessageSalt);
 
   const theme = isRecovery
     ? {
@@ -1142,7 +1289,14 @@ export default function HomeScreen() {
     const ldmRoutineQuests = getLdmRoutineQuests();
     if (ldmRoutineWindowOpen) return ldmRoutineQuests;
 
-    const mandatoryQuest = getMandatoryQuest() ?? getWindDownQuest();
+    // Gate #1 (Afternoon Check-In incomplete) is a full-board replacement rendered separately —
+    // no ordinary or other mandatory quest appears until it resolves.
+    if (isAfternoonCheckInGateActive) return [];
+
+    const gateQuests: Quest[] = [
+      ...(mandatoryFoodQuest ? [mandatoryFoodQuest] : []),
+      ...(mandatoryEnergyQuest ? [mandatoryEnergyQuest] : []),
+    ];
 
     if (isNeutral) {
       return [{ title: "Complete Morning Check-In", type: "Start", steps: 1 }];
@@ -1165,7 +1319,8 @@ export default function HomeScreen() {
         : null;
 
     return [
-      ...(mandatoryQuest ? [mandatoryQuest] : []),
+      ...gateQuests,
+      ...(windDownQuestActive ? [windDownQuestActive] : []),
       ...(suggestedQuest ? [suggestedQuest] : []),
       ...(recoveryStarterActive ? [recoveryStarterActive] : []),
     ];
@@ -1177,25 +1332,54 @@ export default function HomeScreen() {
    * Only ever one mandatory quest at a time — the severe tier replaces the mild one,
    * it never stacks a second mandatory quest alongside it.
    */
-  function getMandatoryQuest(): Quest | null {
+  /**
+   * Gate #3 (priority list in getMandatoryGateQuests below): below 60 energy, a mild 15-min
+   * mandatory reset (blocks new Progress starts only); below 30 energy, a severe 30-min reset
+   * that blocks the whole board. Reuses the existing thresholds/energy-restore math unchanged —
+   * only the title/copy/guide are new (Luna, "Relax to restore energy").
+   */
+  function getMandatoryEnergyQuest(): Quest | null {
     if (!hasEnergyData) return null;
     if (energyYield >= MANDATORY_MILD_THRESHOLD) return null;
 
-    const alreadyDone = completedQuests.some((entry) => entry.title === MANDATORY_QUEST_TITLE);
+    const alreadyDone = completedQuests.some((entry) => entry.title === MANDATORY_ENERGY_QUEST_TITLE);
     if (alreadyDone) return null;
 
     const isSevere = energyYield < MANDATORY_SEVERE_THRESHOLD;
     const durationMinutes = isSevere ? MANDATORY_SEVERE_DURATION_MINUTES : MANDATORY_MILD_DURATION_MINUTES;
     return {
-      title: MANDATORY_QUEST_TITLE,
+      title: MANDATORY_ENERGY_QUEST_TITLE,
       type: "Mandatory",
       steps: 1,
       durationMinutes,
       restoreEnergy: getMandatoryQuestRestoreEnergy(durationMinutes),
       mandatory: true,
-      description: isSevere
-        ? "Your flame is very low. Take 30 minutes to eat or rest before continuing."
-        : "Your flame dipped below 60. Take 15 minutes to eat or rest before more progress.",
+      guide: "luna",
+      description: "It's okay to take a break. Rest so you have enough energy to continue.",
+    };
+  }
+
+  /**
+   * Gate #2: Afternoon Check-In reported not eating today — a mandatory Luna quest until it's
+   * resolved. Only ever active once today's Afternoon Check-In actually exists (gate #1 in
+   * getMandatoryGateQuests handles "check-in itself missing" first), so `eatenSinceMorning`
+   * here is always today's real answer, never a stale earlier day's.
+   */
+  function getMandatoryFoodQuest(): Quest | null {
+    if (latestCheckIn?.eatenSinceMorning !== false) return null;
+    const alreadyDone = completedQuests.some((entry) => entry.title === MANDATORY_FOOD_QUEST_TITLE);
+    if (alreadyDone) return null;
+
+    const durationMinutes = MANDATORY_MILD_DURATION_MINUTES;
+    return {
+      title: MANDATORY_FOOD_QUEST_TITLE,
+      type: "Mandatory",
+      steps: 1,
+      durationMinutes,
+      restoreEnergy: getMandatoryQuestRestoreEnergy(durationMinutes),
+      mandatory: true,
+      guide: "luna",
+      description: "It's okay to take a break. Eat so you have enough energy to continue.",
     };
   }
 
@@ -1401,10 +1585,21 @@ export default function HomeScreen() {
     if (recoveryNow < forcedRecoveryTrigger.endsAtMs) return;
     let cancelled = false;
     (async () => {
-      const nextCompleted = await markItemComplete(buildForcedRecoveryItem(forcedRecoveryTrigger), completedQuests);
+      const forcedRecoveryItem = buildForcedRecoveryItem(forcedRecoveryTrigger);
+      const nextCompleted = await markItemComplete(forcedRecoveryItem, completedQuests);
       if (cancelled) return;
+      const wasNewCompletion = nextCompleted.length > completedQuests.length;
       setCompletedQuests(nextCompleted);
       setFocusLog(await loadFocusBlockLog());
+      if (wasNewCompletion) {
+        emitQuestCompletionFeedback({
+          completionId: forcedRecoveryItem.id,
+          questId: forcedRecoveryItem.id,
+          stepsAwarded: forcedRecoveryItem.steps,
+          guide: "luna",
+          energyEffect: "restore",
+        });
+      }
     })();
     return () => {
       cancelled = true;
@@ -1552,11 +1747,20 @@ export default function HomeScreen() {
 
               {!isNeutral ? (
                 <View style={styles.guideScene}>
-                  <Image source={guideImage} style={[styles.guideEmblem, { borderColor: theme.accent }]} resizeMode="contain" />
+                  <View style={styles.guideEmblemWrap}>
+                    <Image source={guideImage} style={[styles.guideEmblem, { borderColor: theme.accent }]} resizeMode="contain" />
+                    {guideReaction ? (
+                      <View pointerEvents="none" style={styles.guideReactionOverlay}>
+                        <Text style={styles.guideReactionStar}>✦</Text>
+                      </View>
+                    ) : null}
+                  </View>
                   <View style={styles.guideTextColumn}>
-                    <View style={[styles.speechBubble, { borderColor: theme.accent }]}>
+                    <View style={[styles.speechBubble, { borderColor: guideMessageIsAffirmation ? "#F472B6" : theme.accent }]}>
                       <Text style={styles.speechText}>{guideMessage}</Text>
-                      <Text style={[styles.speechName, { color: theme.accent }]}>{guideName} {isRecovery ? "💜" : "💚"}</Text>
+                      <Text style={[styles.speechName, { color: guideMessageIsAffirmation ? "#F472B6" : theme.accent }]}>
+                        {guideMessageIsAffirmation ? "Luna · from your affirmations 💗" : `${guideName} ${isRecovery ? "💜" : "💚"}`}
+                      </Text>
                     </View>
                     <TouchableOpacity
                       style={[styles.talkToGuideBtn, { backgroundColor: theme.accent }]}
@@ -1635,6 +1839,19 @@ export default function HomeScreen() {
                     }}
                   />
                 )}
+                {flameReaction ? (
+                  // Overlay only — never resizes/moves the flame stage itself, and returns to
+                  // idle (unmounts) after the reaction timeout in the effect above.
+                  <View pointerEvents="none" style={styles.flameReactionOverlay}>
+                    {flameReaction === "restore" ? (
+                      <Text style={styles.flameReactionRestore}>✦</Text>
+                    ) : flameReaction === "consume" ? (
+                      <View style={styles.flameReactionDim} />
+                    ) : (
+                      <Text style={styles.flameReactionNeutral}>✦</Text>
+                    )}
+                  </View>
+                ) : null}
                 {!isNeutral ? (
                   <>
                     <View style={styles.energyScoreLine}>
@@ -1895,6 +2112,22 @@ export default function HomeScreen() {
                       <Text style={[styles.waitingRoomBtnText, { color: "#C4A7FF" }]}>🕯️ Wait in Study Room</Text>
                     </TouchableOpacity>
                   </View>
+                ) : isAfternoonCheckInGateActive ? (
+                  <View style={[styles.activeCard, { borderColor: "#C4A7FF", backgroundColor: "#6D28D9" }]}>
+                    <View style={styles.recoveryHeaderRow}>
+                      <Image source={uiAssets.guides.luna} style={styles.recoveryLunaAvatar} resizeMode="contain" />
+                      <Text style={[styles.activeLockLabel, { color: "#F5F3FF" }]}>AFTERNOON CHECK-IN NEEDED</Text>
+                    </View>
+                    <Text style={[styles.recoveryLockText, { color: "#F5F3FF" }]}>
+                      Luna needs your Afternoon Check-In before more quests unlock — it&apos;s quick, and helps her look out for you.
+                    </Text>
+                    <TouchableOpacity
+                      style={[styles.waitingRoomBtn, { borderColor: "#F5F3FF" }]}
+                      onPress={() => { lightHaptic(); router.push({ pathname: "/sleep-checkin", params: { type: "afternoon" } }); }}
+                    >
+                      <Text style={[styles.waitingRoomBtnText, { color: "#F5F3FF" }]}>Complete Afternoon Check-In</Text>
+                    </TouchableOpacity>
+                  </View>
                 ) : ldmRoutineWindowOpen && availableItems.length === 0 ? (
                   // Never invent routine tasks — if tonight's routine is already fully done
                   // (or never had anything to show), Luna's bubble replaces the empty board
@@ -1915,12 +2148,20 @@ export default function HomeScreen() {
                   <>
                     {visibleItems.map((item) => {
                       const visual = getQuestVisual(item);
+                      const setByNotice = item.mandatory
+                        ? "Set by Luna"
+                        : item.suggested || item.starter
+                        ? "Set by Evie based on your Path"
+                        : null;
                       return (
                         <TouchableOpacity
                           key={item.id}
                           style={[
                             styles.questRow,
-                            { backgroundColor: visual.fill, borderColor: item.mandatory ? "#F87171" : visual.border },
+                            // Mandatory Luna gate quests are always kind:"recovery", so this is
+                            // already the same purple fill/chunky border as any Recovery card —
+                            // no separate red-border treatment.
+                            { backgroundColor: visual.fill, borderColor: visual.border },
                           ]}
                           onPress={() => openQuestItem(item)}
                           activeOpacity={0.85}
@@ -1939,6 +2180,9 @@ export default function HomeScreen() {
                               </Text>
                               <Text style={[styles.questSteps, { color: visual.text }]}>+{item.steps}</Text>
                             </View>
+                            {setByNotice ? (
+                              <Text style={[styles.questSetByNotice, { color: visual.meta }]} numberOfLines={1}>{setByNotice}</Text>
+                            ) : null}
                           </View>
                           <Text style={[styles.startChevron, { color: visual.text }]}>▶</Text>
                         </TouchableOpacity>
@@ -2015,6 +2259,19 @@ export default function HomeScreen() {
                       {questSourceLabel(selectedItem.source).toUpperCase()}
                     </Text>
                     <Text style={styles.modalTitle}>{selectedItem.title}</Text>
+
+                    {selectedItem.mandatory ? (
+                      <View style={styles.modalGuideRow}>
+                        <Image source={uiAssets.guides.luna} style={styles.modalGuideAvatar} resizeMode="contain" />
+                        <Text style={styles.modalGuideText}>
+                          {selectedItem.title === MANDATORY_FOOD_QUEST_TITLE
+                            ? "It's okay to take a break. Eat so you have enough energy to continue."
+                            : selectedItem.title === MANDATORY_ENERGY_QUEST_TITLE
+                            ? "It's okay to take a break. Rest so you have enough energy to continue."
+                            : "Luna set this quest to help protect your flame."}
+                        </Text>
+                      </View>
+                    ) : null}
 
                     <View style={styles.modalMetaGrid}>
                       <Text style={styles.modalMeta}>Type: {selectedItem.kind === "recovery" ? "Recovery" : "Progress"}</Text>
@@ -2313,6 +2570,27 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(8, 13, 24, 0.55)",
     marginRight: 10,
   },
+  // Wrapper is the same size as the emblem plus its own margin, so the reaction overlay is
+  // purely decorative — it never changes the emblem's own size/position.
+  guideEmblemWrap: {
+    width: 96,
+    height: 86,
+    position: "relative",
+  },
+  guideReactionOverlay: {
+    position: "absolute",
+    top: -6,
+    right: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  guideReactionStar: {
+    fontSize: 22,
+    color: "#FDE68A",
+    textShadowColor: "#000",
+    textShadowRadius: 0,
+    textShadowOffset: { width: 1, height: 1 },
+  },
   speechBubble: {
     flex: 1,
     backgroundColor: "rgba(8, 12, 20, 0.94)",
@@ -2417,6 +2695,32 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 10,
+  },
+  // Safe temporary reaction effects (no restore/consume/neutral flame spritesheets exist yet —
+  // see assets/ui/animations/flame/). Purely decorative overlays: absolutely positioned, never
+  // affects the flame's own size/position, and unmounts back to nothing (idle) on its own.
+  flameReactionOverlay: {
+    position: "absolute",
+    top: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  flameReactionRestore: {
+    fontSize: 30,
+    color: "#FEF3C7",
+    textShadowColor: "#FBBF24",
+    textShadowRadius: 6,
+    textShadowOffset: { width: 0, height: 0 },
+  },
+  flameReactionNeutral: {
+    fontSize: 20,
+    color: "#E2E8F0",
+  },
+  flameReactionDim: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "rgba(15, 15, 15, 0.28)",
   },
   talkToGuideBtn: {
     marginTop: 6,
@@ -2764,6 +3068,12 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "900",
   },
+  questSetByNotice: {
+    fontSize: 9,
+    fontWeight: "700",
+    fontStyle: "italic",
+    marginTop: 2,
+  },
   kindDot: {
     height: 9,
     width: 9,
@@ -2971,6 +3281,31 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     marginTop: 6,
     lineHeight: 22,
+  },
+  modalGuideRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 10,
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+    backgroundColor: "rgba(109, 40, 217, 0.28)",
+  },
+  modalGuideAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: "#C4A7FF",
+    marginRight: 10,
+  },
+  modalGuideText: {
+    flex: 1,
+    color: "#F5F3FF",
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17,
   },
   modalMetaGrid: {
     marginTop: 12,

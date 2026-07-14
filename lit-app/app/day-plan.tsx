@@ -26,6 +26,7 @@ import {
   getQuestCapacityMinutes,
 } from "../lib/questProgress";
 import { sanitizeDayPlanChecklists } from "../lib/dayPlanChecklist";
+import { emitQuestCompletionFeedback } from "../lib/completionFeedback";
 import { persistProgressKeys } from "../lib/progressStore";
 import { setChecklistItemChecked, syncDayPlanScheduledItems } from "../lib/progressSync";
 import {
@@ -763,6 +764,13 @@ export default function DayPlanScreen() {
       // Only the "checking off" direction is a real completion — unchecking is undoing a
       // mistake, not a miss (misses are inferred elsewhere from time passing, not this toggle).
       if (nextChecked) {
+        emitQuestCompletionFeedback({
+          completionId: `${itemId}:${getDateKey()}`,
+          questId: itemId,
+          stepsAwarded: item.steps,
+          guide: item.kind === "recovery" ? "luna" : "evie",
+          energyEffect: "neutral",
+        });
         void recordAgentEvent({
           type: "checklist_completed",
           sourcePage: "day-plan",

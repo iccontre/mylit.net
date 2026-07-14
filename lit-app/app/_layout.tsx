@@ -5,6 +5,7 @@ import 'react-native-reanimated';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AuthBootstrap } from '@/components/AuthBootstrap';
+import { CompletionFeedbackToast } from '@/components/CompletionFeedbackToast';
 import { PwaUpdateBootstrap } from '@/components/PwaUpdateBootstrap';
 import { StableViewportLock } from '@/components/StableViewportLock';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -29,6 +30,7 @@ export default function RootLayout() {
           <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
         </Stack>
       </AuthBootstrap>
+      <CompletionFeedbackToast />
       <StatusBar style="auto" />
     </ThemeProvider>
     </PwaUpdateBootstrap>

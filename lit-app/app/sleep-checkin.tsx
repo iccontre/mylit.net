@@ -20,7 +20,15 @@ import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { persistProgressKeys } from "../lib/progressStore";
 import { CHECKIN_HISTORY_KEY, LATEST_CHECKIN_KEY } from "../lib/storageKeys";
 import { syncDailySnapshot } from "../lib/progressSync";
-import { computeSleepSession, formatMinutesAsTime, parseTimeToMinutes, sleepInterruptionPenalty } from "../lib/scheduling";
+import {
+  computeAfternoonUnlockLabel,
+  computeSleepSession,
+  DEFAULT_AFTERNOON_UNLOCK_TIME,
+  formatMinutesAsTime,
+  getQuestDayKey,
+  parseTimeToMinutes,
+  sleepInterruptionPenalty,
+} from "../lib/scheduling";
 import { loadGuideMemory, loadUserLifeProfile, recordAgentEvent, saveGuideMemory } from "../lib/mylitAgents";
 import type { WakeRhythm } from "../lib/agentTypes";
 
@@ -48,7 +56,15 @@ type CheckIn = {
   eatenSinceMorning?: boolean;
   hasEatenToday?: boolean;
   foodSinceMorning?: string;
+  /** Approximate meal time — a preset ("Morning"/"Midday"/"Afternoon"/"Evening") or, if the
+   *  user picked "Exact time", the free-text time below. Only meaningful when eatenSinceMorning
+   *  is true; never inferred from time simply passing (see saving logic). */
+  ateTimePreset?: string;
+  ateApproxTime?: string;
   afternoonCheckInCompletedToday?: boolean;
+  /** Quest-day (6 AM boundary) this Afternoon Check-In was completed for — lets Home's mandatory
+   *  gate selector tell "already done today" apart from "done yesterday" without re-deriving it. */
+  afternoonCheckInQuestDayKey?: string;
   tookNap?: boolean;
   napDurationMinutes?: number;
   napEnergyRestored?: number;
@@ -65,6 +81,9 @@ type CheckIn = {
 /** Nap is a special Recovery subtype — its own energy tiers, distinct from generic Recovery quest/checklist values. */
 const NAP_ENERGY_BY_DURATION: Record<number, number> = { 15: 3, 30: 6, 45: 9, 60: 12 };
 const NAP_DURATION_OPTIONS = [15, 30, 45, 60] as const;
+/** Simple meal-time presets — "Exact time" reveals a free-text field, matching the existing
+ *  caffeine-time free-text pattern rather than introducing a new picker component. */
+const MEAL_TIME_PRESETS = ["Morning", "Midday", "Afternoon", "Exact time"] as const;
 
 function getTodayKeyLocal(): string {
   return new Date().toLocaleDateString("en-CA");
@@ -139,18 +158,6 @@ function calculateAfternoonEnergy(baseEnergy: number, eaten: boolean, mood: numb
   return clampEnergy(baseEnergy + clampedDelta);
 }
 
-const DEFAULT_AFTERNOON_UNLOCK_TIME = "2:00 PM";
-const AFTERNOON_UNLOCK_HOURS_AFTER_WAKE = 7;
-
-/** Afternoon Check-In unlocks 7h after the user's planned/learned wake time, or a safe 2 PM default when neither exists. */
-function computeAfternoonUnlockLabel(plannedWakeTime: string | undefined, consistentWakeTimeEstimate: string | undefined): string {
-  const wakeTime = plannedWakeTime?.trim() || consistentWakeTimeEstimate?.trim();
-  if (!wakeTime) return DEFAULT_AFTERNOON_UNLOCK_TIME;
-  const wakeMinutes = parseTimeToMinutes(wakeTime);
-  if (wakeMinutes === null) return DEFAULT_AFTERNOON_UNLOCK_TIME;
-  return formatMinutesAsTime(wakeMinutes + AFTERNOON_UNLOCK_HOURS_AFTER_WAKE * 60);
-}
-
 function nowMinutesSinceMidnight(): number {
   const now = new Date();
   return now.getHours() * 60 + now.getMinutes();
@@ -213,6 +220,8 @@ export default function SleepCheckInScreen() {
   const [stress, setStress] = useState("");
   const [eatenSinceMorning, setEatenSinceMorning] = useState<"yes" | "no" | "">("");
   const [foodSinceMorning, setFoodSinceMorning] = useState("");
+  const [ateTimePreset, setAteTimePreset] = useState("");
+  const [ateApproxTime, setAteApproxTime] = useState("");
   const [currentEnergyFeeling, setCurrentEnergyFeeling] = useState("");
   const [wakeTime, setWakeTime] = useState("");
   const [sleepInterrupted, setSleepInterrupted] = useState<"yes" | "no" | "">("");
@@ -410,7 +419,16 @@ export default function SleepCheckInScreen() {
       eatenSinceMorning: isAfternoon ? eatenSinceMorning === "yes" : false,
       hasEatenToday: isAfternoon ? eatenSinceMorning === "yes" : false,
       foodSinceMorning: isAfternoon ? foodSinceMorning.trim() : undefined,
+      // Never inferred from time passing — only set when the user actually answered "Yes"
+      // and picked a preset (or entered an exact time).
+      ateTimePreset: isAfternoon ? (eatenSinceMorning === "yes" ? ateTimePreset || undefined : undefined) : latestCheckIn?.ateTimePreset,
+      ateApproxTime: isAfternoon
+        ? eatenSinceMorning === "yes" && ateTimePreset === "Exact time"
+          ? ateApproxTime.trim() || undefined
+          : undefined
+        : latestCheckIn?.ateApproxTime,
       afternoonCheckInCompletedToday: isAfternoon,
+      afternoonCheckInQuestDayKey: isAfternoon ? getQuestDayKey() : latestCheckIn?.afternoonCheckInQuestDayKey,
       tookNap: isAfternoon && showNapSection ? tookNap === "yes" : latestCheckIn?.tookNap,
       napDurationMinutes: isAfternoon && showNapSection && tookNap === "yes" ? napDuration ?? undefined : latestCheckIn?.napDurationMinutes,
       // Keep whatever was already restored today if the bonus was already applied —
@@ -543,10 +561,47 @@ export default function SleepCheckInScreen() {
                     <TouchableOpacity style={[styles.choiceButton, eatenSinceMorning === "yes" && styles.choiceButtonActive, { borderColor: eatenSinceMorning === "yes" ? theme.accent : "#334155" }]} onPress={() => setEatenSinceMorning("yes")}>
                       <Text style={styles.choiceText}>Yes</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.choiceButton, eatenSinceMorning === "no" && styles.choiceButtonActive, { borderColor: eatenSinceMorning === "no" ? theme.accent : "#334155" }]} onPress={() => setEatenSinceMorning("no")}>
+                    <TouchableOpacity
+                      style={[styles.choiceButton, eatenSinceMorning === "no" && styles.choiceButtonActive, { borderColor: eatenSinceMorning === "no" ? theme.accent : "#334155" }]}
+                      onPress={() => {
+                        setEatenSinceMorning("no");
+                        setAteTimePreset("");
+                        setAteApproxTime("");
+                      }}
+                    >
                       <Text style={styles.choiceText}>No</Text>
                     </TouchableOpacity>
                   </View>
+
+                  {eatenSinceMorning === "yes" ? (
+                    <>
+                      <Text style={styles.label}>About when did you eat?</Text>
+                      <View style={styles.choiceRow}>
+                        {MEAL_TIME_PRESETS.map((preset) => (
+                          <TouchableOpacity
+                            key={preset}
+                            style={[styles.choiceButton, ateTimePreset === preset && styles.choiceButtonActive, { borderColor: ateTimePreset === preset ? theme.accent : "#334155" }]}
+                            onPress={() => {
+                              setAteTimePreset(preset);
+                              if (preset !== "Exact time") setAteApproxTime("");
+                            }}
+                          >
+                            <Text style={styles.choiceText}>{preset}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                      {ateTimePreset === "Exact time" ? (
+                        <TextInput
+                          style={styles.input}
+                          placeholder="Example: 1:15 PM"
+                          placeholderTextColor="#64748B"
+                          autoCapitalize="characters"
+                          value={ateApproxTime}
+                          onChangeText={setAteApproxTime}
+                        />
+                      ) : null}
+                    </>
+                  ) : null}
 
                   <Text style={styles.label}>What did you eat? Optional</Text>
                   <TextInput style={styles.input} placeholder="Example: sandwich, fruit, water" placeholderTextColor="#64748B" value={foodSinceMorning} onChangeText={setFoodSinceMorning} />

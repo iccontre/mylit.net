@@ -128,6 +128,14 @@ export type MissedEntry = {
   missedAt: string;
 };
 
+/**
+ * Which guide owns this item — explicit metadata, never inferred from card color. Set at
+ * creation time for anything with real guide ownership (Luna: mandatory gates, affirmations,
+ * rest/recovery; Evie: Path quests, reminders); left unset for generic items, which fall back
+ * to "whichever guide is currently active" at the point feedback/copy is resolved.
+ */
+export type GuideOwner = "evie" | "luna";
+
 export type HomeQuestItem = {
   id: string;
   title: string;
@@ -141,6 +149,7 @@ export type HomeQuestItem = {
   starter?: boolean;
   suggested?: boolean;
   ldmRoutine?: boolean;
+  guide?: GuideOwner;
 };
 
 type QuestLike = {
@@ -155,6 +164,7 @@ type QuestLike = {
   kind?: QuestKind;
   /** LDM routine task — see Quest.ldmRoutine in app/(tabs)/index.tsx. */
   ldmRoutine?: boolean;
+  guide?: GuideOwner;
 };
 
 type RawChecklistItem = {
@@ -882,6 +892,10 @@ export function normalizeQuestItems(input: {
       starter: quest.starter,
       suggested: quest.suggested,
       ldmRoutine: quest.ldmRoutine,
+      // Explicit metadata: Evie owns Path quests (starter/suggested); anything already
+      // guide-tagged (e.g. Luna's mandatory gates) keeps that tag. Everything else is left
+      // unset and falls back to "current active guide" at the feedback/copy call site.
+      guide: quest.guide ?? (quest.starter || quest.suggested ? "evie" : undefined),
     });
   });
 

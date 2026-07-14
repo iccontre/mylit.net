@@ -86,6 +86,39 @@ export function getQuestDayKey(date: Date = new Date()): string {
   return getDateKey(shifted);
 }
 
+/** Guide message bubble rotates every 30 minutes from 6:00 AM through 11:30 PM (the same
+ *  6 AM boundary as the quest day) — no scheduled rotation from midnight through 5:59 AM. */
+export const GUIDE_MESSAGE_WINDOW_START_MINUTES = QUEST_DAY_BOUNDARY_HOUR * 60;
+export const GUIDE_MESSAGE_WINDOW_END_MINUTES = 23 * 60 + 30;
+export const GUIDE_MESSAGE_SLOT_MINUTES = 30;
+
+/**
+ * Deterministic 30-minute slot index for "now" — clamped to the 6:00 AM–11:30 PM active window,
+ * so times before 6 AM or after 11:30 PM resolve to the boundary slot (no new rotation happens
+ * there; the last-computed slot just holds). A mid-slot refresh/foreground always recomputes
+ * the SAME index for the same clock time, so nothing needs to be persisted to know "which slot."
+ */
+export function getGuideMessageSlot(date: Date = new Date()): number {
+  const minutes = date.getHours() * 60 + date.getMinutes();
+  const clamped = Math.min(Math.max(minutes, GUIDE_MESSAGE_WINDOW_START_MINUTES), GUIDE_MESSAGE_WINDOW_END_MINUTES);
+  return Math.floor((clamped - GUIDE_MESSAGE_WINDOW_START_MINUTES) / GUIDE_MESSAGE_SLOT_MINUTES);
+}
+
+/**
+ * Deterministic pick from `pool` for a given salt (typically `${userSalt}-${questDayKey}-${slot}`)
+ * — same hash approach as questGeneration.ts's pickRotatingTemplate. The same account resolves
+ * the same salt to the same index everywhere, so every device shows identical content for the
+ * same user/day/slot without needing to sync "which message is showing" as its own record.
+ */
+export function pickGuideMessage(pool: string[], salt: string): string {
+  if (pool.length === 0) return "";
+  let hash = 0;
+  for (let i = 0; i < salt.length; i += 1) {
+    hash = (hash + salt.charCodeAt(i) * (i + 1)) % pool.length;
+  }
+  return pool[hash] ?? pool[0];
+}
+
 /** The next 6:00 AM strictly after `from` — e.g. LDM stays active until the first 6 AM after it starts. */
 export function computeNextQuestDayBoundary(from: Date): Date {
   const cutoff = new Date(from);
@@ -210,8 +243,21 @@ export function isNapTitle(title?: string | null): boolean {
   return /(^|\b)nap\b/i.test(String(title ?? ""));
 }
 
-/** Luna's mandatory eat/rest reset — title is stable so completions can be identified from logs (e.g. Calendar). */
+/** Legacy combined Luna mandatory eat/rest reset — no longer generated, kept so old completion
+ *  history (energy-restore log entries saved under this title) still classifies correctly. */
 export const MANDATORY_QUEST_TITLE = "Eat or rest to restore energy";
+/** Luna's mandatory food gate — triggered when Afternoon Check-In reports not having eaten. */
+export const MANDATORY_FOOD_QUEST_TITLE = "Eat to restore energy";
+/** Luna's mandatory rest gate — triggered by the existing low-energy threshold. */
+export const MANDATORY_ENERGY_QUEST_TITLE = "Relax to restore energy";
+export const MANDATORY_QUEST_TITLES = [
+  MANDATORY_QUEST_TITLE,
+  MANDATORY_FOOD_QUEST_TITLE,
+  MANDATORY_ENERGY_QUEST_TITLE,
+] as const;
+export function isMandatoryQuestTitle(title?: string | null): boolean {
+  return Boolean(title && (MANDATORY_QUEST_TITLES as readonly string[]).includes(title));
+}
 
 /** Luna's completed-focus-block lock — title is stable so completions can be identified from logs. */
 export const FORCED_RECOVERY_TITLE = "Forced Recovery";
@@ -436,6 +482,22 @@ export function formatMinutesAsTime(minutes: number): string {
   const meridiem = hour24 >= 12 ? "PM" : "AM";
   const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
   return `${hour12}:${String(minute).padStart(2, "0")} ${meridiem}`;
+}
+
+export const DEFAULT_AFTERNOON_UNLOCK_TIME = "2:00 PM";
+export const AFTERNOON_UNLOCK_HOURS_AFTER_WAKE = 7;
+
+/**
+ * Afternoon Check-In unlocks 7h after the user's planned/learned wake time, or a safe 2 PM
+ * default when neither exists. Shared by sleep-checkin.tsx (the form's own lock screen) and
+ * Home's mandatory-gate selector (index.tsx), so both agree on exactly when the gate applies.
+ */
+export function computeAfternoonUnlockLabel(plannedWakeTime: string | undefined, consistentWakeTimeEstimate: string | undefined): string {
+  const wakeTime = plannedWakeTime?.trim() || consistentWakeTimeEstimate?.trim();
+  if (!wakeTime) return DEFAULT_AFTERNOON_UNLOCK_TIME;
+  const wakeMinutes = parseTimeToMinutes(wakeTime);
+  if (wakeMinutes === null) return DEFAULT_AFTERNOON_UNLOCK_TIME;
+  return formatMinutesAsTime(wakeMinutes + AFTERNOON_UNLOCK_HOURS_AFTER_WAKE * 60);
 }
 
 export function shiftTimeSlot(time: string, direction: -1 | 1, slots = generateTimeSlots()): string {
