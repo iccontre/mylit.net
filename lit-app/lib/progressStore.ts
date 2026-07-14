@@ -24,6 +24,8 @@ import {
   GUIDE_MEMORY_KEY,
   LEARNING_MEMORY_KEY,
   LDM_MODE_STATE_KEY,
+  EVIE_MORNING_QUEST_KEY,
+  SLEEP_ROUTINE_KEY,
 } from "./storageKeys";
 import { computeNextQuestDayBoundary, getDateKey } from "./scheduling";
 import { sanitizeDayPlanChecklists } from "./dayPlanChecklist";
@@ -113,6 +115,10 @@ const OBJECT_MERGE_PROGRESS_KEYS = new Set<SyncableProgressKey>([
   // LDM_MODE_STATE_KEY is deliberately NOT here — see mergeLdmModeState, dispatched explicitly
   // in mergePayload. A single-session object (nightKey/enteredAt/rewardApplied) needs
   // whole-object-freshest-valid-wins, not field-by-field merging.
+  SLEEP_ROUTINE_KEY,
+  // EVIE_MORNING_QUEST_KEY is deliberately NOT here — see mergeEvieMorningQuest below, which
+  // needs "same quest-day -> earliest createdAt wins" so two devices can never each generate
+  // their own quest for the same day.
 ]);
 
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -446,6 +452,29 @@ function mergeLdmModeState(localRaw: string, cloudRaw: string): string {
   return cloudAt > localAt ? cloudRaw : localRaw;
 }
 
+/**
+ * Whole-object, "same quest-day -> EARLIEST createdAt wins" — the opposite tiebreak from most
+ * merges. Two devices could each independently generate Evie's Morning Check-In quest for the
+ * same quest-day before either has synced; without this, whichever side happened to sync last
+ * would silently overwrite the other with a DIFFERENT generated quest, which reads as the quest
+ * "changing" or duplicating. The first one ever generated for a given day is authoritative.
+ */
+/** Exported for regression testing only (see lib/__tests__/guideAndFeedback.test.ts). */
+export function mergeEvieMorningQuest(localRaw: string, cloudRaw: string): string {
+  if (isPayloadEmpty(cloudRaw)) return localRaw;
+  if (isPayloadEmpty(localRaw)) return cloudRaw;
+
+  const local = parseJson<{ questDayKey?: string; createdAt?: string }>(localRaw, {});
+  const cloud = parseJson<{ questDayKey?: string; createdAt?: string }>(cloudRaw, {});
+  if (local.questDayKey !== cloud.questDayKey) {
+    // Different days recorded on each side — newer quest-day wins (the other is stale).
+    return (local.questDayKey ?? "") > (cloud.questDayKey ?? "") ? localRaw : cloudRaw;
+  }
+  const localAt = toTimestamp(local.createdAt);
+  const cloudAt = toTimestamp(cloud.createdAt);
+  return localAt <= cloudAt ? localRaw : cloudRaw;
+}
+
 function mergePayload(
   key: SyncableProgressKey,
   localRaw: string,
@@ -493,6 +522,12 @@ function mergePayload(
 
   if (key === LDM_MODE_STATE_KEY) {
     const payload = mergeLdmModeState(localRaw, cloudRaw);
+    const chosenAt = payload === localRaw ? localAt : cloudAt;
+    return { payload, updatedAt: new Date(Math.max(chosenAt, localAt, cloudAt)).toISOString() };
+  }
+
+  if (key === EVIE_MORNING_QUEST_KEY) {
+    const payload = mergeEvieMorningQuest(localRaw, cloudRaw);
     const chosenAt = payload === localRaw ? localAt : cloudAt;
     return { payload, updatedAt: new Date(Math.max(chosenAt, localAt, cloudAt)).toISOString() };
   }

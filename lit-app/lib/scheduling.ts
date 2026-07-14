@@ -104,6 +104,13 @@ export function getGuideMessageSlot(date: Date = new Date()): number {
   return Math.floor((clamped - GUIDE_MESSAGE_WINDOW_START_MINUTES) / GUIDE_MESSAGE_SLOT_MINUTES);
 }
 
+/** Lucid Dreaming Mode is active 9:00 PM through the shared 6:00 AM quest-day boundary. */
+export const LDM_START_HOUR = 21;
+export function isLdmActive(date: Date = new Date()): boolean {
+  const minutes = date.getHours() * 60 + date.getMinutes();
+  return minutes >= LDM_START_HOUR * 60 || minutes < QUEST_DAY_BOUNDARY_HOUR * 60;
+}
+
 /**
  * Deterministic pick from `pool` for a given salt (typically `${userSalt}-${questDayKey}-${slot}`)
  * — same hash approach as questGeneration.ts's pickRotatingTemplate. The same account resolves

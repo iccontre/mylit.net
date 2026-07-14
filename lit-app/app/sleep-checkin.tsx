@@ -30,6 +30,7 @@ import {
   sleepInterruptionPenalty,
 } from "../lib/scheduling";
 import { loadGuideMemory, loadUserLifeProfile, recordAgentEvent, saveGuideMemory } from "../lib/mylitAgents";
+import { ensureEvieMorningQuest } from "../lib/evieMorningQuest";
 import type { WakeRhythm } from "../lib/agentTypes";
 
 type CheckInMode = "Recovery" | "Progress";
@@ -228,6 +229,7 @@ export default function SleepCheckInScreen() {
   const [interruptionWakeInput, setInterruptionWakeInput] = useState("");
   const [interruptionSleepAgainInput, setInterruptionSleepAgainInput] = useState("");
   const [dreamedTonight, setDreamedTonight] = useState<"yes" | "no" | "">("");
+  const [todayIntentText, setTodayIntentText] = useState("");
   const [tookNap, setTookNap] = useState<"yes" | "no" | "">("");
   const [napDuration, setNapDuration] = useState<number | null>(null);
   const [hadCaffeine, setHadCaffeine] = useState<"yes" | "no" | "">("");
@@ -459,6 +461,12 @@ export default function SleepCheckInScreen() {
 
     if (!isAfternoon && wakeTime.trim()) {
       void recordWakeTimeForRhythm(wakeTime.trim());
+    }
+
+    if (!isAfternoon && todayIntentText.trim()) {
+      // Idempotent per quest-day — a retry/refresh/another device never generates a second
+      // quest for the same day (see ensureEvieMorningQuest).
+      void ensureEvieMorningQuest(todayIntentText.trim());
     }
 
     await successHaptic();
@@ -742,6 +750,18 @@ export default function SleepCheckInScreen() {
                   <TouchableOpacity style={[styles.dreamJournalButton, { borderColor: theme.accent }]} onPress={() => router.push("/dream-journal")}>
                     <Text style={[styles.dreamJournalButtonText, { color: theme.accent }]}>🌙 Open Dream Journal</Text>
                   </TouchableOpacity>
+
+                  <Text style={styles.label}>Evie: What do you want to get done today?</Text>
+                  <Text style={styles.helperText}>Evie turns this into your first quest for today.</Text>
+                  <TextInput
+                    style={[styles.input, styles.multilineInput]}
+                    placeholder="Example: finish the reading for class and go for a walk"
+                    placeholderTextColor="#64748B"
+                    multiline
+                    textAlignVertical="top"
+                    value={todayIntentText}
+                    onChangeText={setTodayIntentText}
+                  />
                 </>
               )}
 
@@ -939,6 +959,9 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#334155",
     fontFamily: pixelFont,
+  },
+  multilineInput: {
+    minHeight: 70,
   },
   choiceRow: {
     flexDirection: "row",

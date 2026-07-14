@@ -83,6 +83,12 @@ export const AI_LUNA_SUPPORT_SESSIONS_KEY = "lit_ai_luna_support_sessions";
 export const GUIDE_CONVERSATIONS_KEY = "lit_guide_conversations";
 /** GuideMemoryUpdateLogEntry[] — audit log written only once a proposal is decided (approved or dismissed). */
 export const GUIDE_MEMORY_UPDATES_KEY = "lit_guide_memory_updates";
+/** FoodLog[] — meal/snack timestamps that drive the fuel estimate and Luna's food gate. */
+export const FOOD_LOGS_KEY = "lit_food_logs";
+/** EvieMorningQuest | null — one Evie-generated quest per quest-day from Morning Check-In's "what do you want to get done today" answer. */
+export const EVIE_MORNING_QUEST_KEY = "lit_evie_morning_quest";
+/** SleepRoutine — user-edited list of pre-sleep routine steps (Sleep Guide), plus today's checked-off progress. */
+export const SLEEP_ROUTINE_KEY = "lit_sleep_routine";
 
 /**
  * Canonical synced keys that back the Log History screen. These are the SAME keys the
@@ -146,6 +152,9 @@ export const SYNCABLE_PROGRESS_KEYS = [
   LDM_MODE_STATE_KEY,
   QUICK_THOUGHT_NOTES_KEY,
   AFFIRMATIONS_KEY,
+  FOOD_LOGS_KEY,
+  EVIE_MORNING_QUEST_KEY,
+  SLEEP_ROUTINE_KEY,
 ] as const;
 
 export type SyncableProgressKey = (typeof SYNCABLE_PROGRESS_KEYS)[number];
@@ -173,6 +182,7 @@ export const ARRAY_MERGE_PROGRESS_KEYS = new Set<SyncableProgressKey>([
   LUNA_DAY_REMINDERS_KEY,
   QUICK_THOUGHT_NOTES_KEY,
   AFFIRMATIONS_KEY,
+  FOOD_LOGS_KEY,
 ]);
 
 export function isSyncableProgressKey(key: string): key is SyncableProgressKey {

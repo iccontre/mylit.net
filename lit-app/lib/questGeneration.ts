@@ -16,7 +16,7 @@ import {
   type StarterMode,
 } from "../constants/questStarters";
 import { getTodayKey } from "./questProgress";
-import { getStepsForItem } from "./scheduling";
+import { getStepsForItem, inferScheduledClassification } from "./scheduling";
 
 export type GeneratedQuest = {
   title: string;
@@ -338,4 +338,55 @@ export function generateProgressQuests(context: QuestProfileContext, count = 4):
   }
 
   return quests;
+}
+
+const MORNING_QUEST_TITLE_MAX_LENGTH = 80;
+
+function estimateMorningQuestDurationMinutes(text: string): 15 | 30 | 45 | 60 {
+  const hourMatch = text.match(/(\d+(?:\.\d+)?)\s*(?:hour|hr)s?\b/i);
+  const minutes = hourMatch
+    ? Number(hourMatch[1]) * 60
+    : (() => {
+        const minuteMatch = text.match(/(\d+)\s*min/i);
+        return minuteMatch ? Number(minuteMatch[1]) : null;
+      })();
+
+  if (minutes !== null && Number.isFinite(minutes)) {
+    if (minutes >= 60) return 60;
+    if (minutes >= 45) return 45;
+    if (minutes >= 30) return 30;
+    return 15;
+  }
+  // No explicit duration mentioned — 30 minutes is a realistic default for a single concrete
+  // first quest (same default the rest of the app's quick-thought/checklist items use).
+  return 30;
+}
+
+function buildMorningQuestTitle(text: string): string {
+  const trimmed = text.trim().replace(/\s+/g, " ");
+  if (!trimmed) return "Make progress on today's priority";
+  if (trimmed.length <= MORNING_QUEST_TITLE_MAX_LENGTH) return trimmed;
+  return `${trimmed.slice(0, MORNING_QUEST_TITLE_MAX_LENGTH - 1).trimEnd()}…`;
+}
+
+/**
+ * Converts Morning Check-In's "What do you want to get done today?" answer into one concrete
+ * quest — deterministic and reliable enough to be the primary path (see lib/evieMorningQuest.ts),
+ * not just a failure fallback. Preserves the user's own words as the title (never rewrites their
+ * intent), estimates a realistic duration from any explicit time mentioned, and classifies
+ * Progress/Recovery independently via the same classifier (inferScheduledClassification) used
+ * everywhere else in the app — never inferred from card color.
+ */
+export function generateQuestFromMorningIntent(rawText: string): GeneratedQuest {
+  const durationMinutes = estimateMorningQuestDurationMinutes(rawText);
+  const kind = inferScheduledClassification(rawText) === "recovery" ? "recovery" : "progress";
+  return {
+    title: buildMorningQuestTitle(rawText),
+    type: "Evie Path",
+    steps: getStepsForItem(durationMinutes, kind),
+    durationMinutes,
+    kind,
+    suggested: true,
+    description: "Set by Evie based on your Path — from your Morning Check-In answer.",
+  };
 }

@@ -66,7 +66,6 @@ import {
 } from "../../lib/questProgress";
 import {
   computeAfternoonUnlockLabel,
-  computeNextQuestDayBoundary,
   DEFAULT_AFTERNOON_UNLOCK_TIME,
   formatDurationLabel,
   formatEnergyDelta,
@@ -75,18 +74,18 @@ import {
   getMandatoryQuestRestoreEnergy,
   getQuestDayKey,
   getStepsForItem,
+  isLdmActive,
   isMandatoryQuestTitle,
-  LDM_HYGIENE_TITLE,
-  LDM_JOURNALING_TITLE,
-  LDM_NIGHT_REFLECTION_TITLE,
-  LDM_READING_TITLE,
   MANDATORY_ENERGY_QUEST_TITLE,
   MANDATORY_FOOD_QUEST_TITLE,
   parseTimeToMinutes,
   pickGuideMessage,
 } from "../../lib/scheduling";
-import { AFFIRMATIONS_KEY, LATEST_PRE_SLEEP_INTENTION_KEY, LDM_MODE_STATE_KEY, TOTAL_STEPS_FLOOR_KEY } from "../../lib/storageKeys";
+import { AFFIRMATIONS_KEY, FOOD_LOGS_KEY, LATEST_PRE_SLEEP_INTENTION_KEY, SLEEP_ROUTINE_KEY, TOTAL_STEPS_FLOOR_KEY } from "../../lib/storageKeys";
 import { readJson } from "../../lib/readJson";
+import { FoodLogModal } from "../../components/FoodLogModal";
+import { computeFuel, FOOD_GATE_FUEL_THRESHOLD, type FoodLog } from "../../lib/fuel";
+import { loadTodaysEvieMorningQuest, type EvieMorningQuest } from "../../lib/evieMorningQuest";
 
 const mylitLogo = uiAssets.logo.mylit;
 const fireAssets = uiAssets.fires;
@@ -312,20 +311,20 @@ function clampEnergy(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-// Lucid Dreaming Mode — a user-initiated NIGHT overlay, deliberately separate from the
-// day's Progress/Recovery/Neutral mode. Entry is only offered 9 PM–12 AM; once entered it
-// persists (Dream Journal quick-access, etc.) until 7 AM the next morning regardless of when
-// within that window it was started.
-type LdmModeState = {
-  nightKey: string;
-  enteredAt: string;
-  rewardApplied: boolean;
-};
-const LDM_ENTRY_WINDOW_START_MINUTES = 21 * 60;
-const LDM_ENTRY_WINDOW_END_MINUTES = 24 * 60;
-const LDM_ROUTINE_DURATION_MS = 60 * 60 * 1000;
-const LDM_COMPLETION_STEPS = 8;
-const LDM_ROUTINE_TASK_DURATION_MINUTES = 15;
+// Lucid Dreaming Mode — a fully automatic NIGHT overlay on the normal Progress/Recovery/Neutral
+// mode, derived purely from local time via isLdmActive (no button/session/route). Active
+// 9:00 PM through the shared 6:00 AM quest-day boundary.
+const PRE_SLEEP_ROUTINE_TITLE = "Start pre-sleep routine";
+const PRE_SLEEP_ROUTINE_DURATION_MINUTES = 60;
+/** Total scheduled quest duration shown during LDM may never exceed this — the 60-min routine
+ *  quest counts toward it, leaving at most 60 more minutes for other LDM-eligible quests. */
+const LDM_BOARD_CAPACITY_MINUTES = 120;
+const PRE_SLEEP_ROUTINE_ITEMS = [
+  { id: "hygiene", text: "Brush teeth, wash up, and get your body ready for sleep." },
+  { id: "journaling", text: "Write down what you're carrying so your mind can rest." },
+  { id: "reading", text: "Read something calm or light. No pressure to finish." },
+  { id: "night-reflection", text: "Look back on today with kindness — no judgment, just noticing." },
+] as const;
 
 
 // Maps the energy reserve to one of the five emotive fire PNG assets.
@@ -506,8 +505,16 @@ export default function HomeScreen() {
 
   const [dayPlanRaw, setDayPlanRaw] = useState<DayPlanRaw | null>(null);
   const [preSleepDoneToday, setPreSleepDoneToday] = useState(false);
-  const [ldmState, setLdmState] = useState<LdmModeState | null>(null);
-  const [ldmBusy, setLdmBusy] = useState(false);
+  // checkedIds is a map (not an array of plain strings) so the cross-device object merge
+  // (mergeJsonArrays only merges arrays of OBJECTS by id — plain strings are silently dropped)
+  // never wipes out checked routine progress.
+  const [preSleepRoutineChecked, setPreSleepRoutineChecked] = useState<{ questDayKey: string; checkedIds: Record<string, boolean> }>({
+    questDayKey: "",
+    checkedIds: {},
+  });
+  const [foodLogs, setFoodLogs] = useState<FoodLog[]>([]);
+  const [showFoodLogModal, setShowFoodLogModal] = useState(false);
+  const [evieMorningQuest, setEvieMorningQuest] = useState<EvieMorningQuest | null>(null);
   const [activeItem, setActiveItem] = useState<ActiveTimedItem | null>(null);
   const [selectedItem, setSelectedItem] = useState<HomeQuestItem | null>(null);
   const [lockMessage, setLockMessage] = useState("");
@@ -517,7 +524,6 @@ export default function HomeScreen() {
   const [showQuestChooserModal, setShowQuestChooserModal] = useState(false);
   const [timeNow, setTimeNow] = useState<Date>(() => new Date());
   const [countdownNow, setCountdownNow] = useState<number>(() => Date.now());
-  const [ldmCountdownNow, setLdmCountdownNow] = useState<number>(() => Date.now());
   const [recoveryNow, setRecoveryNow] = useState<number>(() => Date.now());
   const lockMessageTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -553,7 +559,9 @@ export default function HomeScreen() {
       loadDayPlan();
       loadActiveItem();
       loadPreSleepStatus();
-      loadLdmState();
+      loadFoodLogs();
+      loadEvieMorningQuest();
+      loadPreSleepRoutineChecked();
       loadAfternoonUnlockLabel();
     }, [])
   );
@@ -566,7 +574,9 @@ export default function HomeScreen() {
     loadDayPlan();
     loadActiveItem();
     loadPreSleepStatus();
-    loadLdmState();
+    loadFoodLogs();
+    loadEvieMorningQuest();
+    loadPreSleepRoutineChecked();
     loadAfternoonUnlockLabel();
   }, []);
 
@@ -596,7 +606,9 @@ export default function HomeScreen() {
       loadDayPlan();
       loadActiveItem();
       loadPreSleepStatus();
-      loadLdmState();
+      loadFoodLogs();
+      loadEvieMorningQuest();
+      loadPreSleepRoutineChecked();
     }
 
     const onAppStateChange = (nextState: AppStateStatus) => {
@@ -832,28 +844,21 @@ export default function HomeScreen() {
     }
   }
 
-  async function loadLdmState() {
-    const saved = await AsyncStorage.getItem(LDM_MODE_STATE_KEY);
-    if (!saved) {
-      setLdmState(null);
-      return;
-    }
-    try {
-      const parsed = JSON.parse(saved) as LdmModeState;
-      const enteredAtMs = new Date(parsed.enteredAt).getTime();
-      // Only ever one night's LDM session lives here — a stale night's record from a
-      // previous night (past its 6 AM cutoff), or one with an invalid timestamp, is treated
-      // as if LDM were never entered AND actively cleared from storage — a stale session left
-      // behind by an old client build must never resurface once a current build loads.
-      if (Number.isFinite(enteredAtMs) && Date.now() < computeNextQuestDayBoundary(new Date(enteredAtMs)).getTime()) {
-        setLdmState(parsed);
-      } else {
-        setLdmState(null);
-        await clearProgressKey(LDM_MODE_STATE_KEY);
-      }
-    } catch {
-      setLdmState(null);
-      await clearProgressKey(LDM_MODE_STATE_KEY);
+  async function loadFoodLogs() {
+    const logs = await readJson<FoodLog[]>(FOOD_LOGS_KEY, []);
+    setFoodLogs(Array.isArray(logs) ? logs : []);
+  }
+
+  async function loadEvieMorningQuest() {
+    setEvieMorningQuest(await loadTodaysEvieMorningQuest());
+  }
+
+  async function loadPreSleepRoutineChecked() {
+    const saved = await readJson<{ questDayKey: string; checkedIds: Record<string, boolean> } | null>(SLEEP_ROUTINE_KEY, null);
+    if (saved && saved.questDayKey === getQuestDayKey()) {
+      setPreSleepRoutineChecked({ questDayKey: saved.questDayKey, checkedIds: saved.checkedIds ?? {} });
+    } else {
+      setPreSleepRoutineChecked({ questDayKey: getQuestDayKey(), checkedIds: {} });
     }
   }
 
@@ -910,6 +915,14 @@ export default function HomeScreen() {
   }
 
   function openQuestItem(item: HomeQuestItem) {
+    // Completing the food gate requires a genuinely new meal log, not a tap-complete — open
+    // Food Log directly. A qualifying meal logged while this gate is active clears it and
+    // awards its steps once (see the FoodLogModal onSaved handler below).
+    if (item.title === MANDATORY_FOOD_QUEST_TITLE) {
+      lightHaptic();
+      setShowFoodLogModal(true);
+      return;
+    }
     if (item.source === "Sleep") {
       lightHaptic();
       router.push("/pre-sleep-intention");
@@ -1086,6 +1099,22 @@ export default function HomeScreen() {
     await completeQuestItem(boardItem);
   }
 
+  /**
+   * A meal logged while the food gate is active clears it — steps are awarded exactly once
+   * through the SAME completeQuestItem/markItemComplete ledger every other quest uses, not a
+   * separate reward path. Looks up the gate's already-normalized board item (computed this
+   * render, before the new log) rather than reconstructing its id, so the id always matches
+   * exactly what the board itself used.
+   */
+  async function handleFoodLogSaved(log: FoodLog) {
+    await loadFoodLogs();
+    if (log.entryType !== "meal") return;
+    const gateItem = allHomeItems.find((item) => item.title === MANDATORY_FOOD_QUEST_TITLE);
+    if (gateItem) {
+      await completeQuestItem(gateItem);
+    }
+  }
+
   async function missQuestItem(item: HomeQuestItem) {
     const nextMissed = await markItemMissed(item, missedQuests, activeItem?.id ?? null);
     await lightHaptic();
@@ -1196,6 +1225,22 @@ export default function HomeScreen() {
       })
     );
 
+  // Hunger/fuel — derived fresh from FoodLog timestamps every render (see lib/fuel.ts), never
+  // decremented by a persisted interval. Recomputes on the same timeNow heartbeat everything
+  // else on Home already uses (30s tick + AppState foreground refresh), so reload/foreground/
+  // "next minute boundary" all just work without a dedicated fuel timer.
+  const fuelResult = computeFuel(foodLogs, timeNow);
+  // Green/gold at high fuel, purple at low — deliberately no red anywhere (this is a
+  // supportive estimate, never a danger/alarm indicator).
+  const fuelBarColor = fuelResult.fuel >= 60 ? "#FBBF24" : fuelResult.fuel >= 30 ? "#84CC16" : "#A78BFA";
+
+  // LDM (Lucid Dreaming Mode) is fully automatic — 9:00 PM through the shared 6:00 AM quest-day
+  // boundary — recomputed from timeNow, no button/session/route (see PRE_SLEEP_ROUTINE_* above).
+  const ldmActive = isLdmActive(timeNow);
+  const preSleepRoutineQuestDone = completedQuests.some((entry) => entry.title === PRE_SLEEP_ROUTINE_TITLE);
+  const preSleepRoutineCheckedToday = preSleepRoutineChecked.questDayKey === getTodayKey() ? preSleepRoutineChecked.checkedIds : {};
+  const preSleepRoutineAllChecked = PRE_SLEEP_ROUTINE_ITEMS.every((item) => Boolean(preSleepRoutineCheckedToday[item.id]));
+
   // Centralized Luna gate selector (priority order):
   //   1. Afternoon Check-In incomplete (past its unlock time) — full-board replacement, handled
   //      in render below, not as a quest-board item.
@@ -1283,12 +1328,6 @@ export default function HomeScreen() {
       };
 
   function generateQuests(): Quest[] {
-    // LDM routine quests show regardless of Progress/Recovery/Neutral — it's a separate night
-    // overlay, not part of the day mode system. While the 1-hour routine window is open, the
-    // board shows ONLY these — no mandatory/suggested/recovery-starter quests mixed in.
-    const ldmRoutineQuests = getLdmRoutineQuests();
-    if (ldmRoutineWindowOpen) return ldmRoutineQuests;
-
     // Gate #1 (Afternoon Check-In incomplete) is a full-board replacement rendered separately —
     // no ordinary or other mandatory quest appears until it resolves.
     if (isAfternoonCheckInGateActive) return [];
@@ -1298,18 +1337,43 @@ export default function HomeScreen() {
       ...(mandatoryEnergyQuest ? [mandatoryEnergyQuest] : []),
     ];
 
+    // LDM (9 PM–6 AM, see ldmActive) is a night overlay independent of the day's
+    // Progress/Recovery/Neutral mode — Luna's pre-sleep routine quest always takes priority
+    // here (after the gates above), with no daytime Progress/suggested quests mixed in (the
+    // board's own LDM item filter, applied below, also excludes anything non-recovery).
+    if (ldmActive) {
+      const routineQuest: Quest | null = preSleepRoutineQuestDone
+        ? null
+        : {
+            title: PRE_SLEEP_ROUTINE_TITLE,
+            type: "Sleep",
+            steps: getStepsForItem(PRE_SLEEP_ROUTINE_DURATION_MINUTES, "recovery"),
+            durationMinutes: PRE_SLEEP_ROUTINE_DURATION_MINUTES,
+            kind: "recovery",
+            mandatory: true,
+            guide: "luna",
+            description: "Your pre-sleep routine — check off each step, then complete the quest once you're through.",
+          };
+      return [...gateQuests, ...(routineQuest ? [routineQuest] : [])];
+    }
+
     if (isNeutral) {
       return [{ title: "Complete Morning Check-In", type: "Start", steps: 1 }];
     }
 
     const completedTitles = new Set(completedQuests.map((entry) => entry.title));
     const missedTitles = new Set(missedQuests.map((entry) => entry.title));
-    const suggestedQuest = getActiveSuggestedQuest(
-      questContext,
-      isProgress ? "progress" : "recovery",
-      completedTitles,
-      missedTitles
-    );
+
+    // Evie's Morning Check-In quest takes the "first quest of the day" slot in place of the
+    // generic algorithmic suggestion once it exists for today — one concrete quest, not two
+    // competing suggestions on the board.
+    const evieMorningQuestActive =
+      evieMorningQuest && !completedTitles.has(evieMorningQuest.title) && !missedTitles.has(evieMorningQuest.title)
+        ? evieMorningQuest
+        : null;
+    const suggestedQuest = evieMorningQuestActive
+      ? null
+      : getActiveSuggestedQuest(questContext, isProgress ? "progress" : "recovery", completedTitles, missedTitles);
 
     // After an hour of progress work today, offer a path-aligned recovery starter quest.
     const recoveryStarter = progressMinutesToday >= 60 ? generateRecoveryStarterQuest(questContext) : null;
@@ -1321,6 +1385,7 @@ export default function HomeScreen() {
     return [
       ...gateQuests,
       ...(windDownQuestActive ? [windDownQuestActive] : []),
+      ...(evieMorningQuestActive ? [evieMorningQuestActive] : []),
       ...(suggestedQuest ? [suggestedQuest] : []),
       ...(recoveryStarterActive ? [recoveryStarterActive] : []),
     ];
@@ -1366,7 +1431,13 @@ export default function HomeScreen() {
    * here is always today's real answer, never a stale earlier day's.
    */
   function getMandatoryFoodQuest(): Quest | null {
-    if (latestCheckIn?.eatenSinceMorning !== false) return null;
+    // Fuel at/below the threshold is the primary trigger (see lib/fuel.ts — a user with no
+    // food logs ever stays at 100/Fueled, so missing history alone never gates them). An
+    // explicit "no" on Afternoon Check-In can also activate it immediately, even if fuel
+    // hasn't decayed that far yet.
+    const fuelGateActive = fuelResult.fuel <= FOOD_GATE_FUEL_THRESHOLD;
+    const checkInGateActive = latestCheckIn?.eatenSinceMorning === false;
+    if (!fuelGateActive && !checkInGateActive) return null;
     const alreadyDone = completedQuests.some((entry) => entry.title === MANDATORY_FOOD_QUEST_TITLE);
     if (alreadyDone) return null;
 
@@ -1391,9 +1462,9 @@ export default function HomeScreen() {
    */
   function getWindDownQuest(): Quest | null {
     if (isNeutral) return null;
-    // LDM's own routine quests already cover "start your pre-sleep routine" for tonight —
-    // showing both would duplicate the same intent as two separate board entries.
-    if (ldmState && ldmState.nightKey === todayKey) return null;
+    // LDM's own pre-sleep routine quest already covers "start your pre-sleep routine" for
+    // tonight — showing both would duplicate the same intent as two separate board entries.
+    if (ldmActive) return null;
     const sleepTime = latestCheckIn?.desiredSleepTime;
     if (!sleepTime) return null;
 
@@ -1428,38 +1499,6 @@ export default function HomeScreen() {
     };
   }
 
-  // LDM (Lucid Dreaming Mode) — see type/constants above. Entered state persists until 7 AM;
-  // the 1-hour routine window is a subset of that, checked separately. Computed here (using
-  // timeNow directly, not the nowMinutes/todayKey declared below) because generateQuests()
-  // — called just below — already needs ldmRoutineWindowOpen.
-  const ldmNowMinutes = timeNow.getHours() * 60 + timeNow.getMinutes();
-  const ldmEnteredAtMs = ldmState ? new Date(ldmState.enteredAt).getTime() : null;
-  const ldmRoutineEndsAtMs = ldmEnteredAtMs !== null ? ldmEnteredAtMs + LDM_ROUTINE_DURATION_MS : null;
-  const ldmActive =
-    ldmState !== null && ldmEnteredAtMs !== null && timeNow.getTime() < computeNextQuestDayBoundary(new Date(ldmEnteredAtMs)).getTime();
-  const ldmRoutineWindowOpen = ldmActive && ldmRoutineEndsAtMs !== null && timeNow.getTime() < ldmRoutineEndsAtMs;
-  const ldmPostRoutine = ldmActive && !ldmRoutineWindowOpen;
-  const canEnterLdm = !ldmActive && ldmNowMinutes >= LDM_ENTRY_WINDOW_START_MINUTES && ldmNowMinutes < LDM_ENTRY_WINDOW_END_MINUTES;
-
-  // Ticks the LDM 60-min countdown once per second while its window is open — separate from
-  // the 30s day/time-track heartbeat so "MM:SS" reads smoothly. The end time itself is derived
-  // from ldmState.enteredAt (an absolute timestamp persisted to AsyncStorage, see loadLdmState),
-  // not from this interval, so backgrounding/rerenders/tab changes never reset or drift it —
-  // this state only controls how often the already-correct remaining time is redisplayed.
-  useEffect(() => {
-    if (!ldmRoutineWindowOpen) return;
-    setLdmCountdownNow(Date.now());
-    const id = setInterval(() => setLdmCountdownNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [ldmRoutineWindowOpen]);
-
-  const ldmHygieneDone = completedQuests.some((entry) => entry.title === LDM_HYGIENE_TITLE);
-  const ldmJournalingDone = completedQuests.some((entry) => entry.title === LDM_JOURNALING_TITLE);
-  const ldmReadingDone = completedQuests.some((entry) => entry.title === LDM_READING_TITLE);
-  const ldmNightReflectionDone = completedQuests.some((entry) => entry.title === LDM_NIGHT_REFLECTION_TITLE);
-  const ldmPreSleepIntentionDone = preSleepDoneToday;
-  const ldmRoutineFullyComplete = ldmHygieneDone && ldmJournalingDone && ldmReadingDone && ldmNightReflectionDone && ldmPreSleepIntentionDone;
-
   const todayKey = getTodayKey();
   const todayChecklist: RawChecklistItem[] = getChecklistItemsForDay(dayPlanRaw, todayName);
   const quests = generateQuests();
@@ -1469,7 +1508,7 @@ export default function HomeScreen() {
   const boardMode: "Progress" | "Recovery" = isRecovery ? "Recovery" : "Progress";
 
   const allHomeItems: HomeQuestItem[] =
-    (hasEnergyData && !isNeutral) || ldmRoutineWindowOpen
+    (hasEnergyData && !isNeutral) || ldmActive
       ? normalizeQuestItems({
           quests,
           todayQuest: dayPlanRaw?.todayQuest ?? null,
@@ -1484,11 +1523,17 @@ export default function HomeScreen() {
         })
       : [];
 
-  const availableItems = allHomeItems.filter((item) => item.id !== activeItem?.id);
-  const boardCapacity = applyQuestBoardCapacity(availableItems, boardMode);
+  // During LDM only sleep/reflection/dream/recovery/mandatory items may show — never daytime
+  // Progress quests. Filtered BEFORE capacity math so the 120-min LDM cap only ever considers
+  // LDM-eligible items; nothing is deleted, items that don't fit are simply deferred (hiddenCount).
+  const availableItemsRaw = allHomeItems.filter((item) => item.id !== activeItem?.id);
+  const availableItems = ldmActive
+    ? availableItemsRaw.filter((item) => item.mandatory || item.kind === "recovery" || item.source === "Sleep")
+    : availableItemsRaw;
+  const boardCapacity = applyQuestBoardCapacity(availableItems, boardMode, ldmActive ? LDM_BOARD_CAPACITY_MINUTES : undefined);
   const visibleItems = boardCapacity.visibleItems;
   const extraItemCount = boardCapacity.hiddenCount;
-  const capacityLabel = formatCapacityHeader(boardCapacity.plannedMinutes, boardMode);
+  const capacityLabel = ldmActive ? "LDM" : formatCapacityHeader(boardCapacity.plannedMinutes, boardMode);
 
   const remainingMs = activeItem ? Math.max(0, activeItem.endsAt - countdownNow) : 0;
   const timerFinished = activeItem !== null && remainingMs <= 0;
@@ -1502,63 +1547,12 @@ export default function HomeScreen() {
   const nowMinutes = timeNow.getHours() * 60 + timeNow.getMinutes();
   const timeTrackPosition = getCurrentTimeTrackPosition(timeNow);
 
-  async function enterLdmMode() {
-    if (ldmBusy || ldmActive || !canEnterLdm) return;
-    setLdmBusy(true);
-    try {
-      const state: LdmModeState = { nightKey: todayKey, enteredAt: new Date().toISOString(), rewardApplied: false };
-      await persistProgressKeys({ [LDM_MODE_STATE_KEY]: JSON.stringify(state) });
-      setLdmState(state);
-      void trackEvent(ANALYTICS_EVENTS.quest_completed, { id: "ldm-entered", title: "Enter LDM Mode", steps: 0 });
-    } finally {
-      setLdmBusy(false);
-    }
+  async function toggleRoutineItemChecked(itemId: string) {
+    const current = preSleepRoutineChecked.questDayKey === todayKey ? preSleepRoutineChecked.checkedIds : {};
+    const nextState = { questDayKey: todayKey, checkedIds: { ...current, [itemId]: !current[itemId] } };
+    setPreSleepRoutineChecked(nextState);
+    await persistProgressKeys({ [SLEEP_ROUTINE_KEY]: JSON.stringify(nextState) });
   }
-
-  async function awardLdmCompletionIfReady() {
-    if (!ldmState || ldmState.rewardApplied || !ldmRoutineFullyComplete) return;
-    const nextState: LdmModeState = { ...ldmState, rewardApplied: true };
-    await persistProgressKeys({ [LDM_MODE_STATE_KEY]: JSON.stringify(nextState) });
-    setLdmState(nextState);
-    const stats = await readJson<{ totalSteps?: number }>(USER_STATS_KEY, {});
-    await persistProgressKeys({ [USER_STATS_KEY]: JSON.stringify({ ...stats, totalSteps: Number(stats.totalSteps ?? 0) + LDM_COMPLETION_STEPS }) });
-  }
-
-  function getLdmRoutineQuests(): Quest[] {
-    if (!ldmRoutineWindowOpen) return [];
-    // Each 15-min routine task awards its own steps via the existing duration-to-steps
-    // utility (recovery: max(1, ceil(minutes/15))) instead of the old flat 0 — the +8 LDM
-    // completion bonus (awardLdmCompletionIfReady) is separate and still fires once for
-    // finishing the whole routine. Per-task dedup against double-award already comes from
-    // the same completedIds/markItemComplete path every other quest board item uses.
-    const ldmTaskSteps = getStepsForItem(LDM_ROUTINE_TASK_DURATION_MINUTES, "recovery");
-    const quests: Quest[] = [];
-    if (!ldmHygieneDone) {
-      quests.push({ title: LDM_HYGIENE_TITLE, type: "LDM", steps: ldmTaskSteps, durationMinutes: LDM_ROUTINE_TASK_DURATION_MINUTES, kind: "recovery", ldmRoutine: true, description: "Brush teeth, wash up, and get your body ready for sleep." });
-    }
-    if (!ldmJournalingDone) {
-      quests.push({ title: LDM_JOURNALING_TITLE, type: "LDM", steps: ldmTaskSteps, durationMinutes: LDM_ROUTINE_TASK_DURATION_MINUTES, kind: "recovery", ldmRoutine: true, description: "Write down what you're carrying so your mind can rest." });
-    }
-    if (!ldmReadingDone) {
-      quests.push({ title: LDM_READING_TITLE, type: "LDM", steps: ldmTaskSteps, durationMinutes: LDM_ROUTINE_TASK_DURATION_MINUTES, kind: "recovery", ldmRoutine: true, description: "Read something calm or light. No pressure to finish." });
-    }
-    if (!ldmNightReflectionDone) {
-      quests.push({ title: LDM_NIGHT_REFLECTION_TITLE, type: "LDM", steps: ldmTaskSteps, durationMinutes: LDM_ROUTINE_TASK_DURATION_MINUTES, kind: "recovery", ldmRoutine: true, description: "Look back on today with kindness — no judgment, just noticing." });
-    }
-    // "Set Pre-Sleep Intention" is NOT added here — normalizeQuestItems already injects that
-    // exact item (same title, source: "Sleep", routes to /pre-sleep-intention) every night
-    // from 9 PM–7 AM. Pushing a second one here would duplicate it on the board; its
-    // completion is tracked below via ldmPreSleepIntentionDone (= preSleepDoneToday) instead.
-    return quests;
-  }
-
-  // Fires the +8 completion bonus exactly once, the moment the last of the four routine
-  // pieces finishes — whichever one that happens to be (including Pre-Sleep Intention, which
-  // completes through a totally different screen/flow than the other three).
-  useEffect(() => {
-    if (ldmRoutineFullyComplete) void awardLdmCompletionIfReady();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ldmRoutineFullyComplete]);
 
   const nextItem = activeItem ? findNextScheduledItem(availableItems, activeItem.id, nowMinutes) : null;
 
@@ -1729,15 +1723,15 @@ export default function HomeScreen() {
                 {ldmActive ? "LUCID DREAMING MODE" : isNeutral ? "NEUTRAL MODE" : isRecovery ? "RECOVERY MODE" : "PROGRESS MODE"}
               </Text>
 
-              {ldmRoutineWindowOpen && ldmRoutineEndsAtMs !== null ? (
+              {ldmActive ? (
                 <LdmErrorBoundary>
                   <View style={styles.capBannerRow}>
                     <Text style={[styles.capBannerText, { color: "#E9D5FF" }]} numberOfLines={2}>
-                      You have 1 hour to finish all pre-sleep tasks. {formatCountdown(Math.max(0, ldmRoutineEndsAtMs - ldmCountdownNow))}
+                      Lucid Dreaming Mode — up to 2 hours of pre-sleep tasks tonight.
                     </Text>
                   </View>
                 </LdmErrorBoundary>
-              ) : !isNeutral && !ldmActive ? (
+              ) : !isNeutral ? (
                 <View style={styles.capBannerRow}>
                   <Text style={[styles.capBannerText, { color: theme.soft }]} numberOfLines={1}>
                     {isBoardLocked ? "Board locked" : isRecoveryLocked ? "Recovery required" : capacityLabel}
@@ -1868,6 +1862,30 @@ export default function HomeScreen() {
                 ) : null}
               </View>
 
+              {/* Fixed layout beneath the flame — never affects the flame's own size/position.
+                  A supportive estimate only: no calorie targets, weight language, or claims of
+                  knowing real biological hunger — see lib/fuel.ts. */}
+              <View style={styles.fuelRow}>
+                <View style={[styles.fuelBar, { borderColor: fuelBarColor }]}>
+                  <Text style={[styles.fuelBarLabel, { color: fuelBarColor }]}>FUEL</Text>
+                  <View style={styles.fuelBarTrack}>
+                    <View style={[styles.fuelBarFill, { width: `${fuelResult.fuel}%`, backgroundColor: fuelBarColor }]} />
+                  </View>
+                  <Text style={[styles.fuelBarStatus, { color: fuelBarColor }]}>
+                    {fuelResult.status} · {fuelResult.fuel}%
+                  </Text>
+                </View>
+                <TouchableOpacity style={styles.foodLogBtn} onPress={() => { lightHaptic(); setShowFoodLogModal(true); }}>
+                  <Text style={styles.foodLogBtnText}>🍽️ Food Log</Text>
+                </TouchableOpacity>
+              </View>
+
+              <FoodLogModal
+                visible={showFoodLogModal}
+                onClose={() => setShowFoodLogModal(false)}
+                onSaved={(log) => void handleFoodLogSaved(log)}
+              />
+
               <LunaGuideModal visible={showHomeLunaModal} onClose={() => setShowHomeLunaModal(false)} />
               <EvieGuideModal visible={showHomeEvieModal} onClose={() => setShowHomeEvieModal(false)} />
 
@@ -1963,7 +1981,7 @@ export default function HomeScreen() {
                 </LdmErrorBoundary>
               ) : null}
 
-              {ldmPostRoutine ? (
+              {ldmActive && preSleepRoutineQuestDone ? (
                 <LdmErrorBoundary>
                   <View style={styles.ldmDoneCard}>
                     <Text style={styles.ldmDoneText}>Luna: Your routine is done. Try to let the night carry you now — you can write dreams if you wake up.</Text>
@@ -1971,13 +1989,10 @@ export default function HomeScreen() {
                 </LdmErrorBoundary>
               ) : null}
 
-              {isNeutral && !ldmRoutineWindowOpen && !canEnterLdm ? (
+              {isNeutral && !ldmActive ? (
                 // LDM's quest board must never fall behind the "do a morning check-in" lock —
-                // entry happens late at night, when the day's check-in-derived mode has often
-                // already reverted to Neutral, which otherwise hid the whole LDM routine board
-                // behind this prompt (reported as a "black page" for the full LDM hour). Also
-                // gated on !canEnterLdm — the LDM entry quest card below must stay reachable for
-                // a Neutral user in the 9PM-midnight entry window, not hidden behind this lock.
+                // LDM is time-derived and reachable regardless of the day's check-in-derived
+                // mode, which otherwise hid the whole LDM board behind this prompt overnight.
                 <View style={styles.lockedBoardStrip}>
                   <Text style={styles.lockedBoardStripText}>Complete morning check-in to unlock</Text>
                   <TouchableOpacity style={styles.lockedBoardStripBtn} onPress={() => navigateWithHaptic("/sleep-checkin")}>
@@ -1988,7 +2003,7 @@ export default function HomeScreen() {
               <View style={[styles.questBoard, { borderColor: isBoardLocked && activeItem ? kindAccent(activeItem.kind) : isRecoveryLocked ? "#C4A7FF" : theme.accent }]}>
                 <View style={styles.questHeaderRow}>
                   <View style={styles.questTitleRow}>
-                    <Text style={[styles.questTitle, { color: theme.accent }]}>{isRecovery ? "+ RECOVERY BOARD +" : "⚔ TODAY'S QUESTS"}</Text>
+                    <Text style={[styles.questTitle, { color: theme.accent }]}>{ldmActive ? "☾ NIGHT BOARD ☾" : isRecovery ? "+ RECOVERY BOARD +" : "⚔ TODAY'S QUESTS"}</Text>
                     {!isNeutral ? (
                       <TouchableOpacity style={[styles.questHelpBtn, { borderColor: theme.accent }]} onPress={() => setShowQuestHelp(true)}>
                         <Text style={[styles.questHelpBtnText, { color: theme.accent }]}>?</Text>
@@ -1996,40 +2011,18 @@ export default function HomeScreen() {
                     ) : null}
                   </View>
                   <Text style={[styles.questCount, { color: theme.accent }]}>
-                    {isNeutral && !ldmRoutineWindowOpen ? "LOCKED" : isBoardLocked ? "LOCKED" : isRecoveryLocked ? "RECOVERY" : ldmRoutineWindowOpen ? "LDM" : capacityLabel}
+                    {isNeutral && !ldmActive ? "LOCKED" : isBoardLocked ? "LOCKED" : isRecoveryLocked ? "RECOVERY" : capacityLabel}
                   </Text>
                 </View>
 
-                {canEnterLdm ? (
-                  <LdmErrorBoundary>
-                    <TouchableOpacity
-                      style={[styles.ldmQuestCard, ldmBusy && styles.ldmBtnDisabled]}
-                      disabled={ldmBusy}
-                      onPress={() => void enterLdmMode()}
-                      activeOpacity={0.85}
-                    >
-                      <View style={styles.questIconSlot}>
-                        <Text style={styles.questIcon}>🌌</Text>
-                      </View>
-                      <View style={styles.questCopy}>
-                        <Text style={styles.ldmQuestText} numberOfLines={1}>✦ Enter LDM ✦</Text>
-                        <Text style={styles.ldmQuestMeta} numberOfLines={1}>1-hour pre-sleep routine</Text>
-                      </View>
-                      <View style={styles.ldmQuestStartBtn}>
-                        <Text style={styles.ldmQuestStartBtnText}>START</Text>
-                      </View>
-                    </TouchableOpacity>
-                  </LdmErrorBoundary>
-                ) : null}
-
-                {!isNeutral && todayQuestUnset && ldmNowMinutes < LDM_ENTRY_WINDOW_START_MINUTES ? (
+                {!isNeutral && !ldmActive && todayQuestUnset ? (
                   <TouchableOpacity style={styles.setMainQuestBtn} onPress={() => navigateWithHaptic("/day-plan")}>
                     <Text style={styles.setMainQuestBtnTitle}>SET TODAY’S QUEST</Text>
                     <Text style={styles.setMainQuestBtnHint}>Choose your main quest for today.</Text>
                   </TouchableOpacity>
                 ) : null}
 
-                {isNeutral && !ldmRoutineWindowOpen ? (
+                {isNeutral && !ldmActive ? (
                   <View style={styles.questLockedCard}>
                     <Text style={styles.questLockedTitle}>Quest Board Locked</Text>
                     <Text style={styles.questLockedText} numberOfLines={2}>Check in to reveal today&apos;s quests.</Text>
@@ -2128,7 +2121,7 @@ export default function HomeScreen() {
                       <Text style={[styles.waitingRoomBtnText, { color: "#F5F3FF" }]}>Complete Afternoon Check-In</Text>
                     </TouchableOpacity>
                   </View>
-                ) : ldmRoutineWindowOpen && availableItems.length === 0 ? (
+                ) : ldmActive && availableItems.length === 0 ? (
                   // Never invent routine tasks — if tonight's routine is already fully done
                   // (or never had anything to show), Luna's bubble replaces the empty board
                   // instead of the generic "No quests yet" message.
@@ -2296,11 +2289,40 @@ export default function HomeScreen() {
                       <Text style={styles.modalDescription}>{selectedItem.description}</Text>
                     ) : null}
 
+                    {selectedItem.title === PRE_SLEEP_ROUTINE_TITLE ? (
+                      <View style={styles.routineList}>
+                        {PRE_SLEEP_ROUTINE_ITEMS.map((item) => {
+                          const checked = Boolean(preSleepRoutineCheckedToday[item.id]);
+                          return (
+                            <TouchableOpacity
+                              key={item.id}
+                              style={styles.routineRow}
+                              onPress={() => void toggleRoutineItemChecked(item.id)}
+                              activeOpacity={0.8}
+                            >
+                              <View style={[styles.routineCheckbox, checked && styles.routineCheckboxChecked]}>
+                                {checked ? <Text style={styles.routineCheckMark}>✓</Text> : null}
+                              </View>
+                              <Text style={[styles.routineRowText, checked && styles.routineRowTextChecked]}>{item.text}</Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                    ) : null}
+
                     <View style={styles.modalButtonRow}>
                       <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setSelectedItem(null)}>
                         <Text style={styles.modalCancelText}>CLOSE</Text>
                       </TouchableOpacity>
-                      {selectedItem.source === "Checklist" ? (
+                      {selectedItem.title === PRE_SLEEP_ROUTINE_TITLE ? (
+                        <TouchableOpacity
+                          style={[styles.modalStartBtn, !preSleepRoutineAllChecked && styles.modalStartBtnDisabled]}
+                          disabled={!preSleepRoutineAllChecked}
+                          onPress={() => void completeQuestItem(selectedItem)}
+                        >
+                          <Text style={styles.modalStartText}>COMPLETE ROUTINE</Text>
+                        </TouchableOpacity>
+                      ) : selectedItem.source === "Checklist" ? (
                         <TouchableOpacity style={styles.modalStartBtn} onPress={() => void completeChecklistItem(selectedItem)}>
                           <Text style={styles.modalStartText}>MARK COMPLETE</Text>
                         </TouchableOpacity>
@@ -2660,29 +2682,6 @@ const styles = StyleSheet.create({
   chooserRowExplain: { color: "#94A3B8", fontSize: 11, fontWeight: "700", marginTop: 2 },
   chooserCloseBtn: { marginTop: 4, alignItems: "center", paddingVertical: 10 },
   chooserCloseBtnText: { color: "#94A3B8", fontFamily: "monospace", fontSize: 11, fontWeight: "900" },
-  ldmBtnDisabled: { opacity: 0.5 },
-  // Purple-filled, white text, small star accents — visually distinct from a normal Recovery
-  // quest row (which is also purple but never has a solid fill + stars + dedicated START pill).
-  ldmQuestCard: {
-    minHeight: 44,
-    backgroundColor: "#6D28D9",
-    borderWidth: 2,
-    borderColor: "#4C1D95",
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    marginBottom: 8,
-    flexDirection: "row",
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.6,
-    shadowRadius: 0,
-    shadowOffset: { width: 2, height: 2 },
-  },
-  ldmQuestText: { color: "#FFFFFF", fontSize: 13, fontWeight: "900", letterSpacing: 0.5 },
-  ldmQuestMeta: { color: "#E9D5FF", fontSize: 10, fontWeight: "800", marginTop: 1 },
-  ldmQuestStartBtn: { backgroundColor: "#FFFFFF", borderRadius: 5, paddingHorizontal: 10, paddingVertical: 6, marginLeft: 6 },
-  ldmQuestStartBtnText: { color: "#4C1D95", fontFamily: "monospace", fontSize: 11, fontWeight: "900" },
   dreamJournalBtn: { borderWidth: 2, borderColor: "#4338CA", borderRadius: 8, paddingVertical: 12, alignItems: "center", backgroundColor: "rgba(49,46,129,0.5)", marginBottom: 10 },
   dreamJournalBtnText: { color: "#C7D2FE", fontFamily: "monospace", fontSize: 13, fontWeight: "900", letterSpacing: 0.5 },
   ldmDoneCard: { borderWidth: 2, borderColor: "#A78BFA", borderRadius: 8, padding: 12, backgroundColor: "rgba(88,28,135,0.35)", marginBottom: 10 },
@@ -2855,6 +2854,65 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 6,
     letterSpacing: 0.3,
+  },
+  fuelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 8,
+  },
+  fuelBar: {
+    flex: 1,
+    backgroundColor: "rgba(6, 10, 18, 0.95)",
+    borderWidth: 3,
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    shadowColor: "#000",
+    shadowOpacity: 0.6,
+    shadowRadius: 0,
+    shadowOffset: { width: 2, height: 2 },
+  },
+  fuelBarLabel: {
+    fontFamily: "monospace",
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1,
+  },
+  fuelBarTrack: {
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "rgba(148, 163, 184, 0.25)",
+    overflow: "hidden",
+    marginTop: 4,
+  },
+  fuelBarFill: {
+    height: "100%",
+    borderRadius: 4,
+  },
+  fuelBarStatus: {
+    fontFamily: "monospace",
+    fontSize: 9,
+    fontWeight: "800",
+    marginTop: 4,
+  },
+  foodLogBtn: {
+    backgroundColor: "rgba(6, 10, 18, 0.95)",
+    borderWidth: 3,
+    borderColor: "#334155",
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+    shadowColor: "#000",
+    shadowOpacity: 0.6,
+    shadowRadius: 0,
+    shadowOffset: { width: 2, height: 2 },
+  },
+  foodLogBtnText: {
+    color: "#E2E8F0",
+    fontFamily: "monospace",
+    fontSize: 11,
+    fontWeight: "900",
   },
   checkInRow: {
     flexDirection: "row",
@@ -3360,11 +3418,52 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     alignItems: "center",
   },
+  modalStartBtnDisabled: {
+    borderColor: "#475569",
+    backgroundColor: "#1E293B",
+  },
   modalStartText: {
     color: "#FDE68A",
     fontSize: 12,
     fontWeight: "900",
     letterSpacing: 0.5,
+  },
+  routineList: {
+    marginTop: 12,
+    gap: 8,
+  },
+  routineRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  routineCheckbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  routineCheckboxChecked: {
+    backgroundColor: "#7C3AED",
+  },
+  routineCheckMark: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  routineRowText: {
+    flex: 1,
+    color: "#E9D5FF",
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17,
+  },
+  routineRowTextChecked: {
+    color: "#94A3B8",
+    textDecorationLine: "line-through",
   },
   modalCompleteBtn: {
     flex: 1,

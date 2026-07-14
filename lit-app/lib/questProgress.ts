@@ -538,14 +538,16 @@ export function sortQuestItemsByPriority(items: HomeQuestItem[]): HomeQuestItem[
 
 export function applyQuestBoardCapacity(
   items: HomeQuestItem[],
-  mode: "Progress" | "Recovery"
+  mode: "Progress" | "Recovery",
+  /** Overrides the mode-derived capacity — used for LDM's 120-minute board cap. */
+  capacityOverrideMinutes?: number
 ): {
   visibleItems: HomeQuestItem[];
   hiddenCount: number;
   plannedMinutes: number;
   capacityMinutes: number;
 } {
-  const capacityMinutes = getQuestCapacityMinutes(mode);
+  const capacityMinutes = capacityOverrideMinutes ?? getQuestCapacityMinutes(mode);
   const sorted = sortQuestItemsByPriority(filterQuestBoardItems(items));
 
   const visibleItems: HomeQuestItem[] = [];
@@ -570,14 +572,20 @@ export function applyQuestBoardCapacity(
   // Today's Quest) could otherwise starve out every recurring habit even though each one
   // easily fits on its own. This only ADDS checklist items that fit their own duration; it
   // never removes or reorders anything the packing loop above already decided.
-  const visibleIds = new Set(visibleItems.map((item) => item.id));
-  for (const item of sorted) {
-    if (visibleIds.has(item.id)) continue;
-    if (item.source !== "Checklist") continue;
-    if (itemDurationMinutes(item) > capacityMinutes) continue;
-    visibleItems.push(item);
-    visibleIds.add(item.id);
-    plannedMinutes += itemDurationMinutes(item);
+  //
+  // Skipped entirely when a capacityOverrideMinutes is passed (LDM's 120-minute cap) — that
+  // cap is a hard total, not a per-mode fairness floor, so nothing should be added beyond
+  // what the strict running-total loop above already allowed.
+  if (capacityOverrideMinutes === undefined) {
+    const visibleIds = new Set(visibleItems.map((item) => item.id));
+    for (const item of sorted) {
+      if (visibleIds.has(item.id)) continue;
+      if (item.source !== "Checklist") continue;
+      if (itemDurationMinutes(item) > capacityMinutes) continue;
+      visibleItems.push(item);
+      visibleIds.add(item.id);
+      plannedMinutes += itemDurationMinutes(item);
+    }
   }
 
   return {

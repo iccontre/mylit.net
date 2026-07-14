@@ -37,6 +37,9 @@ export function CompletionFeedbackToast() {
 
   useEffect(() => {
     return subscribeToCompletionFeedback((next) => {
+      // Some events (e.g. logging food outside an active gate) intentionally carry 0 steps —
+      // haptic + guide/flame reaction still fire, but the "+N STEPS" text has nothing to say.
+      if (next.stepsAwarded <= 0) return;
       setEvent(next);
       if (hideTimeout.current) clearTimeout(hideTimeout.current);
 
