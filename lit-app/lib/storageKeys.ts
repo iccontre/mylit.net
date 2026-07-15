@@ -105,6 +105,18 @@ export const EVIE_MORNING_QUEST_KEY = "lit_evie_morning_quest";
 export const SLEEP_ROUTINE_KEY = "lit_sleep_routine";
 /** GuideContextRecord[] — explicit, revocable "Feed to Luna/Evie" consent grants. See lib/guideContext.ts. */
 export const GUIDE_CONTEXT_RECORDS_KEY = "lit_guide_context_records";
+/**
+ * MandatoryGateEvidence | null — { questDayKey, wasProgressToday } — the one piece of durable
+ * evidence the Rest gate needs that mode (Progress/Recovery) isn't itself: mode is recomputed
+ * live from energy every render and never diffed against a prior value, so without this record
+ * there's no way to tell "user was in Progress earlier today, then crossed into Recovery" apart
+ * from "Morning Check-In assigned Recovery from the start." See lib/mandatoryGates.ts and the
+ * markProgressToday effect in app/(tabs)/index.tsx. Sticky true for the quest-day once recorded;
+ * resets automatically once questDayKey rolls over. Merged with a dedicated same-day-OR rule
+ * (mergeMandatoryGateEvidence in progressStore.ts) so a stale device can't un-set evidence a
+ * newer device already recorded for the same day.
+ */
+export const MANDATORY_GATE_EVIDENCE_KEY = "mylit_mandatory_gate_evidence";
 
 /**
  * Canonical synced keys that back the Log History screen. These are the SAME keys the
@@ -173,6 +185,7 @@ export const SYNCABLE_PROGRESS_KEYS = [
   EVIE_MORNING_QUEST_KEY,
   SLEEP_ROUTINE_KEY,
   GUIDE_CONTEXT_RECORDS_KEY,
+  MANDATORY_GATE_EVIDENCE_KEY,
 ] as const;
 
 export type SyncableProgressKey = (typeof SYNCABLE_PROGRESS_KEYS)[number];

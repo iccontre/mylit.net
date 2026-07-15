@@ -26,6 +26,8 @@ import { HistoryModal } from "../components/HistoryModal";
 import { normalizePreSleepLogs } from "../lib/logHistory";
 import { USER_STATS_KEY } from "../lib/questProgress";
 import { recordAgentEvent } from "../lib/mylitAgents";
+import { getQuestDayKey } from "../lib/scheduling";
+import { getSession } from "../lib/auth";
 
 const LUNA_PRE_SLEEP_BULLETS = [
   "Pre-Sleep Intention gives your mind one clear signal before bed.",
@@ -44,6 +46,8 @@ type PreSleepIntention = {
   feeling: string;
   support: string[];
   createdAt: string;
+  userId?: string;
+  timezone?: string;
 };
 
 const FEELING_OPTIONS = ["Focused", "Energized", "Calm", "Grounded", "Rested", "Brave", "Gentle", "Steady"];
@@ -59,10 +63,6 @@ const pixelFont = Platform.select({
   default: "monospace",
 });
 
-function getTodayKey() {
-  return new Date().toLocaleDateString("en-CA");
-}
-
 const theme = { accent: "#C4A7FF", glow: "#E9D5FF", panel: "rgba(18, 16, 34, 0.94)", soft: "#DDD6FE" };
 
 export default function PreSleepIntentionScreen() {
@@ -75,6 +75,8 @@ export default function PreSleepIntentionScreen() {
   const [showInfo, setShowInfo] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
 
   async function successHaptic() {
     try {
@@ -93,14 +95,23 @@ export default function PreSleepIntentionScreen() {
   }
 
   async function saveIntention() {
-    if (saving || !intention.trim()) return;
+    if (saving || saved || !intention.trim()) return;
     setSaving(true);
+    setSaveFailed(false);
 
     try {
-      const todayKey = getTodayKey();
-      const saved = await AsyncStorage.getItem(PRE_SLEEP_INTENTIONS_KEY);
-      const history: PreSleepIntention[] = saved ? JSON.parse(saved) : [];
+      // Quest-day key (6 AM boundary), matching every other consumer of this record —
+      // index.tsx's loadPreSleepStatus, the Log History screen, and LDM's routine/quest
+      // projection all key by this same logical day. The previous plain calendar date
+      // (toLocaleDateString) diverged from it for anyone saving between midnight and 6 AM —
+      // squarely inside the automatic 9 PM-5:59 AM LDM window this screen is meant for — which
+      // stamped the entry with tomorrow's date while everything else still expected today's,
+      // making a successfully-saved intention look like it "didn't save."
+      const todayKey = getQuestDayKey();
+      const existingRaw = await AsyncStorage.getItem(PRE_SLEEP_INTENTIONS_KEY);
+      const history: PreSleepIntention[] = existingRaw ? JSON.parse(existingRaw) : [];
       const alreadyEarnedToday = history.some((past) => past.date === todayKey);
+      const session = await getSession();
 
       const entry: PreSleepIntention = {
         id: String(Date.now()),
@@ -109,6 +120,8 @@ export default function PreSleepIntentionScreen() {
         feeling,
         support,
         createdAt: new Date().toISOString(),
+        userId: session?.user?.id,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       };
 
       await persistProgressKeys({
@@ -129,9 +142,16 @@ export default function PreSleepIntentionScreen() {
         metadata: { feeling },
       });
 
-      router.push("/");
-    } catch {
       setSaving(false);
+      setSaved(true);
+      // Hold the green ✓ SAVED confirmation on screen briefly before returning, per the shared
+      // Save-state pattern, rather than navigating away the instant persistence resolves.
+      setTimeout(() => router.push("/"), 800);
+    } catch {
+      // Input stays exactly as the user left it (no reset here) and the button surfaces a
+      // visible failure + retry affordance instead of silently reverting to its idle label.
+      setSaving(false);
+      setSaveFailed(true);
     }
   }
 
@@ -216,8 +236,20 @@ export default function PreSleepIntentionScreen() {
                 <Text key={`helper-${opt}`} style={[styles.supportHelperText, { color: theme.soft }]}>{SUPPORT_HELPER_TEXT[opt]}</Text>
               ))}
 
-              <TouchableOpacity style={[styles.saveButton, { borderColor: theme.accent }, saving && { opacity: 0.6 }]} disabled={saving} onPress={saveIntention}>
-                <Text style={styles.saveButtonText}>{saving ? "Saving…" : "Save Intention · +1 Step"}</Text>
+              <TouchableOpacity
+                style={[
+                  styles.saveButton,
+                  { borderColor: theme.accent },
+                  saving && { opacity: 0.6 },
+                  saved && styles.saveButtonSaved,
+                  saveFailed && styles.saveButtonError,
+                ]}
+                disabled={saving || saved}
+                onPress={saveIntention}
+              >
+                <Text style={styles.saveButtonText}>
+                  {saving ? "SAVING…" : saved ? "✓ SAVED" : saveFailed ? "SAVE FAILED — RETRY" : "Save Intention · +1 Step"}
+                </Text>
               </TouchableOpacity>
             </View>
 
@@ -447,6 +479,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginTop: 14,
     borderWidth: 3,
+  },
+  saveButtonSaved: {
+    backgroundColor: "#15803D",
+    borderColor: "#4ADE80",
+  },
+  saveButtonError: {
+    backgroundColor: "#7F1D1D",
+    borderColor: "#F87171",
   },
   saveButtonText: {
     color: "#F9FAFB",

@@ -84,7 +84,7 @@ import {
   parseTimeToMinutes,
   pickGuideMessage,
 } from "../../lib/scheduling";
-import { AFFIRMATIONS_KEY, DAILY_STEPS_LOG_KEY, FOOD_LOGS_KEY, LATEST_PRE_SLEEP_INTENTION_KEY, SLEEP_ROUTINE_KEY, TOTAL_STEPS_FLOOR_KEY } from "../../lib/storageKeys";
+import { AFFIRMATIONS_KEY, DAILY_STEPS_LOG_KEY, FOOD_LOGS_KEY, LATEST_PRE_SLEEP_INTENTION_KEY, MANDATORY_GATE_EVIDENCE_KEY, SLEEP_ROUTINE_KEY, TOTAL_STEPS_FLOOR_KEY } from "../../lib/storageKeys";
 import { readJson } from "../../lib/readJson";
 import { FoodLogModal } from "../../components/FoodLogModal";
 import { computeFuel, type FoodLog } from "../../lib/fuel";
@@ -556,6 +556,10 @@ export default function HomeScreen() {
   const [showFoodLogModal, setShowFoodLogModal] = useState(false);
   const [evieMorningQuest, setEvieMorningQuest] = useState<EvieMorningQuest | null>(null);
   const [activeItem, setActiveItem] = useState<ActiveTimedItem | null>(null);
+  const [gateEvidence, setGateEvidence] = useState<{ questDayKey: string; wasProgressToday: boolean }>({
+    questDayKey: "",
+    wasProgressToday: false,
+  });
   const [selectedItem, setSelectedItem] = useState<HomeQuestItem | null>(null);
   const [lockMessage, setLockMessage] = useState("");
   const [showQuestHelp, setShowQuestHelp] = useState(false);
@@ -603,6 +607,7 @@ export default function HomeScreen() {
       loadEvieMorningQuest();
       loadPreSleepRoutineChecked();
       loadAfternoonUnlockLabel();
+      loadGateEvidence();
     }, [])
   );
 
@@ -618,6 +623,7 @@ export default function HomeScreen() {
     loadEvieMorningQuest();
     loadPreSleepRoutineChecked();
     loadAfternoonUnlockLabel();
+    loadGateEvidence();
   }, []);
 
   /** Same computation sleep-checkin.tsx uses for its own lock screen — kept in sync via the
@@ -668,6 +674,7 @@ export default function HomeScreen() {
       loadFoodLogs();
       loadEvieMorningQuest();
       loadPreSleepRoutineChecked();
+      loadGateEvidence();
     }
 
     const onAppStateChange = (nextState: AppStateStatus) => {
@@ -958,6 +965,30 @@ export default function HomeScreen() {
   async function saveActiveItem(item: ActiveTimedItem) {
     setActiveItem(item);
     await persistProgressKeys({ [ACTIVE_TIMED_ITEM_KEY]: JSON.stringify(item) });
+  }
+
+  async function loadGateEvidence() {
+    const saved = await readJson<{ questDayKey: string; wasProgressToday: boolean } | null>(
+      MANDATORY_GATE_EVIDENCE_KEY,
+      null
+    );
+    if (saved && saved.questDayKey === getQuestDayKey()) {
+      setGateEvidence(saved);
+    } else {
+      setGateEvidence({ questDayKey: getQuestDayKey(), wasProgressToday: false });
+    }
+  }
+
+  /** Idempotent: the one durable record the Rest gate needs that live-derived `currentMode`
+   *  can't provide on its own — see MANDATORY_GATE_EVIDENCE_KEY in storageKeys.ts. Only ever
+   *  writes when today doesn't already have this evidence recorded, so it can't fight with
+   *  another device's already-true record via the OR-merge in progressStore.ts. */
+  async function markProgressToday() {
+    const todayKey = getQuestDayKey();
+    if (gateEvidence.questDayKey === todayKey && gateEvidence.wasProgressToday) return;
+    const next = { questDayKey: todayKey, wasProgressToday: true };
+    setGateEvidence(next);
+    await persistProgressKeys({ [MANDATORY_GATE_EVIDENCE_KEY]: JSON.stringify(next) });
   }
 
   async function clearActiveItem() {
@@ -1347,12 +1378,25 @@ export default function HomeScreen() {
   // day-scoped (see loadTodayCompletions), so a stale prior-day completion can never satisfy
   // "already done today" and incorrectly suppress — or fail to clear — a gate.
   const completedTitlesToday = new Set(completedQuests.map((entry) => entry.title));
+  // "Was in Progress at some point today" — live `isProgress` covers the current render
+  // instantly (and is harmless to OR in: energyYield >= 60 whenever isProgress is true, so the
+  // Rest gate's own energy-threshold check below can never fire while this is the only reason
+  // wasProgressToday is true), `gateEvidence` covers every earlier render this session or a
+  // prior one persisted it. Neither Morning Check-In alone nor an app cold-start already inside
+  // Recovery ever sets either of these, which is exactly the "don't gate on Recovery alone" rule.
+  const wasProgressToday =
+    isProgress || (gateEvidence.questDayKey === getQuestDayKey() && gateEvidence.wasProgressToday);
+  const wakeTimestampMs = wakeTimestamp ? wakeTimestamp.getTime() : null;
+  const hasFoodSinceWake =
+    wakeTimestampMs !== null && foodLogs.some((log) => new Date(log.eatenAt).getTime() >= wakeTimestampMs);
   const mandatoryGateState = computeMandatoryGateState({
     afternoonCheckInRequired: isAfternoonCheckInGateActive,
-    eatenSinceMorning: latestCheckIn?.eatenSinceMorning,
-    fuel: fuelResult.fuel,
+    wakeTimestampMs,
+    nowMs: timeNow.getTime(),
+    hasFoodSinceWake,
     hasEnergyData,
     energyYield,
+    wasProgressToday,
     completedTitlesToday,
   });
   const activeFoodGate = mandatoryGateState.gates.find((gate) => gate.id === "food") ?? null;
@@ -1691,6 +1735,41 @@ export default function HomeScreen() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queueItems, todayKey]);
+
+  // Records the one piece of durable evidence the Rest gate needs (see markProgressToday) the
+  // instant this render observes Progress — recomputed on every render's `isProgress`, so it
+  // fires as soon as an app-only-just-opened Morning Check-In elects Progress, not just later.
+  useEffect(() => {
+    if (isProgress) void markProgressToday();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isProgress, todayKey]);
+
+  // Stale-gate migration: an active Rest-gate timer that predates this evidence system (or any
+  // future edge case where one exists without valid same-day Progress evidence) can only have
+  // been created under the old "Recovery alone triggers Rest" rule. Clearing it here — on every
+  // render where the mismatch holds, not just once — also means a stale device can never
+  // resurrect a cleared legacy gate via a later cloud merge (see section 15/19 requirements).
+  useEffect(() => {
+    if (!activeItem || activeItem.title !== MANDATORY_ENERGY_QUEST_TITLE) return;
+    if (wasProgressToday) return;
+    void clearActiveItem();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeItem?.id, activeItem?.title, wasProgressToday]);
+
+  // Mild -> severe upgrade: if the Rest timer is already running at the 15-minute tier and
+  // energy then crosses below 30, extend it to the 30-minute requirement in place — same id
+  // (title+day derived, see buildStableItemId), same startedAt (so elapsed progress carries
+  // over, never restarts from zero), just a later endsAt. No duplicate gate, no double award.
+  useEffect(() => {
+    if (!activeItem || activeItem.title !== MANDATORY_ENERGY_QUEST_TITLE) return;
+    if (!activeEnergyGate || activeEnergyGate.durationMinutes <= activeItem.durationMinutes) return;
+    void saveActiveItem({
+      ...activeItem,
+      durationMinutes: activeEnergyGate.durationMinutes,
+      endsAt: activeItem.startedAt + activeEnergyGate.durationMinutes * 60 * 1000,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeItem?.id, activeItem?.durationMinutes, activeEnergyGate?.durationMinutes]);
 
   const currentBackground = ldmActive || isRecovery
     ? uiAssets.backgrounds.recovery

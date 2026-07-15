@@ -27,6 +27,7 @@ import {
   LDM_MODE_STATE_KEY,
   EVIE_MORNING_QUEST_KEY,
   SLEEP_ROUTINE_KEY,
+  MANDATORY_GATE_EVIDENCE_KEY,
 } from "./storageKeys";
 import { computeNextQuestDayBoundary, getDateKey } from "./scheduling";
 import { sanitizeDayPlanChecklists } from "./dayPlanChecklist";
@@ -505,6 +506,28 @@ export function mergeEvieMorningQuest(localRaw: string, cloudRaw: string): strin
   return localAt <= cloudAt ? localRaw : cloudRaw;
 }
 
+/**
+ * Whole-object, "same quest-day -> OR the booleans" merge. wasProgressToday is sticky evidence
+ * (once true on ANY device for today, it must stay true everywhere) — picking one side wholesale
+ * like mergeActiveTimedItem/mergeLdmModeState would let a device that hasn't yet observed
+ * Progress mode overwrite another device's already-recorded true with false. A different
+ * (older or newer) questDayKey on one side means that side is for a different day and can't
+ * contribute evidence to today — the side matching (or more recent than) the other's day wins.
+ */
+export function mergeMandatoryGateEvidence(localRaw: string, cloudRaw: string): string {
+  if (isPayloadEmpty(cloudRaw)) return localRaw;
+  if (isPayloadEmpty(localRaw)) return cloudRaw;
+
+  const local = parseJson<{ questDayKey?: string; wasProgressToday?: boolean }>(localRaw, {});
+  const cloud = parseJson<{ questDayKey?: string; wasProgressToday?: boolean }>(cloudRaw, {});
+
+  if (local.questDayKey !== cloud.questDayKey) {
+    return (local.questDayKey ?? "") >= (cloud.questDayKey ?? "") ? localRaw : cloudRaw;
+  }
+  if (Boolean(local.wasProgressToday) === Boolean(cloud.wasProgressToday)) return localRaw;
+  return local.wasProgressToday ? localRaw : cloudRaw;
+}
+
 function mergePayload(
   key: SyncableProgressKey,
   localRaw: string,
@@ -563,6 +586,12 @@ function mergePayload(
 
   if (key === EVIE_MORNING_QUEST_KEY) {
     const payload = mergeEvieMorningQuest(localRaw, cloudRaw);
+    const chosenAt = payload === localRaw ? localAt : cloudAt;
+    return { payload, updatedAt: new Date(Math.max(chosenAt, localAt, cloudAt)).toISOString() };
+  }
+
+  if (key === MANDATORY_GATE_EVIDENCE_KEY) {
+    const payload = mergeMandatoryGateEvidence(localRaw, cloudRaw);
     const chosenAt = payload === localRaw ? localAt : cloudAt;
     return { payload, updatedAt: new Date(Math.max(chosenAt, localAt, cloudAt)).toISOString() };
   }

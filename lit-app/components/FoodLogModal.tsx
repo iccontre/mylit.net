@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Modal, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Modal, Platform, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 import { getSession } from "../lib/auth";
 import { emitQuestCompletionFeedback } from "../lib/completionFeedback";
@@ -26,6 +26,7 @@ export function FoodLogModal({ visible, onClose, onSaved }: FoodLogModalProps) {
   const [exactTime, setExactTime] = useState("");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -35,6 +36,7 @@ export function FoodLogModal({ visible, onClose, onSaved }: FoodLogModalProps) {
     setExactTime("");
     setNote("");
     setSaving(false);
+    setSaved(false);
     setError("");
   }, [visible]);
 
@@ -48,7 +50,7 @@ export function FoodLogModal({ visible, onClose, onSaved }: FoodLogModalProps) {
   }
 
   async function handleSave() {
-    if (saving) return;
+    if (saving || saved) return;
     const eatenAtDate = resolveEatenAt();
     if (!eatenAtDate) {
       setError("Enter a valid time, like 1:30 PM, or leave it blank for now.");
@@ -64,6 +66,7 @@ export function FoodLogModal({ visible, onClose, onSaved }: FoodLogModalProps) {
       // A double-tap/rapid resubmit of the same real event must never log twice — see
       // isDuplicateFoodLog for why this is separate from the array-merge-by-id dedup.
       if (isDuplicateFoodLog(existing, { eatenAt, entryType })) {
+        setSaving(false);
         onClose();
         return;
       }
@@ -95,16 +98,24 @@ export function FoodLogModal({ visible, onClose, onSaved }: FoodLogModalProps) {
       });
 
       onSaved(log);
-      onClose();
-    } finally {
       setSaving(false);
+      setSaved(true);
+      // Brief visible ✓ SAVED confirmation before this closes, matching the shared Save-state
+      // pattern, instead of vanishing the instant persistence resolves.
+      setTimeout(onClose, 800);
+    } catch {
+      setSaving(false);
+      setError("Couldn't save that log — please try again.");
     }
   }
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={styles.panel}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={saving ? undefined : onClose}>
+      <Pressable style={styles.backdrop} onPress={saving ? undefined : onClose} accessibilityLabel="Close">
+        <Pressable style={styles.panel} onPress={() => {}}>
+          <TouchableOpacity style={styles.closeBtn} onPress={onClose} disabled={saving} accessibilityLabel="Close">
+            <Text style={styles.closeBtnText}>✕</Text>
+          </TouchableOpacity>
           <Text style={styles.title}>FOOD LOG</Text>
           <Text style={styles.subtitle}>Log a meal or snack — this is just for you, no judgment.</Text>
 
@@ -162,15 +173,19 @@ export function FoodLogModal({ visible, onClose, onSaved }: FoodLogModalProps) {
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
           <View style={styles.buttonRow}>
-            <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={onClose} disabled={saving} accessibilityLabel="Cancel">
               <Text style={styles.cancelBtnText}>CANCEL</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.saveBtn, saving && styles.saveBtnDisabled]} disabled={saving} onPress={() => void handleSave()}>
-              <Text style={styles.saveBtnText}>{saving ? "SAVING…" : "SAVE"}</Text>
+            <TouchableOpacity
+              style={[styles.saveBtn, (saving || saved) && styles.saveBtnDisabled, saved && styles.saveBtnSaved]}
+              disabled={saving || saved}
+              onPress={() => void handleSave()}
+            >
+              <Text style={styles.saveBtnText}>{saving ? "SAVING…" : saved ? "✓ SAVED" : "SAVE"}</Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </View>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }
@@ -184,6 +199,20 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 16,
   },
+  closeBtn: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    width: 44,
+    height: 44,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: "#F87171",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 1,
+  },
+  closeBtnText: { color: "#F87171", fontFamily: pixelFont, fontSize: 16, fontWeight: "900" },
   title: { color: "#FDE047", fontFamily: pixelFont, fontSize: 16, fontWeight: "900", textAlign: "center", letterSpacing: 1 },
   subtitle: { color: "#CBD5E1", fontSize: 11, lineHeight: 16, fontWeight: "700", textAlign: "center", marginTop: 6, marginBottom: 12 },
   label: {
@@ -243,5 +272,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   saveBtnDisabled: { backgroundColor: "#334155", borderColor: "#475569" },
+  saveBtnSaved: { backgroundColor: "#15803D", borderColor: "#4ADE80" },
   saveBtnText: { color: "#0F172A", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", letterSpacing: 1 },
 });

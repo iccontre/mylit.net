@@ -1,4 +1,4 @@
-import { Image, ImageSourcePropType, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Image, ImageSourcePropType, Platform, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -21,8 +21,8 @@ export function GuideInfoModal({ visible, onClose, guideAvatar, guideName, title
   if (!visible) return null;
 
   return (
-    <View style={styles.overlay}>
-      <View style={[styles.card, { borderColor: accentColor }]}>
+    <Pressable style={styles.overlay} onPress={onClose} accessibilityLabel="Close">
+      <Pressable style={[styles.card, { borderColor: accentColor }]} onPress={() => {}}>
         <View style={styles.header}>
           <Image source={guideAvatar} style={[styles.avatar, { borderColor: accentColor }]} resizeMode="contain" />
           <View style={styles.headerCopy}>
@@ -42,8 +42,8 @@ export function GuideInfoModal({ visible, onClose, guideAvatar, guideName, title
         <TouchableOpacity style={[styles.closeBtn, { borderColor: accentColor }]} onPress={onClose}>
           <Text style={styles.closeBtnText}>RETURN</Text>
         </TouchableOpacity>
-      </View>
-    </View>
+      </Pressable>
+    </Pressable>
   );
 }
 

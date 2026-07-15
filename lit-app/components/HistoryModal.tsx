@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useCallback, useEffect, useState } from "react";
-import { Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import {
   groupHistoryByWeek,
@@ -43,8 +43,8 @@ export function HistoryModal({ visible, onClose, title, storageKey, normalize, a
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={[styles.panel, { borderColor: accent }]}>
+      <Pressable style={styles.backdrop} onPress={onClose} accessibilityLabel="Close">
+        <Pressable style={[styles.panel, { borderColor: accent }]} onPress={() => {}}>
           <View style={styles.header}>
             <Text style={[styles.title, { color: accent }]} numberOfLines={1}>{title}</Text>
             <TouchableOpacity style={[styles.closeBtn, { borderColor: accent }]} onPress={onClose}>
@@ -90,8 +90,8 @@ export function HistoryModal({ visible, onClose, title, storageKey, normalize, a
           <TouchableOpacity style={[styles.doneBtn, { borderColor: accent }]} onPress={onClose}>
             <Text style={styles.doneBtnText}>DONE</Text>
           </TouchableOpacity>
-        </View>
-      </View>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }

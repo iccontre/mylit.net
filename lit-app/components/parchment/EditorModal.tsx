@@ -1,4 +1,4 @@
-import { Platform, StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, TouchableOpacity, View, type StyleProp, type ViewStyle } from "react-native";
 import { Modal, KeyboardAvoidingView, ScrollView } from "react-native";
 
 import { accentByParchmentAccent, parchmentBody, parchmentBorder, parchmentGeometry, parchmentInk, type ParchmentAccent } from "../../constants/parchmentTokens";
@@ -48,14 +48,18 @@ export function EditorModal({
   const accentColor = accentByParchmentAccent[accent];
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={saving ? undefined : onClose}>
+      {/* Only a tap on the backdrop itself closes the modal — the no-op Pressable wrapping the
+       *  panel below claims the responder for everything inside it, so taps on the panel (even
+       *  on non-interactive dead space) never bubble up and accidentally dismiss. Disabled while
+       *  saving so a confirmed write in flight can't be interrupted. */}
+      <Pressable style={styles.backdrop} onPress={saving ? undefined : onClose} accessibilityLabel="Close">
         <KeyboardAvoidingView
           style={styles.keyboardAvoider}
           behavior={Platform.OS === "ios" ? "padding" : undefined}
           keyboardVerticalOffset={Platform.OS === "ios" ? 20 : 0}
         >
-          <View style={styles.panel}>
+          <Pressable style={styles.panel} onPress={() => {}}>
             <View style={[styles.titleStrip, { backgroundColor: accentColor }]}>
               <Text style={styles.titleStripText} numberOfLines={2}>{title}</Text>
               <TouchableOpacity style={styles.closeBtn} onPress={onClose} accessibilityLabel="Close">
@@ -96,9 +100,9 @@ export function EditorModal({
                 ) : null}
               </View>
             ) : null}
-          </View>
+          </Pressable>
         </KeyboardAvoidingView>
-      </View>
+      </Pressable>
     </Modal>
   );
 }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Image, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 import { formStyles } from "../constants/formStyles";
 import { uiAssets } from "../constants/uiAssets";
@@ -67,12 +67,12 @@ export function DreamJournalEntryModal({ visible, onClose, onSaved }: DreamJourn
   }
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <View style={styles.panel}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={saving ? undefined : onClose}>
+      <Pressable style={styles.backdrop} onPress={saving ? undefined : onClose} accessibilityLabel="Close">
+        <Pressable style={styles.panel} onPress={() => {}}>
           <View style={styles.titleStrip}>
             <Text style={styles.title}>🌙 Dream Journal</Text>
-            <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
+            <TouchableOpacity style={styles.closeBtn} onPress={onClose} disabled={saving} accessibilityLabel="Close">
               <Text style={styles.closeBtnText}>✕</Text>
             </TouchableOpacity>
           </View>
@@ -115,15 +115,15 @@ export function DreamJournalEntryModal({ visible, onClose, onSaved }: DreamJourn
           </ScrollView>
 
           <View style={styles.buttonRow}>
-            <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={onClose} disabled={saving} accessibilityLabel="Cancel">
               <Text style={styles.cancelBtnText}>CANCEL</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.saveBtn, (saving || justSaved) && styles.saveBtnDisabled]} disabled={saving || justSaved} onPress={handleSave}>
               <Text style={styles.saveBtnText}>{justSaved ? "SAVED ✓" : saving ? "SAVING…" : "SAVE DREAM · +1 STEP"}</Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </View>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }

@@ -1,5 +1,4 @@
 import { MANDATORY_ENERGY_QUEST_TITLE, MANDATORY_FOOD_QUEST_TITLE } from "./scheduling";
-import { FOOD_GATE_FUEL_THRESHOLD } from "./fuel";
 
 /**
  * Centralized Luna mandatory eat/rest gate state machine. Previously this logic was scattered
@@ -9,12 +8,22 @@ import { FOOD_GATE_FUEL_THRESHOLD } from "./fuel";
  * that never actually existed), making it easy for one call site to drift out of sync with
  * another. This module is now the single source of truth: given the same inputs, both the
  * quest board's tap handlers and its rendering must derive the identical gate list.
+ *
+ * Eat and Rest are both evidence-gated so that Morning Check-In alone can never create either:
+ * - Eat requires an absolute wake+2h timestamp (see eatGateEligibleAt below) — waking into
+ *   Recovery, or not having a recorded wake time at all, can never trigger it on its own.
+ * - Rest requires proof the user was actually in Progress earlier the same quest-day
+ *   (wasProgressToday) — waking directly into Recovery from Morning Check-In can never trigger
+ *   it either, since that evidence is only recorded once currentMode has actually read Progress.
  */
 
 export const MANDATORY_MILD_ENERGY_THRESHOLD = 60;
 export const MANDATORY_MILD_DURATION_MINUTES = 15;
 export const MANDATORY_SEVERE_ENERGY_THRESHOLD = 30;
 export const MANDATORY_SEVERE_DURATION_MINUTES = 30;
+
+/** Absolute delay after a reported wake time before the Eat gate becomes eligible. */
+export const EAT_GATE_DELAY_MS = 2 * 60 * 60 * 1000;
 
 export type MandatoryGateId = "afternoon_checkin" | "food" | "energy";
 
@@ -41,16 +50,30 @@ export type MandatoryGateInput = {
   /** True only once Morning Check-In exists AND today's Afternoon Check-In is unlocked
    *  (5h post-wake) AND not yet completed AND LDM is not active — see isAfternoonCheckInGateActive. */
   afternoonCheckInRequired: boolean;
-  /** latestCheckIn?.eatenSinceMorning — undefined/true means "no explicit no", only an explicit
-   *  false activates the check-in-driven trigger (fuel is the primary trigger otherwise). */
-  eatenSinceMorning: boolean | undefined;
-  fuel: number;
+  /** Epoch ms of today's reported wake time (see resolveWakeTimestamp), or null when no wake
+   *  time has been recorded yet — the Eat gate can never trigger without this. */
+  wakeTimestampMs: number | null;
+  /** Epoch ms "now" — passed in (not read from Date.now()) so this stays pure/testable. */
+  nowMs: number;
+  /** True once a food event with eatenAt >= wakeTimestampMs exists — a real logged meal/snack
+   *  at or after waking, not merely "fuel is high" (fuel decays over time independent of this). */
+  hasFoodSinceWake: boolean;
   hasEnergyData: boolean;
   energyYield: number;
+  /** True once currentMode has actually read "Progress" (energyYield >= 60) at some point during
+   *  today's quest-day — see markProgressToday in app/(tabs)/index.tsx. Waking straight into
+   *  Recovery, or the app starting in Recovery with no earlier same-day Progress evidence, both
+   *  leave this false, so the Rest gate never fires from either case alone. */
+  wasProgressToday: boolean;
   /** Titles of quests already completed TODAY (day-scoped — see loadTodayCompletions) — a gate
    *  resolved today must never re-lock from a stale prior-day record satisfying this same check. */
   completedTitlesToday: Set<string>;
 };
+
+/** Exposed for callers that need to display/derive the eligibility timestamp directly. */
+export function computeEatGateEligibleAt(wakeTimestampMs: number | null): number | null {
+  return wakeTimestampMs === null ? null : wakeTimestampMs + EAT_GATE_DELAY_MS;
+}
 
 /**
  * Priority order (matches the existing product spec): (1) missing Afternoon Check-In takes over
@@ -78,7 +101,8 @@ export function computeMandatoryGateState(input: MandatoryGateInput): MandatoryG
   const gates: MandatoryGateInfo[] = [];
 
   const foodAlreadyDone = input.completedTitlesToday.has(MANDATORY_FOOD_QUEST_TITLE);
-  const foodTriggered = input.fuel <= FOOD_GATE_FUEL_THRESHOLD || input.eatenSinceMorning === false;
+  const eatGateEligibleAt = computeEatGateEligibleAt(input.wakeTimestampMs);
+  const foodTriggered = eatGateEligibleAt !== null && input.nowMs >= eatGateEligibleAt && !input.hasFoodSinceWake;
   if (foodTriggered && !foodAlreadyDone) {
     gates.push({
       id: "food",
@@ -89,7 +113,7 @@ export function computeMandatoryGateState(input: MandatoryGateInput): MandatoryG
     });
   }
 
-  if (input.hasEnergyData) {
+  if (input.hasEnergyData && input.wasProgressToday) {
     const energyAlreadyDone = input.completedTitlesToday.has(MANDATORY_ENERGY_QUEST_TITLE);
     if (!energyAlreadyDone && input.energyYield < MANDATORY_MILD_ENERGY_THRESHOLD) {
       const severe = input.energyYield < MANDATORY_SEVERE_ENERGY_THRESHOLD;
