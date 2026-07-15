@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import { Image, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { BottomNav } from "../components/BottomNav";
-import { FeedToGuideModal } from "../components/FeedToGuideModal";
+import { FeedToGuideButton } from "../components/parchment/FeedToGuideButton";
 import { FormScreen } from "../components/FormScreen";
 import { formPageContent } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
@@ -48,6 +48,15 @@ const SECTIONS: { type: LogType; title: string; icon: string }[] = [
   { type: "dream", title: "Dream Journal", icon: "🌙" },
   { type: "pre_sleep_intention", title: "Pre-Sleep Intentions", icon: "✨" },
 ];
+
+/** Left-edge accent per entry type — pure presentation, not tied to any behavior. */
+const SECTION_ACCENT: Record<LogType, string> = {
+  journal: "#A78BFA",
+  reflection: "#FBBF24",
+  meditation: "#22C55E",
+  dream: "#F472B6",
+  pre_sleep_intention: "#A78BFA",
+};
 
 function readArray(raw: string | null): Record<string, unknown>[] {
   if (!raw) return [];
@@ -214,7 +223,6 @@ export default function LogHistoryScreen() {
     pre_sleep_intention: [],
   });
   const [selectedEntry, setSelectedEntry] = useState<LogEntry | null>(null);
-  const [showFeedToLuna, setShowFeedToLuna] = useState(false);
 
   const loadLogs = useCallback(async () => {
     const [journalRaw, reflectionRaw, meditationRaw, dreamRaw, preSleepRaw] = await Promise.all([
@@ -281,12 +289,12 @@ export default function LogHistoryScreen() {
                     entries.map((entry) => (
                       <TouchableOpacity
                         key={entry.id}
-                        style={styles.entryCard}
+                        style={[styles.entryCard, { borderLeftWidth: 6, borderLeftColor: SECTION_ACCENT[section.type] }]}
                         activeOpacity={0.85}
                         onPress={() => setSelectedEntry(entry)}
                       >
                         <View style={styles.entryTopRow}>
-                          <Text style={styles.entryLabel} numberOfLines={1}>{entry.label}</Text>
+                          <Text style={styles.entryLabel} numberOfLines={1}>{section.icon} {entry.label}</Text>
                           <Text style={styles.entryWhen}>{entry.when}</Text>
                         </View>
                         {entry.meta ? <Text style={styles.entryMeta} numberOfLines={1}>{entry.meta}</Text> : null}
@@ -324,27 +332,22 @@ export default function LogHistoryScreen() {
                   {selectedEntry?.meta ? <Text style={styles.modalMeta}>{selectedEntry.meta}</Text> : null}
                   <Text style={styles.modalBody}>{selectedEntry?.body || selectedEntry?.preview}</Text>
                 </ScrollView>
-                <TouchableOpacity style={styles.feedToLunaBtn} onPress={() => setShowFeedToLuna(true)}>
-                  <Image source={uiAssets.guides.luna} style={styles.feedToLunaAvatar} resizeMode="contain" />
-                  <Text style={styles.feedToLunaBtnText}>Feed to Luna</Text>
-                </TouchableOpacity>
+                {selectedEntry ? (
+                  <View style={styles.feedToLunaRow}>
+                    <FeedToGuideButton
+                      guide="luna"
+                      sourceType={LOG_TYPE_TO_GUIDE_SOURCE[selectedEntry.type]}
+                      sourceId={selectedEntry.id}
+                      sourceText={selectedEntry.body || selectedEntry.preview}
+                    />
+                  </View>
+                ) : null}
                 <TouchableOpacity style={styles.modalDoneBtn} onPress={() => setSelectedEntry(null)}>
                   <Text style={styles.modalDoneBtnText}>DONE</Text>
                 </TouchableOpacity>
               </View>
             </View>
           </Modal>
-
-          {selectedEntry ? (
-            <FeedToGuideModal
-              visible={showFeedToLuna}
-              guide="luna"
-              sourceType={LOG_TYPE_TO_GUIDE_SOURCE[selectedEntry.type]}
-              sourceId={selectedEntry.id}
-              sourceText={selectedEntry.body || selectedEntry.preview}
-              onClose={() => setShowFeedToLuna(false)}
-            />
-          ) : null}
 
           <BottomNav activeRoute="stats" theme="purple" bottomOffset={mobile.bottomNavOffset} />
         </View>
@@ -453,24 +456,7 @@ const styles = StyleSheet.create({
   modalBody: { color: "#3D2C18", fontFamily: pixelFont, fontSize: 13, fontWeight: "700", lineHeight: 20 },
   modalDoneBtn: { marginTop: 12, borderWidth: 2, borderColor: "#A78BFA", borderRadius: 6, paddingVertical: 12, alignItems: "center", backgroundColor: "rgba(15,23,42,0.9)" },
   modalDoneBtnText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 0.8 },
-  feedToLunaBtn: {
-    marginTop: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    borderWidth: 3,
-    borderColor: "#4C1D95",
-    borderRadius: 8,
-    paddingVertical: 11,
-    backgroundColor: "#7C3AED",
-    shadowColor: "#000",
-    shadowOpacity: 0.5,
-    shadowRadius: 0,
-    shadowOffset: { width: 3, height: 3 },
-  },
-  feedToLunaAvatar: { width: 22, height: 22, borderRadius: 11 },
-  feedToLunaBtnText: { color: "#FFFFFF", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 0.3 },
+  feedToLunaRow: { marginTop: 12 },
   backButton: {
     backgroundColor: "rgba(8, 13, 24, 0.94)",
     borderWidth: 2,

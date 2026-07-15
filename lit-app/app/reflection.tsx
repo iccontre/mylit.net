@@ -247,7 +247,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   hero: {
-    backgroundColor: "rgba(8, 13, 24, 0.96)",
+    backgroundColor: "#EAD9B6",
     borderWidth: 4,
     borderColor: "#FBBF24",
     borderRadius: 8,
@@ -268,7 +268,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   heroTitle: {
-    color: "#F9FAFB",
+    color: "#4A3620",
     fontFamily: pixelFont,
     fontSize: 26,
     fontWeight: "900",
@@ -276,7 +276,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   heroSubtitle: {
-    color: "#F8F1D7",
+    color: "#7C5B2B",
     fontFamily: pixelFont,
     fontSize: 13,
     fontWeight: "800",
@@ -285,7 +285,7 @@ const styles = StyleSheet.create({
   lunaCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(8, 13, 24, 0.95)",
+    backgroundColor: "#EAD9B6",
     borderWidth: 3,
     borderColor: "#A78BFA",
     borderRadius: 8,
@@ -305,7 +305,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   lunaName: {
-    color: "#F0ABFC",
+    color: "#7C3AED",
     fontFamily: pixelFont,
     fontSize: 15,
     fontWeight: "900",
@@ -313,14 +313,14 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   lunaText: {
-    color: "#F8F1D7",
+    color: "#4A3620",
     fontFamily: pixelFont,
     fontSize: 12,
     fontWeight: "800",
     lineHeight: 18,
   },
   questCard: {
-    backgroundColor: "rgba(31, 27, 75, 0.95)",
+    backgroundColor: "#EAD9B6",
     borderWidth: 3,
     borderColor: "#FDE68A",
     borderRadius: 8,
@@ -328,7 +328,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   panel: {
-    backgroundColor: "rgba(8, 13, 24, 0.96)",
+    backgroundColor: "#EAD9B6",
     borderWidth: 3,
     borderColor: "#A78BFA",
     borderRadius: 8,

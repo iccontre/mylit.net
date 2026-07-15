@@ -836,8 +836,8 @@ export default function SleepCheckInScreen() {
                       <Text style={styles.choiceText}>No</Text>
                     </TouchableOpacity>
                   </View>
-                  <TouchableOpacity style={[styles.dreamJournalButton, { borderColor: theme.accent }]} onPress={() => setShowDreamJournalModal(true)}>
-                    <Text style={[styles.dreamJournalButtonText, { color: theme.accent }]}>🌙 Open Dream Journal</Text>
+                  <TouchableOpacity style={styles.dreamJournalButton} onPress={() => setShowDreamJournalModal(true)}>
+                    <Text style={styles.dreamJournalButtonText}>🌙 Open Dream Journal</Text>
                   </TouchableOpacity>
 
                   <Text style={styles.label}>Evie: What do you want to get done today?</Text>
@@ -1040,14 +1040,14 @@ const styles = StyleSheet.create({
     fontFamily: pixelFont,
   },
   input: {
-    backgroundColor: "rgba(58, 42, 21, 0.92)",
-    borderRadius: 8,
+    backgroundColor: "#F4E8CE",
+    borderRadius: 7,
     padding: 12,
     fontSize: 16,
     fontWeight: "800",
-    color: "#F9FAFB",
+    color: "#4A3620",
     borderWidth: 2,
-    borderColor: "#8B6B3D",
+    borderColor: "#5C4425",
     fontFamily: pixelFont,
   },
   multilineInput: {
@@ -1059,14 +1059,16 @@ const styles = StyleSheet.create({
   },
   choiceButton: {
     width: "48%",
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
-    borderRadius: 4,
+    backgroundColor: "#F4E8CE",
+    borderRadius: 7,
     borderWidth: 2,
+    borderColor: "#5C4425",
     paddingVertical: 12,
     alignItems: "center",
   },
   choiceButtonActive: {
-    backgroundColor: "rgba(24, 75, 49, 0.9)",
+    backgroundColor: "#86EFAC",
+    borderColor: "#14532D",
   },
   napDurationRow: {
     flexDirection: "row",
@@ -1076,27 +1078,28 @@ const styles = StyleSheet.create({
   },
   napDurationButton: {
     width: "48%",
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
-    borderRadius: 4,
+    backgroundColor: "#F4E8CE",
+    borderRadius: 7,
     borderWidth: 2,
+    borderColor: "#5C4425",
     paddingVertical: 10,
     alignItems: "center",
   },
   napDurationText: {
-    color: "#F9FAFB",
+    color: "#4A3620",
     fontSize: 13,
     fontWeight: "900",
     fontFamily: pixelFont,
   },
   napDurationEnergy: {
-    color: "#94A3B8",
+    color: "#7C5B2B",
     fontSize: 11,
     fontWeight: "700",
     fontFamily: pixelFont,
     marginTop: 2,
   },
   choiceText: {
-    color: "#F9FAFB",
+    color: "#4A3620",
     fontSize: 13,
     fontWeight: "900",
     fontFamily: pixelFont,
@@ -1119,9 +1122,10 @@ const styles = StyleSheet.create({
   },
   dreamJournalButton: {
     marginTop: 10,
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
-    borderRadius: 4,
-    borderWidth: 2,
+    backgroundColor: "#7C3AED",
+    borderRadius: 6,
+    borderWidth: 3,
+    borderColor: "#4C1D95",
     paddingVertical: 10,
     alignItems: "center",
   },
@@ -1129,6 +1133,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "900",
     fontFamily: pixelFont,
+    color: "#FFFFFF",
   },
   resultCard: {
     backgroundColor: "rgba(6, 10, 18, 0.96)",

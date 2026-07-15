@@ -850,17 +850,17 @@ const styles = StyleSheet.create({
   supplementaryQuestCard: { marginTop: 8, borderColor: "#86EFAC" },
   supplementaryQuestLabel: { color: "#86EFAC", fontFamily: pixelFont, fontSize: 10, fontWeight: "900", letterSpacing: 0.8, marginBottom: 4 },
   emptyPreviewText: { color: "#94A3B8", fontSize: 12, lineHeight: 17, fontWeight: "700", fontStyle: "italic" },
-  creationPanel: { backgroundColor: "rgba(58, 42, 21, 0.92)", borderRadius: 8, padding: 12, marginBottom: 14, borderWidth: 3, borderColor: "#8B6B3D" },
+  creationPanel: { backgroundColor: "#EAD9B6", borderRadius: 8, padding: 12, marginBottom: 14, borderWidth: 3, borderColor: "#5C4425" },
   rowBetween: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  panelHeading: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", letterSpacing: 0.5 },
+  panelHeading: { color: "#4A3620", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", letterSpacing: 0.5 },
   // flex:1 lets the heading center in the space left of the CANCEL button (when editing).
   panelHeadingCentered: { flex: 1, textAlign: "center" },
   // Dedicated (not shared with the numbered field labels below) so bumping size/centering
   // here doesn't also blow up "1. QUEST TITLE" etc. into oversized sub-labels.
-  bigSectionTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 16, fontWeight: "900", letterSpacing: 0.5, lineHeight: 20, marginBottom: 6, textAlign: "center" },
-  cancelEditText: { color: "#FCA5A5", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
-  sectionTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 0.5, lineHeight: 17, marginTop: 10, marginBottom: 8 },
-  input: { backgroundColor: "rgba(58, 42, 21, 0.92)", borderRadius: 8, padding: 13, fontSize: 15, color: "#F9FAFB", borderWidth: 2, borderColor: "#8B6B3D", fontWeight: "800" },
+  bigSectionTitle: { color: "#92610A", fontFamily: pixelFont, fontSize: 16, fontWeight: "900", letterSpacing: 0.5, lineHeight: 20, marginBottom: 6, textAlign: "center" },
+  cancelEditText: { color: "#B3261E", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
+  sectionTitle: { color: "#92610A", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 0.5, lineHeight: 17, marginTop: 10, marginBottom: 8 },
+  input: { backgroundColor: "#F4E8CE", borderRadius: 7, padding: 13, fontSize: 15, color: "#4A3620", borderWidth: 2, borderColor: "#5C4425", fontWeight: "800" },
   kindSelectorRow: { flexDirection: "row", gap: 10 },
   kindButton: { flex: 1, borderWidth: 2, paddingVertical: 11, alignItems: "center" },
   kindProgress: { borderColor: "#FBBF24", backgroundColor: "rgba(69,43,8,0.35)" },

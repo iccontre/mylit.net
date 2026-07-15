@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { Image, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 import { formStyles } from "../constants/formStyles";
+import { uiAssets } from "../constants/uiAssets";
 import { saveDreamEntry } from "../lib/dreamJournal";
 
 const pixelFont = Platform.select({ ios: "Menlo", android: "monospace", web: "monospace", default: "monospace" });
@@ -69,11 +70,16 @@ export function DreamJournalEntryModal({ visible, onClose, onSaved }: DreamJourn
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.backdrop}>
         <View style={styles.panel}>
-          <View style={styles.headerRow}>
+          <View style={styles.titleStrip}>
             <Text style={styles.title}>🌙 Dream Journal</Text>
             <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
               <Text style={styles.closeBtnText}>✕</Text>
             </TouchableOpacity>
+          </View>
+          <Text style={styles.stepIndicator}>YOUR MORNING CHECK-IN IS SAVED — THIS WON&apos;T LOSE YOUR ANSWERS</Text>
+          <View style={styles.lunaRow}>
+            <Image source={uiAssets.guides.luna} style={styles.lunaAvatar} resizeMode="contain" />
+            <Text style={styles.lunaText}>Most dreams fade within about 10 minutes — write it down now, even just fragments.</Text>
           </View>
           <ScrollView style={styles.scroll} showsVerticalScrollIndicator={false}>
             <Text style={styles.label}>Dream title</Text>
@@ -132,17 +138,48 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: "#5C4425",
     borderRadius: 8,
-    padding: 14,
+    overflow: "hidden",
     shadowColor: "#000",
     shadowOpacity: 0.6,
     shadowRadius: 0,
     shadowOffset: { width: 4, height: 4 },
   },
-  headerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 10 },
-  title: { color: "#3D2C18", fontFamily: pixelFont, fontSize: 16, fontWeight: "900" },
-  closeBtn: { width: 30, height: 30, borderWidth: 2, borderColor: "#5C4425", borderRadius: 6, alignItems: "center", justifyContent: "center", backgroundColor: "#E7D3A9" },
-  closeBtnText: { color: "#4A3620", fontFamily: pixelFont, fontSize: 14, fontWeight: "900" },
-  scroll: { maxHeight: 420 },
+  titleStrip: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#7C3AED",
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+  },
+  title: { color: "#FFFFFF", fontFamily: pixelFont, fontSize: 16, fontWeight: "900" },
+  closeBtn: { width: 28, height: 28, borderWidth: 2, borderColor: "rgba(255,255,255,0.6)", borderRadius: 6, alignItems: "center", justifyContent: "center" },
+  closeBtnText: { color: "#FFFFFF", fontFamily: pixelFont, fontSize: 13, fontWeight: "900" },
+  stepIndicator: {
+    color: "#7C5B2B",
+    fontFamily: pixelFont,
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 0.3,
+    textAlign: "center",
+    paddingTop: 10,
+    paddingHorizontal: 14,
+  },
+  lunaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginHorizontal: 14,
+    marginTop: 8,
+    padding: 8,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: "#8B6B3D",
+    backgroundColor: "rgba(58, 42, 21, 0.92)",
+  },
+  lunaAvatar: { width: 30, height: 30, borderRadius: 15, borderWidth: 2, borderColor: "#A78BFA" },
+  lunaText: { flex: 1, color: "#F9FAFB", fontFamily: pixelFont, fontSize: 11, lineHeight: 15, fontWeight: "700" },
+  scroll: { maxHeight: 380, paddingHorizontal: 14 },
   label: { color: "#4A3620", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", marginTop: 10, marginBottom: 4, letterSpacing: 0.4, textTransform: "uppercase" },
   input: { marginBottom: 4 },
   textArea: { minHeight: 90, maxHeight: 140 },
@@ -151,7 +188,7 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: "#7C3AED", borderColor: "#4C1D95" },
   chipText: { color: "#4A3620", fontFamily: pixelFont, fontSize: 11, fontWeight: "800" },
   chipTextActive: { color: "#FFFFFF" },
-  buttonRow: { flexDirection: "row", gap: 10, marginTop: 12 },
+  buttonRow: { flexDirection: "row", gap: 10, marginTop: 12, paddingHorizontal: 14, paddingBottom: 14 },
   cancelBtn: { flex: 1, borderWidth: 2, borderColor: "#5C4425", borderRadius: 6, paddingVertical: 11, alignItems: "center", backgroundColor: "#E7D3A9" },
   cancelBtnText: { color: "#4A3620", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
   saveBtn: { flex: 2, borderWidth: 3, borderColor: "#4C1D95", borderRadius: 6, paddingVertical: 11, alignItems: "center", backgroundColor: "#7C3AED" },

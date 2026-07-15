@@ -370,21 +370,55 @@ function getQuestSourceType(item: HomeQuestItem): QuestSourceType {
   return "regular";
 }
 
-function getQuestVisual(item: HomeQuestItem): { fill: string; text: string; border: string; meta: string; badge?: string } {
-  const sourceType = getQuestSourceType(item);
-  const modeColor = item.kind === "recovery" ? "#7C3AED" : "#FBBF24";
+/** Presentation-only quest visual state — never used to infer quest behavior; card kind/
+ *  mandatory/source metadata (already computed elsewhere) still drives all quest logic. */
+type QuestVisual =
+  | "progress"
+  | "recovery"
+  | "today-progress"
+  | "today-recovery"
+  | "path-progress"
+  | "path-recovery"
+  | "mandatory-luna"
+  | "ldm";
 
-  if (sourceType === "today") {
-    // White fill regardless of Progress/Recovery — the small badge dot carries the mode.
-    return { fill: "#FFFFFF", text: "#1F2937", border: "#1F2937", meta: "#4B5563", badge: modeColor };
+function resolveQuestVisualState(item: HomeQuestItem, ldmActiveNow: boolean): QuestVisual {
+  if (item.mandatory) return "mandatory-luna";
+  if (ldmActiveNow) return "ldm";
+  const sourceType = getQuestSourceType(item);
+  const isRecovery = item.kind === "recovery";
+  if (sourceType === "today") return isRecovery ? "today-recovery" : "today-progress";
+  if (sourceType === "path") return isRecovery ? "path-recovery" : "path-progress";
+  return isRecovery ? "recovery" : "progress";
+}
+
+/**
+ * Parchment-body cards with an accent strip/border carrying the mode, EXCEPT the mandatory
+ * Luna gate card, which stays a solid filled purple card (never parchment, never a red border)
+ * to keep it visually distinct as a "guide is asking for something" state.
+ */
+function getQuestVisualForState(state: QuestVisual): { fill: string; text: string; border: string; meta: string; badge?: string; edgeAccent?: string } {
+  switch (state) {
+    case "mandatory-luna":
+      return { fill: "#7C3AED", text: "#FFFFFF", border: "#4C1D95", meta: "#E9D5FF" };
+    case "recovery":
+    case "ldm":
+      return { fill: "#EAD9B6", text: "#4A3620", border: "#5C4425", meta: "#7C5B2B", edgeAccent: "#A78BFA" };
+    case "progress":
+      return { fill: "#EAD9B6", text: "#4A3620", border: "#5C4425", meta: "#7C5B2B", edgeAccent: "#FBBF24" };
+    case "today-progress":
+      return { fill: "#EAD9B6", text: "#4A3620", border: "#5C4425", meta: "#7C5B2B", badge: "#FBBF24" };
+    case "today-recovery":
+      return { fill: "#EAD9B6", text: "#4A3620", border: "#5C4425", meta: "#7C5B2B", badge: "#A78BFA" };
+    case "path-progress":
+      return { fill: "#EAD9B6", text: "#4A3620", border: "#14532D", meta: "#0B3B1E", edgeAccent: "#22C55E", badge: "#FBBF24" };
+    case "path-recovery":
+      return { fill: "#EAD9B6", text: "#4A3620", border: "#14532D", meta: "#0B3B1E", edgeAccent: "#22C55E", badge: "#A78BFA" };
   }
-  if (sourceType === "path") {
-    // Green fill regardless of Progress/Recovery — same badge convention as Today.
-    return { fill: "#22C55E", text: "#052E14", border: "#14532D", meta: "#0B3B1E", badge: modeColor };
-  }
-  return item.kind === "recovery"
-    ? { fill: "#7C3AED", text: "#FFFFFF", border: "#4C1D95", meta: "#E9D5FF" }
-    : { fill: "#FBBF24", text: "#241A00", border: "#92610A", meta: "#4A3200" };
+}
+
+function getQuestVisual(item: HomeQuestItem, ldmActiveNow = false): { fill: string; text: string; border: string; meta: string; badge?: string; edgeAccent?: string } {
+  return getQuestVisualForState(resolveQuestVisualState(item, ldmActiveNow));
 }
 
 // Day / Time Track spans 6 AM → 12 PM → 6 PM → 12 AM (an 18-hour window).
@@ -1913,11 +1947,11 @@ export default function HomeScreen() {
                   knowing real biological hunger — see lib/fuel.ts. */}
               <View style={styles.fuelRow}>
                 <View style={[styles.fuelBar, { borderColor: fuelBarColor }]}>
-                  <Text style={[styles.fuelBarLabel, { color: fuelBarColor }]}>FUEL</Text>
+                  <Text style={styles.fuelBarLabel}>FUEL</Text>
                   <View style={styles.fuelBarTrack}>
                     <View style={[styles.fuelBarFill, { width: `${fuelResult.fuel}%`, backgroundColor: fuelBarColor }]} />
                   </View>
-                  <Text style={[styles.fuelBarStatus, { color: fuelBarColor }]}>
+                  <Text style={styles.fuelBarStatus}>
                     {fuelResult.status} · {fuelResult.fuel}%
                   </Text>
                 </View>
@@ -1940,7 +1974,7 @@ export default function HomeScreen() {
                   <TouchableOpacity style={[styles.checkInCard, { borderColor: theme.accent }]} onPress={() => navigateWithHaptic("/sleep-checkin")}>
                     <View style={styles.checkIconBox}><Text style={styles.checkIcon}>🌄</Text></View>
                     <View style={styles.checkTextBox}>
-                      <Text style={[styles.checkTitle, { color: theme.glow }]}>MORNING{"\n"}CHECK-IN</Text>
+                      <Text style={[styles.checkTitle, { color: "#4A3620" }]}>MORNING{"\n"}CHECK-IN</Text>
                       <Text style={styles.checkSubtitle} numberOfLines={2}>{isRecovery ? "Start your day with kindness." : "Start strong. Set your focus."}</Text>
                     </View>
                     <Text style={[styles.checkArrow, { color: theme.accent }]}>›</Text>
@@ -1958,7 +1992,7 @@ export default function HomeScreen() {
                     >
                       <View style={styles.checkIconBox}><Text style={styles.checkIcon}>{isRecovery ? "🌙" : "🌇"}</Text></View>
                       <View style={styles.checkTextBox}>
-                        <Text style={[styles.checkTitle, { color: theme.glow }]}>AFTERNOON{"\n"}CHECK-IN</Text>
+                        <Text style={[styles.checkTitle, { color: "#4A3620" }]}>AFTERNOON{"\n"}CHECK-IN</Text>
                         <Text style={styles.checkSubtitle} numberOfLines={2}>{isRecovery ? "Pause, breathe, reset." : "Recalibrate. Keep going."}</Text>
                       </View>
                       <Text style={[styles.checkArrow, { color: theme.accent }]}>›</Text>
@@ -1967,7 +2001,7 @@ export default function HomeScreen() {
                     <View style={[styles.checkInCard, styles.checkInCardLocked]}>
                       <View style={styles.checkIconBox}><Text style={styles.checkIcon}>🔒</Text></View>
                       <View style={styles.checkTextBox}>
-                        <Text style={[styles.checkTitle, { color: "#94A3B8" }]}>AFTERNOON{"\n"}CHECK-IN</Text>
+                        <Text style={[styles.checkTitle, { color: "#7C5B2B" }]}>AFTERNOON{"\n"}CHECK-IN</Text>
                         <Text style={styles.checkSubtitle} numberOfLines={2}>Opens {afternoonUnlockDisplayLabel}</Text>
                       </View>
                     </View>
@@ -2202,7 +2236,7 @@ export default function HomeScreen() {
                 ) : (
                   <>
                     {visibleItems.map((item) => {
-                      const visual = getQuestVisual(item);
+                      const visual = getQuestVisual(item, ldmActive);
                       const setByNotice = item.mandatory
                         ? "Set by Luna"
                         : item.suggested || item.starter
@@ -2213,10 +2247,11 @@ export default function HomeScreen() {
                           key={item.id}
                           style={[
                             styles.questRow,
-                            // Mandatory Luna gate quests are always kind:"recovery", so this is
-                            // already the same purple fill/chunky border as any Recovery card —
-                            // no separate red-border treatment.
+                            // Mandatory Luna gate quests stay a solid filled purple card, never
+                            // parchment and never a red border — every other card is parchment
+                            // with its mode carried by an edge accent and/or badge only.
                             { backgroundColor: visual.fill, borderColor: visual.border },
+                            visual.edgeAccent ? { borderLeftWidth: 6, borderLeftColor: visual.edgeAccent } : null,
                           ]}
                           onPress={() => openQuestItem(item)}
                           activeOpacity={0.85}
@@ -2942,9 +2977,9 @@ const styles = StyleSheet.create({
   },
   fuelBar: {
     flex: 1,
-    backgroundColor: "rgba(6, 10, 18, 0.95)",
+    backgroundColor: "#EAD9B6",
     borderWidth: 3,
-    borderRadius: 6,
+    borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 7,
     shadowColor: "#000",
@@ -2957,11 +2992,12 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: "900",
     letterSpacing: 1,
+    color: "#4A3620",
   },
   fuelBarTrack: {
     height: 8,
     borderRadius: 4,
-    backgroundColor: "rgba(148, 163, 184, 0.25)",
+    backgroundColor: "rgba(92, 68, 37, 0.25)",
     overflow: "hidden",
     marginTop: 4,
   },
@@ -2974,12 +3010,13 @@ const styles = StyleSheet.create({
     fontSize: 9,
     fontWeight: "800",
     marginTop: 4,
+    color: "#7C5B2B",
   },
   foodLogBtn: {
-    backgroundColor: "rgba(6, 10, 18, 0.95)",
+    backgroundColor: "#EAD9B6",
     borderWidth: 3,
-    borderColor: "#334155",
-    borderRadius: 6,
+    borderColor: "#5C4425",
+    borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 10,
     shadowColor: "#000",
@@ -2988,7 +3025,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 2, height: 2 },
   },
   foodLogBtnText: {
-    color: "#E2E8F0",
+    color: "#4A3620",
     fontFamily: "monospace",
     fontSize: 11,
     fontWeight: "900",
@@ -3001,9 +3038,9 @@ const styles = StyleSheet.create({
   checkInCard: {
     flex: 1,
     minHeight: 76,
-    backgroundColor: "rgba(6, 10, 18, 0.95)",
+    backgroundColor: "#EAD9B6",
     borderWidth: 3,
-    borderRadius: 4,
+    borderRadius: 8,
     padding: 7,
     flexDirection: "row",
     alignItems: "center",
@@ -3016,8 +3053,8 @@ const styles = StyleSheet.create({
     height: 46,
     width: 46,
     borderWidth: 2,
-    borderColor: "#334155",
-    backgroundColor: "rgba(15, 23, 42, 0.8)",
+    borderColor: "#5C4425",
+    backgroundColor: "#F4E8CE",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 7,
@@ -3034,7 +3071,7 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   checkSubtitle: {
-    color: "#F8F1D7",
+    color: "#7C5B2B",
     fontSize: 10,
     fontWeight: "800",
     lineHeight: 13,
@@ -3047,11 +3084,11 @@ const styles = StyleSheet.create({
   },
   questBoard: {
     minHeight: 142,
-    // Lighter than the quest-row cards it contains — avoids a dark box nested inside a
-    // dark box; the rows still read as distinct slips against this lighter backing.
-    backgroundColor: "rgba(5, 9, 17, 0.4)",
+    // Translucent parchment backing — the individual quest rows (also parchment) still read
+    // as distinct slips against it via their own opaque fill/border.
+    backgroundColor: "rgba(234, 217, 182, 0.28)",
     borderWidth: 3,
-    borderRadius: 4,
+    borderRadius: 8,
     padding: 8,
     marginTop: 8,
   },
@@ -3165,13 +3202,15 @@ const styles = StyleSheet.create({
   },
   questRow: {
     minHeight: 39,
-    backgroundColor: "rgba(15, 23, 42, 0.94)",
+    backgroundColor: "#EAD9B6",
     borderWidth: 2,
-    borderColor: "#2E3542",
+    borderColor: "#5C4425",
+    borderRadius: 7,
     paddingHorizontal: 6,
     marginBottom: 5,
     flexDirection: "row",
     alignItems: "center",
+    overflow: "hidden",
   },
   questTitleWithBadge: { flexDirection: "row", alignItems: "center", gap: 5 },
   questModeBadge: { width: 8, height: 8, borderRadius: 4, borderWidth: 1, borderColor: "#00000055" },
@@ -3612,9 +3651,9 @@ const styles = StyleSheet.create({
     minHeight: 58,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(5, 9, 17, 0.96)",
+    backgroundColor: "#EAD9B6",
     borderWidth: 3,
-    borderRadius: 4,
+    borderRadius: 8,
     paddingHorizontal: 8,
     marginTop: 8,
   },
@@ -3628,7 +3667,7 @@ const styles = StyleSheet.create({
   statDivider: {
     height: 40,
     width: 2,
-    backgroundColor: "#4B5563",
+    backgroundColor: "#5C4425",
   },
   statIcon: {
     fontSize: 26,
@@ -3639,7 +3678,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
   },
   statValue: {
-    color: "#F8F1D7",
+    color: "#4A3620",
     fontSize: 12,
     fontWeight: "900",
     marginTop: 1,

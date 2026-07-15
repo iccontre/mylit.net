@@ -14,6 +14,7 @@ import {
 
 import { GuideInfoModal } from "../components/GuideInfoModal";
 import { GuideFoundationCard } from "../components/GuideFoundationCard";
+import { FeedToGuideButton } from "../components/parchment/FeedToGuideButton";
 import { EvieGuideModal } from "../components/EvieGuideModal";
 import { LunaGuideModal } from "../components/LunaGuideModal";
 import { GOAL_HORIZON_LABELS } from "../constants/goalMilestoneTemplates";
@@ -243,6 +244,12 @@ export default function PathScreen() {
               </View>
             </View>
 
+            {profile?.progressMeaning?.trim() ? (
+              <View style={styles.feedToEvieRow}>
+                <FeedToGuideButton guide="evie" sourceType="pathGoal" sourceId="path-progress-meaning" sourceText={progressMeaning} />
+              </View>
+            ) : null}
+
             {profile && (
               <View style={styles.resourcesPanel}>
                 <Text style={styles.resourcesTitle}>ACTIVE RESOURCES</Text>
@@ -417,15 +424,17 @@ const styles = StyleSheet.create({
   hero: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(8, 13, 18, 0.90)",
-    borderWidth: 4,
-    borderColor: "#FBBF24",
+    backgroundColor: "#EAD9B6",
+    borderWidth: 3,
+    borderColor: "#14532D",
+    borderLeftWidth: 6,
+    borderLeftColor: "#22C55E",
     borderRadius: 8,
     paddingVertical: 15,
     paddingHorizontal: 14,
     marginBottom: 12,
     shadowColor: "#000",
-    shadowOpacity: 0.7,
+    shadowOpacity: 0.68,
     shadowRadius: 0,
     shadowOffset: { width: 4, height: 4 },
   },
@@ -433,7 +442,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   heroLabel: {
-    color: "#4ADE80",
+    color: "#14532D",
     fontFamily: pixelFont,
     fontSize: 13,
     fontWeight: "900",
@@ -441,19 +450,16 @@ const styles = StyleSheet.create({
     marginBottom: 7,
   },
   title: {
-    color: "#F9FAFB",
+    color: "#4A3620",
     fontFamily: pixelFont,
     fontSize: 40,
     fontWeight: "900",
     letterSpacing: 4,
     lineHeight: 45,
     textAlign: "center",
-    textShadowColor: "#000",
-    textShadowOffset: { width: 3, height: 3 },
-    textShadowRadius: 0,
   },
   subtitle: {
-    color: "#F8F1D7",
+    color: "#7C5B2B",
     fontFamily: pixelFont,
     fontSize: 13,
     fontWeight: "800",
@@ -463,9 +469,11 @@ const styles = StyleSheet.create({
   evieCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(20, 83, 45, 0.94)",
+    backgroundColor: "#EAD9B6",
     borderWidth: 3,
-    borderColor: "#22C55E",
+    borderColor: "#14532D",
+    borderLeftWidth: 6,
+    borderLeftColor: "#22C55E",
     borderRadius: 8,
     paddingVertical: 9,
     paddingHorizontal: 11,
@@ -480,22 +488,22 @@ const styles = StyleSheet.create({
     height: 52,
     borderRadius: 26,
     borderWidth: 2,
-    borderColor: "#4ADE80",
-    backgroundColor: "rgba(15, 61, 24, 0.72)",
+    borderColor: "#14532D",
+    backgroundColor: "#F4E8CE",
     marginRight: 10,
   },
   evieCopy: {
     flex: 1,
   },
   evieName: {
-    color: "#86EFAC",
+    color: "#14532D",
     fontFamily: pixelFont,
     fontSize: 13,
     fontWeight: "900",
     marginBottom: 4,
   },
   evieText: {
-    color: "#F8F1D7",
+    color: "#4A3620",
     fontFamily: pixelFont,
     fontSize: 12,
     fontWeight: "800",
@@ -726,12 +734,18 @@ const styles = StyleSheet.create({
     minHeight: 70,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(8, 13, 18, 0.90)",
-    borderWidth: 2,
-    borderColor: "rgba(148, 163, 184, 0.52)",
+    backgroundColor: "#EAD9B6",
+    borderWidth: 3,
+    borderColor: "#5C4425",
+    borderLeftWidth: 6,
+    borderLeftColor: "#22C55E",
     borderRadius: 8,
     padding: 10,
     marginBottom: 12,
+    shadowColor: "#000",
+    shadowOpacity: 0.5,
+    shadowRadius: 0,
+    shadowOffset: { width: 3, height: 3 },
   },
   meaningIconBox: {
     height: 50,
@@ -747,32 +761,33 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   meaningLabel: {
-    color: "#FDE68A",
+    color: "#92610A",
     fontFamily: pixelFont,
     fontSize: 12,
     fontWeight: "900",
     letterSpacing: 0.9,
   },
   meaningText: {
-    color: "#F9FAFB",
+    color: "#4A3620",
     fontFamily: pixelFont,
     fontSize: 13,
     fontWeight: "800",
     lineHeight: 19,
     marginTop: 4,
   },
+  feedToEvieRow: { marginBottom: 12 },
   primaryActionButton: {
     minHeight: 54,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(22, 101, 52, 0.96)",
+    backgroundColor: "#16A34A",
     borderWidth: 3,
-    borderColor: "#FBBF24",
+    borderColor: "#14532D",
     borderRadius: 8,
     paddingHorizontal: 14,
     marginBottom: 10,
     shadowColor: "#000",
-    shadowOpacity: 0.7,
+    shadowOpacity: 0.68,
     shadowRadius: 0,
     shadowOffset: { width: 4, height: 4 },
   },

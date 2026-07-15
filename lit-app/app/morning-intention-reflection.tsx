@@ -550,7 +550,7 @@ const styles = StyleSheet.create({
     fontFamily: pixelFont,
     fontSize: 24,
     fontWeight: "900",
-    color: "#F9FAFB",
+    color: "#4A3620",
     lineHeight: 30,
     textAlign: "center",
   },
@@ -613,14 +613,14 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
   emptyCard: {
-    backgroundColor: "rgba(8, 13, 24, 0.96)",
+    backgroundColor: "#EAD9B6",
     borderRadius: 6,
     borderWidth: 3,
     padding: 14,
     marginBottom: 10,
   },
   lockedCard: {
-    backgroundColor: "rgba(8, 13, 24, 0.96)",
+    backgroundColor: "#EAD9B6",
     borderRadius: 6,
     borderWidth: 3,
     padding: 18,
@@ -653,7 +653,7 @@ const styles = StyleSheet.create({
     marginBottom: 7,
   },
   emptyText: {
-    color: "#E2E8F0",
+    color: "#7C5B2B",
     fontFamily: pixelFont,
     fontSize: 13,
     lineHeight: 19,
@@ -690,7 +690,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   panel: {
-    backgroundColor: "rgba(8, 13, 24, 0.95)",
+    backgroundColor: "#EAD9B6",
     borderRadius: 6,
     borderWidth: 3,
     padding: 13,

@@ -132,11 +132,16 @@ export default function GuideContextScreen() {
               </View>
             ) : (
               active.map((record) => (
-                <View key={record.id} style={styles.entryCard}>
+                <View
+                  key={record.id}
+                  style={[styles.entryCard, { borderLeftWidth: 6, borderLeftColor: record.guide === "luna" ? "#A78BFA" : "#22C55E" }]}
+                >
                   <View style={styles.entryTopRow}>
                     <Image source={record.guide === "luna" ? uiAssets.guides.luna : uiAssets.guides.evie} style={styles.avatar} resizeMode="contain" />
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.entryLabel}>{record.guide === "luna" ? "Luna" : "Evie"} · {sourceLabel(record.sourceType)}</Text>
+                      <Text style={[styles.entryLabel, { color: record.guide === "luna" ? "#5B21B6" : "#14532D" }]}>
+                        {record.guide === "luna" ? "Luna" : "Evie"} · {sourceLabel(record.sourceType)}
+                      </Text>
                       <Text style={styles.entryWhen}>Shared {whenLabel(record.permissionGrantedAt)}</Text>
                     </View>
                   </View>
@@ -190,21 +195,21 @@ const styles = StyleSheet.create({
   worldOverlay: { flex: 1, backgroundColor: "rgba(4, 8, 14, 0.22)" },
   hudContent: { paddingTop: 8 },
   hero: {
-    backgroundColor: "rgba(31, 27, 75, 0.95)",
-    borderWidth: 4,
-    borderColor: "#A78BFA",
+    backgroundColor: "#EAD9B6",
+    borderWidth: 3,
+    borderColor: "#5C4425",
     borderRadius: 8,
     paddingVertical: 16,
     paddingHorizontal: 16,
     marginBottom: 16,
     shadowColor: "#000",
-    shadowOpacity: 0.7,
+    shadowOpacity: 0.68,
     shadowRadius: 0,
     shadowOffset: { width: 4, height: 4 },
   },
-  heroKicker: { color: "#C4A7FF", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 2, marginBottom: 8 },
-  title: { color: "#F9FAFB", fontFamily: pixelFont, fontSize: 26, fontWeight: "900", letterSpacing: 1, lineHeight: 32, textAlign: "center" },
-  subtitle: { color: "#F8F1D7", fontFamily: pixelFont, fontSize: 12, fontWeight: "800", lineHeight: 18, marginTop: 8 },
+  heroKicker: { color: "#7C5B2B", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 2, marginBottom: 8 },
+  title: { color: "#4A3620", fontFamily: pixelFont, fontSize: 26, fontWeight: "900", letterSpacing: 1, lineHeight: 32, textAlign: "center" },
+  subtitle: { color: "#7C5B2B", fontFamily: pixelFont, fontSize: 12, fontWeight: "800", lineHeight: 18, marginTop: 8 },
   checkInBtn: {
     borderWidth: 3,
     borderColor: "#4C1D95",
