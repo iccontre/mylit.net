@@ -4,10 +4,12 @@ import { useCallback, useState } from "react";
 import { Image, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { BottomNav } from "../components/BottomNav";
+import { FeedToGuideModal } from "../components/FeedToGuideModal";
 import { FormScreen } from "../components/FormScreen";
 import { formPageContent } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
-import { uiAssets } from "../constants/uiAssets";
+import { LOG_HISTORY_HEADING, uiAssets } from "../constants/uiAssets";
+import type { GuideContextSourceType } from "../lib/agentTypes";
 import { LOG_HISTORY_KEYS } from "../lib/storageKeys";
 
 // Read-only history view. It reads the same synced, array-merged keys the entry pages
@@ -28,6 +30,16 @@ type LogEntry = {
 };
 
 const pixelFont = Platform.select({ ios: "Menlo", android: "monospace", web: "monospace", default: "monospace" });
+
+/** Every Log History entry is a Mind/Sleep entry — Luna owns emotional/mental support and
+ *  sleep/recovery, so these all offer "Feed to Luna" only (see components/FeedToGuideModal). */
+const LOG_TYPE_TO_GUIDE_SOURCE: Record<LogType, GuideContextSourceType> = {
+  journal: "journal",
+  reflection: "reflection",
+  meditation: "awarenessCheck",
+  dream: "dream",
+  pre_sleep_intention: "preSleepIntention",
+};
 
 const SECTIONS: { type: LogType; title: string; icon: string }[] = [
   { type: "journal", title: "Journal", icon: "📓" },
@@ -202,6 +214,7 @@ export default function LogHistoryScreen() {
     pre_sleep_intention: [],
   });
   const [selectedEntry, setSelectedEntry] = useState<LogEntry | null>(null);
+  const [showFeedToLuna, setShowFeedToLuna] = useState(false);
 
   const loadLogs = useCallback(async () => {
     const [journalRaw, reflectionRaw, meditationRaw, dreamRaw, preSleepRaw] = await Promise.all([
@@ -241,7 +254,7 @@ export default function LogHistoryScreen() {
           <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.hudContent]}>
             <View style={styles.hero}>
               <Text style={styles.heroKicker}>YOUR ACCOUNT</Text>
-              <Text style={styles.title}>LOG HISTORY</Text>
+              <Text style={styles.title}>{LOG_HISTORY_HEADING}</Text>
               <Text style={styles.subtitle}>Everything you&apos;ve saved, synced to your account and restored on any device.</Text>
             </View>
 
@@ -311,12 +324,27 @@ export default function LogHistoryScreen() {
                   {selectedEntry?.meta ? <Text style={styles.modalMeta}>{selectedEntry.meta}</Text> : null}
                   <Text style={styles.modalBody}>{selectedEntry?.body || selectedEntry?.preview}</Text>
                 </ScrollView>
+                <TouchableOpacity style={styles.feedToLunaBtn} onPress={() => setShowFeedToLuna(true)}>
+                  <Image source={uiAssets.guides.luna} style={styles.feedToLunaAvatar} resizeMode="contain" />
+                  <Text style={styles.feedToLunaBtnText}>Feed to Luna</Text>
+                </TouchableOpacity>
                 <TouchableOpacity style={styles.modalDoneBtn} onPress={() => setSelectedEntry(null)}>
                   <Text style={styles.modalDoneBtnText}>DONE</Text>
                 </TouchableOpacity>
               </View>
             </View>
           </Modal>
+
+          {selectedEntry ? (
+            <FeedToGuideModal
+              visible={showFeedToLuna}
+              guide="luna"
+              sourceType={LOG_TYPE_TO_GUIDE_SOURCE[selectedEntry.type]}
+              sourceId={selectedEntry.id}
+              sourceText={selectedEntry.body || selectedEntry.preview}
+              onClose={() => setShowFeedToLuna(false)}
+            />
+          ) : null}
 
           <BottomNav activeRoute="stats" theme="purple" bottomOffset={mobile.bottomNavOffset} />
         </View>
@@ -361,14 +389,18 @@ const styles = StyleSheet.create({
   title: { color: "#F9FAFB", fontFamily: pixelFont, fontSize: 30, fontWeight: "900", letterSpacing: 1, lineHeight: 36, textAlign: "center" },
   subtitle: { color: "#F8F1D7", fontFamily: pixelFont, fontSize: 12, fontWeight: "800", lineHeight: 18, marginTop: 8 },
   emptyCard: {
-    backgroundColor: "rgba(8, 13, 24, 0.95)",
-    borderWidth: 2,
-    borderColor: "#334155",
-    borderRadius: 6,
+    backgroundColor: "#EAD9B6",
+    borderWidth: 3,
+    borderColor: "#5C4425",
+    borderRadius: 8,
     padding: 14,
     marginBottom: 16,
+    shadowColor: "#000",
+    shadowOpacity: 0.5,
+    shadowRadius: 0,
+    shadowOffset: { width: 3, height: 3 },
   },
-  emptyText: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 12, lineHeight: 18, fontWeight: "800" },
+  emptyText: { color: "#4A3620", fontFamily: pixelFont, fontSize: 12, lineHeight: 18, fontWeight: "800" },
   section: { marginBottom: 18 },
   sectionHeader: {
     flexDirection: "row",
@@ -392,31 +424,53 @@ const styles = StyleSheet.create({
   },
   sectionEmpty: { color: "#64748B", fontFamily: pixelFont, fontSize: 11, fontWeight: "800", marginBottom: 4 },
   entryCard: {
-    backgroundColor: "rgba(8, 13, 24, 0.95)",
-    borderWidth: 2,
-    borderColor: "#334155",
-    borderRadius: 6,
+    backgroundColor: "#EAD9B6",
+    borderWidth: 3,
+    borderColor: "#5C4425",
+    borderRadius: 8,
     padding: 12,
     marginBottom: 8,
+    shadowColor: "#000",
+    shadowOpacity: 0.5,
+    shadowRadius: 0,
+    shadowOffset: { width: 3, height: 3 },
   },
   entryTopRow: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 8 },
-  entryLabel: { flex: 1, color: "#E9D5FF", fontFamily: pixelFont, fontSize: 13, fontWeight: "900" },
-  entryWhen: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 10, fontWeight: "800" },
-  entryMeta: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", marginTop: 6 },
-  entryBody: { color: "#F8F1D7", fontFamily: pixelFont, fontSize: 12, fontWeight: "700", lineHeight: 18, marginTop: 7 },
-  entryCue: { color: "#64748B", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", marginTop: 8, textTransform: "uppercase", letterSpacing: 0.6 },
+  entryLabel: { flex: 1, color: "#5B21B6", fontFamily: pixelFont, fontSize: 13, fontWeight: "900" },
+  entryWhen: { color: "#8A7554", fontFamily: pixelFont, fontSize: 10, fontWeight: "800" },
+  entryMeta: { color: "#92610A", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", marginTop: 6 },
+  entryBody: { color: "#3D2C18", fontFamily: pixelFont, fontSize: 12, fontWeight: "700", lineHeight: 18, marginTop: 7 },
+  entryCue: { color: "#7C5B2B", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", marginTop: 8, textTransform: "uppercase", letterSpacing: 0.6 },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(2,4,10,0.82)", alignItems: "center", justifyContent: "center", padding: 18 },
-  modalPanel: { width: "100%", maxWidth: 380, maxHeight: "82%", backgroundColor: "rgba(8,13,24,0.99)", borderWidth: 3, borderColor: "#A78BFA", borderRadius: 10, padding: 14 },
+  modalPanel: { width: "100%", maxWidth: 380, maxHeight: "82%", backgroundColor: "#EAD9B6", borderWidth: 3, borderColor: "#5C4425", borderRadius: 8, padding: 14, shadowColor: "#000", shadowOpacity: 0.5, shadowRadius: 0, shadowOffset: { width: 4, height: 4 } },
   modalHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 10, gap: 10 },
-  modalLabel: { color: "#E9D5FF", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", letterSpacing: 0.5 },
-  modalWhen: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 11, fontWeight: "800", marginTop: 4 },
-  modalCloseBtn: { width: 30, height: 30, borderWidth: 2, borderColor: "#A78BFA", borderRadius: 6, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(15,23,42,0.9)" },
-  modalCloseBtnText: { color: "#E9D5FF", fontFamily: pixelFont, fontSize: 14, fontWeight: "900" },
+  modalLabel: { color: "#5B21B6", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", letterSpacing: 0.5 },
+  modalWhen: { color: "#8A7554", fontFamily: pixelFont, fontSize: 11, fontWeight: "800", marginTop: 4 },
+  modalCloseBtn: { width: 30, height: 30, borderWidth: 2, borderColor: "#5C4425", borderRadius: 6, alignItems: "center", justifyContent: "center", backgroundColor: "#E7D3A9" },
+  modalCloseBtnText: { color: "#4A3620", fontFamily: pixelFont, fontSize: 14, fontWeight: "900" },
   modalScroll: { maxHeight: 420 },
-  modalMeta: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", marginBottom: 10 },
-  modalBody: { color: "#F8F1D7", fontFamily: pixelFont, fontSize: 13, fontWeight: "700", lineHeight: 20 },
+  modalMeta: { color: "#92610A", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", marginBottom: 10 },
+  modalBody: { color: "#3D2C18", fontFamily: pixelFont, fontSize: 13, fontWeight: "700", lineHeight: 20 },
   modalDoneBtn: { marginTop: 12, borderWidth: 2, borderColor: "#A78BFA", borderRadius: 6, paddingVertical: 12, alignItems: "center", backgroundColor: "rgba(15,23,42,0.9)" },
   modalDoneBtnText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 0.8 },
+  feedToLunaBtn: {
+    marginTop: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: 3,
+    borderColor: "#4C1D95",
+    borderRadius: 8,
+    paddingVertical: 11,
+    backgroundColor: "#7C3AED",
+    shadowColor: "#000",
+    shadowOpacity: 0.5,
+    shadowRadius: 0,
+    shadowOffset: { width: 3, height: 3 },
+  },
+  feedToLunaAvatar: { width: 22, height: 22, borderRadius: 11 },
+  feedToLunaBtnText: { color: "#FFFFFF", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 0.3 },
   backButton: {
     backgroundColor: "rgba(8, 13, 24, 0.94)",
     borderWidth: 2,

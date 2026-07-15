@@ -1,0 +1,55 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+import { persistProgressKeys } from "./progressStore";
+import { DREAM_JOURNAL_KEY, USER_STATS_KEY } from "./storageKeys";
+import { recordAgentEvent } from "./mylitAgents";
+
+export type DreamEntry = {
+  id: string;
+  title: string;
+  summary: string;
+  feeling: string;
+  createdAt: string;
+};
+
+export async function loadDreamEntries(): Promise<DreamEntry[]> {
+  const saved = await AsyncStorage.getItem(DREAM_JOURNAL_KEY);
+  if (!saved) return [];
+  try {
+    const parsed = JSON.parse(saved);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * The one shared dream-save path — used by both the full Dream Journal page and the inline
+ * modal opened from Morning Check-In (see components/DreamJournalEntryModal.tsx), so a dream
+ * saved from either place earns its step exactly once through the same ledger and shows up in
+ * the same history either way.
+ */
+export async function saveDreamEntry(input: { title: string; summary: string; feeling: string }): Promise<DreamEntry | null> {
+  if (!input.title.trim() && !input.summary.trim()) return null;
+
+  const entry: DreamEntry = {
+    id: String(Date.now()),
+    title: input.title.trim(),
+    summary: input.summary.trim(),
+    feeling: input.feeling,
+    createdAt: new Date().toISOString(),
+  };
+
+  const existing = await loadDreamEntries();
+  await persistProgressKeys({ [DREAM_JOURNAL_KEY]: JSON.stringify([entry, ...existing]) });
+
+  const savedStats = await AsyncStorage.getItem(USER_STATS_KEY);
+  const currentStats: Record<string, unknown> = savedStats ? JSON.parse(savedStats) : {};
+  await persistProgressKeys({
+    [USER_STATS_KEY]: JSON.stringify({ ...currentStats, totalSteps: Number(currentStats.totalSteps ?? 0) + 1 }),
+  });
+
+  void recordAgentEvent({ type: "dream_saved", sourcePage: "dream-journal", relatedItemId: entry.id, stepDelta: 1, metadata: { feeling: input.feeling } });
+
+  return entry;
+}

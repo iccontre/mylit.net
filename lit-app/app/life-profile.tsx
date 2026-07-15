@@ -4,6 +4,7 @@ import { Image, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } 
 
 import { FormScreen } from "../components/FormScreen";
 import { BottomNav } from "../components/BottomNav";
+import { FeedToGuideModal } from "../components/FeedToGuideModal";
 import { formPageContent } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
@@ -88,6 +89,8 @@ export default function LifeProfileScreen() {
   const [preferredFocusWindow, setPreferredFocusWindow] = useState<FocusWindow | "">("");
   const [strongestSkillCategories, setStrongestSkillCategories] = useState<SkillCategory[]>([]);
   const [customSkillCategoryText, setCustomSkillCategoryText] = useState("");
+  const [showFeedToEvie, setShowFeedToEvie] = useState(false);
+  const [showFeedToLuna, setShowFeedToLuna] = useState(false);
   const savedSnapshotRef = useRef<string>(
     JSON.stringify({
       displayName: "",
@@ -419,6 +422,11 @@ export default function LifeProfileScreen() {
                 value={draft.preferredEvieAccountability}
                 onChangeText={(text) => updateField("preferredEvieAccountability", text)}
               />
+
+              <TouchableOpacity style={styles.feedToEvieBtn} onPress={() => setShowFeedToEvie(true)}>
+                <Image source={uiAssets.guides.evie} style={styles.feedToGuideAvatar} resizeMode="contain" />
+                <Text style={styles.feedToEvieBtnText}>Feed my goals to Evie</Text>
+              </TouchableOpacity>
             </View>
 
             <View style={[styles.panel, styles.lunaAccent]}>
@@ -453,11 +461,43 @@ export default function LifeProfileScreen() {
                 value={draft.preferredLunaSupport}
                 onChangeText={(text) => updateField("preferredLunaSupport", text)}
               />
+
+              <TouchableOpacity style={styles.feedToLunaBtn} onPress={() => setShowFeedToLuna(true)}>
+                <Image source={uiAssets.guides.luna} style={styles.feedToGuideAvatar} resizeMode="contain" />
+                <Text style={styles.feedToLunaBtnText}>Feed my recovery notes to Luna</Text>
+              </TouchableOpacity>
             </View>
 
             <TouchableOpacity style={[styles.saveButton, !isDirty && styles.saveButtonDisabled]} disabled={!isDirty} onPress={handleSave}>
               <Text style={styles.saveButtonText}>{saveLabel}</Text>
             </TouchableOpacity>
+
+            <FeedToGuideModal
+              visible={showFeedToEvie}
+              guide="evie"
+              sourceType="pathGoal"
+              sourceId="life-profile-goals"
+              sourceText={[
+                draft.futureSelfStatement,
+                draft.longTermDreamStatement,
+                draft.careerGoals,
+                draft.bodyHealthGoals,
+                draft.friendshipSocialGoals,
+                draft.purposeGoals,
+                draft.confidenceGoals,
+                draft.currentObstacles,
+                draft.preferredEvieAccountability,
+              ].filter(Boolean).join("\n\n")}
+              onClose={() => setShowFeedToEvie(false)}
+            />
+            <FeedToGuideModal
+              visible={showFeedToLuna}
+              guide="luna"
+              sourceType="lifeProfile"
+              sourceId="life-profile-recovery"
+              sourceText={[draft.commonSleepBarriers, draft.recoveryActivitiesThatHelp, draft.preferredLunaSupport].filter(Boolean).join("\n\n")}
+              onClose={() => setShowFeedToLuna(false)}
+            />
 
             <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
               <Text style={styles.backButtonText}>← Back</Text>
@@ -523,6 +563,33 @@ const styles = StyleSheet.create({
   },
   evieAccent: { borderColor: "#FBBF24" },
   lunaAccent: { borderColor: "#A78BFA" },
+  feedToGuideAvatar: { width: 20, height: 20, borderRadius: 10 },
+  feedToEvieBtn: {
+    marginTop: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: 2,
+    borderColor: "#92610A",
+    borderRadius: 6,
+    paddingVertical: 10,
+    backgroundColor: "rgba(146, 97, 10, 0.25)",
+  },
+  feedToEvieBtnText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
+  feedToLunaBtn: {
+    marginTop: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: 3,
+    borderColor: "#4C1D95",
+    borderRadius: 6,
+    paddingVertical: 10,
+    backgroundColor: "#7C3AED",
+  },
+  feedToLunaBtnText: { color: "#FFFFFF", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
   sectionTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 14, fontWeight: "900", letterSpacing: 0.5, textAlign: "center", marginBottom: 8 },
   evieTitle: { color: "#FDE68A" },
   lunaTitle: { color: "#E9D5FF" },

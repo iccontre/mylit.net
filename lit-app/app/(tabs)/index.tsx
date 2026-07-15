@@ -35,7 +35,7 @@ import {
   collectExpiredUnresolvedQuickThoughts,
   collectTodayCalendarItems,
   computeFreshRankBonuses,
-  computeTotalEarnedSteps,
+  computeTodayScopedEarnedSteps,
   findNextScheduledItem,
   FORCED_RECOVERY_MESSAGE,
   FORCED_RECOVERY_RESTORE_ENERGY,
@@ -84,10 +84,11 @@ import {
   parseTimeToMinutes,
   pickGuideMessage,
 } from "../../lib/scheduling";
-import { AFFIRMATIONS_KEY, FOOD_LOGS_KEY, LATEST_PRE_SLEEP_INTENTION_KEY, SLEEP_ROUTINE_KEY, TOTAL_STEPS_FLOOR_KEY } from "../../lib/storageKeys";
+import { AFFIRMATIONS_KEY, DAILY_STEPS_LOG_KEY, FOOD_LOGS_KEY, LATEST_PRE_SLEEP_INTENTION_KEY, SLEEP_ROUTINE_KEY, TOTAL_STEPS_FLOOR_KEY } from "../../lib/storageKeys";
 import { readJson } from "../../lib/readJson";
 import { FoodLogModal } from "../../components/FoodLogModal";
-import { computeFuel, FOOD_GATE_FUEL_THRESHOLD, type FoodLog } from "../../lib/fuel";
+import { computeFuel, type FoodLog } from "../../lib/fuel";
+import { computeMandatoryGateState } from "../../lib/mandatoryGates";
 import { loadTodaysEvieMorningQuest, type EvieMorningQuest } from "../../lib/evieMorningQuest";
 
 const mylitLogo = uiAssets.logo.mylit;
@@ -260,15 +261,11 @@ const USER_STATS_KEY = "lit_user_stats";
 const PASSIVE_DECAY_POINTS = 5;
 const PASSIVE_DECAY_INTERVAL_HOURS = 2;
 
-// Luna's mandatory recovery quest, triggered when energy runs low (see getMandatoryQuest).
-// Restore amounts are tiered by duration — see getMandatoryQuestRestoreEnergy in scheduling.ts.
-// MANDATORY_QUEST_TITLE now lives in scheduling.ts so Calendar can identify completions too.
-// Below 60 energy: a short 15-min reset that only blocks starting new PROGRESS quests.
-const MANDATORY_MILD_THRESHOLD = 60;
+// Luna's mandatory recovery quest, triggered when energy runs low — thresholds/durations and
+// the full gate state machine now live in lib/mandatoryGates.ts (single source of truth shared
+// by both tap handlers and rendering below). MANDATORY_QUEST_TITLE lives in scheduling.ts so
+// Calendar can identify completions too.
 const MANDATORY_MILD_DURATION_MINUTES = 15;
-// Below 30 energy: a stronger 30-min requirement that locks the whole Quest Board.
-const MANDATORY_SEVERE_THRESHOLD = 30;
-const MANDATORY_SEVERE_DURATION_MINUTES = 30;
 
 // Luna's wind-down lock, triggered by TIME (desired sleep time minus wind-down minutes),
 // separate from the energy-based mandatory quests above (see getWindDownQuest). Locks
@@ -789,11 +786,12 @@ export default function HomeScreen() {
   }
 
   async function loadProgressState() {
-    const [completions, missed, stats, focusLogEntries, savedFloor, affirmationsRaw] = await Promise.all([
+    const [completions, missed, stats, focusLogEntries, savedDailyLog, savedLegacyFloor, affirmationsRaw] = await Promise.all([
       loadTodayCompletions(),
       loadTodayMissed(),
       AsyncStorage.getItem(USER_STATS_KEY),
       loadFocusBlockLog(),
+      AsyncStorage.getItem(DAILY_STEPS_LOG_KEY),
       AsyncStorage.getItem(TOTAL_STEPS_FLOOR_KEY),
       AsyncStorage.getItem(AFFIRMATIONS_KEY),
     ]);
@@ -821,16 +819,29 @@ export default function HomeScreen() {
       }
     }
     // Home and Stats must read total steps from the same canonical source. Seed the floor
-    // from storage immediately (not just from the totalEarnedSteps-triggered effect below) so
-    // Home never flashes a lower number than Stats while today's completions are still loading.
-    if (savedFloor) {
+    // from storage immediately (not just from the reconcile-triggered effect below) so Home
+    // never flashes a lower number than Stats while today's completions are still loading.
+    let seededFloor = 0;
+    try {
+      const parsedLog = savedDailyLog ? JSON.parse(savedDailyLog) : null;
+      if (parsedLog && typeof parsedLog === "object" && !Array.isArray(parsedLog)) {
+        seededFloor = Object.values(parsedLog as Record<string, unknown>).reduce(
+          (sum: number, value) => sum + (Number(value) || 0),
+          0
+        );
+      }
+    } catch {
+      // Ignore malformed ledger data — the reconcile effect will still repair it.
+    }
+    if (!seededFloor && savedLegacyFloor) {
       try {
-        const parsedFloor = Number(JSON.parse(savedFloor));
-        if (Number.isFinite(parsedFloor)) setStepsFloor((current) => Math.max(current, parsedFloor));
+        const parsedFloor = Number(JSON.parse(savedLegacyFloor));
+        if (Number.isFinite(parsedFloor)) seededFloor = parsedFloor;
       } catch {
-        // Ignore malformed floor data — the totalEarnedSteps effect will still reconcile it.
+        // Ignore malformed legacy floor data.
       }
     }
+    if (seededFloor) setStepsFloor((current) => Math.max(current, seededFloor));
   }
 
   async function loadLatestCheckIn() {
@@ -1296,17 +1307,53 @@ export default function HomeScreen() {
   // its own separate "Complete Morning Check-In" prompt in generateQuests().
   const isAfternoonCheckInGateActive = hasEnergyData && afternoonCheckInUnlocked && !afternoonCheckInDoneToday;
 
-  const mandatoryFoodQuest = isAfternoonCheckInGateActive ? null : getMandatoryFoodQuest();
-  const mandatoryEnergyQuest = isAfternoonCheckInGateActive ? null : getMandatoryEnergyQuest();
+  // Single centralized gate state machine (lib/mandatoryGates.ts) — both tap handlers and
+  // rendering below derive from this SAME computed state, so they can never drift out of sync
+  // with each other. completedTitlesToday comes from completedQuests, which is already
+  // day-scoped (see loadTodayCompletions), so a stale prior-day completion can never satisfy
+  // "already done today" and incorrectly suppress — or fail to clear — a gate.
+  const completedTitlesToday = new Set(completedQuests.map((entry) => entry.title));
+  const mandatoryGateState = computeMandatoryGateState({
+    afternoonCheckInRequired: isAfternoonCheckInGateActive,
+    eatenSinceMorning: latestCheckIn?.eatenSinceMorning,
+    fuel: fuelResult.fuel,
+    hasEnergyData,
+    energyYield,
+    completedTitlesToday,
+  });
+  const activeFoodGate = mandatoryGateState.gates.find((gate) => gate.id === "food") ?? null;
+  const activeEnergyGate = mandatoryGateState.gates.find((gate) => gate.id === "energy") ?? null;
+  const mandatoryFoodQuest: Quest | null = activeFoodGate
+    ? {
+        title: MANDATORY_FOOD_QUEST_TITLE,
+        type: "Mandatory",
+        steps: 1,
+        durationMinutes: activeFoodGate.durationMinutes,
+        restoreEnergy: getMandatoryQuestRestoreEnergy(activeFoodGate.durationMinutes),
+        mandatory: true,
+        guide: "luna",
+        description: "It's okay to take a break. Eat so you have enough energy to continue.",
+      }
+    : null;
+  const mandatoryEnergyQuest: Quest | null = activeEnergyGate
+    ? {
+        title: MANDATORY_ENERGY_QUEST_TITLE,
+        type: "Mandatory",
+        steps: 1,
+        durationMinutes: activeEnergyGate.durationMinutes,
+        restoreEnergy: getMandatoryQuestRestoreEnergy(activeEnergyGate.durationMinutes),
+        mandatory: true,
+        guide: "luna",
+        description: "It's okay to take a break. Rest so you have enough energy to continue.",
+      }
+    : null;
   const mandatoryGateQuestCount = (mandatoryFoodQuest ? 1 : 0) + (mandatoryEnergyQuest ? 1 : 0);
   // Wind-down (time-based, see getWindDownQuest) only applies when no Luna gate quest is active.
-  const windDownQuestActive = mandatoryGateQuestCount === 0 ? getWindDownQuest() : null;
-  const mandatoryActive = isAfternoonCheckInGateActive || mandatoryGateQuestCount > 0 || windDownQuestActive !== null;
+  const windDownQuestActive = mandatoryGateQuestCount === 0 && !isAfternoonCheckInGateActive ? getWindDownQuest() : null;
+  const mandatoryActive = mandatoryGateState.active || windDownQuestActive !== null;
   // The food gate and the severe energy tier both lock Recovery-kind items too — the mild
   // energy tier and wind-down leave Recovery open.
-  const mandatoryLocksRecoveryToo =
-    Boolean(mandatoryFoodQuest) ||
-    (mandatoryEnergyQuest?.title === MANDATORY_ENERGY_QUEST_TITLE && mandatoryEnergyQuest?.durationMinutes === MANDATORY_SEVERE_DURATION_MINUTES);
+  const mandatoryLocksRecoveryToo = mandatoryGateState.locksRecovery;
 
   const todayName = getWeekdayName();
 
@@ -1439,69 +1486,6 @@ export default function HomeScreen() {
       ...(suggestedQuest ? [suggestedQuest] : []),
       ...(recoveryStarterActive ? [recoveryStarterActive] : []),
     ];
-  }
-
-  /**
-   * Below 60 energy: mild 15-min mandatory reset (blocks new Progress starts only).
-   * Below 30 energy: severe 30-min mandatory reset (blocks the whole Quest Board).
-   * Only ever one mandatory quest at a time — the severe tier replaces the mild one,
-   * it never stacks a second mandatory quest alongside it.
-   */
-  /**
-   * Gate #3 (priority list in getMandatoryGateQuests below): below 60 energy, a mild 15-min
-   * mandatory reset (blocks new Progress starts only); below 30 energy, a severe 30-min reset
-   * that blocks the whole board. Reuses the existing thresholds/energy-restore math unchanged —
-   * only the title/copy/guide are new (Luna, "Relax to restore energy").
-   */
-  function getMandatoryEnergyQuest(): Quest | null {
-    if (!hasEnergyData) return null;
-    if (energyYield >= MANDATORY_MILD_THRESHOLD) return null;
-
-    const alreadyDone = completedQuests.some((entry) => entry.title === MANDATORY_ENERGY_QUEST_TITLE);
-    if (alreadyDone) return null;
-
-    const isSevere = energyYield < MANDATORY_SEVERE_THRESHOLD;
-    const durationMinutes = isSevere ? MANDATORY_SEVERE_DURATION_MINUTES : MANDATORY_MILD_DURATION_MINUTES;
-    return {
-      title: MANDATORY_ENERGY_QUEST_TITLE,
-      type: "Mandatory",
-      steps: 1,
-      durationMinutes,
-      restoreEnergy: getMandatoryQuestRestoreEnergy(durationMinutes),
-      mandatory: true,
-      guide: "luna",
-      description: "It's okay to take a break. Rest so you have enough energy to continue.",
-    };
-  }
-
-  /**
-   * Gate #2: Afternoon Check-In reported not eating today — a mandatory Luna quest until it's
-   * resolved. Only ever active once today's Afternoon Check-In actually exists (gate #1 in
-   * getMandatoryGateQuests handles "check-in itself missing" first), so `eatenSinceMorning`
-   * here is always today's real answer, never a stale earlier day's.
-   */
-  function getMandatoryFoodQuest(): Quest | null {
-    // Fuel at/below the threshold is the primary trigger (see lib/fuel.ts — a user with no
-    // food logs ever stays at 100/Fueled, so missing history alone never gates them). An
-    // explicit "no" on Afternoon Check-In can also activate it immediately, even if fuel
-    // hasn't decayed that far yet.
-    const fuelGateActive = fuelResult.fuel <= FOOD_GATE_FUEL_THRESHOLD;
-    const checkInGateActive = latestCheckIn?.eatenSinceMorning === false;
-    if (!fuelGateActive && !checkInGateActive) return null;
-    const alreadyDone = completedQuests.some((entry) => entry.title === MANDATORY_FOOD_QUEST_TITLE);
-    if (alreadyDone) return null;
-
-    const durationMinutes = MANDATORY_MILD_DURATION_MINUTES;
-    return {
-      title: MANDATORY_FOOD_QUEST_TITLE,
-      type: "Mandatory",
-      steps: 1,
-      durationMinutes,
-      restoreEnergy: getMandatoryQuestRestoreEnergy(durationMinutes),
-      mandatory: true,
-      guide: "luna",
-      description: "It's okay to take a break. Eat so you have enough energy to continue.",
-    };
   }
 
   /**
@@ -1690,26 +1674,28 @@ export default function HomeScreen() {
       durationMinutes: 30,
     })),
   ];
-  const totalEarnedSteps = computeTotalEarnedSteps({
+  const todayScopedEarnedSteps = computeTodayScopedEarnedSteps({
     dayPlan: dayPlanRaw,
     quickThoughts: queueItems,
     todayCompletions: completedQuests,
-    userStats,
-    affirmationsCount,
   });
+  // Already all-time cumulative on their own (never reset day-to-day), so they're added on
+  // top of the per-day ledger rather than banked into it — banking them too would double
+  // count them on every future day. See reconcileMonotonicTotalSteps.
+  const alwaysCumulativeSteps = affirmationsCount + (userStats.totalSteps ?? 0);
   const completedCount = completedQuests.length;
   const totalCount = allHomeItems.length + completedCount;
-  // Never show/rank a total lower than the highest ever computed — protects against a
-  // transient source (today's completions resetting for a new day, a stale cloud pull,
-  // an edited item) briefly computing a lower number than what the user already saw.
-  const displayedTotalSteps = Math.max(totalEarnedSteps, stepsFloor);
+  // stepsFloor is the sum of the per-day earned-steps ledger (see reconcileMonotonicTotalSteps)
+  // — it actually accumulates across days, unlike a same-day-only recompute maxed against a
+  // single historical peak (the old behavior, which is why totals appeared to stop growing).
+  const displayedTotalSteps = stepsFloor + alwaysCumulativeSteps;
   // Same bonus-inclusive total the Stats page ranks with, so Home and Stats agree.
   const totalStepsForRank = displayedTotalSteps + computeFreshRankBonuses(displayedTotalSteps).rankBonusPool;
   const rankDisplay = stepRank ? `#${stepRank.rank}` : "Unranked";
 
   useEffect(() => {
-    void reconcileMonotonicTotalSteps(totalEarnedSteps).then(setStepsFloor);
-  }, [totalEarnedSteps]);
+    void reconcileMonotonicTotalSteps(todayScopedEarnedSteps).then(setStepsFloor);
+  }, [todayScopedEarnedSteps]);
 
   useEffect(() => {
     if (!profileChecked) return;
@@ -1989,10 +1975,14 @@ export default function HomeScreen() {
                 </View>
               ) : null}
 
-              <TouchableOpacity style={styles.createQuestBtn} onPress={() => setShowQuestChooserModal(true)}>
-                <Text style={styles.createQuestBtnText}>+ CREATE A QUEST</Text>
-              </TouchableOpacity>
-              <Text style={styles.createQuestNote}>Create a quest for today or a day you choose.</Text>
+              {!ldmActive ? (
+                <>
+                  <TouchableOpacity style={styles.createQuestBtn} onPress={() => setShowQuestChooserModal(true)}>
+                    <Text style={styles.createQuestBtnText}>+ CREATE A QUEST</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.createQuestNote}>Create a quest for today or a day you choose.</Text>
+                </>
+              ) : null}
 
               <Modal visible={showQuestChooserModal} transparent animationType="fade" onRequestClose={() => setShowQuestChooserModal(false)}>
                 <View style={styles.chooserBackdrop}>
@@ -3412,8 +3402,8 @@ const styles = StyleSheet.create({
     width: "100%",
     maxWidth: 320,
     borderWidth: 3,
-    borderRadius: 6,
-    backgroundColor: "rgba(8, 12, 22, 0.98)",
+    borderRadius: 8,
+    backgroundColor: "#EAD9B6",
     paddingHorizontal: 16,
     paddingVertical: 16,
     shadowColor: "#000",
@@ -3427,7 +3417,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
   },
   modalTitle: {
-    color: "#F8F1D7",
+    color: "#3D2C18",
     fontSize: 17,
     fontWeight: "900",
     marginTop: 6,
@@ -3463,19 +3453,19 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   modalMeta: {
-    color: "#CBD5E1",
+    color: "#4A3620",
     fontSize: 12,
     fontWeight: "800",
   },
   modalDescription: {
-    color: "#94A3B8",
+    color: "#5C4425",
     fontSize: 12,
     fontWeight: "700",
     lineHeight: 17,
     marginTop: 10,
   },
   recoveryTriggerNote: {
-    color: "#C4A7FF",
+    color: "#5B21B6",
     fontSize: 12,
     fontWeight: "900",
     marginTop: 8,

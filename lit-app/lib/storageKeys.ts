@@ -19,6 +19,16 @@ export const USER_STATS_KEY = "lit_user_stats";
  * computes lower. See reconcileMonotonicTotalSteps in questProgress.ts.
  */
 export const TOTAL_STEPS_FLOOR_KEY = "lit_total_steps_floor";
+/**
+ * Per-quest-day earned-steps ledger: { [questDayKey]: finalStepsEarnedThatDay }, plus a
+ * one-time "__legacy__" carry-forward entry seeded from the old TOTAL_STEPS_FLOOR_KEY value
+ * so existing users never lose steps already earned before this ledger existed. The lifetime
+ * total is the sum of every entry. Each entry only ever ratchets up (see the dedicated
+ * max-per-day merge rule in progressStore.ts), so unlike a single same-day snapshot this
+ * actually accumulates across days instead of freezing at one historical peak. See
+ * reconcileMonotonicTotalSteps in questProgress.ts.
+ */
+export const DAILY_STEPS_LOG_KEY = "lit_daily_steps_log";
 
 /** Local metadata for last-write timestamps per synced storage key. */
 export const PROGRESS_SYNC_META_KEY = "lit_progress_sync_meta";
@@ -34,6 +44,10 @@ export const LEGACY_PROGRESS_KEYS = ["lit_morning_reflections", "lit_sleep_calen
 
 export const LATEST_CHECKIN_KEY = "lit_latest_checkin";
 export const CHECKIN_HISTORY_KEY = "lit_checkin_history";
+/** In-progress Morning Check-In form draft — local-only (device-scoped, not cloud-synced), so
+ *  opening Dream Journal, backgrounding, or refreshing mid-fill never loses answers. Cleared as
+ *  soon as the check-in actually saves. See app/sleep-checkin.tsx. */
+export const MORNING_CHECKIN_DRAFT_KEY = "lit_morning_checkin_draft";
 export const JOURNAL_ENTRIES_KEY = "lit_journal_entries";
 export const DREAM_JOURNAL_KEY = "lit_dream_journal";
 export const PRE_SLEEP_INTENTIONS_KEY = "lit_pre_sleep_intentions";
@@ -89,6 +103,8 @@ export const FOOD_LOGS_KEY = "lit_food_logs";
 export const EVIE_MORNING_QUEST_KEY = "lit_evie_morning_quest";
 /** SleepRoutine — user-edited list of pre-sleep routine steps (Sleep Guide), plus today's checked-off progress. */
 export const SLEEP_ROUTINE_KEY = "lit_sleep_routine";
+/** GuideContextRecord[] — explicit, revocable "Feed to Luna/Evie" consent grants. See lib/guideContext.ts. */
+export const GUIDE_CONTEXT_RECORDS_KEY = "lit_guide_context_records";
 
 /**
  * Canonical synced keys that back the Log History screen. These are the SAME keys the
@@ -126,6 +142,7 @@ export const SYNCABLE_PROGRESS_KEYS = [
   TOMORROW_QUEUE_KEY,
   USER_STATS_KEY,
   TOTAL_STEPS_FLOOR_KEY,
+  DAILY_STEPS_LOG_KEY,
   JOURNAL_ENTRIES_KEY,
   DREAM_JOURNAL_KEY,
   PRE_SLEEP_INTENTIONS_KEY,
@@ -155,6 +172,7 @@ export const SYNCABLE_PROGRESS_KEYS = [
   FOOD_LOGS_KEY,
   EVIE_MORNING_QUEST_KEY,
   SLEEP_ROUTINE_KEY,
+  GUIDE_CONTEXT_RECORDS_KEY,
 ] as const;
 
 export type SyncableProgressKey = (typeof SYNCABLE_PROGRESS_KEYS)[number];
@@ -183,6 +201,7 @@ export const ARRAY_MERGE_PROGRESS_KEYS = new Set<SyncableProgressKey>([
   QUICK_THOUGHT_NOTES_KEY,
   AFFIRMATIONS_KEY,
   FOOD_LOGS_KEY,
+  GUIDE_CONTEXT_RECORDS_KEY,
 ]);
 
 export function isSyncableProgressKey(key: string): key is SyncableProgressKey {

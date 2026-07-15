@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { loadUserLifeProfile, loadLearningMemory, buildStatsInsightSnapshot, buildGuidePatternContext, recordAgentEvent } from "./mylitAgents";
 import { loadLatestEvieAiPathPipeline } from "./evieAiPathPipeline";
+import { loadActiveGuideContext } from "./guideContext";
 import { generatePathPipelineFromLifeProfile, saveDailyQuestSuggestion, type SaveDailyQuestResult } from "./pathPipeline";
 import { persistProgressKeys } from "./progressStore";
 import { AI_LUNA_SUPPORT_SESSIONS_KEY, CHECKIN_HISTORY_KEY, LATEST_CHECKIN_KEY, MISSED_QUESTS_KEY, REFLECTIONS_KEY, TOMORROW_QUEUE_KEY } from "./storageKeys";
@@ -139,7 +140,7 @@ export type RequestLunaSupportResult = { ok: true; record: LunaSupportModifierRe
 
 /** Gathers local context, asks the server route for support + suggestions, and saves the session (suggestions only — no automatic change). */
 export async function requestLunaSupport(userMessage: string): Promise<RequestLunaSupportResult> {
-  const [currentPathPipeline, checkInContext, recentMisses, reflectionSummary, activeQuests, learningMemory, patternContext] = await Promise.all([
+  const [currentPathPipeline, checkInContext, recentMisses, reflectionSummary, activeQuests, learningMemory, patternContext, permittedContext] = await Promise.all([
     loadCurrentPathPipelineSummary(),
     loadCheckInContext(),
     loadRecentMisses(),
@@ -147,10 +148,19 @@ export async function requestLunaSupport(userMessage: string): Promise<RequestLu
     loadActiveQuests(),
     loadLearningMemory(),
     buildGuidePatternContext(),
+    loadActiveGuideContext("luna"),
   ]);
 
+  // Explicit, consent-based context ("Feed to Luna") — never automatic access to any entry.
+  // Folded into the free-text message field (already unstructured, already sent to the model
+  // as-is) rather than a new schema field, so no server-side JSON schema change is needed.
+  const permittedContextNote =
+    permittedContext.length > 0
+      ? `\n\nContext I've explicitly shared with you:\n${permittedContext.map((r) => `- (${r.sourceType}) ${r.sourceTextSnapshot}`).join("\n")}`
+      : "";
+
   const request: LunaSupportModifierRequest = {
-    userMessage: userMessage.trim(),
+    userMessage: `${userMessage.trim()}${permittedContextNote}`,
     currentPathPipeline,
     recentMisses,
     recentEnergy: checkInContext.recentEnergy,

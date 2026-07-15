@@ -1,4 +1,3 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect, useRouter } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -17,12 +16,11 @@ import { GuideInfoModal } from "../components/GuideInfoModal";
 import { formPageContent, formStyles } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
-import { USER_STATS_KEY } from "../lib/questProgress";
 import { persistProgressKeys } from "../lib/progressStore";
 import { DREAM_JOURNAL_KEY } from "../lib/storageKeys";
 import { HistoryModal } from "../components/HistoryModal";
 import { normalizeDreamLogs } from "../lib/logHistory";
-import { recordAgentEvent } from "../lib/mylitAgents";
+import { loadDreamEntries, saveDreamEntry, type DreamEntry } from "../lib/dreamJournal";
 
 const LUNA_DREAM_BULLETS = [
   "Dream Journal helps you capture dreams quickly after waking.",
@@ -32,14 +30,6 @@ const LUNA_DREAM_BULLETS = [
   "Even a single image, fragment, or feeling is worth recording.",
   "Over time, entries may help you notice patterns in your dream life.",
 ];
-
-type DreamEntry = {
-  id: string;
-  title: string;
-  summary: string;
-  feeling: string;
-  createdAt: string;
-};
 
 const pixelFont = Platform.select({
   ios: "Menlo",
@@ -120,47 +110,16 @@ export default function DreamJournalScreen() {
     }
   }
 
-  async function earnSteps(count: number) {
-    const saved = await AsyncStorage.getItem(USER_STATS_KEY);
-    const current: Record<string, unknown> = saved ? JSON.parse(saved) : {};
-    await persistProgressKeys({
-      [USER_STATS_KEY]: JSON.stringify({ ...current, totalSteps: Number(current.totalSteps ?? 0) + count }),
-    });
-  }
-
   async function loadEntries() {
-    const saved = await AsyncStorage.getItem(DREAM_JOURNAL_KEY);
-
-    if (!saved) return;
-
-    try {
-      const parsed = JSON.parse(saved);
-      setEntries(Array.isArray(parsed) ? parsed : []);
-    } catch {
-      setEntries([]);
-    }
-  }
-
-  async function saveEntries(nextEntries: DreamEntry[]) {
-    setEntries(nextEntries);
-    await persistProgressKeys({ [DREAM_JOURNAL_KEY]: JSON.stringify(nextEntries) });
+    setEntries(await loadDreamEntries());
   }
 
   async function saveDream() {
-    if (!title.trim() && !summary.trim()) return;
+    const entry = await saveDreamEntry({ title, summary, feeling });
+    if (!entry) return;
 
-    const entry: DreamEntry = {
-      id: String(Date.now()),
-      title: title.trim(),
-      summary: summary.trim(),
-      feeling,
-      createdAt: new Date().toISOString(),
-    };
-
-    await saveEntries([entry, ...entries]);
-    await earnSteps(1);
+    setEntries((current) => [entry, ...current]);
     await successHaptic();
-    void recordAgentEvent({ type: "dream_saved", sourcePage: "dream-journal", relatedItemId: entry.id, stepDelta: 1, metadata: { feeling } });
 
     setTitle("");
     setSummary("");
@@ -173,7 +132,8 @@ export default function DreamJournalScreen() {
 
   async function clearDreams() {
     await lightHaptic();
-    await saveEntries([]);
+    setEntries([]);
+    await persistProgressKeys({ [DREAM_JOURNAL_KEY]: JSON.stringify([]) });
   }
 
   return (

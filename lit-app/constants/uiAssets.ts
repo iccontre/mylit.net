@@ -1,3 +1,6 @@
+/** Shared heading text for every Log History entry point (page header, entry-point card, etc). */
+export const LOG_HISTORY_HEADING = "📜 LOG HISTORY";
+
 export const uiAssets = {
   backgrounds: {
     default: require("../assets/ui/backgrounds/default-background.png"),

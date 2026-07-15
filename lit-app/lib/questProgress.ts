@@ -11,6 +11,7 @@ import {
   TOMORROW_QUEUE_KEY,
   USER_STATS_KEY,
   TOTAL_STEPS_FLOOR_KEY,
+  DAILY_STEPS_LOG_KEY,
 } from "./storageKeys";
 import {
   collectDayPlanScheduledItems,
@@ -47,6 +48,7 @@ export {
   TOMORROW_QUEUE_KEY,
   USER_STATS_KEY,
   TOTAL_STEPS_FLOOR_KEY,
+  DAILY_STEPS_LOG_KEY,
 };
 export {
   FORCED_RECOVERY_DURATION_MINUTES,
@@ -997,19 +999,21 @@ export function computeItemStepsFromSources(dayPlan: unknown, quickThoughts: unk
   return total;
 }
 
-export function computeTotalEarnedSteps(input: {
+/**
+ * Steps from TODAY's live, day-scoped sources only (today's quest / checked-off checklist
+ * items / completed quick thoughts / today's completion entries). This resets to ~0 every
+ * new quest day BY DESIGN (see loadTodayCompletions) — it is deliberately NOT a lifetime
+ * total. It is the input reconcileMonotonicTotalSteps banks into a persistent per-day ledger
+ * so steps actually accumulate across days instead of resetting; see that function for why a
+ * same-day-only recompute can't be used as a lifetime total on its own.
+ */
+export function computeTodayScopedEarnedSteps(input: {
   dayPlan: unknown;
   quickThoughts: unknown;
   todayCompletions: CompletionEntry[];
-  userStats?: { totalSteps?: number };
-  /** Count of all-time saved affirmations — +1 step each, folded in the same way checklist/quest
-   *  completions are: recomputed fresh from the live source, then ratcheted by the monotonic
-   *  floor, so deleting/clearing affirmations later never subtracts steps already earned. */
-  affirmationsCount?: number;
 }): number {
   const seen = new Set<string>();
   let total = computeItemStepsFromSources(input.dayPlan, input.quickThoughts);
-  total += safeNumber(input.affirmationsCount, 0);
 
   const plan = input.dayPlan as Record<string, unknown> | null;
   if (plan?.todayQuest) {
@@ -1048,31 +1052,77 @@ export function computeTotalEarnedSteps(input: {
     total += entry.steps;
   }
 
-  return total + safeNumber(input.userStats?.totalSteps, 0);
+  return total;
+}
+
+export function computeTotalEarnedSteps(input: {
+  dayPlan: unknown;
+  quickThoughts: unknown;
+  todayCompletions: CompletionEntry[];
+  userStats?: { totalSteps?: number };
+  /** Count of all-time saved affirmations — +1 step each, folded in the same way checklist/quest
+   *  completions are: recomputed fresh from the live source, then ratcheted by the monotonic
+   *  floor, so deleting/clearing affirmations later never subtracts steps already earned. */
+  affirmationsCount?: number;
+}): number {
+  return (
+    computeTodayScopedEarnedSteps(input) +
+    safeNumber(input.affirmationsCount, 0) +
+    safeNumber(input.userStats?.totalSteps, 0)
+  );
 }
 
 /**
  * Total earned steps must never decrease — not across days, refreshes, sign-in/out, or
- * cloud merges. computeTotalEarnedSteps re-derives its total from live sources (Day Plan,
- * Quick Thoughts, today's completions) on every call; if any of those sources ever shrinks
- * (today's completions resetting for a new day, an item being edited/removed, etc.) the
- * freshly computed number could dip below what the user already saw.
+ * cloud merges — AND must actually ACCUMULATE across days, not just protect against
+ * same-day dips. computeTodayScopedEarnedSteps re-derives its total from live sources (Day
+ * Plan, Quick Thoughts, today's completions) that are deliberately reset every new quest
+ * day; taking `max(todayScopedLive, allTimeHighWaterMark)` (the old behavior) meant a fresh
+ * day's live total could almost never exceed a historical peak reached on a single best day,
+ * so the displayed total appeared permanently frozen once that peak was hit — the root cause
+ * of steps never increasing again after an early high point.
  *
- * This ratchets a SEPARATE high-water-mark key (TOTAL_STEPS_FLOOR_KEY) up whenever the
- * fresh total exceeds it, and returns the higher of the two — never lower than what was
- * already recorded. Deliberately NOT stored back into USER_STATS_KEY.totalSteps: that field
- * is itself one of the inputs computeTotalEarnedSteps adds the live sources on top of, so
- * writing the combined total back into it would double-count those live sources on every
- * subsequent call.
+ * The fix: bank EVERY day's own final total into a persistent per-day ledger
+ * (DAILY_STEPS_LOG_KEY: { [questDayKey]: stepsThatDay }) and return the SUM over all days,
+ * not the max of one day against history. Each day's own entry is itself a same-day
+ * monotonic floor (never decreases within that day), and merges across devices by taking the
+ * max per day (see progressStore.ts), so the ledger is idempotent and cross-device safe. A
+ * one-time "__legacy__" entry carries forward any pre-existing TOTAL_STEPS_FLOOR_KEY value so
+ * users who already had steps banked under the old scheme never lose them.
  */
-export async function reconcileMonotonicTotalSteps(freshTotal: number): Promise<number> {
-  const raw = await AsyncStorage.getItem(TOTAL_STEPS_FLOOR_KEY);
-  const storedFloor = safeNumber(raw ? JSON.parse(raw) : 0, 0);
-  const nextFloor = Math.max(Math.round(freshTotal), storedFloor);
-  if (nextFloor !== storedFloor) {
-    await persistProgressKeys({ [TOTAL_STEPS_FLOOR_KEY]: JSON.stringify(nextFloor) });
+export async function reconcileMonotonicTotalSteps(todayScopedLive: number): Promise<number> {
+  const today = getTodayKey();
+  const raw = await AsyncStorage.getItem(DAILY_STEPS_LOG_KEY);
+  let log: Record<string, number> = {};
+  try {
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) log = parsed;
+  } catch {
+    log = {};
   }
-  return nextFloor;
+
+  let dirty = false;
+  if (Object.keys(log).length === 0) {
+    const legacyRaw = await AsyncStorage.getItem(TOTAL_STEPS_FLOOR_KEY);
+    const legacyFloor = safeNumber(legacyRaw ? JSON.parse(legacyRaw) : 0, 0);
+    if (legacyFloor > 0) {
+      log = { __legacy__: legacyFloor };
+      dirty = true;
+    }
+  }
+
+  const existingToday = safeNumber(log[today], 0);
+  const nextToday = Math.max(Math.round(todayScopedLive), existingToday);
+  if (nextToday !== existingToday) {
+    log = { ...log, [today]: nextToday };
+    dirty = true;
+  }
+
+  if (dirty) {
+    await persistProgressKeys({ [DAILY_STEPS_LOG_KEY]: JSON.stringify(log) });
+  }
+
+  return Object.values(log).reduce((sum: number, value) => sum + safeNumber(value, 0), 0);
 }
 
 /** Every SKILL_TIER_SIZE earned steps unlocks the next Skill tier. */

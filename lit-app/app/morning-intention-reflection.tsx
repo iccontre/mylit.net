@@ -139,6 +139,7 @@ export default function MorningIntentionReflectionScreen() {
   const [morningSupport, setMorningSupport] = useState<string[]>([]);
   const [showInfo, setShowInfo] = useState(false);
   const [now, setNow] = useState<Date>(() => new Date());
+  const [saving, setSaving] = useState(false);
 
   const morningUnlocked = now.getHours() >= MORNING_UNLOCK_HOUR;
   const sleepTimesEntered = sleptTimeInput.trim() !== "" && wokeTimeInput.trim() !== "";
@@ -221,7 +222,8 @@ export default function MorningIntentionReflectionScreen() {
   }
 
   async function saveReflection() {
-    if (!canSaveReflection || effectiveSleepMinutes === null) return;
+    if (saving || !canSaveReflection || effectiveSleepMinutes === null) return;
+    setSaving(true);
     const todayKey = getTodayKey();
 
     const saved = await AsyncStorage.getItem(MORNING_INTENTION_REFLECTIONS_KEY);
@@ -249,25 +251,29 @@ export default function MorningIntentionReflectionScreen() {
       createdAt: new Date().toISOString(),
     };
 
-    await persistProgressKeys({
-      [MORNING_INTENTION_REFLECTIONS_KEY]: JSON.stringify([reflection, ...history]),
-    });
+    try {
+      await persistProgressKeys({
+        [MORNING_INTENTION_REFLECTIONS_KEY]: JSON.stringify([reflection, ...history]),
+      });
 
-    // +1 for completing check-in (always, once valid) plus the sleep-duration bonus tier.
-    if (!alreadyAwardedToday) {
-      await earnSteps(1 + sleepBonusSteps);
+      // +1 for completing check-in (always, once valid) plus the sleep-duration bonus tier.
+      if (!alreadyAwardedToday) {
+        await earnSteps(1 + sleepBonusSteps);
+      }
+
+      await successHaptic();
+      void recordAgentEvent({
+        type: "morning_reflection_saved",
+        sourcePage: "morning-intention-reflection",
+        relatedItemId: reflection.id,
+        durationMinutes: effectiveSleepMinutes ?? undefined,
+        stepDelta: alreadyAwardedToday ? undefined : 1 + sleepBonusSteps,
+        metadata: { interrupted: sleepInterrupted === "yes" },
+      });
+      router.push("/");
+    } catch {
+      setSaving(false);
     }
-
-    await successHaptic();
-    void recordAgentEvent({
-      type: "morning_reflection_saved",
-      sourcePage: "morning-intention-reflection",
-      relatedItemId: reflection.id,
-      durationMinutes: effectiveSleepMinutes ?? undefined,
-      stepDelta: alreadyAwardedToday ? undefined : 1 + sleepBonusSteps,
-      metadata: { interrupted: sleepInterrupted === "yes" },
-    });
-    router.push("/");
   }
 
   function toggleMorningSupport(option: string) {
@@ -441,11 +447,11 @@ export default function MorningIntentionReflectionScreen() {
                 </View>
 
                 <TouchableOpacity
-                  style={[styles.saveButton, { borderColor: theme.accent }, !canSaveReflection && styles.saveButtonDisabled]}
-                  disabled={!canSaveReflection}
+                  style={[styles.saveButton, { borderColor: theme.accent }, (!canSaveReflection || saving) && styles.saveButtonDisabled]}
+                  disabled={!canSaveReflection || saving}
                   onPress={saveReflection}
                 >
-                  <Text style={styles.saveButtonText}>{canSaveReflection ? "Save Reflection" : "Enter Sleep & Wake Times"}</Text>
+                  <Text style={styles.saveButtonText}>{saving ? "Saving…" : canSaveReflection ? "Save Reflection" : "Enter Sleep & Wake Times"}</Text>
                 </TouchableOpacity>
               </>
             )}

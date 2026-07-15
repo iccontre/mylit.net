@@ -685,6 +685,40 @@ export type LunaSupportModifierRecord = {
 
 export type GuideName = "evie" | "luna";
 
+// ---------------------------------------------------------------------------
+// Explicit, consent-based guide context sharing ("Feed to Luna" / "Feed to Evie"). Neither
+// guide has automatic access to any private entry — a GuideContextRecord only exists once the
+// user has previewed the exact text, been told how it may be used, and confirmed. Revoking sets
+// revokedAt and the record is excluded from every future orchestration pass; it is never
+// deleted outright so "what did I ever share" stays auditable. See lib/guideContext.ts.
+// ---------------------------------------------------------------------------
+
+export type GuideContextSourceType =
+  | "journal"
+  | "reflection"
+  | "dream"
+  | "preSleepIntention"
+  | "morningIntentionReflection"
+  | "awarenessCheck"
+  | "affirmation"
+  | "lifeProfile"
+  | "pathGoal";
+
+export type GuideContextRecord = {
+  id: string;
+  userId: string;
+  guide: GuideName;
+  sourceType: GuideContextSourceType;
+  sourceId: string;
+  /** The exact text previewed and consented to — never re-derived later from the live entry,
+   *  so an edit/deletion of the original entry can't silently change what was already shared. */
+  sourceTextSnapshot: string;
+  permissionGrantedAt: string;
+  revokedAt?: string;
+  updatedAt: string;
+  schemaVersion: number;
+};
+
 export type GuideMemoryUpdateType =
   | "new_goal"
   | "changed_goal"

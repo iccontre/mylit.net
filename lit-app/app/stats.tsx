@@ -16,14 +16,14 @@ import {
   type AppStateStatus,
 } from "react-native";
 
-import { uiAssets } from "../constants/uiAssets";
+import { LOG_HISTORY_HEADING, uiAssets } from "../constants/uiAssets";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { getSession, signOut } from "../lib/auth";
 import {
   computeFreshRankBonuses,
   computeItemStepsFromSources,
-  computeTotalEarnedSteps,
+  computeTodayScopedEarnedSteps,
   loadTodayCompletions,
   reconcileMonotonicTotalSteps,
   SKILL_TIER_SIZE,
@@ -417,17 +417,18 @@ export default function StatsScreen() {
     // This guarantees: if earnedSteps === 0, displayTotal === 0. No bonus at Level 1.
     const earnedSteps = computeItemStepsFromSources(dayPlan, quickThoughts);
     const todayCompletions = await loadTodayCompletions();
-    const freshEarnedSteps = computeTotalEarnedSteps({
+    const todayScopedEarnedSteps = computeTodayScopedEarnedSteps({
       dayPlan,
       quickThoughts,
       todayCompletions,
-      userStats,
-      affirmationsCount: Array.isArray(affirmations) ? affirmations.length : 0,
     });
-    // Never show a total lower than the highest ever computed (shared floor with Home —
-    // see reconcileMonotonicTotalSteps) so a transient source computing lower never reads
-    // as "my steps went down."
-    const displayEarnedSteps = await reconcileMonotonicTotalSteps(freshEarnedSteps);
+    const affirmationsCount = Array.isArray(affirmations) ? affirmations.length : 0;
+    // Already all-time cumulative on their own — added on top of the per-day ledger rather
+    // than banked into it (banking them too would double count them every future day).
+    const alwaysCumulativeSteps = affirmationsCount + safeNumber(userStats.totalSteps, 0);
+    // Same authoritative per-day ledger Home reads (see reconcileMonotonicTotalSteps) — this
+    // actually accumulates across days instead of freezing at one historical peak.
+    const displayEarnedSteps = (await reconcileMonotonicTotalSteps(todayScopedEarnedSteps)) + alwaysCumulativeSteps;
     const { rankBonusPool, awardedThresholds } = computeFreshRankBonuses(displayEarnedSteps);
     const prevAwarded = Array.isArray(userStats.rankBonusesAwarded) ? userStats.rankBonusesAwarded : [];
     const hasNewBonuses = awardedThresholds.some(t => !prevAwarded.includes(t));
@@ -555,8 +556,9 @@ export default function StatsScreen() {
               <ChestCard accent="green" icon="🛡️" title="SKILL PROGRESS" subtitle="Steps, level, and next skill unlock." meta={`${computed.totalSteps} / ${computed.nextRankAt} · ${computed.percentToNext}%`} onPress={() => setActivePanel("skill")} onInfo={() => setActiveInfo("skill")} />
               <ChestCard accent="purple" icon="🏆" title="RANK" subtitle="Your steps vs other players." meta={stepRank ? `#${stepRank.rank} of ${stepRank.totalPlayers}` : "Sign in to rank"} onPress={() => setActivePanel("rank")} onInfo={() => setActiveInfo("rank")} />
               <ChestCard accent="gold" icon="📊" title="BEHAVIOR" subtitle="Routines, sleep & cognitive habits." meta={`${computed.progressDays} progress · ${computed.recoveryDays} recovery`} onPress={() => setActivePanel("behavior")} onInfo={() => setActiveInfo("behavior")} />
-              <ChestCard accent="purple" icon="📖" title="LOG HISTORY" subtitle="Journals, reflections, meditations, dreams & intentions." meta="Saved to your account · synced across devices" onPress={() => router.push("/log-history")} />
+              <ChestCard accent="purple" icon="📖" title={LOG_HISTORY_HEADING} subtitle="Journals, reflections, meditations, dreams & intentions." meta="Saved to your account · synced across devices" onPress={() => router.push("/log-history")} />
               <ChestCard accent="green" icon="🧭" title="EDIT MY LIFE PROFILE" subtitle="Name, goals, obstacles, and how Evie/Luna should support you." meta="Optional · helps Evie and Luna understand you" onPress={() => router.push("/life-profile")} />
+              <ChestCard accent="purple" icon="📜" title="GUIDE CONTEXT" subtitle="What you've shared with Luna and Evie — and remove any of it." meta="Explicit, revocable · nothing is shared automatically" onPress={() => router.push("/guide-context")} />
 
               <TouchableOpacity style={styles.learningLoopButton} onPress={() => setShowLearningLoopModal(true)}>
                 <Text style={styles.learningLoopButtonText}>🔁 MYLIT LEARNING LOOP</Text>

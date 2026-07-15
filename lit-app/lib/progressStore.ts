@@ -16,6 +16,7 @@ import {
   SYNCABLE_PROGRESS_KEYS,
   USER_STATS_KEY,
   TOTAL_STEPS_FLOOR_KEY,
+  DAILY_STEPS_LOG_KEY,
   type SyncableProgressKey,
   DAY_PLAN_KEY,
   MISSED_QUESTS_KEY,
@@ -287,6 +288,23 @@ export async function backupLocalProgressNow(): Promise<string> {
   return backupKey;
 }
 
+/**
+ * { [questDayKey]: stepsEarnedThatDay } — merge per-day, keeping the higher value for each
+ * day present on either side. Never additive across sides (that would double-count the same
+ * day's steps if both devices computed it independently); each day's own value is itself
+ * already a same-day monotonic floor, so max-per-key is safe, idempotent, and commutative.
+ * Exported for direct unit testing (two-device convergence).
+ */
+export function mergeDailyStepsLog(localRaw: string, cloudRaw: string): string {
+  const local = parseJson<Record<string, number>>(localRaw, {});
+  const cloud = parseJson<Record<string, number>>(cloudRaw, {});
+  const merged: Record<string, number> = { ...local };
+  for (const [day, cloudSteps] of Object.entries(cloud)) {
+    merged[day] = Math.max(safeNumber(merged[day], 0), safeNumber(cloudSteps, 0));
+  }
+  return JSON.stringify(merged);
+}
+
 /** Exported for regression testing only (see scripts/checklist-sync.regression.mjs). */
 export function mergeJsonArrays(localRaw: string, cloudRaw: string): string {
   const local = parseJson<unknown[]>(localRaw, []);
@@ -313,6 +331,18 @@ export function mergeJsonArrays(localRaw: string, cloudRaw: string): string {
       return;
     }
     if (existingDeleted && !rowDeleted) {
+      return;
+    }
+    // Same one-way ratchet for consent revocation (see GuideContextRecord.revokedAt) — a
+    // device that hasn't seen the revocation yet must never resurrect access the user already
+    // withdrew elsewhere.
+    const existingRevoked = Boolean(existing.revokedAt);
+    const rowRevoked = Boolean(row.revokedAt);
+    if (rowRevoked && !existingRevoked) {
+      merged.set(id, row);
+      return;
+    }
+    if (existingRevoked && !rowRevoked) {
       return;
     }
     const existingCompleted = Boolean(existing.completedAt || existing.status === "completed");
@@ -500,6 +530,11 @@ function mergePayload(
   if (key === TOTAL_STEPS_FLOOR_KEY) {
     // A plain monotonic number — always keep the higher of the two sides.
     const payload = String(Math.max(safeNumber(parseJson(localRaw, 0)), safeNumber(parseJson(cloudRaw, 0))));
+    return { payload, updatedAt: new Date(Math.max(localAt, cloudAt, Date.now())).toISOString() };
+  }
+
+  if (key === DAILY_STEPS_LOG_KEY) {
+    const payload = mergeDailyStepsLog(localRaw, cloudRaw);
     return { payload, updatedAt: new Date(Math.max(localAt, cloudAt, Date.now())).toISOString() };
   }
 

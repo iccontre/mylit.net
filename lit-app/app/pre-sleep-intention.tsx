@@ -74,6 +74,7 @@ export default function PreSleepIntentionScreen() {
   const [support, setSupport] = useState<string[]>([]);
   const [showInfo, setShowInfo] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   async function successHaptic() {
     try {
@@ -92,41 +93,46 @@ export default function PreSleepIntentionScreen() {
   }
 
   async function saveIntention() {
-    if (!intention.trim()) return;
+    if (saving || !intention.trim()) return;
+    setSaving(true);
 
-    const todayKey = getTodayKey();
-    const saved = await AsyncStorage.getItem(PRE_SLEEP_INTENTIONS_KEY);
-    const history: PreSleepIntention[] = saved ? JSON.parse(saved) : [];
-    const alreadyEarnedToday = history.some((past) => past.date === todayKey);
+    try {
+      const todayKey = getTodayKey();
+      const saved = await AsyncStorage.getItem(PRE_SLEEP_INTENTIONS_KEY);
+      const history: PreSleepIntention[] = saved ? JSON.parse(saved) : [];
+      const alreadyEarnedToday = history.some((past) => past.date === todayKey);
 
-    const entry: PreSleepIntention = {
-      id: String(Date.now()),
-      date: todayKey,
-      intention: intention.trim(),
-      feeling,
-      support,
-      createdAt: new Date().toISOString(),
-    };
+      const entry: PreSleepIntention = {
+        id: String(Date.now()),
+        date: todayKey,
+        intention: intention.trim(),
+        feeling,
+        support,
+        createdAt: new Date().toISOString(),
+      };
 
-    await persistProgressKeys({
-      [PRE_SLEEP_INTENTIONS_KEY]: JSON.stringify([entry, ...history]),
-      [LATEST_PRE_SLEEP_INTENTION_KEY]: JSON.stringify(entry),
-    });
-    // Only the first save of the day earns the step — editing/resaving today's
-    // intention should not award it again.
-    if (!alreadyEarnedToday) {
-      await earnSteps(1);
+      await persistProgressKeys({
+        [PRE_SLEEP_INTENTIONS_KEY]: JSON.stringify([entry, ...history]),
+        [LATEST_PRE_SLEEP_INTENTION_KEY]: JSON.stringify(entry),
+      });
+      // Only the first save of the day earns the step — editing/resaving today's
+      // intention should not award it again.
+      if (!alreadyEarnedToday) {
+        await earnSteps(1);
+      }
+      await successHaptic();
+      void recordAgentEvent({
+        type: "pre_sleep_intention_saved",
+        sourcePage: "pre-sleep-intention",
+        relatedItemId: entry.id,
+        stepDelta: alreadyEarnedToday ? undefined : 1,
+        metadata: { feeling },
+      });
+
+      router.push("/");
+    } catch {
+      setSaving(false);
     }
-    await successHaptic();
-    void recordAgentEvent({
-      type: "pre_sleep_intention_saved",
-      sourcePage: "pre-sleep-intention",
-      relatedItemId: entry.id,
-      stepDelta: alreadyEarnedToday ? undefined : 1,
-      metadata: { feeling },
-    });
-
-    router.push("/");
   }
 
   function toggleSupport(option: string) {
@@ -210,8 +216,8 @@ export default function PreSleepIntentionScreen() {
                 <Text key={`helper-${opt}`} style={[styles.supportHelperText, { color: theme.soft }]}>{SUPPORT_HELPER_TEXT[opt]}</Text>
               ))}
 
-              <TouchableOpacity style={[styles.saveButton, { borderColor: theme.accent }]} onPress={saveIntention}>
-                <Text style={styles.saveButtonText}>Save Intention · +1 Step</Text>
+              <TouchableOpacity style={[styles.saveButton, { borderColor: theme.accent }, saving && { opacity: 0.6 }]} disabled={saving} onPress={saveIntention}>
+                <Text style={styles.saveButtonText}>{saving ? "Saving…" : "Save Intention · +1 Step"}</Text>
               </TouchableOpacity>
             </View>
 

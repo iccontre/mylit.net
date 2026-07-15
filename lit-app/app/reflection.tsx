@@ -60,26 +60,33 @@ export default function ReflectionScreen() {
   const [whatGotInTheWay, setWhatGotInTheWay] = useState("");
   const [whatWasOff, setWhatWasOff] = useState("");
   const [smallerVersion, setSmallerVersion] = useState("");
+  const [saving, setSaving] = useState(false);
 
   async function saveReflection() {
+    if (saving) return;
     if (!whatGotInTheWay.trim() && !whatWasOff.trim() && !smallerVersion.trim()) return;
+    setSaving(true);
 
-    const newEntry: ReflectionEntry = {
-      id: String(Date.now()),
-      quest,
-      whatGotInTheWay: whatGotInTheWay.trim(),
-      whatWasOff: whatWasOff.trim(),
-      smallerVersion: smallerVersion.trim(),
-      nextTry: smallerVersion.trim(),
-      createdAt: new Date().toISOString(),
-    };
+    try {
+      const newEntry: ReflectionEntry = {
+        id: String(Date.now()),
+        quest,
+        whatGotInTheWay: whatGotInTheWay.trim(),
+        whatWasOff: whatWasOff.trim(),
+        smallerVersion: smallerVersion.trim(),
+        nextTry: smallerVersion.trim(),
+        createdAt: new Date().toISOString(),
+      };
 
-    const saved = await AsyncStorage.getItem(REFLECTIONS_KEY);
-    const parsed: ReflectionEntry[] = saved ? JSON.parse(saved) : [];
-    const next = [newEntry, ...parsed];
+      const saved = await AsyncStorage.getItem(REFLECTIONS_KEY);
+      const parsed: ReflectionEntry[] = saved ? JSON.parse(saved) : [];
+      const next = [newEntry, ...parsed];
 
-    await persistProgressKeys({ [REFLECTIONS_KEY]: JSON.stringify(next) });
-    router.push("/");
+      await persistProgressKeys({ [REFLECTIONS_KEY]: JSON.stringify(next) });
+      router.push("/");
+    } catch {
+      setSaving(false);
+    }
   }
 
   return (
@@ -153,11 +160,11 @@ export default function ReflectionScreen() {
             </View>
 
             <TouchableOpacity
-              style={[styles.primaryBtn, !whatGotInTheWay.trim() && !whatWasOff.trim() && !smallerVersion.trim() && { opacity: 0.5 }]}
-              disabled={!whatGotInTheWay.trim() && !whatWasOff.trim() && !smallerVersion.trim()}
+              style={[styles.primaryBtn, (saving || (!whatGotInTheWay.trim() && !whatWasOff.trim() && !smallerVersion.trim())) && { opacity: 0.5 }]}
+              disabled={saving || (!whatGotInTheWay.trim() && !whatWasOff.trim() && !smallerVersion.trim())}
               onPress={saveReflection}
             >
-              <Text style={styles.primaryText}>Save Reflection</Text>
+              <Text style={styles.primaryText}>{saving ? "Saving…" : "Save Reflection"}</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={[styles.secondaryBtn, { marginBottom: 8 }]} onPress={() => setShowHistory(true)}>

@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Image,
   Platform,
@@ -13,12 +13,13 @@ import {
 } from "react-native";
 
 import { FormScreen } from "../components/FormScreen";
+import { DreamJournalEntryModal } from "../components/DreamJournalEntryModal";
 import { uiAssets } from "../constants/uiAssets";
 import { formPageContent } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { persistProgressKeys } from "../lib/progressStore";
-import { CHECKIN_HISTORY_KEY, LATEST_CHECKIN_KEY } from "../lib/storageKeys";
+import { CHECKIN_HISTORY_KEY, LATEST_CHECKIN_KEY, MORNING_CHECKIN_DRAFT_KEY } from "../lib/storageKeys";
 import { syncDailySnapshot } from "../lib/progressSync";
 import {
   computeAfternoonUnlockLabel,
@@ -36,6 +37,20 @@ import type { WakeRhythm } from "../lib/agentTypes";
 type CheckInMode = "Recovery" | "Progress";
 type CheckInType = "morning" | "afternoon";
 type ModeState = CheckInMode | "Neutral";
+
+type MorningCheckInDraft = {
+  sleptTimeInput: string;
+  sleepQuality: string;
+  mood: string;
+  stress: string;
+  currentEnergyFeeling: string;
+  wakeTime: string;
+  sleepInterrupted: "yes" | "no" | "";
+  interruptionWakeInput: string;
+  interruptionSleepAgainInput: string;
+  dreamedTonight: "yes" | "no" | "";
+  todayIntentText: string;
+};
 
 type CheckIn = {
   id: string;
@@ -236,6 +251,57 @@ export default function SleepCheckInScreen() {
   const [caffeineTime, setCaffeineTime] = useState("");
   const [afternoonUnlockLabel, setAfternoonUnlockLabel] = useState(DEFAULT_AFTERNOON_UNLOCK_TIME);
   const [afternoonUnlockChecked, setAfternoonUnlockChecked] = useState(false);
+  const [showDreamJournalModal, setShowDreamJournalModal] = useState(false);
+
+  // Restore an unfinished Morning Check-In draft (e.g. app was backgrounded, refreshed, or the
+  // user opened Dream Journal mid-form) — restored ONCE on mount, before the user types
+  // anything new, and only for the morning flow (afternoon has no draft).
+  const draftRestoredRef = useRef(false);
+  useEffect(() => {
+    if (checkInType === "afternoon" || draftRestoredRef.current) return;
+    draftRestoredRef.current = true;
+    void (async () => {
+      const raw = await AsyncStorage.getItem(MORNING_CHECKIN_DRAFT_KEY);
+      if (!raw) return;
+      try {
+        const draft = JSON.parse(raw) as Partial<MorningCheckInDraft>;
+        if (draft.sleptTimeInput) setSleptTimeInput(draft.sleptTimeInput);
+        if (draft.sleepQuality) setSleepQuality(draft.sleepQuality);
+        if (draft.mood) setMood(draft.mood);
+        if (draft.stress) setStress(draft.stress);
+        if (draft.currentEnergyFeeling) setCurrentEnergyFeeling(draft.currentEnergyFeeling);
+        if (draft.wakeTime) setWakeTime(draft.wakeTime);
+        if (draft.sleepInterrupted) setSleepInterrupted(draft.sleepInterrupted);
+        if (draft.interruptionWakeInput) setInterruptionWakeInput(draft.interruptionWakeInput);
+        if (draft.interruptionSleepAgainInput) setInterruptionSleepAgainInput(draft.interruptionSleepAgainInput);
+        if (draft.dreamedTonight) setDreamedTonight(draft.dreamedTonight);
+        if (draft.todayIntentText) setTodayIntentText(draft.todayIntentText);
+      } catch {
+        // Malformed draft — safe to ignore, the form just starts blank.
+      }
+    })();
+  }, [checkInType]);
+
+  // Autosave the draft (debounced) any time a morning field changes, so backgrounding/refresh/
+  // opening Dream Journal never loses what's already been entered.
+  const draftSaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (checkInType === "afternoon" || !draftRestoredRef.current) return;
+    const draft: MorningCheckInDraft = {
+      sleptTimeInput, sleepQuality, mood, stress, currentEnergyFeeling, wakeTime,
+      sleepInterrupted, interruptionWakeInput, interruptionSleepAgainInput, dreamedTonight, todayIntentText,
+    };
+    if (draftSaveTimeout.current) clearTimeout(draftSaveTimeout.current);
+    draftSaveTimeout.current = setTimeout(() => {
+      void AsyncStorage.setItem(MORNING_CHECKIN_DRAFT_KEY, JSON.stringify(draft));
+    }, 400);
+    return () => {
+      if (draftSaveTimeout.current) clearTimeout(draftSaveTimeout.current);
+    };
+  }, [
+    checkInType, sleptTimeInput, sleepQuality, mood, stress, currentEnergyFeeling, wakeTime,
+    sleepInterrupted, interruptionWakeInput, interruptionSleepAgainInput, dreamedTonight, todayIntentText,
+  ]);
 
   useEffect(() => {
     loadLatestCheckIn();
@@ -475,6 +541,12 @@ export default function SleepCheckInScreen() {
       [LATEST_CHECKIN_KEY]: JSON.stringify(checkIn),
       [CHECKIN_HISTORY_KEY]: JSON.stringify(nextHistory),
     });
+
+    if (!isAfternoon) {
+      // Submission succeeded — the draft's job is done. Idempotent: removing an already-gone
+      // key is a safe no-op, so a retry/refresh after this point never errors.
+      await AsyncStorage.removeItem(MORNING_CHECKIN_DRAFT_KEY);
+    }
 
     if (!isAfternoon && wakeTime.trim()) {
       void recordWakeTimeForRhythm(wakeTime.trim());
@@ -764,7 +836,7 @@ export default function SleepCheckInScreen() {
                       <Text style={styles.choiceText}>No</Text>
                     </TouchableOpacity>
                   </View>
-                  <TouchableOpacity style={[styles.dreamJournalButton, { borderColor: theme.accent }]} onPress={() => router.push("/dream-journal")}>
+                  <TouchableOpacity style={[styles.dreamJournalButton, { borderColor: theme.accent }]} onPress={() => setShowDreamJournalModal(true)}>
                     <Text style={[styles.dreamJournalButtonText, { color: theme.accent }]}>🌙 Open Dream Journal</Text>
                   </TouchableOpacity>
 
@@ -822,6 +894,7 @@ export default function SleepCheckInScreen() {
               <Text style={styles.backButtonText}>Back to Today</Text>
             </TouchableOpacity>
           </FormScreen>
+          <DreamJournalEntryModal visible={showDreamJournalModal} onClose={() => setShowDreamJournalModal(false)} />
         </View>
       </View>
     </View>
