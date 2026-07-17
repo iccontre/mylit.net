@@ -10,6 +10,15 @@ import { uiAssets } from "../constants/uiAssets";
 import type { GuideContextRecord } from "../lib/agentTypes";
 import { loadGuideContextRecords, revokeGuideContext } from "../lib/guideContext";
 import { runBoundedGuideOrchestration } from "../lib/guideOrchestration";
+import { resetLearnedGuidePreferences } from "../lib/mylitAgents";
+
+const LEARNING_LOOP_STEPS = [
+  { icon: "🖋️", title: "YOU CHOOSE WHAT TO SHARE", body: "Nothing is shared automatically. You pick an entry and tap Feed to Luna or Feed to Evie — never both at once." },
+  { icon: "💜", title: "LUNA LEARNS HOW TO SUPPORT YOU", body: "Luna may notice patterns — mood, sleep, missed quests — and offer gentler pacing. She never diagnoses anything." },
+  { icon: "💚", title: "EVIE SHAPES YOUR PATH", body: "Evie only ever sees your raw text if you shared it with her directly, or a short non-clinical summary from Luna if you separately allowed that handoff." },
+  { icon: "📋", title: "YOU REVIEW EVERY CHANGE", body: "Any quest change a guide proposes lands as a suggestion — nothing on your board changes until you accept it." },
+  { icon: "🗝️", title: "YOU CAN UNDO OR FORGET IT", body: "Remove any shared entry any time, and reset what the guides have learned from your patterns below — without losing your saved history." },
+] as const;
 
 const pixelFont = Platform.select({ ios: "Menlo", android: "monospace", web: "monospace", default: "monospace" });
 
@@ -46,6 +55,10 @@ export default function GuideContextScreen() {
   const [checkInResult, setCheckInResult] = useState<string>("");
   const lastCheckInAtRef = useRef(0);
   const CHECK_IN_COOLDOWN_MS = 30_000;
+  const [showLearningLoop, setShowLearningLoop] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [resetConfirming, setResetConfirming] = useState(false);
+  const [resetDone, setResetDone] = useState(false);
 
   const load = useCallback(async () => {
     const all = await loadGuideContextRecords();
@@ -102,6 +115,26 @@ export default function GuideContextScreen() {
     }
   }
 
+  /** Two-tap confirm (no destructive action on a single accidental press) — this clears the
+   *  DERIVED preference profile only, never the user's shared entries or saved history. See
+   *  resetLearnedGuidePreferences for exactly what is and isn't cleared. */
+  async function handleResetLearnedPreferences() {
+    if (resetting) return;
+    if (!resetConfirming) {
+      setResetConfirming(true);
+      return;
+    }
+    setResetting(true);
+    try {
+      await resetLearnedGuidePreferences();
+      setResetConfirming(false);
+      setResetDone(true);
+      setTimeout(() => setResetDone(false), 3000);
+    } finally {
+      setResetting(false);
+    }
+  }
+
   const active = records.filter((r) => !r.revokedAt);
   const revoked = records.filter((r) => r.revokedAt);
 
@@ -115,9 +148,30 @@ export default function GuideContextScreen() {
           <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.hudContent]}>
             <View style={styles.hero}>
               <Text style={styles.heroKicker}>YOUR ACCOUNT</Text>
-              <Text style={styles.title}>📜 GUIDE CONTEXT</Text>
+              <Text style={styles.title}>📜 GUIDE LEDGER</Text>
               <Text style={styles.subtitle}>Everything you&apos;ve explicitly shared with Luna or Evie. Remove anything, any time.</Text>
             </View>
+
+            <TouchableOpacity style={styles.learningLoopToggle} onPress={() => setShowLearningLoop((prev) => !prev)}>
+              <Text style={styles.learningLoopToggleText}>ⓘ HOW MYLIT LEARNS</Text>
+              <Text style={styles.learningLoopToggleArrow}>{showLearningLoop ? "▲" : "▼"}</Text>
+            </TouchableOpacity>
+            {showLearningLoop ? (
+              <View style={styles.learningLoopCard}>
+                {LEARNING_LOOP_STEPS.map((step, index) => (
+                  <View key={step.title} style={[styles.learningLoopStep, index === LEARNING_LOOP_STEPS.length - 1 && { marginBottom: 0 }]}>
+                    <Text style={styles.learningLoopIcon}>{step.icon}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.learningLoopStepTitle}>{step.title}</Text>
+                      <Text style={styles.learningLoopStepBody}>{step.body}</Text>
+                    </View>
+                  </View>
+                ))}
+                <Text style={styles.learningLoopFooter}>
+                  Guides may adjust tone, quest length, timing, and recovery balance — they never diagnose you or replace professional care.
+                </Text>
+              </View>
+            ) : null}
 
             {active.length > 0 ? (
               <TouchableOpacity style={styles.checkInBtn} disabled={checkingIn} onPress={handleCheckIn}>
@@ -146,6 +200,11 @@ export default function GuideContextScreen() {
                     </View>
                   </View>
                   <Text style={styles.entryBody} numberOfLines={3}>{record.sourceTextSnapshot}</Text>
+                  {record.guide === "luna" && record.permissionScope?.includes("luna_to_evie_summary") ? (
+                    <View style={styles.scopeBadge}>
+                      <Text style={styles.scopeBadgeText}>💜→💚 also summarized for Evie (not raw text)</Text>
+                    </View>
+                  ) : null}
                   <TouchableOpacity style={styles.removeBtn} onPress={() => handleRevoke(record.id)}>
                     <Text style={styles.removeBtnText}>REMOVE ACCESS</Text>
                   </TouchableOpacity>
@@ -164,6 +223,22 @@ export default function GuideContextScreen() {
               </>
             ) : null}
 
+            <View style={styles.resetCard}>
+              <Text style={styles.resetTitle}>Reset Learned Preferences</Text>
+              <Text style={styles.resetBody}>
+                Clears any temporary support patterns Luna and Evie have picked up from your entries — your saved history and shared entries above are untouched.
+              </Text>
+              {resetDone ? (
+                <Text style={styles.resetDoneText}>✓ Reset — guides will start learning fresh from here.</Text>
+              ) : (
+                <TouchableOpacity style={styles.resetBtn} disabled={resetting} onPress={handleResetLearnedPreferences}>
+                  <Text style={styles.resetBtnText}>
+                    {resetting ? "RESETTING…" : resetConfirming ? "TAP AGAIN TO CONFIRM" : "RESET LEARNED PREFERENCES"}
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+
             <TouchableOpacity style={styles.backButton} onPress={() => router.push("/stats")}>
               <Text style={styles.backButtonText}>← Back to Stats</Text>
             </TouchableOpacity>
@@ -176,6 +251,34 @@ export default function GuideContextScreen() {
 }
 
 const styles = StyleSheet.create({
+  learningLoopToggle: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(124,58,237,0.22)",
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+    borderRadius: 8,
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    marginBottom: 10,
+  },
+  learningLoopToggleText: { color: "#E9D5FF", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 0.5 },
+  learningLoopToggleArrow: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
+  learningLoopCard: { backgroundColor: "#EAD9B6", borderWidth: 3, borderColor: "#5C4425", borderRadius: 8, padding: 14, marginBottom: 16, shadowColor: "#000", shadowOpacity: 0.5, shadowRadius: 0, shadowOffset: { width: 3, height: 3 } },
+  learningLoopStep: { flexDirection: "row", gap: 10, marginBottom: 12, alignItems: "flex-start" },
+  learningLoopIcon: { fontSize: 20, marginTop: 1 },
+  learningLoopStepTitle: { color: "#4A3620", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", letterSpacing: 0.4, marginBottom: 3 },
+  learningLoopStepBody: { color: "#5C4425", fontFamily: pixelFont, fontSize: 11, lineHeight: 16, fontWeight: "700" },
+  learningLoopFooter: { color: "#7C5B2B", fontFamily: pixelFont, fontSize: 10, fontStyle: "italic", lineHeight: 15, marginTop: 4 },
+  scopeBadge: { alignSelf: "flex-start", backgroundColor: "rgba(34,197,94,0.16)", borderWidth: 1, borderColor: "#22C55E", borderRadius: 5, paddingVertical: 4, paddingHorizontal: 8, marginBottom: 8 },
+  scopeBadgeText: { color: "#14532D", fontFamily: pixelFont, fontSize: 9, fontWeight: "900" },
+  resetCard: { backgroundColor: "#EAD9B6", borderWidth: 3, borderColor: "#5C4425", borderRadius: 8, padding: 14, marginTop: 8, marginBottom: 10, shadowColor: "#000", shadowOpacity: 0.5, shadowRadius: 0, shadowOffset: { width: 3, height: 3 } },
+  resetTitle: { color: "#4A3620", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", marginBottom: 6 },
+  resetBody: { color: "#7C5B2B", fontFamily: pixelFont, fontSize: 11, lineHeight: 16, fontWeight: "700", marginBottom: 10 },
+  resetBtn: { borderWidth: 2, borderColor: "#92400E", borderRadius: 6, paddingVertical: 10, alignItems: "center", backgroundColor: "rgba(146,64,14,0.16)" },
+  resetBtnText: { color: "#92400E", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", letterSpacing: 0.4 },
+  resetDoneText: { color: "#166534", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
   pageRoot: { flex: 1, backgroundColor: "#140F0A" },
   phoneStage: {
     alignSelf: "center",

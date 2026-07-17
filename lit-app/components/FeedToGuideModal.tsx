@@ -3,7 +3,7 @@ import { Image, Modal, Platform, StyleSheet, Text, TouchableOpacity, View } from
 
 import { uiAssets } from "../constants/uiAssets";
 import { shareEntryWithGuide } from "../lib/guideContext";
-import type { GuideContextSourceType, GuideName } from "../lib/agentTypes";
+import type { GuideContextSourceType, GuideName, GuidePermissionScope } from "../lib/agentTypes";
 
 const pixelFont = Platform.select({ ios: "Menlo", android: "monospace", web: "monospace", default: "monospace" });
 
@@ -33,14 +33,18 @@ type FeedToGuideModalProps = {
  */
 export function FeedToGuideModal({ visible, guide, sourceType, sourceId, sourceText, onClose, onShared }: FeedToGuideModalProps) {
   const [saving, setSaving] = useState(false);
+  const [alsoSummarizeForEvie, setAlsoSummarizeForEvie] = useState(false);
 
   async function handleConfirm() {
     if (saving) return;
     setSaving(true);
     try {
-      await shareEntryWithGuide({ guide, sourceType, sourceId, sourceText });
+      const permissionScope: GuidePermissionScope[] | undefined =
+        guide === "luna" && alsoSummarizeForEvie ? ["luna_support", "luna_to_evie_summary"] : undefined;
+      await shareEntryWithGuide({ guide, sourceType, sourceId, sourceText, permissionScope });
       onShared?.();
       onClose();
+      setAlsoSummarizeForEvie(false);
     } finally {
       setSaving(false);
     }
@@ -63,6 +67,22 @@ export function FeedToGuideModal({ visible, guide, sourceType, sourceId, sourceT
           <Text style={styles.sectionLabel}>HOW IT MAY BE USED</Text>
           <Text style={styles.usageText}>{USAGE_EXPLANATION[guide]}</Text>
           <Text style={styles.revocableNote}>You can remove this at any time from Guide Context in your account settings.</Text>
+
+          {guide === "luna" ? (
+            <TouchableOpacity
+              style={styles.scopeRow}
+              onPress={() => setAlsoSummarizeForEvie((prev) => !prev)}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: alsoSummarizeForEvie }}
+            >
+              <View style={[styles.checkbox, alsoSummarizeForEvie && styles.checkboxChecked]}>
+                {alsoSummarizeForEvie ? <Text style={styles.checkboxMark}>✓</Text> : null}
+              </View>
+              <Text style={styles.scopeText}>
+                Also let Luna share a short, non-clinical summary with Evie so she can adjust your quests — never this raw text, only Luna's summary.
+              </Text>
+            </TouchableOpacity>
+          ) : null}
 
           <View style={styles.buttonRow}>
             <TouchableOpacity style={styles.cancelBtn} onPress={onClose} disabled={saving}>
@@ -101,6 +121,11 @@ const styles = StyleSheet.create({
   previewText: { color: "#4A3620", fontFamily: pixelFont, fontSize: 12, lineHeight: 17, fontWeight: "700" },
   usageText: { color: "#4A3620", fontFamily: pixelFont, fontSize: 12, lineHeight: 17, fontWeight: "700" },
   revocableNote: { color: "#7C5B2B", fontFamily: pixelFont, fontSize: 10, fontStyle: "italic", marginTop: 8, lineHeight: 14 },
+  scopeRow: { flexDirection: "row", alignItems: "flex-start", gap: 9, marginTop: 12, padding: 9, backgroundColor: "#F4E8CE", borderWidth: 2, borderColor: "#5C4425", borderRadius: 7 },
+  checkbox: { width: 18, height: 18, borderWidth: 2, borderColor: "#5C4425", borderRadius: 4, alignItems: "center", justifyContent: "center", backgroundColor: "#EAD9B6", marginTop: 1 },
+  checkboxChecked: { backgroundColor: "#7C3AED", borderColor: "#4C1D95" },
+  checkboxMark: { color: "#FFFFFF", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
+  scopeText: { flex: 1, color: "#4A3620", fontFamily: pixelFont, fontSize: 11, lineHeight: 15, fontWeight: "700" },
   buttonRow: { flexDirection: "row", gap: 10, marginTop: 16 },
   cancelBtn: { flex: 1, borderWidth: 2, borderColor: "#5C4425", borderRadius: 6, paddingVertical: 11, alignItems: "center", backgroundColor: "#E7D3A9" },
   cancelBtnText: { color: "#4A3620", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },

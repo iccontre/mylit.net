@@ -20,7 +20,16 @@ const palette = hubPalettes.mind;
 // write to (see LOG_HISTORY_KEYS), so logs restore across devices after login. We never
 // log the private journal/dream/reflection/meditation text to the console.
 
-type LogType = "journal" | "reflection" | "meditation" | "dream" | "pre_sleep_intention";
+type LogType =
+  | "journal"
+  | "reflection"
+  | "meditation"
+  | "dream"
+  | "pre_sleep_intention"
+  | "affirmation"
+  | "morning_reflection"
+  | "sleep_checkin"
+  | "food_log";
 
 type LogEntry = {
   id: string;
@@ -43,6 +52,10 @@ const LOG_TYPE_TO_GUIDE_SOURCE: Record<LogType, GuideContextSourceType> = {
   meditation: "awarenessCheck",
   dream: "dream",
   pre_sleep_intention: "preSleepIntention",
+  affirmation: "affirmation",
+  morning_reflection: "morningIntentionReflection",
+  sleep_checkin: "sleepCheckIn",
+  food_log: "foodLog",
 };
 
 const SECTIONS: { type: LogType; title: string; icon: string }[] = [
@@ -51,6 +64,10 @@ const SECTIONS: { type: LogType; title: string; icon: string }[] = [
   { type: "meditation", title: "Meditations", icon: "🧘" },
   { type: "dream", title: "Dream Journal", icon: "🌙" },
   { type: "pre_sleep_intention", title: "Pre-Sleep Intentions", icon: "✨" },
+  { type: "affirmation", title: "Affirmations", icon: "💫" },
+  { type: "morning_reflection", title: "Morning Reflections", icon: "🌄" },
+  { type: "sleep_checkin", title: "Sleep Check-Ins", icon: "🌤️" },
+  { type: "food_log", title: "Food Log Notes", icon: "🍽️" },
 ];
 
 /** Left-edge accent per entry type — pure presentation, not tied to any behavior. */
@@ -60,6 +77,10 @@ const SECTION_ACCENT: Record<LogType, string> = {
   meditation: "#22C55E",
   dream: "#F472B6",
   pre_sleep_intention: "#A78BFA",
+  affirmation: "#FDE68A",
+  morning_reflection: "#FDBA74",
+  sleep_checkin: "#7DD3FC",
+  food_log: "#86EFAC",
 };
 
 function readArray(raw: string | null): Record<string, unknown>[] {
@@ -215,6 +236,97 @@ function normalizePreSleep(items: Record<string, unknown>[]): LogEntry[] {
     .filter((e): e is LogEntry => e !== null);
 }
 
+function normalizeAffirmation(items: Record<string, unknown>[]): LogEntry[] {
+  return items
+    .map((it, index): LogEntry | null => {
+      const text = str(it.text);
+      if (!text) return null;
+      return {
+        id: `affirmation-${str(it.id) || index}`,
+        type: "affirmation" as const,
+        label: "Affirmation",
+        preview: clip(text),
+        body: text,
+        when: whenLabel(it.createdAt),
+        sortAt: toSortMs(it.createdAt, it.id),
+      };
+    })
+    .filter((e): e is LogEntry => e !== null);
+}
+
+function normalizeMorningReflection(items: Record<string, unknown>[]): LogEntry[] {
+  return items
+    .map((it, index): LogEntry | null => {
+      const reflectionText = str(it.reflectionText);
+      if (!reflectionText) return null;
+      const sleepMinutes = typeof it.effectiveSleepMinutes === "number" ? it.effectiveSleepMinutes : undefined;
+      const meta = sleepMinutes ? `Slept ~${Math.round(sleepMinutes / 60)}h ${sleepMinutes % 60}m` : undefined;
+      return {
+        id: `morning_reflection-${str(it.id) || index}`,
+        type: "morning_reflection" as const,
+        label: "Morning Reflection",
+        preview: clip(reflectionText),
+        body: reflectionText,
+        meta,
+        when: whenLabel(it.createdAt),
+        sortAt: toSortMs(it.createdAt, it.id),
+      };
+    })
+    .filter((e): e is LogEntry => e !== null);
+}
+
+/** Sleep check-ins are mostly structured data, not free text — the shareable "body" is a short,
+ *  human-readable summary of the mood/stress signals Luna cares about, built fresh here rather
+ *  than stored, so it's never a second source of truth for the check-in record itself. Only
+ *  check-ins with an actual mood/stress signal are shown — a bare energy/mode check-in with
+ *  neither has nothing meaningful for Luna to receive. */
+function normalizeSleepCheckIn(items: Record<string, unknown>[]): LogEntry[] {
+  return items
+    .map((it, index): LogEntry | null => {
+      const mood = str(it.mood);
+      const stress = str(it.stress);
+      if (!mood && !stress) return null;
+      const parts: string[] = [];
+      if (mood) parts.push(`Mood: ${mood}`);
+      if (stress) parts.push(`Stress: ${stress}`);
+      if (typeof it.energy === "number") parts.push(`Energy: ${it.energy}`);
+      if (typeof it.mode === "string" && it.mode) parts.push(`Mode: ${it.mode}`);
+      const body = parts.join(" · ");
+      return {
+        id: `sleep_checkin-${str(it.id) || index}`,
+        type: "sleep_checkin" as const,
+        label: "Sleep Check-In",
+        preview: clip(body),
+        body,
+        when: whenLabel(it.createdAt),
+        sortAt: toSortMs(it.createdAt, it.id),
+      };
+    })
+    .filter((e): e is LogEntry => e !== null);
+}
+
+/** Only entries with an actual note are shareable — a bare meal-time log with no note has
+ *  nothing relevant to energy/recovery for Luna to receive. */
+function normalizeFoodLog(items: Record<string, unknown>[]): LogEntry[] {
+  return items
+    .map((it, index): LogEntry | null => {
+      const note = str(it.note);
+      if (!note) return null;
+      const entryType = str(it.entryType);
+      return {
+        id: `food_log-${str(it.id) || index}`,
+        type: "food_log" as const,
+        label: "Food Log Note",
+        preview: clip(note),
+        body: note,
+        meta: entryType || undefined,
+        when: whenLabel(it.createdAt ?? it.eatenAt),
+        sortAt: toSortMs(it.createdAt ?? it.eatenAt, it.id),
+      };
+    })
+    .filter((e): e is LogEntry => e !== null);
+}
+
 export default function LogHistoryScreen() {
   const router = useRouter();
   const mobile = useMobileFrame();
@@ -225,17 +337,26 @@ export default function LogHistoryScreen() {
     meditation: [],
     dream: [],
     pre_sleep_intention: [],
+    affirmation: [],
+    morning_reflection: [],
+    sleep_checkin: [],
+    food_log: [],
   });
   const [selectedEntry, setSelectedEntry] = useState<LogEntry | null>(null);
 
   const loadLogs = useCallback(async () => {
-    const [journalRaw, reflectionRaw, meditationRaw, dreamRaw, preSleepRaw] = await Promise.all([
-      AsyncStorage.getItem(LOG_HISTORY_KEYS.journal),
-      AsyncStorage.getItem(LOG_HISTORY_KEYS.reflection),
-      AsyncStorage.getItem(LOG_HISTORY_KEYS.meditation),
-      AsyncStorage.getItem(LOG_HISTORY_KEYS.dream),
-      AsyncStorage.getItem(LOG_HISTORY_KEYS.preSleepIntention),
-    ]);
+    const [journalRaw, reflectionRaw, meditationRaw, dreamRaw, preSleepRaw, affirmationRaw, morningReflectionRaw, sleepCheckInRaw, foodLogRaw] =
+      await Promise.all([
+        AsyncStorage.getItem(LOG_HISTORY_KEYS.journal),
+        AsyncStorage.getItem(LOG_HISTORY_KEYS.reflection),
+        AsyncStorage.getItem(LOG_HISTORY_KEYS.meditation),
+        AsyncStorage.getItem(LOG_HISTORY_KEYS.dream),
+        AsyncStorage.getItem(LOG_HISTORY_KEYS.preSleepIntention),
+        AsyncStorage.getItem(LOG_HISTORY_KEYS.affirmation),
+        AsyncStorage.getItem(LOG_HISTORY_KEYS.morningReflection),
+        AsyncStorage.getItem(LOG_HISTORY_KEYS.sleepCheckIn),
+        AsyncStorage.getItem(LOG_HISTORY_KEYS.foodLog),
+      ]);
 
     const sortDesc = (list: LogEntry[]) => [...list].sort((a, b) => b.sortAt - a.sortAt);
 
@@ -245,6 +366,10 @@ export default function LogHistoryScreen() {
       meditation: sortDesc(normalizeMeditation(readArray(meditationRaw))),
       dream: sortDesc(normalizeDream(readArray(dreamRaw))),
       pre_sleep_intention: sortDesc(normalizePreSleep(readArray(preSleepRaw))),
+      affirmation: sortDesc(normalizeAffirmation(readArray(affirmationRaw))),
+      morning_reflection: sortDesc(normalizeMorningReflection(readArray(morningReflectionRaw))),
+      sleep_checkin: sortDesc(normalizeSleepCheckIn(readArray(sleepCheckInRaw))),
+      food_log: sortDesc(normalizeFoodLog(readArray(foodLogRaw))),
     });
   }, []);
 

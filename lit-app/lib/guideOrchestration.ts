@@ -14,14 +14,24 @@ function formatContextForPrompt(records: GuideContextRecord[]): string {
 }
 
 /**
- * Evie only ever runs as a SECOND step of this SAME bounded pass, and only when Luna actually
- * produced something worth handing off AND the user has separately permitted Evie to see at
- * least one piece of Path context. No permitted Evie context means no Evie call — Luna having
- * permission never implies Evie does too (each guide's access is independently consented).
+ * Evie only ever runs as a SECOND step of this SAME bounded pass, and only when ALL of the
+ * following hold:
+ * 1. Luna actually produced something worth handing off (a non-empty evieHandoffNote).
+ * 2. The user has separately opted at least one Luna-shared entry into the
+ *    "luna_to_evie_summary" scope — sharing something with Luna never implies Evie may see a
+ *    summary of it unless the user explicitly checked that box (see FeedToGuideModal).
+ * 3. The user has separately permitted Evie to see at least one piece of her own Path context.
+ * No permitted Evie context means no Evie call — Luna having permission never implies Evie does
+ * too (each guide's access, and each scope, is independently consented).
  */
-export function shouldRunEvieHandoff(luna: RequestLunaSupportResult, evieContext: GuideContextRecord[]): boolean {
+export function shouldRunEvieHandoff(
+  luna: RequestLunaSupportResult,
+  evieContext: GuideContextRecord[],
+  lunaToEvieSummaryContext: GuideContextRecord[] = []
+): boolean {
   if (!luna.ok) return false;
   if (!luna.record.response.evieHandoffNote?.trim()) return false;
+  if (lunaToEvieSummaryContext.length === 0) return false;
   return evieContext.length > 0;
 }
 
@@ -45,8 +55,11 @@ export async function runBoundedGuideOrchestration(userTrigger: string): Promise
     : userTrigger;
   const luna = await requestLunaSupport(lunaPrompt);
 
-  const evieContext = await loadActiveGuideContext("evie");
-  if (!shouldRunEvieHandoff(luna, evieContext)) {
+  const [evieContext, lunaToEvieSummaryContext] = await Promise.all([
+    loadActiveGuideContext("evie"),
+    loadActiveGuideContext("luna", "luna_to_evie_summary"),
+  ]);
+  if (!shouldRunEvieHandoff(luna, evieContext, lunaToEvieSummaryContext)) {
     return { luna, evie: null };
   }
 

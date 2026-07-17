@@ -137,6 +137,9 @@ export const LOG_HISTORY_KEYS = {
   dream: DREAM_JOURNAL_KEY,
   preSleepIntention: PRE_SLEEP_INTENTIONS_KEY,
   affirmation: AFFIRMATIONS_KEY,
+  morningReflection: MORNING_INTENTION_REFLECTIONS_KEY,
+  sleepCheckIn: CHECKIN_HISTORY_KEY,
+  foodLog: FOOD_LOGS_KEY,
 } as const;
 
 /** AsyncStorage keys mirrored to the signed-in user's cloud profile. */

@@ -703,7 +703,23 @@ export type GuideContextSourceType =
   | "awarenessCheck"
   | "affirmation"
   | "lifeProfile"
-  | "pathGoal";
+  | "pathGoal"
+  | "sleepCheckIn"
+  | "foodLog";
+
+/**
+ * What a consent grant actually permits, independent of which guide holds the record:
+ * - "luna_support": Luna may use this entry to shape her own supportive responses/accommodations
+ *   (the default scope for anything shared with Luna).
+ * - "evie_planning": Evie may use this entry (Path/goal-flavored content) to shape quest
+ *   suggestions (the default scope for anything shared with Evie).
+ * - "luna_to_evie_summary": an additional, separately-opted-in scope on a LUNA-guide record —
+ *   without it, Luna's structured accommodation summary is never handed off to Evie even if the
+ *   user has separately shared other context with Evie. Granting this never exposes the raw
+ *   entry text to Evie, only Luna's own structured, non-diagnostic summary — see
+ *   lib/guideOrchestration.ts's shouldRunEvieHandoff.
+ */
+export type GuidePermissionScope = "luna_support" | "evie_planning" | "luna_to_evie_summary";
 
 export type GuideContextRecord = {
   id: string;
@@ -714,6 +730,10 @@ export type GuideContextRecord = {
   /** The exact text previewed and consented to — never re-derived later from the live entry,
    *  so an edit/deletion of the original entry can't silently change what was already shared. */
   sourceTextSnapshot: string;
+  /** Defaults to ['luna_support'] or ['evie_planning'] depending on `guide` — see
+   *  shareEntryWithGuide. Absent on records written before this field existed; treat a missing
+   *  array as the guide's own default scope only (never as luna_to_evie_summary). */
+  permissionScope?: GuidePermissionScope[];
   permissionGrantedAt: string;
   revokedAt?: string;
   updatedAt: string;

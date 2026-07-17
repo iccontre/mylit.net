@@ -40,6 +40,11 @@ export function EvieGuideModal({ visible, onClose }: { visible: boolean; onClose
             <Text style={styles.actionText}>Talk to Evie about my path</Text>
             <Text style={styles.actionArrow}>›</Text>
           </TouchableOpacity>
+          <TouchableOpacity style={styles.actionButton} onPress={() => { onClose(); router.push("/guide-context"); }}>
+            <Text style={styles.actionIcon}>📜</Text>
+            <Text style={styles.actionText}>How MYLIT Learns</Text>
+            <Text style={styles.actionArrow}>›</Text>
+          </TouchableOpacity>
 
           <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
             <Text style={styles.closeBtnText}>CLOSE</Text>

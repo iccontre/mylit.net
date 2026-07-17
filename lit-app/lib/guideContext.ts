@@ -2,9 +2,16 @@ import { getSession } from "./auth";
 import { persistProgressKeys } from "./progressStore";
 import { readJson } from "./readJson";
 import { GUIDE_CONTEXT_RECORDS_KEY } from "./storageKeys";
-import type { GuideContextRecord, GuideContextSourceType, GuideName } from "./agentTypes";
+import type { GuideContextRecord, GuideContextSourceType, GuideName, GuidePermissionScope } from "./agentTypes";
 
 const MAX_SNAPSHOT_CHARS = 2000;
+
+/** A record with no permissionScope (written before the field existed) is treated as only its
+ *  guide's own default scope — never as luna_to_evie_summary, which must always be opted into. */
+function effectiveScope(record: GuideContextRecord): GuidePermissionScope[] {
+  if (record.permissionScope && record.permissionScope.length > 0) return record.permissionScope;
+  return [record.guide === "luna" ? "luna_support" : "evie_planning"];
+}
 
 function generateId(): string {
   return `gcr_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
@@ -15,11 +22,17 @@ export async function loadGuideContextRecords(): Promise<GuideContextRecord[]> {
   return Array.isArray(list) ? list : [];
 }
 
-/** Active (non-revoked) records for one guide, newest first — what an orchestration pass may read. */
-export async function loadActiveGuideContext(guide: GuideName): Promise<GuideContextRecord[]> {
+/**
+ * Active (non-revoked) records for one guide, newest first — what an orchestration pass may
+ * read. Pass `requiredScope` to further narrow to records that were explicitly granted that
+ * scope (e.g. "luna_to_evie_summary" for the handoff gate) — a record missing that scope is
+ * excluded even if it's active for the guide in general.
+ */
+export async function loadActiveGuideContext(guide: GuideName, requiredScope?: GuidePermissionScope): Promise<GuideContextRecord[]> {
   const all = await loadGuideContextRecords();
   return all
     .filter((record) => record.guide === guide && !record.revokedAt)
+    .filter((record) => !requiredScope || effectiveScope(record).includes(requiredScope))
     .sort((a, b) => new Date(b.permissionGrantedAt).getTime() - new Date(a.permissionGrantedAt).getTime());
 }
 
@@ -34,6 +47,10 @@ export async function shareEntryWithGuide(input: {
   sourceType: GuideContextSourceType;
   sourceId: string;
   sourceText: string;
+  /** Defaults to ['luna_support'] (Luna) / ['evie_planning'] (Evie) when omitted. Pass an array
+   *  including "luna_to_evie_summary" only when the user has separately opted in to letting
+   *  this specific entry inform a Luna-to-Evie handoff (see FeedToGuideModal's opt-in checkbox). */
+  permissionScope?: GuidePermissionScope[];
 }): Promise<GuideContextRecord> {
   const session = await getSession();
   const now = new Date().toISOString();
@@ -44,6 +61,9 @@ export async function shareEntryWithGuide(input: {
     sourceType: input.sourceType,
     sourceId: input.sourceId,
     sourceTextSnapshot: input.sourceText.trim().slice(0, MAX_SNAPSHOT_CHARS),
+    permissionScope: input.permissionScope && input.permissionScope.length > 0
+      ? input.permissionScope
+      : [input.guide === "luna" ? "luna_support" : "evie_planning"],
     permissionGrantedAt: now,
     updatedAt: now,
     schemaVersion: 1,

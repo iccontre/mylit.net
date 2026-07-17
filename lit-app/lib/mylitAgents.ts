@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-import { persistProgressKeys } from "./progressStore";
+import { persistProgressKeys, clearProgressKey } from "./progressStore";
 import {
   USER_LIFE_PROFILE_KEY,
   GUIDE_MEMORY_KEY,
@@ -16,6 +16,7 @@ import {
   REFLECTIONS_KEY,
   JOURNAL_ENTRIES_KEY,
   DAY_PLAN_KEY,
+  AI_LUNA_SUPPORT_SESSIONS_KEY,
 } from "./storageKeys";
 import type { CompletionEntry, MissedEntry, FocusBlockLogEntry } from "./questProgress";
 import type {
@@ -519,6 +520,20 @@ const RISK_INSIGHT_IDS = new Set([
 
 export async function loadLearningMemory(): Promise<LearningMemory> {
   return readJson<LearningMemory>(LEARNING_MEMORY_KEY, { lastUpdatedAt: new Date(0).toISOString() });
+}
+
+/**
+ * User-initiated "forget what you've learned about me" action (see the Guide Ledger's Reset
+ * Learned Preferences button in app/guide-context.tsx). Clears the DERIVED preference profile
+ * and any temporary Luna support sessions/accommodations — it does NOT touch the underlying
+ * event ledger (completed/missed quests, check-ins) or any explicit "Feed to Luna/Evie" share,
+ * since those are the user's own history, not a guide's inference about them. The next natural
+ * recompute (updateLearningMemoryFromEvents) rebuilds LearningMemory fresh from real completions
+ * again over time — this only clears what's been inferred so far, never the raw record.
+ */
+export async function resetLearnedGuidePreferences(): Promise<void> {
+  await clearProgressKey(LEARNING_MEMORY_KEY);
+  await clearProgressKey(AI_LUNA_SUPPORT_SESSIONS_KEY);
 }
 
 const WEEKDAY_REST_KEYWORDS = /(rest|recover|recovery|break|light|reset|sabbath|chill)/i;
