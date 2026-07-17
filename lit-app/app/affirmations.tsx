@@ -16,6 +16,7 @@ import { BottomNav } from "../components/BottomNav";
 import { FormScreen } from "../components/FormScreen";
 import { GuideInfoModal } from "../components/GuideInfoModal";
 import { HistoryModal } from "../components/HistoryModal";
+import { SaveButton, type SaveState } from "../components/parchment/SaveButton";
 import { formPageContent, formStyles } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
@@ -35,6 +36,7 @@ type AffirmationEntry = {
   id: string;
   text: string;
   createdAt: string;
+  updatedAt?: string;
 };
 
 const pixelFont = Platform.select({
@@ -51,14 +53,17 @@ export default function AffirmationsScreen() {
   const [text, setText] = useState("");
   const [affirmations, setAffirmations] = useState<AffirmationEntry[]>([]);
   const [showInfo, setShowInfo] = useState(false);
-  const [justSaved, setJustSaved] = useState(false);
-  const justSavedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const saveStateTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     return () => {
-      if (justSavedTimeout.current) clearTimeout(justSavedTimeout.current);
+      if (saveStateTimeout.current) clearTimeout(saveStateTimeout.current);
     };
   }, []);
   const [showHistory, setShowHistory] = useState(false);
+  /** Non-null while editing an existing entry in place — same id, same array length, so the
+   *  step-ledger's "array length grew = +1 step" rule never double-awards for an edit. */
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   useEffect(() => {
     loadAffirmations();
@@ -95,27 +100,58 @@ export default function AffirmationsScreen() {
    * earned.
    */
   async function saveAffirmation() {
-    if (!text.trim() || justSaved) return;
+    if (!text.trim() || saveState === "saving" || saveState === "saved") return;
+    setSaveState("saving");
 
-    const newEntry: AffirmationEntry = {
-      id: `affirmation-${Date.now()}`,
-      text: text.trim(),
-      createdAt: new Date().toLocaleString(),
-    };
+    try {
+      let next: AffirmationEntry[];
+      let relatedId: string;
+      if (editingId) {
+        // Same id, same array length — the canonical update path, never a new record and
+        // never a second step award (see the array-length step rule above).
+        next = affirmations.map((entry) =>
+          entry.id === editingId ? { ...entry, text: text.trim(), updatedAt: new Date().toISOString() } : entry
+        );
+        relatedId = editingId;
+      } else {
+        const newEntry: AffirmationEntry = {
+          id: `affirmation-${Date.now()}`,
+          text: text.trim(),
+          createdAt: new Date().toISOString(),
+        };
+        next = [newEntry, ...affirmations];
+        relatedId = newEntry.id;
+      }
 
-    const next = [newEntry, ...affirmations];
+      setAffirmations(next);
+      await persistProgressKeys({ [AFFIRMATIONS_KEY]: JSON.stringify(next) });
+      void recordAgentEvent({ type: "affirmation_saved", sourcePage: "affirmations", relatedItemId: relatedId });
 
-    setAffirmations(next);
-    await persistProgressKeys({ [AFFIRMATIONS_KEY]: JSON.stringify(next) });
-    void recordAgentEvent({ type: "affirmation_saved", sourcePage: "affirmations", relatedItemId: newEntry.id });
+      await successHaptic();
 
+      setSaveState("saved");
+      saveStateTimeout.current && clearTimeout(saveStateTimeout.current);
+      saveStateTimeout.current = setTimeout(() => {
+        setSaveState("idle");
+        setText("");
+        setEditingId(null);
+      }, 800);
+    } catch (error) {
+      console.warn("saveAffirmation error:", error);
+      setSaveState("error");
+    }
+  }
+
+  function startEditingAffirmation(entry: AffirmationEntry) {
+    setEditingId(entry.id);
+    setText(entry.text);
+    setSaveState("idle");
+  }
+
+  function cancelEditingAffirmation() {
+    setEditingId(null);
     setText("");
-
-    await successHaptic();
-
-    setJustSaved(true);
-    if (justSavedTimeout.current) clearTimeout(justSavedTimeout.current);
-    justSavedTimeout.current = setTimeout(() => setJustSaved(false), 2500);
+    setSaveState("idle");
   }
 
   async function clearAffirmations() {
@@ -151,7 +187,7 @@ export default function AffirmationsScreen() {
             </View>
 
             <View style={styles.card}>
-              <Text style={styles.label}>Write an affirmation:</Text>
+              <Text style={styles.label}>{editingId ? "Edit your affirmation:" : "Write an affirmation:"}</Text>
               <TextInput
                 style={[formStyles.textArea, styles.largeTextArea]}
                 multiline
@@ -163,9 +199,20 @@ export default function AffirmationsScreen() {
                 onChangeText={setText}
               />
 
-              <TouchableOpacity style={[styles.saveButton, (!text.trim() || justSaved) && styles.saveButtonDisabled]} disabled={!text.trim() || justSaved} onPress={saveAffirmation}>
-                <Text style={styles.saveButtonText}>{justSaved ? "Saved" : "Save Affirmation"}</Text>
-              </TouchableOpacity>
+              <View style={styles.saveRow}>
+                {editingId ? (
+                  <TouchableOpacity style={styles.cancelEditBtn} onPress={cancelEditingAffirmation} disabled={saveState === "saving"}>
+                    <Text style={styles.cancelEditBtnText}>CANCEL</Text>
+                  </TouchableOpacity>
+                ) : null}
+                <SaveButton
+                  state={saveState}
+                  onPress={saveAffirmation}
+                  disabled={!text.trim()}
+                  idleLabel={editingId ? "UPDATE AFFIRMATION" : "SAVE AFFIRMATION"}
+                  style={styles.saveButton}
+                />
+              </View>
             </View>
 
             <Text style={styles.sectionTitle}>RECENT AFFIRMATIONS</Text>
@@ -177,7 +224,17 @@ export default function AffirmationsScreen() {
             ) : (
               affirmations.map((entry) => (
                 <View key={entry.id} style={styles.entryCard}>
-                  <Text style={styles.entryDate}>{entry.createdAt}</Text>
+                  <View style={styles.entryTopRow}>
+                    <Text style={styles.entryDate}>{entry.createdAt}{entry.updatedAt ? " · edited" : ""}</Text>
+                    <TouchableOpacity
+                      style={styles.editBtn}
+                      hitSlop={{ top: 7, bottom: 7, left: 7, right: 7 }}
+                      onPress={() => startEditingAffirmation(entry)}
+                      accessibilityLabel="Edit entry"
+                    >
+                      <Text style={styles.editBtnText}>✎</Text>
+                    </TouchableOpacity>
+                  </View>
                   <Text style={styles.entryText}>{entry.text}</Text>
                 </View>
               ))
@@ -360,26 +417,28 @@ const styles = StyleSheet.create({
   largeTextArea: {
     marginBottom: 4,
   },
-  saveButton: {
-    backgroundColor: "#A78BFA",
-    borderWidth: 3,
-    borderColor: "#E9D5FF",
-    borderRadius: 6,
-    paddingVertical: 14,
-    alignItems: "center",
+  saveRow: {
+    flexDirection: "row",
+    gap: 10,
     marginTop: 16,
   },
-  saveButtonDisabled: {
-    backgroundColor: "#5C4425",
-    borderColor: "#475569",
+  saveButton: {
+    flex: 1,
   },
-  saveButtonText: {
-    color: "#0F172A",
+  cancelEditBtn: {
+    flex: 1,
+    backgroundColor: "#3E2A1A",
+    borderWidth: 2,
+    borderColor: "#5C4425",
+    borderRadius: 6,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  cancelEditBtnText: {
+    color: "#D8C9A3",
     fontFamily: pixelFont,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "900",
-    letterSpacing: 1,
-    textTransform: "uppercase",
   },
   sectionTitle: {
     color: "#FDE68A",
@@ -411,13 +470,24 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 10,
   },
+  entryTopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 },
   entryDate: {
     color: "#7C5B2B",
     fontFamily: pixelFont,
     fontSize: 10,
     fontWeight: "800",
-    marginBottom: 6,
   },
+  editBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: "#5C4425",
+    backgroundColor: "#F4E8CE",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  editBtnText: { color: "#4A3620", fontSize: 14, fontWeight: "900" },
   entryText: {
     color: "#4A3620",
     fontFamily: pixelFont,

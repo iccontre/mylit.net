@@ -258,7 +258,8 @@ export type AgentEventType =
   | "calendar_overloaded"
   | "progress_locked"
   | "goal_updated"
-  | "path_updated";
+  | "path_updated"
+  | "quest_fulfillment_rated";
 
 export type AgentEventMode = "progress" | "recovery" | "neutral";
 

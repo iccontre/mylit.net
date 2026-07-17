@@ -2,7 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AccessibilityInfo, AppState, Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View, type AppStateStatus } from "react-native";
+import { AccessibilityInfo, AppState, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TouchableOpacity, View, type AppStateStatus } from "react-native";
 
 import { BottomNav } from "../../components/BottomNav";
 import { LunaGuideModal } from "../../components/LunaGuideModal";
@@ -84,11 +84,18 @@ import {
   parseTimeToMinutes,
   pickGuideMessage,
 } from "../../lib/scheduling";
-import { AFFIRMATIONS_KEY, DAILY_STEPS_LOG_KEY, FOOD_LOGS_KEY, LATEST_PRE_SLEEP_INTENTION_KEY, MANDATORY_GATE_EVIDENCE_KEY, SLEEP_ROUTINE_KEY, TOTAL_STEPS_FLOOR_KEY } from "../../lib/storageKeys";
+import { AFFIRMATIONS_KEY, DAILY_STEPS_LOG_KEY, FOOD_LOGS_KEY, LATEST_PRE_SLEEP_INTENTION_KEY, MANDATORY_GATE_EVIDENCE_KEY, QUEST_FULFILLMENT_KEY, SLEEP_ROUTINE_KEY, TOTAL_STEPS_FLOOR_KEY } from "../../lib/storageKeys";
 import { readJson } from "../../lib/readJson";
 import { FoodLogModal } from "../../components/FoodLogModal";
+import { SaveButton, type SaveState } from "../../components/parchment/SaveButton";
 import { computeFuel, type FoodLog } from "../../lib/fuel";
-import { computeMandatoryGateState } from "../../lib/mandatoryGates";
+import { getSession } from "../../lib/auth";
+import { isValidFulfillmentRating, type QuestFulfillmentFeedback } from "../../lib/questFulfillment";
+import {
+  computeMandatoryGateState,
+  getQuestSourceType as getQuestSourceTypeShared,
+  isEvieRecoveryExemptFromMandatoryGates,
+} from "../../lib/mandatoryGates";
 import { loadTodaysEvieMorningQuest, type EvieMorningQuest } from "../../lib/evieMorningQuest";
 import { hubPalettes } from "../../constants/worldTokens";
 
@@ -202,7 +209,7 @@ type CheckIn = {
   /** Sleep Guide fields — used only to compute the wind-down lock window (see getWindDownQuest). */
   desiredSleepTime?: string;
   windDownMinutes?: number;
-  /** Morning Check-In's recorded wake time — top priority source for the Afternoon Check-In 5-hour unlock. */
+  /** Morning Check-In's recorded wake time — top priority source for the Afternoon Check-In 6-hour unlock. */
   wakeTime?: string;
   finalWakeTime?: string;
 };
@@ -363,12 +370,7 @@ function getFireAssetForEnergy(score: number) {
 type QuestSourceType = "regular" | "today" | "path";
 
 function getQuestSourceType(item: HomeQuestItem): QuestSourceType {
-  if (item.source === "Today's Quest") return "today";
-  // "Path Quest" = quests the path/pipeline system itself surfaced (Evie's suggested quest,
-  // the post-progress recovery starter) — not a separately stored field, just what
-  // suggested/starter already mean.
-  if (item.suggested || item.starter) return "path";
-  return "regular";
+  return getQuestSourceTypeShared(item);
 }
 
 /** Presentation-only quest visual state — never used to infer quest behavior; card kind/
@@ -555,6 +557,11 @@ export default function HomeScreen() {
   });
   const [foodLogs, setFoodLogs] = useState<FoodLog[]>([]);
   const [showFoodLogModal, setShowFoodLogModal] = useState(false);
+  /** Today's Quest completion is held here (not yet written to the ledger) while the
+   *  fulfillment-rating modal is open — Cancel just clears this, nothing is completed. */
+  const [pendingRatingItem, setPendingRatingItem] = useState<HomeQuestItem | null>(null);
+  const [fulfillmentRating, setFulfillmentRating] = useState<number | null>(null);
+  const [ratingSaveState, setRatingSaveState] = useState<SaveState>("idle");
   const [evieMorningQuest, setEvieMorningQuest] = useState<EvieMorningQuest | null>(null);
   const [activeItem, setActiveItem] = useState<ActiveTimedItem | null>(null);
   const [gateEvidence, setGateEvidence] = useState<{ questDayKey: string; wasProgressToday: boolean }>({
@@ -1034,7 +1041,7 @@ export default function HomeScreen() {
       return;
     }
     // Mild mandatory (15 min) only blocks PROGRESS starts; severe (30 min) blocks everything.
-    if (mandatoryActive && !item.mandatory && (mandatoryLocksRecoveryToo || item.kind !== "recovery")) {
+    if (mandatoryActive && !item.mandatory && !isEvieRecoveryExemptFromMandatoryGates(item) && (mandatoryLocksRecoveryToo || item.kind !== "recovery")) {
       showMandatoryLockMessage();
       return;
     }
@@ -1098,7 +1105,7 @@ export default function HomeScreen() {
 
   async function startTimedItem(item: HomeQuestItem) {
     // Mild mandatory (15 min) only blocks PROGRESS starts; severe (30 min) blocks everything.
-    if (mandatoryActive && !item.mandatory && (mandatoryLocksRecoveryToo || item.kind !== "recovery")) {
+    if (mandatoryActive && !item.mandatory && !isEvieRecoveryExemptFromMandatoryGates(item) && (mandatoryLocksRecoveryToo || item.kind !== "recovery")) {
       showMandatoryLockMessage();
       return;
     }
@@ -1201,7 +1208,80 @@ export default function HomeScreen() {
       durationMinutes: activeItem.durationMinutes,
       scheduledTime: activeItem.scheduledTime,
     };
-    await completeQuestItem(boardItem);
+    requestQuestCompletion(boardItem);
+  }
+
+  /**
+   * Every quest completion routes through here first. Today's Quest specifically opens the
+   * 1-10 fulfillment-rating modal BEFORE anything is committed to the ledger — Cancel returns
+   * with nothing completed, nothing awarded. Every other source completes immediately exactly
+   * as before (this never changes behavior for non-Today's-Quest items).
+   */
+  function requestQuestCompletion(item: HomeQuestItem) {
+    if (item.source === "Today's Quest") {
+      setFulfillmentRating(null);
+      setRatingSaveState("idle");
+      setPendingRatingItem(item);
+      return;
+    }
+    void completeQuestItem(item);
+  }
+
+  function cancelRatedCompletion() {
+    setPendingRatingItem(null);
+    setFulfillmentRating(null);
+    setRatingSaveState("idle");
+  }
+
+  /**
+   * SAVE & COMPLETE: runs the quest through the exact same completeQuestItem ledger path every
+   * other quest uses (steps awarded exactly once, deduped by item.id), then attaches the rating
+   * under that SAME id — a retry after a partial failure updates the one record for this
+   * completion rather than creating a second one. The rating is collection/metadata only; it
+   * never gates or duplicates the underlying step reward.
+   */
+  async function confirmRatedCompletion() {
+    if (!pendingRatingItem || fulfillmentRating === null || !isValidFulfillmentRating(fulfillmentRating)) return;
+    if (ratingSaveState === "saving" || ratingSaveState === "saved") return;
+    const item = pendingRatingItem;
+    setRatingSaveState("saving");
+
+    try {
+      await completeQuestItem(item);
+
+      const session = await getSession();
+      const now = new Date().toISOString();
+      const existing = await readJson<QuestFulfillmentFeedback[]>(QUEST_FULFILLMENT_KEY, []);
+      const withoutThisCompletion = existing.filter((entry) => entry.completionId !== item.id);
+      const feedback: QuestFulfillmentFeedback & { id: string } = {
+        id: item.id,
+        completionId: item.id,
+        questId: item.id,
+        rating: fulfillmentRating,
+        logicalDayKey: getTodayKey(),
+        completedAt: now,
+        userId: session?.user?.id ?? "local",
+        updatedAt: now,
+      };
+      await persistProgressKeys({ [QUEST_FULFILLMENT_KEY]: JSON.stringify([feedback, ...withoutThisCompletion]) });
+
+      void recordAgentEvent({
+        type: "quest_fulfillment_rated",
+        sourcePage: "home",
+        relatedItemId: item.id,
+        metadata: { rating: fulfillmentRating, title: item.title },
+      });
+
+      setRatingSaveState("saved");
+      setTimeout(() => {
+        setPendingRatingItem(null);
+        setFulfillmentRating(null);
+        setRatingSaveState("idle");
+      }, 700);
+    } catch (error) {
+      console.warn("confirmRatedCompletion error:", error);
+      setRatingSaveState("error");
+    }
   }
 
   /**
@@ -1353,7 +1433,7 @@ export default function HomeScreen() {
   //   3. Energy below the existing low-energy threshold — mandatory energy/rest quest.
   //   4. Both 2 and 3 — both quests show; ordinary quests stay locked until both resolve.
   //
-  // afternoonUnlockAt = wakeTimestamp + 5 hours, using the real recorded wake time when known
+  // afternoonUnlockAt = wakeTimestamp + 6 hours, using the real recorded wake time when known
   // (see loadAfternoonUnlockLabel's priority chain) — resolveWakeTimestamp anchors it to the
   // correct calendar date even for a wake time that crosses midnight. Falls back to the
   // label-based minutes-of-day comparison only when no wake timestamp can be resolved at all.
@@ -1367,7 +1447,7 @@ export default function HomeScreen() {
   const afternoonUnlockDisplayLabel = afternoonUnlockAt ? formatMinutesAsTime(afternoonUnlockAt.getHours() * 60 + afternoonUnlockAt.getMinutes()) : afternoonUnlockLabel;
   const afternoonCheckInDoneToday =
     latestCheckIn?.afternoonCheckInCompletedToday === true && latestCheckIn?.afternoonCheckInQuestDayKey === getTodayKey();
-  // Never unlocks during LDM, even once 5 hours have elapsed since waking.
+  // Never unlocks during LDM, even once 6 hours have elapsed since waking.
   const afternoonCheckInUnlocked = !ldmActive && afternoonUnlockChecked && afternoonUnlockReached;
   // Only meaningful once Morning Check-In is already done (hasEnergyData) — Neutral mode has
   // its own separate "Complete Morning Check-In" prompt in generateQuests().
@@ -2028,6 +2108,52 @@ export default function HomeScreen() {
                 onClose={() => setShowFoodLogModal(false)}
                 onSaved={(log) => void handleFoodLogSaved(log)}
               />
+
+              <Modal
+                visible={pendingRatingItem !== null}
+                transparent
+                animationType="fade"
+                onRequestClose={ratingSaveState === "saving" ? undefined : cancelRatedCompletion}
+              >
+                <Pressable
+                  style={styles.ratingBackdrop}
+                  onPress={ratingSaveState === "saving" ? undefined : cancelRatedCompletion}
+                  accessibilityLabel="Close"
+                >
+                  <Pressable style={styles.ratingPanel} onPress={() => {}}>
+                    <Text style={styles.ratingTitle}>How fulfilling was this quest?</Text>
+                    <Text style={styles.ratingSubtitle} numberOfLines={2}>{pendingRatingItem?.title}</Text>
+                    <View style={styles.ratingRow}>
+                      {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                        <TouchableOpacity
+                          key={n}
+                          style={[styles.ratingChip, fulfillmentRating === n && styles.ratingChipActive]}
+                          onPress={() => setFulfillmentRating(n)}
+                          accessibilityLabel={`Rate ${n} out of 10`}
+                          disabled={ratingSaveState === "saving"}
+                        >
+                          <Text style={[styles.ratingChipText, fulfillmentRating === n && styles.ratingChipTextActive]}>{n}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                    <Text style={styles.ratingSelectedLabel}>
+                      {fulfillmentRating !== null ? `Selected: ${fulfillmentRating} / 10` : "Pick a number from 1 to 10"}
+                    </Text>
+                    <View style={styles.ratingButtonRow}>
+                      <TouchableOpacity style={styles.ratingCancelBtn} onPress={cancelRatedCompletion} disabled={ratingSaveState === "saving"}>
+                        <Text style={styles.ratingCancelText}>CANCEL</Text>
+                      </TouchableOpacity>
+                      <SaveButton
+                        state={ratingSaveState}
+                        onPress={() => void confirmRatedCompletion()}
+                        disabled={fulfillmentRating === null}
+                        idleLabel="SAVE & COMPLETE"
+                        style={styles.ratingSaveBtn}
+                      />
+                    </View>
+                  </Pressable>
+                </Pressable>
+              </Modal>
 
               <LunaGuideModal visible={showHomeLunaModal} onClose={() => setShowHomeLunaModal(false)} />
               <EvieGuideModal visible={showHomeEvieModal} onClose={() => setShowHomeEvieModal(false)} />
@@ -3607,6 +3733,45 @@ const styles = StyleSheet.create({
     borderColor: "#475569",
     backgroundColor: "#3E2A1A",
   },
+  ratingBackdrop: { flex: 1, backgroundColor: "rgba(28,18,10,0.85)", alignItems: "center", justifyContent: "center", padding: 18 },
+  ratingPanel: {
+    width: "100%",
+    maxWidth: 380,
+    backgroundColor: "#EAD9B6",
+    borderWidth: 3,
+    borderColor: "#5C4425",
+    borderRadius: 10,
+    padding: 18,
+  },
+  ratingTitle: { color: "#4A3620", fontFamily: "monospace", fontSize: 15, fontWeight: "900", textAlign: "center" },
+  ratingSubtitle: { color: "#7C5B2B", fontFamily: "monospace", fontSize: 12, fontWeight: "700", textAlign: "center", marginTop: 6, marginBottom: 14 },
+  ratingRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, justifyContent: "center" },
+  ratingChip: {
+    width: 40,
+    height: 40,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: "#5C4425",
+    backgroundColor: "#F4E8CE",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  ratingChipActive: { backgroundColor: "#B45309", borderColor: "#FBBF24" },
+  ratingChipText: { color: "#4A3620", fontFamily: "monospace", fontSize: 14, fontWeight: "900" },
+  ratingChipTextActive: { color: "#FFFFFF" },
+  ratingSelectedLabel: { color: "#4A3620", fontFamily: "monospace", fontSize: 12, fontWeight: "800", textAlign: "center", marginTop: 12 },
+  ratingButtonRow: { flexDirection: "row", gap: 10, marginTop: 16 },
+  ratingCancelBtn: {
+    flex: 1,
+    backgroundColor: "#3E2A1A",
+    borderWidth: 2,
+    borderColor: "#5C4425",
+    borderRadius: 6,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  ratingCancelText: { color: "#D8C9A3", fontFamily: "monospace", fontSize: 12, fontWeight: "900" },
+  ratingSaveBtn: { flex: 1, paddingVertical: 11 },
   modalStartText: {
     color: "#FDE68A",
     fontSize: 12,

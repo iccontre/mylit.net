@@ -14,14 +14,19 @@ import {
 
 import { FormScreen } from "../components/FormScreen";
 import { DreamJournalEntryModal } from "../components/DreamJournalEntryModal";
+import { SaveButton, type SaveState } from "../components/parchment/SaveButton";
 import { uiAssets } from "../constants/uiAssets";
 import { formPageContent } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
+import { getSession } from "../lib/auth";
+import { isDuplicateFoodLog, type FoodLog } from "../lib/fuel";
 import { persistProgressKeys } from "../lib/progressStore";
-import { CHECKIN_HISTORY_KEY, LATEST_CHECKIN_KEY, MORNING_CHECKIN_DRAFT_KEY } from "../lib/storageKeys";
+import { readJson } from "../lib/readJson";
+import { CHECKIN_HISTORY_KEY, FOOD_LOGS_KEY, LATEST_CHECKIN_KEY, MORNING_CHECKIN_DRAFT_KEY } from "../lib/storageKeys";
 import { syncDailySnapshot } from "../lib/progressSync";
 import {
+  AFTERNOON_UNLOCK_HOURS_AFTER_WAKE,
   computeAfternoonUnlockLabel,
   computeSleepSession,
   DEFAULT_AFTERNOON_UNLOCK_TIME,
@@ -72,11 +77,6 @@ type CheckIn = {
   eatenSinceMorning?: boolean;
   hasEatenToday?: boolean;
   foodSinceMorning?: string;
-  /** Approximate meal time — a preset ("Morning"/"Midday"/"Afternoon"/"Evening") or, if the
-   *  user picked "Exact time", the free-text time below. Only meaningful when eatenSinceMorning
-   *  is true; never inferred from time simply passing (see saving logic). */
-  ateTimePreset?: string;
-  ateApproxTime?: string;
   afternoonCheckInCompletedToday?: boolean;
   /** Quest-day (6 AM boundary) this Afternoon Check-In was completed for — lets Home's mandatory
    *  gate selector tell "already done today" apart from "done yesterday" without re-deriving it. */
@@ -97,12 +97,19 @@ type CheckIn = {
 /** Nap is a special Recovery subtype — its own energy tiers, distinct from generic Recovery quest/checklist values. */
 const NAP_ENERGY_BY_DURATION: Record<number, number> = { 15: 3, 30: 6, 45: 9, 60: 12 };
 const NAP_DURATION_OPTIONS = [15, 30, 45, 60] as const;
-/** Simple meal-time presets — "Exact time" reveals a free-text field, matching the existing
- *  caffeine-time free-text pattern rather than introducing a new picker component. */
-const MEAL_TIME_PRESETS = ["Morning", "Midday", "Afternoon", "Exact time"] as const;
 
+/** Logical quest-day (6 AM boundary) — every "already done today"/"already applied today"
+ *  check on this screen compares against THIS, not a plain calendar date, so a check-in
+ *  submitted between midnight and 6 AM (inside the automatic LDM window) is still correctly
+ *  recognized as "today's" check-in by every other consumer that also keys by quest-day. */
 function getTodayKeyLocal(): string {
-  return new Date().toLocaleDateString("en-CA");
+  return getQuestDayKey();
+}
+
+/** Same rule applied to an arbitrary saved timestamp, for comparing a past record's day
+ *  against today's quest-day rather than its raw calendar date. */
+function questDayKeyOf(isoTimestamp: string): string {
+  return getQuestDayKey(new Date(isoTimestamp));
 }
 
 const pixelFont = Platform.select({
@@ -179,6 +186,17 @@ function nowMinutesSinceMidnight(): number {
   return now.getHours() * 60 + now.getMinutes();
 }
 
+/** Identical shape to FoodLogModal's own resolveEatenAt — "Now" by default, or an exact
+ *  free-text time parsed onto today's date. Returns null only for an unparseable exact time. */
+function resolveMealEatenAt(useExact: boolean, exactTimeInput: string): Date | null {
+  if (!useExact || !exactTimeInput.trim()) return new Date();
+  const minutes = parseTimeToMinutes(exactTimeInput.trim());
+  if (minutes === null) return null;
+  const d = new Date();
+  d.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+  return d;
+}
+
 /** Rolling estimate of the user's actual wake time — simple average of the last ~14 Morning Check-In wake times, per spec ("do not overcomplicate"). */
 function computeConsistentWakeTime(recentWakeTimes: string[]): string | undefined {
   const minutesList = recentWakeTimes.map((t) => parseTimeToMinutes(t)).filter((m): m is number => m !== null);
@@ -236,8 +254,12 @@ export default function SleepCheckInScreen() {
   const [stress, setStress] = useState("");
   const [eatenSinceMorning, setEatenSinceMorning] = useState<"yes" | "no" | "">("");
   const [foodSinceMorning, setFoodSinceMorning] = useState("");
-  const [ateTimePreset, setAteTimePreset] = useState("");
-  const [ateApproxTime, setAteApproxTime] = useState("");
+  // Exact meal time — same component/validation as Food Log (components/FoodLogModal.tsx):
+  // "Now" by default, or toggle to an exact free-text time. Feeds a REAL FoodLog event on
+  // save (see saveCheckIn) instead of a competing approximate-time field on the CheckIn
+  // record, so this answer actually clears the Eat gate and updates fuel like any other meal.
+  const [useExactMealTime, setUseExactMealTime] = useState(false);
+  const [mealTimeInput, setMealTimeInput] = useState("");
   const [currentEnergyFeeling, setCurrentEnergyFeeling] = useState("");
   const [wakeTime, setWakeTime] = useState("");
   const [sleepInterrupted, setSleepInterrupted] = useState<"yes" | "no" | "">("");
@@ -252,6 +274,11 @@ export default function SleepCheckInScreen() {
   const [afternoonUnlockLabel, setAfternoonUnlockLabel] = useState(DEFAULT_AFTERNOON_UNLOCK_TIME);
   const [afternoonUnlockChecked, setAfternoonUnlockChecked] = useState(false);
   const [showDreamJournalModal, setShowDreamJournalModal] = useState(false);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
+  /** True once we've confirmed THIS check-in type already has a saved submission for today's
+   *  quest day — drives the "already saved" banner and prefills the form below instead of
+   *  showing a blank screen that looks like the user needs to start over. */
+  const [alreadySavedToday, setAlreadySavedToday] = useState(false);
 
   // Restore an unfinished Morning Check-In draft (e.g. app was backgrounded, refreshed, or the
   // user opened Dream Journal mid-form) — restored ONCE on mount, before the user types
@@ -316,7 +343,7 @@ export default function SleepCheckInScreen() {
       let todayRecordedWakeTime: string | undefined;
       try {
         const saved = savedCheckInRaw ? (JSON.parse(savedCheckInRaw) as CheckIn) : null;
-        if (saved?.createdAt && new Date(saved.createdAt).toLocaleDateString("en-CA") === getTodayKeyLocal()) {
+        if (saved?.createdAt && questDayKeyOf(saved.createdAt) === getTodayKeyLocal()) {
           todayRecordedWakeTime = saved.wakeTime || saved.finalWakeTime;
         }
       } catch {
@@ -337,13 +364,36 @@ export default function SleepCheckInScreen() {
     try {
       const parsed = JSON.parse(saved) as CheckIn;
       setLatestCheckIn(parsed);
-      // Prefill today's nap answer if this check-in already recorded one, so reopening
-      // the screen shows what was saved instead of resetting the question.
       const isTodayAfternoon =
-        parsed.checkInType === "afternoon" && new Date(parsed.createdAt).toLocaleDateString("en-CA") === getTodayKeyLocal();
+        parsed.checkInType === "afternoon" && questDayKeyOf(parsed.createdAt) === getTodayKeyLocal();
       if (isTodayAfternoon && typeof parsed.tookNap === "boolean") {
         setTookNap(parsed.tookNap ? "yes" : "no");
         if (parsed.napDurationMinutes) setNapDuration(parsed.napDurationMinutes);
+      }
+
+      // Reopening a check-in that's already saved for TODAY's quest day (of the same type this
+      // screen instance is) prefills every answer instead of showing a blank form that reads as
+      // "you need to start over" — resubmitting just updates the same day's record.
+      const isTodayThisType = parsed.checkInType === checkInType && questDayKeyOf(parsed.createdAt) === getTodayKeyLocal();
+      if (isTodayThisType) {
+        setAlreadySavedToday(true);
+        setMood(parsed.mood ?? "");
+        setStress(parsed.stress ?? "");
+        setCurrentEnergyFeeling(parsed.currentEnergyFeeling ?? "");
+        if (checkInType === "morning") {
+          setSleptTimeInput(parsed.sleptTime ?? "");
+          setSleepQuality(parsed.sleepQuality ?? "");
+          setWakeTime(parsed.wakeTime ?? parsed.finalWakeTime ?? "");
+          setSleepInterrupted(parsed.interrupted ? "yes" : "no");
+          setInterruptionWakeInput(parsed.interruptionWakeTime ?? "");
+          setInterruptionSleepAgainInput(parsed.interruptionSleepTime ?? "");
+          setDreamedTonight(typeof parsed.dreamedTonight === "boolean" ? (parsed.dreamedTonight ? "yes" : "no") : "");
+        } else {
+          setEatenSinceMorning(typeof parsed.eatenSinceMorning === "boolean" ? (parsed.eatenSinceMorning ? "yes" : "no") : "");
+          setFoodSinceMorning(parsed.foodSinceMorning ?? "");
+          setHadCaffeine(typeof parsed.hadCaffeine === "boolean" ? (parsed.hadCaffeine ? "yes" : "no") : "");
+          setCaffeineTime(parsed.caffeineTime ?? "");
+        }
       }
     } catch {
       setLatestCheckIn(null);
@@ -396,7 +446,7 @@ export default function SleepCheckInScreen() {
   // resubmitting (e.g. to tweak mood/stress) must not stack the bonus again.
   const napAlreadyAppliedToday =
     latestCheckIn?.checkInType === "afternoon" &&
-    new Date(latestCheckIn.createdAt).toLocaleDateString("en-CA") === todayKeyForCheckIn &&
+    questDayKeyOf(latestCheckIn.createdAt) === todayKeyForCheckIn &&
     Boolean(latestCheckIn?.napEnergyRestored);
   const napEnergyToApply =
     showNapSection && tookNap === "yes" && napDuration && !napAlreadyAppliedToday ? NAP_ENERGY_BY_DURATION[napDuration] ?? 0 : 0;
@@ -405,7 +455,7 @@ export default function SleepCheckInScreen() {
   // baseline, not from the already-adjusted energy the first submit saved — otherwise every
   // resubmit would stack another +/-10 on top of the last one.
   const isTodayAfternoonAlreadySaved =
-    latestCheckIn?.checkInType === "afternoon" && new Date(latestCheckIn.createdAt).toLocaleDateString("en-CA") === todayKeyForCheckIn;
+    latestCheckIn?.checkInType === "afternoon" && questDayKeyOf(latestCheckIn.createdAt) === todayKeyForCheckIn;
   const afternoonBaseEnergy =
     isTodayAfternoonAlreadySaved && typeof latestCheckIn?.preAfternoonEnergy === "number"
       ? latestCheckIn.preAfternoonEnergy
@@ -474,118 +524,159 @@ export default function SleepCheckInScreen() {
     }
   }
 
-  async function saveCheckIn() {
-    if (!hasAllInputs) return;
+  /**
+   * A meal logged here goes through the exact same canonical path FoodLogModal uses — same
+   * shape, same 5-minute-window dedup (isDuplicateFoodLog) — so "yes I ate" from Afternoon
+   * Check-In actually clears the Eat gate and updates fuel/history like any other logged meal,
+   * instead of only setting an approximate-time field nothing else reads.
+   */
+  async function logMealFromCheckIn(eatenAtDate: Date): Promise<void> {
+    const existing = await readJson<FoodLog[]>(FOOD_LOGS_KEY, []);
+    const eatenAt = eatenAtDate.toISOString();
+    if (isDuplicateFoodLog(existing, { eatenAt, entryType: "meal" })) return;
 
-    const checkIn: CheckIn = {
-      // Spread the previous check-in first so Sleep Guide fields (desired sleep/wake
-      // time, cutoff suggestions, etc. — saved under this same storage key from the
-      // Sleep Guide screen) survive every morning/afternoon check-in for the week,
-      // instead of being wiped out by this object replacing the whole record.
-      ...latestCheckIn,
-      id: String(Date.now()),
-      checkInType,
-      // `hours` is kept as a plain decimal for older consumers (weekly averages, daily
-      // snapshot sync) that read it directly — always derived from effective sleep now.
-      hours: isAfternoon ? latestCheckIn?.hours : effectiveSleepMinutes !== null ? (Math.round((effectiveSleepMinutes / 60) * 10) / 10).toString() : undefined,
-      sleepQuality: isAfternoon ? latestCheckIn?.sleepQuality : sleepQuality,
-      sleptTime: isAfternoon ? latestCheckIn?.sleptTime : sleptTimeInput.trim() || undefined,
-      wakeTime: isAfternoon ? latestCheckIn?.wakeTime : wakeTime.trim() || undefined,
-      finalWakeTime: isAfternoon ? latestCheckIn?.finalWakeTime : wakeTime.trim() || undefined,
-      interrupted: isAfternoon ? latestCheckIn?.interrupted : sleepInterrupted === "yes",
-      interruptionWakeTime: isAfternoon ? latestCheckIn?.interruptionWakeTime : sleepInterrupted === "yes" ? interruptionWakeInput.trim() : undefined,
-      interruptionSleepTime: isAfternoon ? latestCheckIn?.interruptionSleepTime : sleepInterrupted === "yes" ? interruptionSleepAgainInput.trim() : undefined,
-      interruptionDurationMinutes: isAfternoon ? latestCheckIn?.interruptionDurationMinutes : interruptionDurationMinutes ?? undefined,
-      effectiveSleepMinutes: isAfternoon ? latestCheckIn?.effectiveSleepMinutes : effectiveSleepMinutes ?? undefined,
-      dreamedTonight: isAfternoon ? latestCheckIn?.dreamedTonight : dreamedTonight === "yes",
-      mood,
-      stress,
-      currentEnergyFeeling: currentEnergyFeeling.trim() || undefined,
-      eatenSinceMorning: isAfternoon ? eatenSinceMorning === "yes" : false,
-      hasEatenToday: isAfternoon ? eatenSinceMorning === "yes" : false,
-      foodSinceMorning: isAfternoon ? foodSinceMorning.trim() : undefined,
-      // Never inferred from time passing — only set when the user actually answered "Yes"
-      // and picked a preset (or entered an exact time).
-      ateTimePreset: isAfternoon ? (eatenSinceMorning === "yes" ? ateTimePreset || undefined : undefined) : latestCheckIn?.ateTimePreset,
-      ateApproxTime: isAfternoon
-        ? eatenSinceMorning === "yes" && ateTimePreset === "Exact time"
-          ? ateApproxTime.trim() || undefined
-          : undefined
-        : latestCheckIn?.ateApproxTime,
-      afternoonCheckInCompletedToday: isAfternoon,
-      afternoonCheckInQuestDayKey: isAfternoon ? getQuestDayKey() : latestCheckIn?.afternoonCheckInQuestDayKey,
-      tookNap: isAfternoon && showNapSection ? tookNap === "yes" : latestCheckIn?.tookNap,
-      napDurationMinutes: isAfternoon && showNapSection && tookNap === "yes" ? napDuration ?? undefined : latestCheckIn?.napDurationMinutes,
-      // Keep whatever was already restored today if the bonus was already applied —
-      // otherwise record this save's nap energy (0 if no nap was taken).
-      napEnergyRestored: isAfternoon
-        ? napAlreadyAppliedToday
-          ? latestCheckIn?.napEnergyRestored
-          : napEnergyToApply
-        : latestCheckIn?.napEnergyRestored,
-      hadCaffeine: isAfternoon ? hadCaffeine === "yes" : latestCheckIn?.hadCaffeine,
-      caffeineTime: isAfternoon ? (hadCaffeine === "yes" ? caffeineTime.trim() || undefined : undefined) : latestCheckIn?.caffeineTime,
-      // Anchors any SAME-DAY resubmit of afternoon answers to this same pre-adjustment value —
-      // see the afternoonBaseEnergy computation above.
-      preAfternoonEnergy: isAfternoon ? afternoonBaseEnergy : latestCheckIn?.preAfternoonEnergy,
-      energy,
-      mode,
-      createdAt: new Date().toISOString(),
+    const session = await getSession();
+    const now = new Date().toISOString();
+    const log: FoodLog = {
+      id: `foodlog-${Date.now()}`,
+      userId: session?.user?.id ?? "local",
+      eatenAt,
+      entryType: "meal",
+      note: foodSinceMorning.trim() || undefined,
+      logicalDayKey: getQuestDayKey(eatenAtDate),
+      createdAt: now,
+      updatedAt: now,
     };
+    await persistProgressKeys({ [FOOD_LOGS_KEY]: JSON.stringify([log, ...existing]) });
+  }
 
-    const savedHistory = await AsyncStorage.getItem(CHECKIN_HISTORY_KEY);
-    const history: CheckIn[] = savedHistory ? JSON.parse(savedHistory) : [];
-    const nextHistory = [checkIn, ...history];
+  async function saveCheckIn() {
+    if (!hasAllInputs || saveState === "saving" || saveState === "saved") return;
 
-    await persistProgressKeys({
-      [LATEST_CHECKIN_KEY]: JSON.stringify(checkIn),
-      [CHECKIN_HISTORY_KEY]: JSON.stringify(nextHistory),
-    });
-
-    if (!isAfternoon) {
-      // Submission succeeded — the draft's job is done. Idempotent: removing an already-gone
-      // key is a safe no-op, so a retry/refresh after this point never errors.
-      await AsyncStorage.removeItem(MORNING_CHECKIN_DRAFT_KEY);
+    // Validate the exact meal time BEFORE entering the saving state, same as Food Log —
+    // an unparseable time must never silently fall back to "now" or block the whole check-in.
+    let mealEatenAtDate: Date | null = null;
+    if (isAfternoon && eatenSinceMorning === "yes") {
+      mealEatenAtDate = resolveMealEatenAt(useExactMealTime, mealTimeInput);
+      if (!mealEatenAtDate) {
+        setSaveState("error");
+        return;
+      }
     }
 
-    if (!isAfternoon && wakeTime.trim()) {
-      void recordWakeTimeForRhythm(wakeTime.trim());
-    }
+    setSaveState("saving");
 
-    if (!isAfternoon && todayIntentText.trim()) {
-      // Idempotent per quest-day — a retry/refresh/another device never generates a second
-      // quest for the same day (see ensureEvieMorningQuest).
-      void ensureEvieMorningQuest(todayIntentText.trim());
-    }
-
-    await successHaptic();
-
-    void trackEvent(
-      isAfternoon ? ANALYTICS_EVENTS.afternoon_checkin_completed : ANALYTICS_EVENTS.morning_checkin_completed,
-      { energy, mode }
-    );
-    void syncDailySnapshot({
-      energy_score: energy,
-      mode,
-      mood_score: Number(mood) || null,
-      stress_score: Number(stress) || null,
-      sleep_hours: isAfternoon ? Number(latestCheckIn?.hours) || null : effectiveSleepMinutes !== null ? Math.round((effectiveSleepMinutes / 60) * 10) / 10 : null,
-    });
-    void recordAgentEvent({
-      type: "sleep_checkin_saved",
-      sourcePage: "sleep-checkin",
-      relatedItemId: checkIn.id,
-      mode: mode === "Recovery" ? "recovery" : "progress",
-      metadata: { checkInType: isAfternoon ? "afternoon" : "morning", energy },
-    });
-
-    router.push({
-      pathname: "/",
-      params: {
-        energy: String(energy),
+    try {
+      const checkIn: CheckIn = {
+        // Spread the previous check-in first so Sleep Guide fields (desired sleep/wake
+        // time, cutoff suggestions, etc. — saved under this same storage key from the
+        // Sleep Guide screen) survive every morning/afternoon check-in for the week,
+        // instead of being wiped out by this object replacing the whole record.
+        ...latestCheckIn,
+        id: String(Date.now()),
+        checkInType,
+        // `hours` is kept as a plain decimal for older consumers (weekly averages, daily
+        // snapshot sync) that read it directly — always derived from effective sleep now.
+        hours: isAfternoon ? latestCheckIn?.hours : effectiveSleepMinutes !== null ? (Math.round((effectiveSleepMinutes / 60) * 10) / 10).toString() : undefined,
+        sleepQuality: isAfternoon ? latestCheckIn?.sleepQuality : sleepQuality,
+        sleptTime: isAfternoon ? latestCheckIn?.sleptTime : sleptTimeInput.trim() || undefined,
+        wakeTime: isAfternoon ? latestCheckIn?.wakeTime : wakeTime.trim() || undefined,
+        finalWakeTime: isAfternoon ? latestCheckIn?.finalWakeTime : wakeTime.trim() || undefined,
+        interrupted: isAfternoon ? latestCheckIn?.interrupted : sleepInterrupted === "yes",
+        interruptionWakeTime: isAfternoon ? latestCheckIn?.interruptionWakeTime : sleepInterrupted === "yes" ? interruptionWakeInput.trim() : undefined,
+        interruptionSleepTime: isAfternoon ? latestCheckIn?.interruptionSleepTime : sleepInterrupted === "yes" ? interruptionSleepAgainInput.trim() : undefined,
+        interruptionDurationMinutes: isAfternoon ? latestCheckIn?.interruptionDurationMinutes : interruptionDurationMinutes ?? undefined,
+        effectiveSleepMinutes: isAfternoon ? latestCheckIn?.effectiveSleepMinutes : effectiveSleepMinutes ?? undefined,
+        dreamedTonight: isAfternoon ? latestCheckIn?.dreamedTonight : dreamedTonight === "yes",
+        mood,
+        stress,
+        currentEnergyFeeling: currentEnergyFeeling.trim() || undefined,
+        eatenSinceMorning: isAfternoon ? eatenSinceMorning === "yes" : false,
+        hasEatenToday: isAfternoon ? eatenSinceMorning === "yes" : false,
+        foodSinceMorning: isAfternoon ? foodSinceMorning.trim() : undefined,
+        afternoonCheckInCompletedToday: isAfternoon,
+        afternoonCheckInQuestDayKey: isAfternoon ? getQuestDayKey() : latestCheckIn?.afternoonCheckInQuestDayKey,
+        tookNap: isAfternoon && showNapSection ? tookNap === "yes" : latestCheckIn?.tookNap,
+        napDurationMinutes: isAfternoon && showNapSection && tookNap === "yes" ? napDuration ?? undefined : latestCheckIn?.napDurationMinutes,
+        // Keep whatever was already restored today if the bonus was already applied —
+        // otherwise record this save's nap energy (0 if no nap was taken).
+        napEnergyRestored: isAfternoon
+          ? napAlreadyAppliedToday
+            ? latestCheckIn?.napEnergyRestored
+            : napEnergyToApply
+          : latestCheckIn?.napEnergyRestored,
+        hadCaffeine: isAfternoon ? hadCaffeine === "yes" : latestCheckIn?.hadCaffeine,
+        caffeineTime: isAfternoon ? (hadCaffeine === "yes" ? caffeineTime.trim() || undefined : undefined) : latestCheckIn?.caffeineTime,
+        // Anchors any SAME-DAY resubmit of afternoon answers to this same pre-adjustment value —
+        // see the afternoonBaseEnergy computation above.
+        preAfternoonEnergy: isAfternoon ? afternoonBaseEnergy : latestCheckIn?.preAfternoonEnergy,
+        energy,
         mode,
-      },
-    });
+        createdAt: new Date().toISOString(),
+      };
+
+      const savedHistory = await AsyncStorage.getItem(CHECKIN_HISTORY_KEY);
+      const history: CheckIn[] = savedHistory ? JSON.parse(savedHistory) : [];
+      const nextHistory = [checkIn, ...history];
+
+      await persistProgressKeys({
+        [LATEST_CHECKIN_KEY]: JSON.stringify(checkIn),
+        [CHECKIN_HISTORY_KEY]: JSON.stringify(nextHistory),
+      });
+
+      if (mealEatenAtDate) {
+        await logMealFromCheckIn(mealEatenAtDate);
+      }
+
+      if (!isAfternoon) {
+        // Submission succeeded — the draft's job is done. Idempotent: removing an already-gone
+        // key is a safe no-op, so a retry/refresh after this point never errors.
+        await AsyncStorage.removeItem(MORNING_CHECKIN_DRAFT_KEY);
+      }
+
+      if (!isAfternoon && wakeTime.trim()) {
+        void recordWakeTimeForRhythm(wakeTime.trim());
+      }
+
+      if (!isAfternoon && todayIntentText.trim()) {
+        // Idempotent per quest-day — a retry/refresh/another device never generates a second
+        // quest for the same day (see ensureEvieMorningQuest).
+        void ensureEvieMorningQuest(todayIntentText.trim());
+      }
+
+      await successHaptic();
+
+      void trackEvent(
+        isAfternoon ? ANALYTICS_EVENTS.afternoon_checkin_completed : ANALYTICS_EVENTS.morning_checkin_completed,
+        { energy, mode }
+      );
+      void syncDailySnapshot({
+        energy_score: energy,
+        mode,
+        mood_score: Number(mood) || null,
+        stress_score: Number(stress) || null,
+        sleep_hours: isAfternoon ? Number(latestCheckIn?.hours) || null : effectiveSleepMinutes !== null ? Math.round((effectiveSleepMinutes / 60) * 10) / 10 : null,
+      });
+      void recordAgentEvent({
+        type: "sleep_checkin_saved",
+        sourcePage: "sleep-checkin",
+        relatedItemId: checkIn.id,
+        mode: mode === "Recovery" ? "recovery" : "progress",
+        metadata: { checkInType: isAfternoon ? "afternoon" : "morning", energy },
+      });
+
+      setSaveState("saved");
+      // Hold the green ✓ SAVED confirmation on screen briefly, matching the shared Save-state
+      // pattern, instead of navigating away the instant persistence resolves.
+      setTimeout(() => {
+        router.push({ pathname: "/", params: { energy: String(energy), mode } });
+      }, 800);
+    } catch (error) {
+      console.warn("saveCheckIn error:", error);
+      // All answers stay exactly as entered — the button surfaces a visible failure + retry
+      // affordance instead of silently doing nothing.
+      setSaveState("error");
+    }
   }
 
   if (isAfternoonLocked) {
@@ -601,7 +692,7 @@ export default function SleepCheckInScreen() {
                 <Text style={styles.heroTitle}>AFTERNOON CHECK-IN</Text>
                 <Text style={styles.heroBody}>
                   {afternoonUnlockChecked
-                    ? `Afternoon Check-In opens at ${afternoonUnlockLabel} — about 7 hours after your wake time, so there's enough of the day to reflect on.`
+                    ? `Afternoon Check-In opens at ${afternoonUnlockLabel} — ${AFTERNOON_UNLOCK_HOURS_AFTER_WAKE} hours after your wake time, so there's enough of the day to reflect on.`
                     : "Checking when your Afternoon Check-In unlocks…"}
                 </Text>
               </View>
@@ -637,6 +728,11 @@ export default function SleepCheckInScreen() {
                   ? "Tell MYLIT what changed since morning so your Energy Reserve can update."
                   : "This morning ritual helps MYLIT choose quests that fit your real energy."}
               </Text>
+              {alreadySavedToday ? (
+                <Text style={[styles.heroBody, { marginTop: 6, fontStyle: "italic" }]}>
+                  Already saved for today — your answers below are what you saved. Updating will replace them.
+                </Text>
+              ) : null}
             </View>
 
             <View style={[styles.dialogueCard, { borderColor: theme.accent }]}>
@@ -662,8 +758,8 @@ export default function SleepCheckInScreen() {
                       style={[styles.choiceButton, eatenSinceMorning === "no" && styles.choiceButtonActive, { borderColor: eatenSinceMorning === "no" ? theme.accent : "#5C4425" }]}
                       onPress={() => {
                         setEatenSinceMorning("no");
-                        setAteTimePreset("");
-                        setAteApproxTime("");
+                        setUseExactMealTime(false);
+                        setMealTimeInput("");
                       }}
                     >
                       <Text style={styles.choiceText}>No</Text>
@@ -672,29 +768,32 @@ export default function SleepCheckInScreen() {
 
                   {eatenSinceMorning === "yes" ? (
                     <>
-                      <Text style={styles.label}>About when did you eat?</Text>
+                      {/* Same exact time input as Food Log (components/FoodLogModal.tsx) — this
+                       *  answer creates a real meal event through the same persistence path, not
+                       *  a separate approximate-time field. */}
+                      <Text style={styles.label}>When did you eat?</Text>
                       <View style={styles.choiceRow}>
-                        {MEAL_TIME_PRESETS.map((preset) => (
-                          <TouchableOpacity
-                            key={preset}
-                            style={[styles.choiceButton, ateTimePreset === preset && styles.choiceButtonActive, { borderColor: ateTimePreset === preset ? theme.accent : "#5C4425" }]}
-                            onPress={() => {
-                              setAteTimePreset(preset);
-                              if (preset !== "Exact time") setAteApproxTime("");
-                            }}
-                          >
-                            <Text style={styles.choiceText}>{preset}</Text>
-                          </TouchableOpacity>
-                        ))}
+                        <TouchableOpacity
+                          style={[styles.choiceButton, !useExactMealTime && styles.choiceButtonActive, { borderColor: !useExactMealTime ? theme.accent : "#5C4425" }]}
+                          onPress={() => setUseExactMealTime(false)}
+                        >
+                          <Text style={styles.choiceText}>Now</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.choiceButton, useExactMealTime && styles.choiceButtonActive, { borderColor: useExactMealTime ? theme.accent : "#5C4425" }]}
+                          onPress={() => setUseExactMealTime(true)}
+                        >
+                          <Text style={styles.choiceText}>Exact time</Text>
+                        </TouchableOpacity>
                       </View>
-                      {ateTimePreset === "Exact time" ? (
+                      {useExactMealTime ? (
                         <TextInput
                           style={styles.input}
                           placeholder="Example: 1:15 PM"
                           placeholderTextColor="#64748B"
                           autoCapitalize="characters"
-                          value={ateApproxTime}
-                          onChangeText={setAteApproxTime}
+                          value={mealTimeInput}
+                          onChangeText={setMealTimeInput}
                         />
                       ) : null}
                     </>
@@ -886,9 +985,13 @@ export default function SleepCheckInScreen() {
               </View>
             </View>
 
-            <TouchableOpacity style={[!hasAllInputs ? styles.disabledButton : styles.primaryButton, { borderColor: hasAllInputs ? theme.accent : "#475569" }]} onPress={saveCheckIn}>
-              <Text style={styles.buttonText}>{hasAllInputs ? "Save Check-In" : "Enter Check-In Values"}</Text>
-            </TouchableOpacity>
+            <SaveButton
+              state={saveState}
+              onPress={saveCheckIn}
+              disabled={!hasAllInputs}
+              idleLabel={hasAllInputs ? (alreadySavedToday ? "UPDATE CHECK-IN" : "SAVE CHECK-IN") : "ENTER CHECK-IN VALUES"}
+              style={styles.primaryButton}
+            />
 
             <TouchableOpacity style={styles.backButton} onPress={() => router.push("/")}>
               <Text style={styles.backButtonText}>Back to Today</Text>
@@ -1191,11 +1294,6 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   primaryButton: {
-    backgroundColor: "#3E2A1A",
-    padding: 14,
-    borderRadius: 4,
-    alignItems: "center",
-    borderWidth: 3,
     marginBottom: 10,
   },
   disabledButton: {

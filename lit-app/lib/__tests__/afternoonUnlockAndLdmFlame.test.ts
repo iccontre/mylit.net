@@ -13,9 +13,9 @@ function at(hours: number, minutes: number): Date {
   return d;
 }
 
-describe("Afternoon Check-In unlocks exactly 5 hours after wake", () => {
-  it("the shared constant is 5 hours (not the old 7-hour value)", () => {
-    expect(AFTERNOON_UNLOCK_HOURS_AFTER_WAKE).toBe(5);
+describe("Afternoon Check-In unlocks exactly 6 hours after wake", () => {
+  it("the shared constant is 6 hours (not the old 5-hour value)", () => {
+    expect(AFTERNOON_UNLOCK_HOURS_AFTER_WAKE).toBe(6);
   });
 
   it("resolveWakeTimestamp anchors a same-quest-day wake time to today", () => {
@@ -27,18 +27,28 @@ describe("Afternoon Check-In unlocks exactly 5 hours after wake", () => {
     expect(wake!.getDate()).toBe(now.getDate());
   });
 
-  it("computeAfternoonUnlockTimestamp is exactly wake + 5 hours", () => {
+  it("computeAfternoonUnlockTimestamp is exactly wake + 6 hours", () => {
     const wake = resolveWakeTimestamp("7:00 AM", at(10, 0));
     const unlock = computeAfternoonUnlockTimestamp(wake);
     expect(unlock).not.toBeNull();
-    expect(unlock!.getHours()).toBe(12);
+    expect(unlock!.getHours()).toBe(13);
     expect(unlock!.getMinutes()).toBe(0);
   });
 
-  it("a late wake time still unlocks exactly 5 hours later, even past noon", () => {
+  it("does not unlock one minute before wake + 6 hours", () => {
+    const wake = resolveWakeTimestamp("7:00 AM", at(10, 0))!;
+    const unlock = computeAfternoonUnlockTimestamp(wake)!;
+    const oneMinuteBefore = new Date(unlock.getTime() - 60 * 1000);
+    expect(oneMinuteBefore.getTime() < unlock.getTime()).toBe(true);
+    expect(unlock.getHours()).toBe(13);
+    expect(oneMinuteBefore.getHours()).toBe(12);
+    expect(oneMinuteBefore.getMinutes()).toBe(59);
+  });
+
+  it("a late wake time still unlocks exactly 6 hours later, even past noon", () => {
     const wake = resolveWakeTimestamp("11:30 AM", at(12, 0));
     const unlock = computeAfternoonUnlockTimestamp(wake);
-    expect(unlock!.getHours()).toBe(16);
+    expect(unlock!.getHours()).toBe(17);
     expect(unlock!.getMinutes()).toBe(30);
   });
 
@@ -52,7 +62,7 @@ describe("Afternoon Check-In unlocks exactly 5 hours after wake", () => {
     expect(wake!.getHours()).toBe(1);
     const unlock = computeAfternoonUnlockTimestamp(wake);
     expect(unlock!.getDate()).toBe(now.getDate() + 1);
-    expect(unlock!.getHours()).toBe(6);
+    expect(unlock!.getHours()).toBe(7);
   });
 
   it("returns null (no fixed clock-time fallback) when there is no wake time at all", () => {

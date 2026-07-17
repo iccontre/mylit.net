@@ -47,6 +47,7 @@ type JournalEntry = {
   honestReframe: string;
   mindLesson: string;
   createdAt: string;
+  updatedAt?: string;
 };
 
 const STORAGE_KEY = JOURNAL_ENTRIES_KEY;
@@ -70,6 +71,7 @@ export default function JournalScreen() {
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [editingId, setEditingId] = useState<string | null>(null);
   const savedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -100,31 +102,59 @@ export default function JournalScreen() {
     setSaveState("saving");
 
     try {
-      const newEntry: JournalEntry = {
-        id: String(Date.now()),
-        type: entryType,
-        mood,
-        content: content.trim(),
-        thoughtPattern: "",
-        thoughtImpact: "Neutral",
-        honestReframe: "",
-        mindLesson: "",
-        createdAt: new Date().toLocaleString(),
-      };
+      let nextEntries: JournalEntry[];
+      let relatedId: string;
+      if (editingId) {
+        nextEntries = entries.map((entry) =>
+          entry.id === editingId ? { ...entry, type: entryType, mood, content: content.trim(), updatedAt: new Date().toISOString() } : entry
+        );
+        relatedId = editingId;
+      } else {
+        const newEntry: JournalEntry = {
+          id: String(Date.now()),
+          type: entryType,
+          mood,
+          content: content.trim(),
+          thoughtPattern: "",
+          thoughtImpact: "Neutral",
+          honestReframe: "",
+          mindLesson: "",
+          createdAt: new Date().toLocaleString(),
+        };
+        nextEntries = [newEntry, ...entries];
+        relatedId = newEntry.id;
+      }
 
-      const nextEntries = [newEntry, ...entries];
       await saveEntries(nextEntries);
-      void recordAgentEvent({ type: "journal_saved", sourcePage: "journal", relatedItemId: newEntry.id, metadata: { entryType } });
-
-      setContent("");
-      setMood("");
+      void recordAgentEvent({ type: "journal_saved", sourcePage: "journal", relatedItemId: relatedId, metadata: { entryType } });
 
       setSaveState("saved");
       if (savedTimeout.current) clearTimeout(savedTimeout.current);
-      savedTimeout.current = setTimeout(() => setSaveState("idle"), 2000);
-    } catch {
+      savedTimeout.current = setTimeout(() => {
+        setSaveState("idle");
+        setContent("");
+        setMood("");
+        setEditingId(null);
+      }, 800);
+    } catch (error) {
+      console.warn("saveJournalEntry error:", error);
       setSaveState("error");
     }
+  }
+
+  function startEditingEntry(entry: JournalEntry) {
+    setEditingId(entry.id);
+    setEntryType(entry.type);
+    setMood(entry.mood);
+    setContent(entry.content);
+    setSaveState("idle");
+  }
+
+  function cancelEditingEntry() {
+    setEditingId(null);
+    setContent("");
+    setMood("");
+    setSaveState("idle");
   }
 
   async function clearEntries() {
@@ -187,7 +217,19 @@ export default function JournalScreen() {
                 onChangeText={setContent}
               />
 
-              <SaveButton state={saveState} onPress={saveJournalEntry} idleLabel="SAVE JOURNAL ENTRY" style={styles.saveButton} />
+              <View style={styles.saveRow}>
+                {editingId ? (
+                  <TouchableOpacity style={styles.cancelEditBtn} onPress={cancelEditingEntry} disabled={saveState === "saving"}>
+                    <Text style={styles.cancelEditBtnText}>CANCEL</Text>
+                  </TouchableOpacity>
+                ) : null}
+                <SaveButton
+                  state={saveState}
+                  onPress={saveJournalEntry}
+                  idleLabel={editingId ? "UPDATE ENTRY" : "SAVE JOURNAL ENTRY"}
+                  style={styles.saveButton}
+                />
+              </View>
             </ParchmentSurface>
 
             <TouchableOpacity style={[styles.backButton, { marginBottom: 8 }]} onPress={() => setShowHistory(true)}>
@@ -203,8 +245,18 @@ export default function JournalScreen() {
             ) : (
               entries.map((entry) => (
                 <ParchmentSurface key={entry.id} accent="mind" edgeStrip style={styles.entryCard}>
-                  <Text style={styles.entryType}>{entry.type} Log</Text>
-                  <Text style={parchmentTextStyles.meta}>{entry.createdAt}</Text>
+                  <View style={styles.entryTopRow}>
+                    <Text style={styles.entryType}>{entry.type} Log</Text>
+                    <TouchableOpacity
+                      style={styles.editBtn}
+                      hitSlop={{ top: 7, bottom: 7, left: 7, right: 7 }}
+                      onPress={() => startEditingEntry(entry)}
+                      accessibilityLabel="Edit entry"
+                    >
+                      <Text style={styles.editBtnText}>✎</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={parchmentTextStyles.meta}>{entry.createdAt}{entry.updatedAt ? " · edited" : ""}</Text>
                   <Text style={styles.entryMood}>
                     Mood: {entry.mood.trim() ? `${entry.mood}/10` : "Not entered"}
                   </Text>
@@ -338,7 +390,18 @@ const styles = StyleSheet.create({
     maxHeight: 280,
     marginBottom: 8,
   },
-  saveButton: { marginTop: 4 },
+  saveRow: { flexDirection: "row", gap: 10, marginTop: 4 },
+  saveButton: { flex: 1 },
+  cancelEditBtn: {
+    flex: 1,
+    backgroundColor: "#3E2A1A",
+    borderWidth: 2,
+    borderColor: "#5C4425",
+    borderRadius: 6,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  cancelEditBtnText: { color: "#D8C9A3", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
   sectionTitle: {
     color: "#FDE68A",
     fontFamily: pixelFont,
@@ -349,12 +412,24 @@ const styles = StyleSheet.create({
   },
   emptyCard: {},
   entryCard: { marginBottom: 10 },
+  entryTopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   entryType: {
     color: "#5B21B6",
     fontFamily: pixelFont,
     fontSize: 13,
     fontWeight: "900",
   },
+  editBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: "#5C4425",
+    backgroundColor: "#F4E8CE",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  editBtnText: { color: "#4A3620", fontSize: 14, fontWeight: "900" },
   entryMood: {
     color: "#92610A",
     fontFamily: pixelFont,

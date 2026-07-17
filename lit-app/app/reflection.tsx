@@ -14,6 +14,7 @@ import {
 import { BottomNav } from "../components/BottomNav";
 import { FormScreen } from "../components/FormScreen";
 import { GuideInfoModal } from "../components/GuideInfoModal";
+import { SaveButton, type SaveState } from "../components/parchment/SaveButton";
 import { formPageContent, formStyles } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
@@ -60,12 +61,12 @@ export default function ReflectionScreen() {
   const [whatGotInTheWay, setWhatGotInTheWay] = useState("");
   const [whatWasOff, setWhatWasOff] = useState("");
   const [smallerVersion, setSmallerVersion] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
 
   async function saveReflection() {
-    if (saving) return;
+    if (saveState === "saving" || saveState === "saved") return;
     if (!whatGotInTheWay.trim() && !whatWasOff.trim() && !smallerVersion.trim()) return;
-    setSaving(true);
+    setSaveState("saving");
 
     try {
       const newEntry: ReflectionEntry = {
@@ -83,9 +84,11 @@ export default function ReflectionScreen() {
       const next = [newEntry, ...parsed];
 
       await persistProgressKeys({ [REFLECTIONS_KEY]: JSON.stringify(next) });
-      router.push("/");
-    } catch {
-      setSaving(false);
+      setSaveState("saved");
+      setTimeout(() => router.push("/"), 800);
+    } catch (error) {
+      console.warn("saveReflection error:", error);
+      setSaveState("error");
     }
   }
 
@@ -159,13 +162,13 @@ export default function ReflectionScreen() {
               />
             </View>
 
-            <TouchableOpacity
-              style={[styles.primaryBtn, (saving || (!whatGotInTheWay.trim() && !whatWasOff.trim() && !smallerVersion.trim())) && { opacity: 0.5 }]}
-              disabled={saving || (!whatGotInTheWay.trim() && !whatWasOff.trim() && !smallerVersion.trim())}
+            <SaveButton
+              state={saveState}
               onPress={saveReflection}
-            >
-              <Text style={styles.primaryText}>{saving ? "Saving…" : "Save Reflection"}</Text>
-            </TouchableOpacity>
+              disabled={!whatGotInTheWay.trim() && !whatWasOff.trim() && !smallerVersion.trim()}
+              idleLabel="SAVE REFLECTION"
+              style={styles.primaryBtn}
+            />
 
             <TouchableOpacity style={[styles.secondaryBtn, { marginBottom: 8 }]} onPress={() => setShowHistory(true)}>
               <Text style={styles.secondaryText}>🔍 Reflection History</Text>
@@ -363,20 +366,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   primaryBtn: {
-    backgroundColor: "#FBBF24",
-    borderWidth: 3,
-    borderColor: "#92400E",
-    borderRadius: 6,
-    alignItems: "center",
-    paddingVertical: 14,
     marginBottom: 10,
-  },
-  primaryText: {
-    color: "#111827",
-    fontFamily: pixelFont,
-    fontSize: 13,
-    fontWeight: "900",
-    textTransform: "uppercase",
   },
   secondaryBtn: {
     backgroundColor: "rgba(46,32,20, 0.94)",

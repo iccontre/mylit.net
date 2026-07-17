@@ -87,12 +87,12 @@ describe("Afternoon Check-In unlock time (gate #1 persistence input)", () => {
     expect(computeAfternoonUnlockLabel(undefined, undefined)).toBe(DEFAULT_AFTERNOON_UNLOCK_TIME);
   });
 
-  it("computes 5 hours after the planned wake time", () => {
-    expect(computeAfternoonUnlockLabel("8:00 AM", undefined)).toBe("1:00 PM");
+  it("computes 6 hours after the planned wake time", () => {
+    expect(computeAfternoonUnlockLabel("8:00 AM", undefined)).toBe("2:00 PM");
   });
 
   it("prefers the planned wake time over the learned estimate", () => {
-    expect(computeAfternoonUnlockLabel("7:00 AM", "9:00 AM")).toBe("12:00 PM");
+    expect(computeAfternoonUnlockLabel("7:00 AM", "9:00 AM")).toBe("1:00 PM");
   });
 });
 

@@ -491,20 +491,21 @@ export function formatMinutesAsTime(minutes: number): string {
   return `${hour12}:${String(minute).padStart(2, "0")} ${meridiem}`;
 }
 
-export const DEFAULT_AFTERNOON_UNLOCK_TIME = "2:00 PM";
-export const AFTERNOON_UNLOCK_HOURS_AFTER_WAKE = 5;
+export const DEFAULT_AFTERNOON_UNLOCK_TIME = "3:00 PM";
+export const AFTERNOON_UNLOCK_HOURS_AFTER_WAKE = 6;
 
 /**
- * Afternoon Check-In unlocks exactly 5h after the user's wake time, or a safe 2 PM default
+ * Afternoon Check-In unlocks exactly 6h after the user's wake time, or a safe 3 PM default
  * when no wake data exists. Shared by sleep-checkin.tsx (the form's own lock screen) and
  * Home's mandatory-gate selector (index.tsx), so both agree on exactly when the gate applies.
  */
 /**
- * Priority: (1) today's actually-recorded wake time (Morning Check-In/sleep log), (2) the
- * user's configured/planned wake time, (3) a rolling learned estimate, (4) the safe default
- * label. Todo's actual value is the whole point of "unlock 5 hours after the user's ACTUAL
- * wake time" — the other tiers are legitimate estimates for when today's real value isn't
- * known yet (e.g. before Morning Check-In).
+ * Priority: (1) today's actually-recorded wake time (Morning Check-In/sleep log — both write
+ * the same CheckIn.wakeTime/finalWakeTime field, so "sleep-log wake timestamp" and "recorded
+ * wake time" are the same source here), (2) the user's configured/planned wake time, (3) a
+ * rolling learned estimate, (4) the safe default label. Today's actual value is the whole
+ * point of "unlock 6 hours after the user's ACTUAL wake time" — the other tiers are legitimate
+ * estimates for when today's real value isn't known yet (e.g. before Morning Check-In).
  */
 export function computeAfternoonUnlockLabel(
   plannedWakeTime: string | undefined,
@@ -537,7 +538,7 @@ export function resolveWakeTimestamp(wakeTimeLabel: string | undefined, now: Dat
   return anchor;
 }
 
-/** afternoonUnlockAt = wakeTimestamp + 5 hours (AFTERNOON_UNLOCK_HOURS_AFTER_WAKE). */
+/** afternoonUnlockAt = wakeTimestamp + 6 hours (AFTERNOON_UNLOCK_HOURS_AFTER_WAKE). */
 export function computeAfternoonUnlockTimestamp(wakeTimestamp: Date | null): Date | null {
   if (!wakeTimestamp) return null;
   return new Date(wakeTimestamp.getTime() + AFTERNOON_UNLOCK_HOURS_AFTER_WAKE * 60 * 60 * 1000);

@@ -13,6 +13,7 @@ import {
 
 import { FormScreen } from "../components/FormScreen";
 import { GuideInfoModal } from "../components/GuideInfoModal";
+import { SaveButton, type SaveState } from "../components/parchment/SaveButton";
 import { formPageContent, formStyles } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
@@ -20,7 +21,7 @@ import { persistProgressKeys } from "../lib/progressStore";
 import { DREAM_JOURNAL_KEY } from "../lib/storageKeys";
 import { HistoryModal } from "../components/HistoryModal";
 import { normalizeDreamLogs } from "../lib/logHistory";
-import { loadDreamEntries, saveDreamEntry, type DreamEntry } from "../lib/dreamJournal";
+import { loadDreamEntries, saveDreamEntry, updateDreamEntry, type DreamEntry } from "../lib/dreamJournal";
 
 const LUNA_DREAM_BULLETS = [
   "Dream Journal helps you capture dreams quickly after waking.",
@@ -80,11 +81,12 @@ export default function DreamJournalScreen() {
   const [feeling, setFeeling] = useState("");
   const [showInfo, setShowInfo] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const [justSaved, setJustSaved] = useState(false);
-  const justSavedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const saveStateTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     return () => {
-      if (justSavedTimeout.current) clearTimeout(justSavedTimeout.current);
+      if (saveStateTimeout.current) clearTimeout(saveStateTimeout.current);
     };
   }, []);
 
@@ -115,19 +117,58 @@ export default function DreamJournalScreen() {
   }
 
   async function saveDream() {
-    const entry = await saveDreamEntry({ title, summary, feeling });
-    if (!entry) return;
+    if (saveState === "saving" || saveState === "saved") return;
+    if (!title.trim() && !summary.trim()) return;
+    setSaveState("saving");
 
-    setEntries((current) => [entry, ...current]);
-    await successHaptic();
+    try {
+      if (editingId) {
+        const updated = await updateDreamEntry(editingId, { title, summary, feeling });
+        if (!updated) {
+          setSaveState("idle");
+          return;
+        }
+        setEntries((current) => current.map((e) => (e.id === updated.id ? updated : e)));
+      } else {
+        const entry = await saveDreamEntry({ title, summary, feeling });
+        if (!entry) {
+          setSaveState("idle");
+          return;
+        }
+        setEntries((current) => [entry, ...current]);
+      }
 
+      await successHaptic();
+
+      setSaveState("saved");
+      if (saveStateTimeout.current) clearTimeout(saveStateTimeout.current);
+      saveStateTimeout.current = setTimeout(() => {
+        setSaveState("idle");
+        setTitle("");
+        setSummary("");
+        setFeeling("");
+        setEditingId(null);
+      }, 800);
+    } catch (error) {
+      console.warn("saveDream error:", error);
+      setSaveState("error");
+    }
+  }
+
+  function startEditingDream(entry: DreamEntry) {
+    setEditingId(entry.id);
+    setTitle(entry.title);
+    setSummary(entry.summary);
+    setFeeling(entry.feeling);
+    setSaveState("idle");
+  }
+
+  function cancelEditingDream() {
+    setEditingId(null);
     setTitle("");
     setSummary("");
     setFeeling("");
-
-    setJustSaved(true);
-    if (justSavedTimeout.current) clearTimeout(justSavedTimeout.current);
-    justSavedTimeout.current = setTimeout(() => setJustSaved(false), 2500);
+    setSaveState("idle");
   }
 
   async function clearDreams() {
@@ -197,9 +238,20 @@ export default function DreamJournalScreen() {
                 })}
               </View>
 
-              <TouchableOpacity style={[styles.saveButton, { borderColor: theme.accent }]} disabled={justSaved} onPress={saveDream}>
-                <Text style={styles.saveButtonText}>{justSaved ? "Saved" : "Save Dream · +1 Step"}</Text>
-              </TouchableOpacity>
+              <View style={styles.saveRow}>
+                {editingId ? (
+                  <TouchableOpacity style={styles.cancelEditBtn} onPress={cancelEditingDream} disabled={saveState === "saving"}>
+                    <Text style={styles.cancelEditBtnText}>CANCEL</Text>
+                  </TouchableOpacity>
+                ) : null}
+                <SaveButton
+                  state={saveState}
+                  onPress={saveDream}
+                  disabled={!title.trim() && !summary.trim()}
+                  idleLabel={editingId ? "UPDATE DREAM" : "SAVE DREAM · +1 STEP"}
+                  style={styles.saveButton}
+                />
+              </View>
             </View>
 
             <View style={[styles.historyCard, { borderColor: theme.accent }]}>
@@ -219,7 +271,17 @@ export default function DreamJournalScreen() {
                   <View key={entry.id} style={styles.entryCard}>
                     <View style={styles.entryTopRow}>
                       <Text style={styles.entryTitle}>{entry.title || "Untitled dream"}</Text>
-                      <Text style={styles.entryDate}>{formatDreamDate(entry.createdAt)}</Text>
+                      <View style={styles.entryTopRowRight}>
+                        <Text style={styles.entryDate}>{formatDreamDate(entry.createdAt)}{entry.updatedAt ? " · edited" : ""}</Text>
+                        <TouchableOpacity
+                          style={styles.editBtn}
+                          hitSlop={{ top: 7, bottom: 7, left: 7, right: 7 }}
+                          onPress={() => startEditingDream(entry)}
+                          accessibilityLabel="Edit entry"
+                        >
+                          <Text style={styles.editBtnText}>✎</Text>
+                        </TouchableOpacity>
+                      </View>
                     </View>
 
                     {entry.summary ? <Text style={styles.entryText}>{entry.summary}</Text> : null}
@@ -450,22 +512,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "800",
   },
-  saveButton: {
-    backgroundColor: "#312E81",
-    padding: 14,
-    borderRadius: 4,
+  saveRow: { flexDirection: "row", gap: 10, marginTop: 14 },
+  saveButton: { flex: 1 },
+  cancelEditBtn: {
+    flex: 1,
+    backgroundColor: "#3E2A1A",
+    borderWidth: 2,
+    borderColor: "#5C4425",
+    borderRadius: 6,
+    paddingVertical: 12,
     alignItems: "center",
-    marginTop: 14,
-    borderWidth: 3,
   },
-  saveButtonText: {
-    color: "#F9FAFB",
-    fontSize: 15,
-    fontWeight: "900",
-    fontFamily: pixelFont,
-    textTransform: "uppercase",
-    letterSpacing: 0.7,
-  },
+  cancelEditBtnText: { color: "#D8C9A3", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
   historyCard: {
     backgroundColor: "#EAD9B6",
     borderRadius: 6,
@@ -528,12 +586,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "900",
   },
+  entryTopRowRight: { flexDirection: "row", alignItems: "center", gap: 8 },
   entryDate: {
     color: "#7C5B2B",
     fontFamily: pixelFont,
     fontSize: 10,
     fontWeight: "800",
   },
+  editBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: "#5C4425",
+    backgroundColor: "#F4E8CE",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  editBtnText: { color: "#4A3620", fontSize: 13, fontWeight: "900" },
   entryText: {
     color: "#4A3620",
     fontFamily: pixelFont,

@@ -1,4 +1,5 @@
 import { MANDATORY_ENERGY_QUEST_TITLE, MANDATORY_FOOD_QUEST_TITLE } from "./scheduling";
+import type { HomeQuestItem } from "./questProgress";
 
 /**
  * Centralized Luna mandatory eat/rest gate state machine. Previously this logic was scattered
@@ -133,4 +134,30 @@ export function computeMandatoryGateState(input: MandatoryGateInput): MandatoryG
     locksProgress: gates.some((g) => g.locksProgress),
     locksRecovery: gates.some((g) => g.locksRecovery),
   };
+}
+
+/** "Path Quest" = quests the path/pipeline system itself surfaced (Evie's suggested quest, the
+ *  post-progress recovery starter) — not a separately stored field, just what suggested/starter
+ *  already mean. Mirrors app/(tabs)/index.tsx's own getQuestSourceType exactly; that screen now
+ *  delegates to this copy so there's one definition, not two that can drift. */
+export function getQuestSourceType(item: Pick<HomeQuestItem, "source" | "suggested" | "starter">): "regular" | "today" | "path" {
+  if (item.source === "Today's Quest") return "today";
+  if (item.suggested || item.starter) return "path";
+  return "regular";
+}
+
+/**
+ * Centralized mandatory-gate eligibility exception: an Evie Path/suggestion quest saved as
+ * Recovery-kind stays startable while a mandatory Eat/Rest gate is active, even a severe gate
+ * that otherwise locks Recovery-kind items too — resting is exactly what the gate itself is
+ * trying to encourage, so blocking Evie's own Recovery suggestion behind it would be
+ * self-defeating. Both quest-board tap handlers (openQuestItem, startTimedItem in
+ * app/(tabs)/index.tsx) call this SAME function — never re-derive this condition inline in a
+ * handler. Card color/visual state is never consulted here, only the item's own source/kind
+ * metadata (already computed elsewhere, before the board ever renders) — items that reach this
+ * point are already guaranteed not-deleted/not-expired/not-completed by normalizeQuestItems'
+ * own filtering (completed/missed/expired items never make it into the board's item list).
+ */
+export function isEvieRecoveryExemptFromMandatoryGates(item: Pick<HomeQuestItem, "source" | "suggested" | "starter" | "kind" | "mandatory">): boolean {
+  return !item.mandatory && item.kind === "recovery" && getQuestSourceType(item) === "path";
 }

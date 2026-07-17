@@ -117,6 +117,10 @@ export const GUIDE_CONTEXT_RECORDS_KEY = "lit_guide_context_records";
  * newer device already recorded for the same day.
  */
 export const MANDATORY_GATE_EVIDENCE_KEY = "mylit_mandatory_gate_evidence";
+/** QuestFulfillmentFeedback[] — one 1-10 rating per Today's Quest completion, keyed by the same
+ *  completionId the completion itself uses (see lib/questFulfillment.ts). Array-merged by id
+ *  like every other log, so a retry/resubmit of the same completion never duplicates. */
+export const QUEST_FULFILLMENT_KEY = "lit_quest_fulfillment_feedback";
 
 /**
  * Canonical synced keys that back the Log History screen. These are the SAME keys the
@@ -186,6 +190,7 @@ export const SYNCABLE_PROGRESS_KEYS = [
   SLEEP_ROUTINE_KEY,
   GUIDE_CONTEXT_RECORDS_KEY,
   MANDATORY_GATE_EVIDENCE_KEY,
+  QUEST_FULFILLMENT_KEY,
 ] as const;
 
 export type SyncableProgressKey = (typeof SYNCABLE_PROGRESS_KEYS)[number];
@@ -215,6 +220,7 @@ export const ARRAY_MERGE_PROGRESS_KEYS = new Set<SyncableProgressKey>([
   AFFIRMATIONS_KEY,
   FOOD_LOGS_KEY,
   GUIDE_CONTEXT_RECORDS_KEY,
+  QUEST_FULFILLMENT_KEY,
 ]);
 
 export function isSyncableProgressKey(key: string): key is SyncableProgressKey {

@@ -1,4 +1,4 @@
-import { computeMandatoryGateState, EAT_GATE_DELAY_MS } from "../mandatoryGates";
+import { computeMandatoryGateState, EAT_GATE_DELAY_MS, isEvieRecoveryExemptFromMandatoryGates } from "../mandatoryGates";
 import { MANDATORY_ENERGY_QUEST_TITLE, MANDATORY_FOOD_QUEST_TITLE } from "../scheduling";
 
 const NOW = new Date("2026-07-15T12:00:00.000Z").getTime();
@@ -176,5 +176,31 @@ describe("multiple simultaneous gates resolve independently", () => {
     );
     expect(state.active).toBe(false);
     expect(state.gates).toHaveLength(0);
+  });
+});
+
+describe("isEvieRecoveryExemptFromMandatoryGates", () => {
+  it("exempts a suggested Recovery-kind quest", () => {
+    expect(isEvieRecoveryExemptFromMandatoryGates({ source: "Quest", suggested: true, kind: "recovery" })).toBe(true);
+  });
+
+  it("exempts a starter Recovery-kind quest", () => {
+    expect(isEvieRecoveryExemptFromMandatoryGates({ source: "Quest", starter: true, kind: "recovery" })).toBe(true);
+  });
+
+  it("does not exempt a Progress-kind Evie suggestion — only Recovery-kind is exempt", () => {
+    expect(isEvieRecoveryExemptFromMandatoryGates({ source: "Quest", suggested: true, kind: "progress" })).toBe(false);
+  });
+
+  it("does not exempt an ordinary Recovery-kind item that isn't an Evie suggestion", () => {
+    expect(isEvieRecoveryExemptFromMandatoryGates({ source: "Checklist", kind: "recovery" })).toBe(false);
+  });
+
+  it("does not exempt a Today's Quest even if Recovery-kind", () => {
+    expect(isEvieRecoveryExemptFromMandatoryGates({ source: "Today's Quest", kind: "recovery" })).toBe(false);
+  });
+
+  it("never exempts an item already flagged mandatory (the gate quest itself)", () => {
+    expect(isEvieRecoveryExemptFromMandatoryGates({ source: "Quest", suggested: true, kind: "recovery", mandatory: true })).toBe(false);
   });
 });

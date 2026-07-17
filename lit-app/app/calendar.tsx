@@ -89,7 +89,7 @@ const DAY_PLAN_KEY = "lit_day_plan";
 const CHECKIN_KEY = "lit_latest_checkin";
 const WEEKDAY_NAMES: WeekdayName[] = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const WEEKDAY_LABELS = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
-const TIME_ROWS = ["7 AM", "8 AM", "9 AM", "10 AM", "11 AM", "12 PM", "1 PM", "2 PM", "3 PM", "4 PM", "5 PM", "6 PM", "7 PM", "8 PM", "9 PM", "10 PM", "11 PM"];
+const TIME_ROWS = ["6 AM", "7 AM", "8 AM", "9 AM", "10 AM", "11 AM", "12 PM", "1 PM", "2 PM", "3 PM", "4 PM", "5 PM", "6 PM", "7 PM", "8 PM", "9 PM", "10 PM", "11 PM"];
 /** Short encouragement line under the Day View / selected-day heading, indexed by Date#getDay(). */
 const DAY_SUPPORT_LINES = [
   "Fresh week ahead. Ease in gently.",
@@ -132,7 +132,10 @@ function buildDayLabel(date: Date) {
  * time slot down whenever an earlier cell grew tall from several stacked items).
  */
 const HOUR_HEIGHT = 60;
-const GRID_START_HOUR = 7;
+// Matches the app's shared 6 AM logical-day boundary (see getQuestDayKey in lib/scheduling.ts)
+// — a genuinely 6:00 AM-scheduled item now lands in its own labeled row instead of being
+// visually pinned to what used to be the first (7 AM) row.
+const GRID_START_HOUR = 6;
 const GRID_END_HOUR = 24;
 const GRID_HEIGHT = TIME_ROWS.length * HOUR_HEIGHT;
 // Tall enough to fit a 1-line time label + a wrapped 2-line title without clipping,
