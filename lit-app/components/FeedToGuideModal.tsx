@@ -79,7 +79,7 @@ export function FeedToGuideModal({ visible, guide, sourceType, sourceId, sourceT
                 {alsoSummarizeForEvie ? <Text style={styles.checkboxMark}>✓</Text> : null}
               </View>
               <Text style={styles.scopeText}>
-                Also let Luna share a short, non-clinical summary with Evie so she can adjust your quests — never this raw text, only Luna's summary.
+                Also let Luna share a short, non-clinical summary with Evie so she can adjust your quests — never this raw text, only Luna&apos;s summary.
               </Text>
             </TouchableOpacity>
           ) : null}
