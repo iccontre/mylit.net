@@ -248,7 +248,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     padding: 9,
     marginBottom: 8,
-    backgroundColor: "rgba(15,23,42,0.5)",
+    backgroundColor: "rgba(46,32,20,0.5)",
   },
   rowLabel: { fontFamily: pixelFont, fontSize: 10, fontWeight: "900", letterSpacing: 1, marginBottom: 4 },
   rowText: { color: "#F5F3FF", fontSize: 12, lineHeight: 17, fontWeight: "700" },

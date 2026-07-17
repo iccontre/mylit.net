@@ -407,7 +407,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   formPanel: {
-    backgroundColor: "rgba(15, 23, 42, 0.86)",
+    backgroundColor: "rgba(46,32,20, 0.86)",
     borderWidth: 2,
     borderColor: "#D99A16",
     borderRadius: 8,
@@ -493,7 +493,7 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   successPanel: {
-    backgroundColor: "rgba(15, 23, 42, 0.9)",
+    backgroundColor: "rgba(46,32,20, 0.9)",
     borderWidth: 2,
     borderColor: "#22C55E",
     borderRadius: 8,
@@ -528,7 +528,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   fallbackPanel: {
-    backgroundColor: "rgba(15, 23, 42, 0.9)",
+    backgroundColor: "rgba(46,32,20, 0.9)",
     borderWidth: 2,
     borderColor: "#D99A16",
     borderRadius: 8,
@@ -553,7 +553,7 @@ const styles = StyleSheet.create({
   },
   offlineButton: {
     minHeight: 48,
-    backgroundColor: "#1E293B",
+    backgroundColor: "#3E2A1A",
     borderWidth: 2,
     borderColor: "#22C55E",
     borderRadius: 7,

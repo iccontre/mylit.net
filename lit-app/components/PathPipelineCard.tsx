@@ -90,29 +90,29 @@ export function PathPipelineCard() {
         </TouchableOpacity>
       </View>
 
-      <View style={[styles.row, { borderColor: "#FBBF24" }]}>
-        <Text style={[styles.rowLabel, { color: "#FDE68A" }]}>3-MONTH DIRECTION</Text>
+      <View style={[styles.row, { borderLeftColor: "#FBBF24" }]}>
+        <Text style={[styles.rowLabel, { color: "#92610A" }]}>3-MONTH DIRECTION</Text>
         <Text style={styles.rowText}>{pipeline.threeMonth?.headline}</Text>
         {pipeline.threeMonth?.focusAreas.map((line, index) => (
           <Text key={index} style={styles.rowSubText}>· {line}</Text>
         ))}
       </View>
 
-      <View style={[styles.row, { borderColor: "#38BDF8" }]}>
-        <Text style={[styles.rowLabel, { color: "#BAE6FD" }]}>1-MONTH MILESTONE</Text>
+      <View style={[styles.row, { borderLeftColor: "#38BDF8" }]}>
+        <Text style={[styles.rowLabel, { color: "#0369A1" }]}>1-MONTH MILESTONE</Text>
         <Text style={styles.rowText}>{pipeline.oneMonth?.headline}</Text>
         <Text style={styles.rowSubText}>· {pipeline.oneMonth?.concreteStep}</Text>
       </View>
 
-      <View style={[styles.row, { borderColor: "#22C55E" }]}>
-        <Text style={[styles.rowLabel, { color: "#86EFAC" }]}>2-WEEK SPRINT</Text>
+      <View style={[styles.row, { borderLeftColor: "#22C55E" }]}>
+        <Text style={[styles.rowLabel, { color: "#166534" }]}>2-WEEK SPRINT</Text>
         <Text style={styles.rowText}>{pipeline.twoWeek?.headline}</Text>
         <Text style={styles.rowSubText}>· {pipeline.twoWeek?.focus}</Text>
       </View>
 
       {pipeline.weeklyHabit ? (
-        <View style={[styles.row, { borderColor: "#A78BFA" }]}>
-          <Text style={[styles.rowLabel, { color: "#E9D5FF" }]}>SUGGESTED WEEKLY HABIT</Text>
+        <View style={[styles.row, { borderLeftColor: "#A78BFA" }]}>
+          <Text style={[styles.rowLabel, { color: "#5B21B6" }]}>SUGGESTED WEEKLY HABIT</Text>
           <Text style={styles.rowText}>{pipeline.weeklyHabit.title}</Text>
           <Text style={styles.rowSubText}>
             · {pipeline.weeklyHabit.suggestedDays.join(", ")} · {pipeline.weeklyHabit.durationMinutes} min
@@ -126,8 +126,8 @@ export function PathPipelineCard() {
       ) : null}
 
       {pipeline.dailyQuests.length ? (
-        <View style={[styles.row, { borderColor: "#F472B6" }]}>
-          <Text style={[styles.rowLabel, { color: "#FBCFE8" }]}>SUGGESTED DAILY QUESTS</Text>
+        <View style={[styles.row, { borderLeftColor: "#F472B6" }]}>
+          <Text style={[styles.rowLabel, { color: "#9D174D" }]}>SUGGESTED DAILY QUESTS</Text>
           {pipeline.dailyQuests.map((quest) => (
             <View key={quest.id} style={styles.questItem}>
               <Text style={styles.rowText}>{quest.title}</Text>
@@ -144,8 +144,8 @@ export function PathPipelineCard() {
       ) : null}
 
       {pipeline.reflectionPrompt ? (
-        <View style={[styles.row, { borderColor: "#475569" }]}>
-          <Text style={[styles.rowLabel, { color: "#CBD5E1" }]}>REFLECTION PROMPT</Text>
+        <View style={[styles.row, { borderLeftColor: "#475569" }]}>
+          <Text style={[styles.rowLabel, { color: "#5C4425" }]}>REFLECTION PROMPT</Text>
           <Text style={styles.rowText}>{pipeline.reflectionPrompt.prompt}</Text>
         </View>
       ) : null}
@@ -155,16 +155,16 @@ export function PathPipelineCard() {
 
 const styles = StyleSheet.create({
   panel: {
-    backgroundColor: "rgba(8, 13, 24, 0.95)",
+    backgroundColor: "#3E2A1A",
     borderRadius: 8,
     padding: 12,
     marginBottom: 12,
     borderWidth: 3,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
   },
   headerRow: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
   panelTitle: {
-    color: "#FDE047",
+    color: "#4ADE80",
     fontFamily: pixelFont,
     fontSize: 14,
     fontWeight: "900",
@@ -177,52 +177,54 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     borderRadius: 6,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(15,23,42,0.9)",
+    backgroundColor: "#2A1D12",
   },
-  regenButtonText: { color: "#CBD5E1", fontSize: 16, fontWeight: "900" },
-  emptyText: { color: "#CBD5E1", fontSize: 12, lineHeight: 18, fontWeight: "700", textAlign: "center", marginBottom: 12 },
+  regenButtonText: { color: "#D8C9A3", fontSize: 16, fontWeight: "900" },
+  emptyText: { color: "#D8C9A3", fontSize: 12, lineHeight: 18, fontWeight: "700", textAlign: "center", marginBottom: 12 },
   row: {
     borderWidth: 2,
+    borderColor: "#5C4425",
+    borderLeftWidth: 6,
     borderRadius: 6,
     padding: 9,
     marginBottom: 8,
-    backgroundColor: "rgba(15,23,42,0.7)",
+    backgroundColor: "#F4E8CE",
   },
   rowLabel: { fontFamily: pixelFont, fontSize: 10, fontWeight: "900", letterSpacing: 1, marginBottom: 4 },
-  rowText: { color: "#F1F5F9", fontSize: 12, lineHeight: 17, fontWeight: "700" },
-  rowSubText: { color: "#94A3B8", fontSize: 11, lineHeight: 16, fontWeight: "700", marginTop: 4 },
-  questItem: { marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: "#334155" },
+  rowText: { color: "#4A3620", fontSize: 12, lineHeight: 17, fontWeight: "700" },
+  rowSubText: { color: "#7C5B2B", fontSize: 11, lineHeight: 16, fontWeight: "700", marginTop: 4 },
+  questItem: { marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: "#5C4425" },
   saveButton: {
     marginTop: 8,
-    borderWidth: 2,
-    borderColor: "#A78BFA",
+    borderWidth: 3,
+    borderColor: "#FBBF24",
     borderRadius: 6,
     paddingVertical: 9,
     alignItems: "center",
-    backgroundColor: "rgba(88,28,135,0.35)",
+    backgroundColor: "#1B6A39",
   },
   saveButtonSmall: {
     marginTop: 6,
-    borderWidth: 2,
-    borderColor: "#F472B6",
+    borderWidth: 3,
+    borderColor: "#FBBF24",
     borderRadius: 6,
     paddingVertical: 8,
     alignItems: "center",
-    backgroundColor: "rgba(131,24,67,0.35)",
+    backgroundColor: "#1B6A39",
   },
-  saveButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 10, fontWeight: "900", letterSpacing: 0.5 },
+  saveButtonText: { color: "#FFFFFF", fontFamily: pixelFont, fontSize: 10, fontWeight: "900", letterSpacing: 0.5 },
   statusText: { color: "#FDE68A", fontSize: 10, lineHeight: 14, fontWeight: "700", marginTop: 5 },
   editButton: {
-    borderWidth: 2,
+    borderWidth: 3,
     borderColor: "#FBBF24",
     borderRadius: 6,
     paddingVertical: 10,
     alignItems: "center",
-    backgroundColor: "rgba(69,43,8,0.4)",
+    backgroundColor: "#1B6A39",
   },
-  editButtonText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", letterSpacing: 0.5 },
+  editButtonText: { color: "#FFFFFF", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", letterSpacing: 0.5 },
 });

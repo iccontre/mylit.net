@@ -19,20 +19,27 @@ export const accentColors = {
   stripRed: "#B3261E",
   gold: "#FBBF24",
   purple: "#A78BFA",
-  green: "#22C55E",
-  pink: "#F472B6",
+  green: "#4ADE80",
+  magenta: "#C084FC",
+  lavender: "#B9A6F5",
   slate: "#334155",
 } as const;
 
-export type ParchmentAccent = "progress" | "recovery" | "path" | "mind" | "neutral" | "calendar";
+/** Matches constants/worldTokens.ts's HubKey — kept as a separate literal type here (rather than
+ *  importing HubKey) to avoid a circular import, since worldTokens.ts re-exports from this file.
+ *  Values below are the exact `.accent` hex from each HubPalette in worldTokens.ts. */
+export type ParchmentAccent = "progress" | "recovery" | "path" | "mind" | "neutral" | "calendar" | "sleep" | "stats" | "ldm";
 
 export const accentByParchmentAccent: Record<ParchmentAccent, string> = {
   progress: accentColors.gold,
   recovery: accentColors.purple,
   path: accentColors.green,
-  mind: accentColors.pink,
-  neutral: accentColors.slate,
+  mind: accentColors.magenta,
+  neutral: accentColors.green,
   calendar: accentColors.stripRed,
+  sleep: accentColors.lavender,
+  stats: accentColors.gold,
+  ldm: "#C4A7FF",
 };
 
 export const parchmentGeometry = {

@@ -655,11 +655,11 @@ export default function SleepCheckInScreen() {
                 <>
                   <Text style={styles.label}>Have you eaten since morning?</Text>
                   <View style={styles.choiceRow}>
-                    <TouchableOpacity style={[styles.choiceButton, eatenSinceMorning === "yes" && styles.choiceButtonActive, { borderColor: eatenSinceMorning === "yes" ? theme.accent : "#334155" }]} onPress={() => setEatenSinceMorning("yes")}>
+                    <TouchableOpacity style={[styles.choiceButton, eatenSinceMorning === "yes" && styles.choiceButtonActive, { borderColor: eatenSinceMorning === "yes" ? theme.accent : "#5C4425" }]} onPress={() => setEatenSinceMorning("yes")}>
                       <Text style={styles.choiceText}>Yes</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.choiceButton, eatenSinceMorning === "no" && styles.choiceButtonActive, { borderColor: eatenSinceMorning === "no" ? theme.accent : "#334155" }]}
+                      style={[styles.choiceButton, eatenSinceMorning === "no" && styles.choiceButtonActive, { borderColor: eatenSinceMorning === "no" ? theme.accent : "#5C4425" }]}
                       onPress={() => {
                         setEatenSinceMorning("no");
                         setAteTimePreset("");
@@ -677,7 +677,7 @@ export default function SleepCheckInScreen() {
                         {MEAL_TIME_PRESETS.map((preset) => (
                           <TouchableOpacity
                             key={preset}
-                            style={[styles.choiceButton, ateTimePreset === preset && styles.choiceButtonActive, { borderColor: ateTimePreset === preset ? theme.accent : "#334155" }]}
+                            style={[styles.choiceButton, ateTimePreset === preset && styles.choiceButtonActive, { borderColor: ateTimePreset === preset ? theme.accent : "#5C4425" }]}
                             onPress={() => {
                               setAteTimePreset(preset);
                               if (preset !== "Exact time") setAteApproxTime("");
@@ -709,13 +709,13 @@ export default function SleepCheckInScreen() {
                       <Text style={styles.helperText}>If you napped, MYLIT can restore your energy based on how long you rested.</Text>
                       <View style={styles.choiceRow}>
                         <TouchableOpacity
-                          style={[styles.choiceButton, tookNap === "yes" && styles.choiceButtonActive, { borderColor: tookNap === "yes" ? theme.accent : "#334155" }]}
+                          style={[styles.choiceButton, tookNap === "yes" && styles.choiceButtonActive, { borderColor: tookNap === "yes" ? theme.accent : "#5C4425" }]}
                           onPress={() => setTookNap("yes")}
                         >
                           <Text style={styles.choiceText}>Yes</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                          style={[styles.choiceButton, tookNap === "no" && styles.choiceButtonActive, { borderColor: tookNap === "no" ? theme.accent : "#334155" }]}
+                          style={[styles.choiceButton, tookNap === "no" && styles.choiceButtonActive, { borderColor: tookNap === "no" ? theme.accent : "#5C4425" }]}
                           onPress={() => {
                             setTookNap("no");
                             setNapDuration(null);
@@ -730,7 +730,7 @@ export default function SleepCheckInScreen() {
                           {NAP_DURATION_OPTIONS.map((minutes) => (
                             <TouchableOpacity
                               key={minutes}
-                              style={[styles.napDurationButton, napDuration === minutes && styles.choiceButtonActive, { borderColor: napDuration === minutes ? theme.accent : "#334155" }]}
+                              style={[styles.napDurationButton, napDuration === minutes && styles.choiceButtonActive, { borderColor: napDuration === minutes ? theme.accent : "#5C4425" }]}
                               onPress={() => setNapDuration(minutes)}
                             >
                               <Text style={styles.napDurationText}>{minutes} min</Text>
@@ -748,13 +748,13 @@ export default function SleepCheckInScreen() {
                   <Text style={styles.label}>Did you have caffeine today?</Text>
                   <View style={styles.choiceRow}>
                     <TouchableOpacity
-                      style={[styles.choiceButton, hadCaffeine === "yes" && styles.choiceButtonActive, { borderColor: hadCaffeine === "yes" ? theme.accent : "#334155" }]}
+                      style={[styles.choiceButton, hadCaffeine === "yes" && styles.choiceButtonActive, { borderColor: hadCaffeine === "yes" ? theme.accent : "#5C4425" }]}
                       onPress={() => setHadCaffeine("yes")}
                     >
                       <Text style={styles.choiceText}>Yes</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
-                      style={[styles.choiceButton, hadCaffeine === "no" && styles.choiceButtonActive, { borderColor: hadCaffeine === "no" ? theme.accent : "#334155" }]}
+                      style={[styles.choiceButton, hadCaffeine === "no" && styles.choiceButtonActive, { borderColor: hadCaffeine === "no" ? theme.accent : "#5C4425" }]}
                       onPress={() => {
                         setHadCaffeine("no");
                         setCaffeineTime("");
@@ -785,11 +785,11 @@ export default function SleepCheckInScreen() {
                     <>
                       <Text style={styles.label}>Was your sleep interrupted?</Text>
                       <View style={styles.choiceRow}>
-                        <TouchableOpacity style={[styles.choiceButton, sleepInterrupted === "yes" && styles.choiceButtonActive, { borderColor: sleepInterrupted === "yes" ? theme.accent : "#334155" }]} onPress={() => setSleepInterrupted("yes")}>
+                        <TouchableOpacity style={[styles.choiceButton, sleepInterrupted === "yes" && styles.choiceButtonActive, { borderColor: sleepInterrupted === "yes" ? theme.accent : "#5C4425" }]} onPress={() => setSleepInterrupted("yes")}>
                           <Text style={styles.choiceText}>Yes</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
-                          style={[styles.choiceButton, sleepInterrupted === "no" && styles.choiceButtonActive, { borderColor: sleepInterrupted === "no" ? theme.accent : "#334155" }]}
+                          style={[styles.choiceButton, sleepInterrupted === "no" && styles.choiceButtonActive, { borderColor: sleepInterrupted === "no" ? theme.accent : "#5C4425" }]}
                           onPress={() => {
                             setSleepInterrupted("no");
                             setInterruptionWakeInput("");
@@ -829,10 +829,10 @@ export default function SleepCheckInScreen() {
 
                   <Text style={styles.label}>Did you dream tonight?</Text>
                   <View style={styles.choiceRow}>
-                    <TouchableOpacity style={[styles.choiceButton, dreamedTonight === "yes" && styles.choiceButtonActive, { borderColor: dreamedTonight === "yes" ? theme.accent : "#334155" }]} onPress={() => setDreamedTonight("yes")}>
+                    <TouchableOpacity style={[styles.choiceButton, dreamedTonight === "yes" && styles.choiceButtonActive, { borderColor: dreamedTonight === "yes" ? theme.accent : "#5C4425" }]} onPress={() => setDreamedTonight("yes")}>
                       <Text style={styles.choiceText}>Yes</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.choiceButton, dreamedTonight === "no" && styles.choiceButtonActive, { borderColor: dreamedTonight === "no" ? theme.accent : "#334155" }]} onPress={() => setDreamedTonight("no")}>
+                    <TouchableOpacity style={[styles.choiceButton, dreamedTonight === "no" && styles.choiceButtonActive, { borderColor: dreamedTonight === "no" ? theme.accent : "#5C4425" }]} onPress={() => setDreamedTonight("no")}>
                       <Text style={styles.choiceText}>No</Text>
                     </TouchableOpacity>
                   </View>
@@ -904,11 +904,11 @@ export default function SleepCheckInScreen() {
 const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
-    backgroundColor: "#02040A",
+    backgroundColor: "#140F0A",
   },
   phoneStage: {
     alignSelf: "center",
-    backgroundColor: "#050814",
+    backgroundColor: "#1C1410",
     overflow: "hidden",
     position: "relative",
     borderWidth: 2,
@@ -993,7 +993,7 @@ const styles = StyleSheet.create({
     width: 64,
     borderRadius: 32,
     borderWidth: 3,
-    backgroundColor: "rgba(8, 13, 24, 0.65)",
+    backgroundColor: "rgba(46,32,20, 0.65)",
   },
   dialogueCard: {
     backgroundColor: "rgba(8, 12, 20, 0.94)",
@@ -1016,7 +1016,7 @@ const styles = StyleSheet.create({
     fontFamily: pixelFont,
   },
   inputCard: {
-    backgroundColor: "rgba(8, 13, 24, 0.95)",
+    backgroundColor: "rgba(46,32,20, 0.95)",
     borderRadius: 6,
     padding: 13,
     borderWidth: 3,
@@ -1180,7 +1180,7 @@ const styles = StyleSheet.create({
   },
   modeBadge: {
     borderWidth: 2,
-    backgroundColor: "#111827",
+    backgroundColor: "#3E2A1A",
     paddingVertical: 6,
     paddingHorizontal: 8,
   },
@@ -1191,7 +1191,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   primaryButton: {
-    backgroundColor: "#111827",
+    backgroundColor: "#3E2A1A",
     padding: 14,
     borderRadius: 4,
     alignItems: "center",
@@ -1216,12 +1216,12 @@ const styles = StyleSheet.create({
     letterSpacing: 0.8,
   },
   backButton: {
-    backgroundColor: "rgba(8, 13, 24, 0.94)",
+    backgroundColor: "rgba(46,32,20, 0.94)",
     padding: 12,
     borderRadius: 4,
     alignItems: "center",
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
   },
   backButtonText: {
     color: "#E2E8F0",

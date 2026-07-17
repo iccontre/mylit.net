@@ -63,7 +63,7 @@ export function LunaGuideModal({ visible, onClose }: { visible: boolean; onClose
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: "rgba(2,4,10,0.88)", padding: 18, paddingTop: 60, paddingBottom: 40 },
-  panel: { flex: 1, backgroundColor: "rgba(8,13,24,0.98)", borderWidth: 3, borderColor: "#334155", borderRadius: 12 },
+  panel: { flex: 1, backgroundColor: "rgba(46,32,20,0.98)", borderWidth: 3, borderColor: "#5C4425", borderRadius: 12 },
   content: { padding: 16 },
   title: { color: "#FDE047", fontFamily: pixelFont, fontSize: 20, fontWeight: "900", textAlign: "center", marginBottom: 8, letterSpacing: 1 },
   intro: { color: "#CBD5E1", fontSize: 12, lineHeight: 18, fontWeight: "700", textAlign: "center", marginBottom: 12 },
@@ -71,7 +71,7 @@ const styles = StyleSheet.create({
     minHeight: 54,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
+    backgroundColor: "rgba(46,32,20, 0.96)",
     borderWidth: 3,
     borderColor: "#A78BFA",
     borderRadius: 8,

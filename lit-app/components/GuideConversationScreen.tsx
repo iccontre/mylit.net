@@ -12,7 +12,7 @@ import {
   View,
 } from "react-native";
 
-import { BottomNav, type BottomNavRoute, type BottomNavTheme } from "./BottomNav";
+import { BottomNav, type BottomNavRoute } from "./BottomNav";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { decideMemoryUpdateProposal, loadGuideConversation, sendGuideMessage } from "../lib/guideConversation";
@@ -25,12 +25,11 @@ type GuideConversationScreenProps = {
   guide: GuideName;
 };
 
-const GUIDE_CONFIG: Record<GuideName, { name: string; accent: string; accentSoft: string; navTheme: BottomNavTheme; navRoute: BottomNavRoute; placeholder: string; heroLabel: string; title: string }> = {
+const GUIDE_CONFIG: Record<GuideName, { name: string; accent: string; accentSoft: string; navRoute: BottomNavRoute; placeholder: string; heroLabel: string; title: string }> = {
   evie: {
     name: "Evie",
     accent: "#22C55E",
     accentSoft: "#86EFAC",
-    navTheme: "gold",
     navRoute: "path",
     placeholder: "What's on your mind about your path?",
     heroLabel: "TALK TO EVIE",
@@ -40,7 +39,6 @@ const GUIDE_CONFIG: Record<GuideName, { name: string; accent: string; accentSoft
     name: "Luna",
     accent: "#A78BFA",
     accentSoft: "#E9D5FF",
-    navTheme: "purple",
     navRoute: "mind",
     placeholder: "What's feeling hard right now?",
     heroLabel: "TALK TO LUNA",
@@ -199,7 +197,7 @@ export function GuideConversationScreen({ guide }: GuideConversationScreenProps)
             </View>
           </ScrollView>
 
-          <BottomNav activeRoute={config.navRoute} theme={config.navTheme} bottomOffset={mobile.bottomNavOffset} />
+          <BottomNav activeRoute={config.navRoute} bottomOffset={mobile.bottomNavOffset} />
         </View>
       </View>
     </View>
@@ -207,10 +205,10 @@ export function GuideConversationScreen({ guide }: GuideConversationScreenProps)
 }
 
 const styles = StyleSheet.create({
-  pageRoot: { flex: 1, backgroundColor: "#02040A" },
+  pageRoot: { flex: 1, backgroundColor: "#140F0A" },
   phoneStage: {
     alignSelf: "center",
-    backgroundColor: "#050814",
+    backgroundColor: "#1C1410",
     overflow: "hidden",
     position: "relative",
     borderWidth: 2,
@@ -231,13 +229,13 @@ const styles = StyleSheet.create({
   hero: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(8, 13, 18, 0.9)",
+    backgroundColor: "rgba(46,32,20, 0.9)",
     borderWidth: 3,
     borderRadius: 8,
     padding: 12,
     marginBottom: 10,
   },
-  avatar: { width: 56, height: 56, borderRadius: 28, borderWidth: 2, marginRight: 12, backgroundColor: "rgba(15,23,42,0.6)" },
+  avatar: { width: 56, height: 56, borderRadius: 28, borderWidth: 2, marginRight: 12, backgroundColor: "rgba(46,32,20,0.6)" },
   heroCopy: { flex: 1 },
   heroLabel: { fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 1, marginBottom: 4 },
   title: { color: "#F9FAFB", fontFamily: pixelFont, fontSize: 16, fontWeight: "900", letterSpacing: 0.5 },
@@ -245,14 +243,14 @@ const styles = StyleSheet.create({
   conversationStack: { gap: 8, marginBottom: 12 },
   bubble: { borderWidth: 2, borderRadius: 8, padding: 10, maxWidth: "92%" },
   userBubble: { alignSelf: "flex-end", backgroundColor: "rgba(120,53,15,0.35)", borderColor: "#FBBF24" },
-  guideBubble: { alignSelf: "flex-start", backgroundColor: "rgba(15,23,42,0.7)" },
+  guideBubble: { alignSelf: "flex-start", backgroundColor: "rgba(46,32,20,0.7)" },
   bubbleText: { color: "#F1F5F9", fontSize: 13, lineHeight: 18, fontWeight: "600" },
-  proposalCard: { marginTop: 8, borderWidth: 2, borderRadius: 6, padding: 8, backgroundColor: "rgba(8,13,24,0.6)" },
+  proposalCard: { marginTop: 8, borderWidth: 2, borderRadius: 6, padding: 8, backgroundColor: "rgba(46,32,20,0.6)" },
   proposalText: { fontSize: 11, lineHeight: 16, fontWeight: "700" },
   proposalActions: { flexDirection: "row", gap: 8, marginTop: 8 },
   proposalButton: { flex: 1, borderWidth: 2, borderRadius: 6, paddingVertical: 8, alignItems: "center", backgroundColor: "rgba(22,101,52,0.4)" },
   proposalButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 10, fontWeight: "900" },
-  proposalButtonSecondary: { flex: 1, borderWidth: 2, borderColor: "#475569", borderRadius: 6, paddingVertical: 8, alignItems: "center", backgroundColor: "rgba(15,23,42,0.6)" },
+  proposalButtonSecondary: { flex: 1, borderWidth: 2, borderColor: "#475569", borderRadius: 6, paddingVertical: 8, alignItems: "center", backgroundColor: "rgba(46,32,20,0.6)" },
   proposalButtonSecondaryText: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 10, fontWeight: "900" },
   proposalStatus: { color: "#FDE68A", fontSize: 10, fontWeight: "700", marginTop: 6 },
   errorText: { color: "#FCA5A5", fontSize: 11, lineHeight: 16, fontWeight: "700", textAlign: "center", marginBottom: 8 },
@@ -269,9 +267,9 @@ const styles = StyleSheet.create({
     minHeight: 44,
     maxHeight: 100,
     textAlignVertical: "top",
-    backgroundColor: "rgba(15,23,42,0.7)",
+    backgroundColor: "rgba(46,32,20,0.7)",
   },
-  sendButton: { borderWidth: 2, borderRadius: 6, paddingVertical: 12, paddingHorizontal: 14, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(15,23,42,0.9)" },
+  sendButton: { borderWidth: 2, borderRadius: 6, paddingVertical: 12, paddingHorizontal: 14, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(46,32,20,0.9)" },
   sendButtonDisabled: { opacity: 0.5 },
   sendButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
 });

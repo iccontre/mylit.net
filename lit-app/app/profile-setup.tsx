@@ -261,7 +261,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   formPanel: {
-    backgroundColor: "rgba(15, 23, 42, 0.86)",
+    backgroundColor: "rgba(46,32,20, 0.86)",
     borderWidth: 2,
     borderColor: "#D99A16",
     borderRadius: 8,
@@ -298,7 +298,7 @@ const styles = StyleSheet.create({
   },
   ageChip: {
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     borderRadius: 6,
     paddingVertical: 8,
     paddingHorizontal: 10,

@@ -177,7 +177,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   panel: {
-    backgroundColor: "rgba(15, 23, 42, 0.9)",
+    backgroundColor: "rgba(46,32,20, 0.9)",
     borderWidth: 2,
     borderColor: "#22C55E",
     borderRadius: 8,

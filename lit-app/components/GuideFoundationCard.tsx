@@ -86,12 +86,12 @@ export function GuideFoundationCard() {
 
 const styles = StyleSheet.create({
   panel: {
-    backgroundColor: "rgba(8, 13, 24, 0.95)",
+    backgroundColor: "rgba(46,32,20, 0.95)",
     borderRadius: 8,
     padding: 12,
     marginBottom: 12,
     borderWidth: 3,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
   },
   panelTitle: {
     color: "#FDE047",
@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     padding: 9,
     marginBottom: 8,
-    backgroundColor: "rgba(15,23,42,0.7)",
+    backgroundColor: "rgba(46,32,20,0.7)",
   },
   rowLabel: {
     fontFamily: pixelFont,

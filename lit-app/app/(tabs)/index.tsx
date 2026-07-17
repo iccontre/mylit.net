@@ -90,6 +90,7 @@ import { FoodLogModal } from "../../components/FoodLogModal";
 import { computeFuel, type FoodLog } from "../../lib/fuel";
 import { computeMandatoryGateState } from "../../lib/mandatoryGates";
 import { loadTodaysEvieMorningQuest, type EvieMorningQuest } from "../../lib/evieMorningQuest";
+import { hubPalettes } from "../../constants/worldTokens";
 
 const mylitLogo = uiAssets.logo.mylit;
 const fireAssets = uiAssets.fires;
@@ -1469,38 +1470,21 @@ export default function HomeScreen() {
   const guideMessageIsAffirmation = isRecovery && affirmationTexts.includes(guideMessage);
   const neutralGuideMessage = pickGuideMessage(NEUTRAL_ROTATING_MESSAGES, guideMessageSalt);
 
-  const theme = isRecovery
-    ? {
-        accent: "#C4A7FF",
-        accent2: "#8B5CF6",
-        glow: "#E9D5FF",
-        dark: "rgba(22, 17, 42, 0.94)",
-        panel: "rgba(18, 16, 34, 0.95)",
-        soft: "#DDD6FE",
-        status: "RECOVERY",
-        mode: "RECOVERY MODE",
-      }
-    : isProgress
-    ? {
-        accent: "#FBBF24",
-        accent2: "#84CC16",
-        glow: "#FEF3C7",
-        dark: "rgba(15, 18, 15, 0.94)",
-        panel: "rgba(8, 13, 18, 0.95)",
-        soft: "#D9F99D",
-        status: "ACTIVE",
-        mode: "PROGRESS MODE",
-      }
-    : {
-        accent: "#F8C84A",
-        accent2: "#22C55E",
-        glow: "#FDE68A",
-        dark: "rgba(11, 17, 22, 0.92)",
-        panel: "rgba(8, 14, 18, 0.94)",
-        soft: "#F8E7A1",
-        status: "NEUTRAL",
-        mode: "NEUTRAL MODE",
-      };
+  // Exact World System hub-mode tokens (constants/worldTokens.ts hubPalettes) — LDM always wins
+  // regardless of the underlying stored day mode, matching the rendered "HOME — LUCID DREAMING"
+  // board's own deeper-violet palette rather than whatever Progress/Recovery tint was active
+  // when night fell.
+  const modePalette = ldmActive ? hubPalettes.ldm : isRecovery ? hubPalettes.recovery : isProgress ? hubPalettes.progress : hubPalettes.neutral;
+  const theme = {
+    accent: modePalette.accent,
+    accent2: modePalette.edge,
+    glow: modePalette.text,
+    dark: `${modePalette.chrome}F0`,
+    panel: `${modePalette.chrome}F2`,
+    soft: modePalette.text,
+    status: ldmActive ? "LUCID DREAMING" : isRecovery ? "RECOVERY" : isProgress ? "ACTIVE" : "NEUTRAL",
+    mode: ldmActive ? "LUCID DREAMING" : isRecovery ? "RECOVERY MODE" : isProgress ? "PROGRESS MODE" : "NEUTRAL MODE",
+  };
 
   function generateQuests(): Quest[] {
     // Gate #1 (Afternoon Check-In incomplete) is a full-board replacement rendered separately —
@@ -2523,7 +2507,7 @@ export default function HomeScreen() {
               </View>
             </Modal>
 
-            <BottomNav activeRoute="home" bottomOffset={mobile.bottomNavOffset} />
+            <BottomNav activeRoute="home" homeAccent={modePalette.accent} bottomOffset={mobile.bottomNavOffset} />
         </View>
       </View>
     </View>
@@ -2532,11 +2516,11 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
-    backgroundColor: "#02040A",
+    backgroundColor: "#140F0A",
   },
   phoneStage: {
     alignSelf: "center",
-    backgroundColor: "#050814",
+    backgroundColor: "#1C1410",
     overflow: "hidden",
     position: "relative",
     borderWidth: 2,
@@ -2767,7 +2751,7 @@ const styles = StyleSheet.create({
     width: 86,
     borderWidth: 3,
     borderRadius: 43,
-    backgroundColor: "rgba(8, 13, 24, 0.55)",
+    backgroundColor: "rgba(46,32,20, 0.55)",
     marginRight: 10,
   },
   // Wrapper is the same size as the emblem plus its own margin, so the reaction overlay is
@@ -2825,11 +2809,11 @@ const styles = StyleSheet.create({
   },
   createQuestBtn: {
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     borderRadius: 8,
     paddingVertical: 12,
     alignItems: "center",
-    backgroundColor: "#1E293B",
+    backgroundColor: "#3E2A1A",
     marginBottom: 4,
   },
   createQuestBtnText: { color: "#F8FAFC", fontFamily: "monospace", fontSize: 13, fontWeight: "900", letterSpacing: 0.5 },
@@ -2839,17 +2823,17 @@ const styles = StyleSheet.create({
     flexBasis: "48%",
     flexGrow: 1,
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     borderRadius: 8,
     paddingVertical: 11,
     alignItems: "center",
-    backgroundColor: "#1E293B",
+    backgroundColor: "#3E2A1A",
   },
   hubGridBtnText: { color: "#E2E8F0", fontFamily: "monospace", fontSize: 11, fontWeight: "900", letterSpacing: 0.3, textAlign: "center" },
   chooserBackdrop: { flex: 1, backgroundColor: "rgba(2,4,10,0.88)", alignItems: "center", justifyContent: "center", padding: 18 },
-  chooserPanel: { width: "100%", maxWidth: 380, backgroundColor: "rgba(8,13,24,0.98)", borderWidth: 3, borderColor: "#334155", borderRadius: 12, padding: 16 },
+  chooserPanel: { width: "100%", maxWidth: 380, backgroundColor: "rgba(46,32,20,0.98)", borderWidth: 3, borderColor: "#5C4425", borderRadius: 12, padding: 16 },
   chooserTitle: { color: "#F8FAFC", fontFamily: "monospace", fontSize: 16, fontWeight: "900", textAlign: "center", marginBottom: 12, letterSpacing: 1 },
-  chooserRow: { flexDirection: "row", alignItems: "center", borderWidth: 2, borderRadius: 8, padding: 12, marginBottom: 10, backgroundColor: "rgba(15,23,42,0.9)" },
+  chooserRow: { flexDirection: "row", alignItems: "center", borderWidth: 2, borderRadius: 8, padding: 12, marginBottom: 10, backgroundColor: "rgba(46,32,20,0.9)" },
   chooserRowGold: { borderColor: "#FBBF24" },
   chooserRowGreen: { borderColor: "#22C55E" },
   chooserRowPurple: { borderColor: "#A78BFA" },
@@ -2986,7 +2970,7 @@ const styles = StyleSheet.create({
   },
   energyPill: {
     borderWidth: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.9)",
+    backgroundColor: "rgba(46,32,20, 0.9)",
     paddingVertical: 2,
     paddingHorizontal: 5,
   },
@@ -3125,7 +3109,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   checkInCardLocked: {
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     opacity: 0.75,
   },
   checkIconBox: {
@@ -3190,7 +3174,7 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(15, 23, 42, 0.9)",
+    backgroundColor: "rgba(46,32,20, 0.9)",
   },
   questHelpBtnText: {
     fontSize: 12,
@@ -3225,9 +3209,9 @@ const styles = StyleSheet.create({
     flex: 1,
     minHeight: 86,
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     // Lighter than before — one less nested dark box inside the already-dark questBoard.
-    backgroundColor: "rgba(15, 23, 42, 0.72)",
+    backgroundColor: "rgba(46,32,20, 0.72)",
     alignItems: "center",
     justifyContent: "center",
     padding: 10,
@@ -3247,7 +3231,7 @@ const styles = StyleSheet.create({
   },
   questLockedButton: {
     borderWidth: 2,
-    backgroundColor: "#111827",
+    backgroundColor: "#3E2A1A",
     paddingVertical: 5,
     paddingHorizontal: 14,
   },
@@ -3262,7 +3246,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#FFFFFF",
     borderStyle: "dashed",
-    backgroundColor: "#111827",
+    backgroundColor: "#3E2A1A",
     paddingVertical: 10,
     alignItems: "center",
     marginBottom: 10,
@@ -3439,7 +3423,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     alignItems: "center",
     marginTop: 8,
-    backgroundColor: "rgba(15, 23, 42, 0.6)",
+    backgroundColor: "rgba(46,32,20, 0.6)",
   },
   waitingRoomBtnText: {
     fontSize: 11,
@@ -3450,7 +3434,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
     borderWidth: 2,
     borderColor: "#2E3542",
-    backgroundColor: "rgba(15, 23, 42, 0.9)",
+    backgroundColor: "rgba(46,32,20, 0.9)",
     paddingHorizontal: 8,
     paddingVertical: 6,
   },
@@ -3499,7 +3483,7 @@ const styles = StyleSheet.create({
   reflectBtn: {
     flex: 1,
     borderWidth: 2,
-    backgroundColor: "rgba(8, 13, 24, 0.94)",
+    backgroundColor: "rgba(46,32,20, 0.94)",
     paddingVertical: 9,
     alignItems: "center",
   },
@@ -3600,8 +3584,8 @@ const styles = StyleSheet.create({
   modalCancelBtn: {
     flex: 1,
     borderWidth: 2,
-    borderColor: "#334155",
-    backgroundColor: "rgba(15, 23, 42, 0.95)",
+    borderColor: "#5C4425",
+    backgroundColor: "rgba(46,32,20, 0.95)",
     paddingVertical: 11,
     alignItems: "center",
   },
@@ -3621,7 +3605,7 @@ const styles = StyleSheet.create({
   },
   modalStartBtnDisabled: {
     borderColor: "#475569",
-    backgroundColor: "#1E293B",
+    backgroundColor: "#3E2A1A",
   },
   modalStartText: {
     color: "#FDE68A",
@@ -3700,7 +3684,7 @@ const styles = StyleSheet.create({
     marginLeft: 5,
     borderWidth: 1,
     borderColor: "#64748B",
-    backgroundColor: "#111827",
+    backgroundColor: "#3E2A1A",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -3777,7 +3761,7 @@ const styles = StyleSheet.create({
   },
   navButton: {
     flex: 1,
-    backgroundColor: "#111827",
+    backgroundColor: "#3E2A1A",
     borderWidth: 2,
     borderColor: "#3A4558",
     borderRadius: 3,

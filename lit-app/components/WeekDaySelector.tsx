@@ -80,7 +80,7 @@ export function WeekDaySelector({ weekDays, selectedIndex, onSelectDay, onPrevWe
 }
 
 const styles = StyleSheet.create({
-  weekNavPanel: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(8,13,24,0.95)", borderWidth: 2, borderColor: "#334155", borderRadius: 8, padding: 8, marginBottom: 10 },
+  weekNavPanel: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(46,32,20,0.95)", borderWidth: 2, borderColor: "#5C4425", borderRadius: 8, padding: 8, marginBottom: 10 },
   weekArrow: { width: 42, height: 38, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "#FBBF24", backgroundColor: "rgba(69,43,8,0.55)" },
   weekArrowText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 18, fontWeight: "900" },
   weekCenter: { flex: 1, alignItems: "center" },

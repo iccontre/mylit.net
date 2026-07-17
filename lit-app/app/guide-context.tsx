@@ -168,7 +168,7 @@ export default function GuideContextScreen() {
               <Text style={styles.backButtonText}>← Back to Stats</Text>
             </TouchableOpacity>
           </FormScreen>
-          <BottomNav activeRoute="stats" theme="purple" bottomOffset={mobile.bottomNavOffset} />
+          <BottomNav activeRoute="stats" bottomOffset={mobile.bottomNavOffset} />
         </View>
       </View>
     </View>
@@ -176,10 +176,10 @@ export default function GuideContextScreen() {
 }
 
 const styles = StyleSheet.create({
-  pageRoot: { flex: 1, backgroundColor: "#02040A" },
+  pageRoot: { flex: 1, backgroundColor: "#140F0A" },
   phoneStage: {
     alignSelf: "center",
-    backgroundColor: "#050814",
+    backgroundColor: "#1C1410",
     overflow: "hidden",
     position: "relative",
     borderWidth: 2,
@@ -236,8 +236,8 @@ const styles = StyleSheet.create({
   removeBtn: { borderWidth: 2, borderColor: "#92400E", borderRadius: 6, paddingVertical: 8, alignItems: "center", backgroundColor: "rgba(146,64,14,0.16)" },
   removeBtnText: { color: "#92400E", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", letterSpacing: 0.5 },
   revokedHeading: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", letterSpacing: 0.8, marginTop: 8, marginBottom: 6 },
-  revokedCard: { backgroundColor: "rgba(8, 13, 24, 0.7)", borderWidth: 1, borderColor: "#334155", borderRadius: 6, padding: 8, marginBottom: 6 },
+  revokedCard: { backgroundColor: "rgba(46,32,20, 0.7)", borderWidth: 1, borderColor: "#5C4425", borderRadius: 6, padding: 8, marginBottom: 6 },
   revokedText: { color: "#64748B", fontFamily: pixelFont, fontSize: 10, fontWeight: "700" },
-  backButton: { backgroundColor: "rgba(8, 13, 24, 0.94)", borderWidth: 2, borderColor: "#334155", borderRadius: 6, paddingVertical: 13, alignItems: "center", marginTop: 10 },
+  backButton: { backgroundColor: "rgba(46,32,20, 0.94)", borderWidth: 2, borderColor: "#5C4425", borderRadius: 6, paddingVertical: 13, alignItems: "center", marginTop: 10 },
   backButtonText: { color: "#F9FAFB", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", textTransform: "uppercase" },
 });

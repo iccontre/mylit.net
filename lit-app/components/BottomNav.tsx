@@ -2,13 +2,20 @@ import { useRouter } from "expo-router";
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { BOTTOM_NAV_HEIGHT } from "../constants/mobileLayout";
+import { hubPalettes, woodBorder, woodVoid } from "../constants/worldTokens";
 
 export type BottomNavRoute = "home" | "sleep" | "mind" | "path" | "calendar" | "stats";
+/** @deprecated Kept only so older call sites still type-check; BottomNav now derives its
+ *  selected-tab color from `activeRoute` (see ROUTE_ACCENTS) and, for "home", from
+ *  `homeAccent` — a page-wide theme string can no longer disagree with the route it's on. */
 export type BottomNavTheme = "gold" | "purple";
 
 type BottomNavProps = {
   activeRoute: BottomNavRoute;
-  theme?: BottomNavTheme;
+  /** Home's selected-tab color follows the LIVE energy mode (see BOTTOM NAV STATES reference:
+   *  "HOME · current mode color") — pass the current mode's accent hex when activeRoute="home".
+   *  Ignored for every other route, which each have one fixed hub color. */
+  homeAccent?: string;
   bottomOffset?: number;
 };
 
@@ -28,28 +35,32 @@ const ROUTES: { key: BottomNavRoute; href: string; icon: string; label: string }
   { key: "stats", href: "/stats", icon: "🎒", label: "BAG" },
 ];
 
-export function BottomNav({ activeRoute, theme = "gold", bottomOffset = 8 }: BottomNavProps) {
+/** Fixed per-tab selected color, straight from the rendered "BOTTOM NAV STATES" reference frame
+ *  ("SLEEP · lavender", "MIND · violet", "PATH · green", "CAL · red/gold", "BAG · white/gold"). */
+const ROUTE_ACCENTS: Record<Exclude<BottomNavRoute, "home">, string> = {
+  sleep: hubPalettes.sleep.accent,
+  mind: hubPalettes.mind.accent,
+  path: hubPalettes.path.accent,
+  calendar: hubPalettes.calendar.accent,
+  stats: hubPalettes.stats.accent,
+};
+
+export function BottomNav({ activeRoute, homeAccent, bottomOffset = 8 }: BottomNavProps) {
   const router = useRouter();
-  const accent = theme === "purple" ? "#A78BFA" : "#FBBF24";
-  const activeGlow = theme === "purple" ? "#FDE68A" : "#86EFAC";
-  const activeBg = theme === "purple" ? "#1E1B4B" : "#162314";
-  const activeBorder = theme === "purple" ? "#FDE68A" : accent;
 
   return (
-    <View style={[styles.bottomNav, { borderColor: accent, bottom: bottomOffset }]}>
+    <View style={[styles.bottomNav, { bottom: bottomOffset }]}>
       {ROUTES.map((route) => {
         const active = route.key === activeRoute;
+        const accent = route.key === "home" ? homeAccent ?? hubPalettes.neutral.accent : ROUTE_ACCENTS[route.key];
         return (
           <TouchableOpacity
             key={route.key}
-            style={[
-              styles.navButton,
-              active && { backgroundColor: activeBg, borderColor: activeBorder },
-            ]}
+            style={[styles.navButton, active && { borderColor: accent, backgroundColor: "rgba(0,0,0,0.25)" }]}
             onPress={() => router.push(route.href as "/")}
           >
-            <Text style={[styles.navIcon, active && { color: activeGlow }]}>{route.icon}</Text>
-            <Text style={[styles.navLabel, active && { color: activeGlow }]}>{route.label}</Text>
+            <Text style={[styles.navIcon, active && { color: accent }]}>{route.icon}</Text>
+            <Text style={[styles.navLabel, active && { color: accent }]}>{route.label}</Text>
           </TouchableOpacity>
         );
       })}
@@ -63,8 +74,9 @@ const styles = StyleSheet.create({
     left: 8,
     right: 8,
     height: BOTTOM_NAV_HEIGHT,
-    backgroundColor: "rgba(4, 8, 16, 0.98)",
+    backgroundColor: woodVoid,
     borderWidth: 3,
+    borderColor: woodBorder,
     borderRadius: 5,
     padding: 4,
     flexDirection: "row",
@@ -72,9 +84,9 @@ const styles = StyleSheet.create({
   },
   navButton: {
     flex: 1,
-    backgroundColor: "#111827",
+    backgroundColor: "#3E2A1A",
     borderWidth: 2,
-    borderColor: "#3A4558",
+    borderColor: "#5C4425",
     borderRadius: 3,
     paddingVertical: 4,
     marginHorizontal: 2,
@@ -82,13 +94,13 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   navIcon: {
-    color: "#E2E8F0",
+    color: "#F5EFE2",
     fontSize: 17,
     fontWeight: "900",
     lineHeight: 20,
   },
   navLabel: {
-    color: "#94A3B8",
+    color: "#D8C9A3",
     fontFamily: pixelFont,
     fontSize: 8,
     fontWeight: "900",

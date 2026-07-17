@@ -8,8 +8,11 @@ import { persistProgressKeys } from "../lib/progressStore";
 import { readJson } from "../lib/readJson";
 import { getQuestDayKey, parseTimeToMinutes } from "../lib/scheduling";
 import { FOOD_LOGS_KEY } from "../lib/storageKeys";
+import { SaveButton, type SaveState } from "./parchment/SaveButton";
+import { hubPalettes } from "../constants/worldTokens";
 
 const pixelFont = Platform.select({ ios: "Menlo", android: "monospace", web: "monospace", default: "monospace" });
+const palette = hubPalettes.progress;
 
 type FoodLogModalProps = {
   visible: boolean;
@@ -25,9 +28,9 @@ export function FoodLogModal({ visible, onClose, onSaved }: FoodLogModalProps) {
   const [useExactTime, setUseExactTime] = useState(false);
   const [exactTime, setExactTime] = useState("");
   const [note, setNote] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState("");
+  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [validationError, setValidationError] = useState("");
+  const saving = saveState === "saving";
 
   useEffect(() => {
     if (!visible) return;
@@ -35,9 +38,8 @@ export function FoodLogModal({ visible, onClose, onSaved }: FoodLogModalProps) {
     setUseExactTime(false);
     setExactTime("");
     setNote("");
-    setSaving(false);
-    setSaved(false);
-    setError("");
+    setSaveState("idle");
+    setValidationError("");
   }, [visible]);
 
   function resolveEatenAt(): Date | null {
@@ -50,14 +52,14 @@ export function FoodLogModal({ visible, onClose, onSaved }: FoodLogModalProps) {
   }
 
   async function handleSave() {
-    if (saving || saved) return;
+    if (saveState === "saving" || saveState === "saved") return;
     const eatenAtDate = resolveEatenAt();
     if (!eatenAtDate) {
-      setError("Enter a valid time, like 1:30 PM, or leave it blank for now.");
+      setValidationError("Enter a valid time, like 1:30 PM, or leave it blank for now.");
       return;
     }
-    setSaving(true);
-    setError("");
+    setSaveState("saving");
+    setValidationError("");
 
     try {
       const eatenAt = eatenAtDate.toISOString();
@@ -66,7 +68,7 @@ export function FoodLogModal({ visible, onClose, onSaved }: FoodLogModalProps) {
       // A double-tap/rapid resubmit of the same real event must never log twice — see
       // isDuplicateFoodLog for why this is separate from the array-merge-by-id dedup.
       if (isDuplicateFoodLog(existing, { eatenAt, entryType })) {
-        setSaving(false);
+        setSaveState("idle");
         onClose();
         return;
       }
@@ -98,14 +100,12 @@ export function FoodLogModal({ visible, onClose, onSaved }: FoodLogModalProps) {
       });
 
       onSaved(log);
-      setSaving(false);
-      setSaved(true);
+      setSaveState("saved");
       // Brief visible ✓ SAVED confirmation before this closes, matching the shared Save-state
       // pattern, instead of vanishing the instant persistence resolves.
       setTimeout(onClose, 800);
     } catch {
-      setSaving(false);
-      setError("Couldn't save that log — please try again.");
+      setSaveState("error");
     }
   }
 
@@ -122,13 +122,13 @@ export function FoodLogModal({ visible, onClose, onSaved }: FoodLogModalProps) {
           <Text style={styles.label}>Meal or snack?</Text>
           <View style={styles.choiceRow}>
             <TouchableOpacity
-              style={[styles.choiceButton, entryType === "meal" && styles.choiceButtonActive]}
+              style={[styles.choiceButton, entryType === "meal" && { backgroundColor: palette.edge, borderColor: palette.chrome }]}
               onPress={() => setEntryType("meal")}
             >
               <Text style={[styles.choiceText, entryType === "meal" && styles.choiceTextActive]}>Meal</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.choiceButton, entryType === "snack" && styles.choiceButtonActive]}
+              style={[styles.choiceButton, entryType === "snack" && { backgroundColor: palette.edge, borderColor: palette.chrome }]}
               onPress={() => setEntryType("snack")}
             >
               <Text style={[styles.choiceText, entryType === "snack" && styles.choiceTextActive]}>Snack</Text>
@@ -138,13 +138,13 @@ export function FoodLogModal({ visible, onClose, onSaved }: FoodLogModalProps) {
           <Text style={styles.label}>When did you eat?</Text>
           <View style={styles.choiceRow}>
             <TouchableOpacity
-              style={[styles.choiceButton, !useExactTime && styles.choiceButtonActive]}
+              style={[styles.choiceButton, !useExactTime && { backgroundColor: palette.edge, borderColor: palette.chrome }]}
               onPress={() => setUseExactTime(false)}
             >
               <Text style={[styles.choiceText, !useExactTime && styles.choiceTextActive]}>Now</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.choiceButton, useExactTime && styles.choiceButtonActive]}
+              style={[styles.choiceButton, useExactTime && { backgroundColor: palette.edge, borderColor: palette.chrome }]}
               onPress={() => setUseExactTime(true)}
             >
               <Text style={[styles.choiceText, useExactTime && styles.choiceTextActive]}>Exact time</Text>
@@ -154,7 +154,7 @@ export function FoodLogModal({ visible, onClose, onSaved }: FoodLogModalProps) {
             <TextInput
               style={styles.input}
               placeholder="Example: 1:30 PM"
-              placeholderTextColor="#64748B"
+              placeholderTextColor="#8A5D2B"
               autoCapitalize="characters"
               value={exactTime}
               onChangeText={setExactTime}
@@ -165,24 +165,18 @@ export function FoodLogModal({ visible, onClose, onSaved }: FoodLogModalProps) {
           <TextInput
             style={styles.input}
             placeholder="Example: sandwich and fruit"
-            placeholderTextColor="#64748B"
+            placeholderTextColor="#8A5D2B"
             value={note}
             onChangeText={setNote}
           />
 
-          {error ? <Text style={styles.errorText}>{error}</Text> : null}
+          {validationError ? <Text style={styles.errorText}>{validationError}</Text> : null}
 
           <View style={styles.buttonRow}>
             <TouchableOpacity style={styles.cancelBtn} onPress={onClose} disabled={saving} accessibilityLabel="Cancel">
               <Text style={styles.cancelBtnText}>CANCEL</Text>
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.saveBtn, (saving || saved) && styles.saveBtnDisabled, saved && styles.saveBtnSaved]}
-              disabled={saving || saved}
-              onPress={() => void handleSave()}
-            >
-              <Text style={styles.saveBtnText}>{saving ? "SAVING…" : saved ? "✓ SAVED" : "SAVE"}</Text>
-            </TouchableOpacity>
+            <SaveButton state={saveState} onPress={() => void handleSave()} style={styles.saveBtn} />
           </View>
         </Pressable>
       </Pressable>
@@ -191,11 +185,11 @@ export function FoodLogModal({ visible, onClose, onSaved }: FoodLogModalProps) {
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: "rgba(2,4,10,0.88)", padding: 18, justifyContent: "center" },
+  backdrop: { flex: 1, backgroundColor: "rgba(28,18,10,0.82)", padding: 18, justifyContent: "center" },
   panel: {
-    backgroundColor: "rgba(8,13,24,0.98)",
+    backgroundColor: "#EAD9B6",
     borderWidth: 3,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     borderRadius: 10,
     padding: 16,
   },
@@ -207,16 +201,16 @@ const styles = StyleSheet.create({
     height: 44,
     borderRadius: 6,
     borderWidth: 2,
-    borderColor: "#F87171",
+    borderColor: "#B3261E",
     alignItems: "center",
     justifyContent: "center",
     zIndex: 1,
   },
-  closeBtnText: { color: "#F87171", fontFamily: pixelFont, fontSize: 16, fontWeight: "900" },
-  title: { color: "#FDE047", fontFamily: pixelFont, fontSize: 16, fontWeight: "900", textAlign: "center", letterSpacing: 1 },
-  subtitle: { color: "#CBD5E1", fontSize: 11, lineHeight: 16, fontWeight: "700", textAlign: "center", marginTop: 6, marginBottom: 12 },
+  closeBtnText: { color: "#B3261E", fontFamily: pixelFont, fontSize: 16, fontWeight: "900" },
+  title: { color: "#4A3620", fontFamily: pixelFont, fontSize: 16, fontWeight: "900", textAlign: "center", letterSpacing: 1 },
+  subtitle: { color: "#7C5B2B", fontSize: 11, lineHeight: 16, fontWeight: "700", textAlign: "center", marginTop: 6, marginBottom: 12 },
   label: {
-    color: "#F9FAFB",
+    color: "#4A3620",
     fontFamily: pixelFont,
     fontSize: 11,
     fontWeight: "900",
@@ -228,16 +222,15 @@ const styles = StyleSheet.create({
   choiceRow: { flexDirection: "row", gap: 8 },
   choiceButton: {
     flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
+    backgroundColor: "#F4E8CE",
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     borderRadius: 6,
     paddingVertical: 10,
     alignItems: "center",
   },
-  choiceButtonActive: { backgroundColor: "rgba(49, 46, 129, 0.96)", borderColor: "#A78BFA" },
-  choiceText: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
-  choiceTextActive: { color: "#F9FAFB" },
+  choiceText: { color: "#4A3620", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
+  choiceTextActive: { color: "#FFFFFF" },
   input: {
     backgroundColor: "#F4E8CE",
     borderWidth: 2,
@@ -250,28 +243,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginTop: 8,
   },
-  errorText: { color: "#FCA5A5", fontSize: 11, fontWeight: "700", marginTop: 10 },
+  errorText: { color: "#B3261E", fontSize: 11, fontWeight: "700", marginTop: 10 },
   buttonRow: { flexDirection: "row", gap: 10, marginTop: 16 },
   cancelBtn: {
     flex: 1,
-    backgroundColor: "rgba(8, 13, 24, 0.94)",
+    backgroundColor: "#3E2A1A",
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     borderRadius: 6,
     paddingVertical: 12,
     alignItems: "center",
   },
-  cancelBtnText: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
-  saveBtn: {
-    flex: 1,
-    backgroundColor: "#A78BFA",
-    borderWidth: 3,
-    borderColor: "#E9D5FF",
-    borderRadius: 6,
-    paddingVertical: 11,
-    alignItems: "center",
-  },
-  saveBtnDisabled: { backgroundColor: "#334155", borderColor: "#475569" },
-  saveBtnSaved: { backgroundColor: "#15803D", borderColor: "#4ADE80" },
-  saveBtnText: { color: "#0F172A", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", letterSpacing: 1 },
+  cancelBtnText: { color: "#D8C9A3", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
+  saveBtn: { flex: 1, paddingVertical: 11 },
 });

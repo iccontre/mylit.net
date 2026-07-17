@@ -5,6 +5,7 @@ import { Image, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, Toucha
 
 import { FormScreen } from "../components/FormScreen";
 import { BottomNav } from "../components/BottomNav";
+import { WorldChrome } from "../components/parchment/WorldChrome";
 import { WeekDaySelector } from "../components/WeekDaySelector";
 import { LunaReminderCard } from "../components/LunaReminderCard";
 import { formPageContent, formStyles } from "../constants/formStyles";
@@ -830,14 +831,6 @@ export default function DayPlanScreen() {
   // (idempotent weekly habit save; today's-quest save only when dirty and valid). Checklist
   // items are intentionally left out: they have their own conflict/cap/recovery-confirm
   // validation per item, which isn't safe to auto-drive for several items at once.
-  async function lockInMyDay() {
-    await saveWeeklyHabit();
-    if (isTodayQuestDirty() && dayPlan.todayQuest.title.trim()) {
-      await saveTodayQuest();
-    }
-    setSavedMessage("Day locked in. Checklist items still save individually.");
-  }
-
   function updateSelectedRole(value: string) {
     setSavedMessage("");
     setDayPlan((current: DayPlan) => ({
@@ -1138,13 +1131,7 @@ export default function DayPlanScreen() {
         </View>
         <View style={styles.worldOverlay}>
           <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.hudContent]}>
-            <View style={styles.heroPanel}>
-              <View style={styles.heroCopy}>
-                <Text style={styles.heroKicker}>PLANNING BOARD</Text>
-                <Text style={styles.title}>DAY PLAN</Text>
-                <Text style={styles.summary}>Shape the day before it starts.</Text>
-              </View>
-            </View>
+            <WorldChrome hub="calendar" kicker="PLANNING BOARD" title="DAY PLAN" subtitle="Shape the day before it starts." style={styles.heroPanel} />
 
             <View style={styles.eviePanel}>
               <Image source={uiAssets.guides.evie} style={styles.evieAvatar} resizeMode="contain" />
@@ -1526,9 +1513,6 @@ export default function DayPlanScreen() {
 
             {conflictMessage ? <Text style={styles.conflictMessage}>{conflictMessage}</Text> : null}
             {savedMessage ? <Text style={styles.savedMessage}>{savedMessage}</Text> : null}
-            <TouchableOpacity style={styles.lockInBtn} onPress={() => void lockInMyDay()}>
-              <Text style={styles.lockInBtnText}>🔒 LOCK IN MY DAY</Text>
-            </TouchableOpacity>
 
             <TouchableOpacity style={styles.backButton} onPress={() => router.push("/calendar")}><Text style={styles.backButtonText}>BACK TO CALENDAR</Text></TouchableOpacity>
           </FormScreen>
@@ -1597,15 +1581,15 @@ function InfoOverlay({ onClose }: { onClose: () => void }) {
 }
 
 const styles = StyleSheet.create({
-  pageRoot: { flex: 1, backgroundColor: "#02040A" },
-  phoneStage: { alignSelf: "center", backgroundColor: "#050814", overflow: "hidden", position: "relative", borderWidth: 2, borderColor: "#FBBF24" },
+  pageRoot: { flex: 1, backgroundColor: "#140F0A" },
+  phoneStage: { alignSelf: "center", backgroundColor: "#1C1410", overflow: "hidden", position: "relative", borderWidth: 2, borderColor: "#FBBF24" },
   phoneStageFullscreen: { borderWidth: 0, maxWidth: undefined, aspectRatio: undefined },
   backgroundLayer: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, zIndex: 0 },
   backgroundImage: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, width: "100%", height: "100%" },
   worldOverlay: { flex: 1, backgroundColor: "rgba(2, 6, 12, 0.62)" },
   screenScroller: { flex: 1 },
   hudContent: { flexGrow: 1, width: "100%", paddingTop: 18, paddingHorizontal: 14 },
-  heroPanel: { backgroundColor: "rgba(5, 12, 24, 0.92)", borderWidth: 3, borderColor: "#D99B2B", borderRadius: 8, padding: 13, marginBottom: 12, flexDirection: "row", alignItems: "center" },
+  heroPanel: { marginBottom: 12 },
   heroCopy: { flex: 1 },
   heroKicker: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", letterSpacing: 1.2, marginBottom: 5 },
   title: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 27, fontWeight: "900", letterSpacing: 1, lineHeight: 32, textAlign: "center" },
@@ -1661,7 +1645,7 @@ const styles = StyleSheet.create({
   deleteButton: { width: 34, height: 30, borderWidth: 1, borderColor: "#FCA5A5", alignItems: "center", justifyContent: "center", backgroundColor: "rgba(127,29,29,0.45)" },
   deleteButtonText: { fontSize: 14 },
   durationRow: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 8 },
-  durationButton: { borderWidth: 2, borderColor: "#334155", paddingVertical: 7, paddingHorizontal: 10, backgroundColor: "rgba(30, 41, 59, 0.88)" },
+  durationButton: { borderWidth: 2, borderColor: "#5C4425", paddingVertical: 7, paddingHorizontal: 10, backgroundColor: "rgba(30, 41, 59, 0.88)" },
   durationButtonActive: { borderColor: "#FBBF24", backgroundColor: "rgba(69,43,8,0.65)" },
   durationText: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
   optionTextActive: { color: "#FDE68A" },
@@ -1742,7 +1726,7 @@ const styles = StyleSheet.create({
   backButtonText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 14, fontWeight: "900", letterSpacing: 1 },
   lockInBtn: { borderWidth: 2, borderColor: "#22C55E", backgroundColor: "#14532D", paddingVertical: 14, alignItems: "center", marginBottom: 10, borderRadius: 8 },
   lockInBtnText: { color: "#F0FDF4", fontFamily: pixelFont, fontSize: 14, fontWeight: "900", letterSpacing: 1 },
-  eviePanel: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(8,13,24,0.95)", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, padding: 10, marginBottom: 12 },
+  eviePanel: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(46,32,20,0.95)", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, padding: 10, marginBottom: 12 },
   evieAvatar: { width: 44, height: 52, marginRight: 10 },
   evieCopy: { flex: 1 },
   evieName: { color: "#FDE047", fontFamily: pixelFont, fontSize: 10, fontWeight: "900" },
@@ -1756,14 +1740,14 @@ const styles = StyleSheet.create({
   saveQuestButtonDisabled: { borderColor: "#7C5B2B", backgroundColor: "#A8916B" },
   saveQuestButtonText: { color: "#FFFFFF", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", letterSpacing: 0.6 },
   infoOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.82)", justifyContent: "center", alignItems: "center", padding: 20, zIndex: 25 },
-  infoCard: { backgroundColor: "rgba(8,13,24,0.99)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 12, padding: 16, width: "100%" },
+  infoCard: { backgroundColor: "rgba(46,32,20,0.99)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 12, padding: 16, width: "100%" },
   infoTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", marginBottom: 10 },
   infoScroll: { maxHeight: 280 },
   infoBody: { color: "#CBD5E1", fontSize: 13, lineHeight: 20, fontWeight: "700" },
   infoClose: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", paddingVertical: 11, alignItems: "center", marginTop: 12 },
   infoCloseText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900" },
   bottomNav: { position: "absolute", bottom: 8, left: 8, right: 8, height: 62, flexDirection: "row", justifyContent: "space-between", backgroundColor: "rgba(4,8,16,0.98)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 5, padding: 4 },
-  navButton: { flex: 1, backgroundColor: "#111827", borderWidth: 2, borderColor: "#3A4558", borderRadius: 3, paddingVertical: 4, marginHorizontal: 2, alignItems: "center", justifyContent: "center" },
+  navButton: { flex: 1, backgroundColor: "#3E2A1A", borderWidth: 2, borderColor: "#3A4558", borderRadius: 3, paddingVertical: 4, marginHorizontal: 2, alignItems: "center", justifyContent: "center" },
   navButtonActive: { backgroundColor: "#162314", borderColor: "#FBBF24" },
   navIcon: { fontSize: 18 },
   navLabel: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", marginTop: 1 },

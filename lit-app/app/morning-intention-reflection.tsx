@@ -479,11 +479,11 @@ export default function MorningIntentionReflectionScreen() {
 const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
-    backgroundColor: "#02040A",
+    backgroundColor: "#140F0A",
   },
   phoneStage: {
     alignSelf: "center",
-    backgroundColor: "#050814",
+    backgroundColor: "#1C1410",
     overflow: "hidden",
     position: "relative",
     borderWidth: 2,
@@ -566,10 +566,10 @@ const styles = StyleSheet.create({
     width: 66,
     borderRadius: 33,
     borderWidth: 3,
-    backgroundColor: "rgba(8, 13, 24, 0.65)",
+    backgroundColor: "rgba(46,32,20, 0.65)",
   },
   evieCard: {
-    backgroundColor: "rgba(8,13,24,0.94)",
+    backgroundColor: "rgba(46,32,20,0.94)",
     borderRadius: 6,
     borderWidth: 3,
     padding: 13,
@@ -719,18 +719,18 @@ const styles = StyleSheet.create({
   },
   choiceButton: {
     flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
+    backgroundColor: "rgba(46,32,20, 0.96)",
     borderRadius: 4,
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     paddingVertical: 10,
     alignItems: "center",
   },
   option: {
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
+    backgroundColor: "rgba(46,32,20, 0.96)",
     borderRadius: 4,
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     paddingVertical: 8,
     paddingHorizontal: 10,
   },
@@ -749,7 +749,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   primaryButton: {
-    backgroundColor: "#111827",
+    backgroundColor: "#3E2A1A",
     padding: 13,
     borderRadius: 4,
     alignItems: "center",
@@ -797,12 +797,12 @@ const styles = StyleSheet.create({
     letterSpacing: 0.7,
   },
   backButton: {
-    backgroundColor: "rgba(8, 13, 24, 0.94)",
+    backgroundColor: "rgba(46,32,20, 0.94)",
     padding: 12,
     borderRadius: 4,
     alignItems: "center",
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
   },
   backButtonText: {
     color: "#E2E8F0",

@@ -195,7 +195,7 @@ export default function ReflectionScreen() {
             accentColor="#C4A7FF"
           />
 
-          <BottomNav activeRoute="mind" theme="purple" bottomOffset={mobile.bottomNavOffset} />
+          <BottomNav activeRoute="mind" bottomOffset={mobile.bottomNavOffset} />
         </View>
       </View>
     </View>
@@ -205,11 +205,11 @@ export default function ReflectionScreen() {
 const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
-    backgroundColor: "#02040A",
+    backgroundColor: "#140F0A",
   },
   phoneStage: {
     alignSelf: "center",
-    backgroundColor: "#050814",
+    backgroundColor: "#1C1410",
     overflow: "hidden",
     position: "relative",
     borderWidth: 2,
@@ -379,9 +379,9 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   secondaryBtn: {
-    backgroundColor: "rgba(8, 13, 24, 0.94)",
+    backgroundColor: "rgba(46,32,20, 0.94)",
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     borderRadius: 6,
     alignItems: "center",
     paddingVertical: 13,
@@ -427,7 +427,7 @@ const styles = StyleSheet.create({
   },
   navButton: {
     flex: 1,
-    backgroundColor: "#111827",
+    backgroundColor: "#3E2A1A",
     borderWidth: 2,
     borderColor: "#3A4558",
     borderRadius: 3,

@@ -184,7 +184,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   summaryCard: {
-    backgroundColor: "rgba(15,23,42,0.96)",
+    backgroundColor: "rgba(46,32,20,0.96)",
     borderWidth: 2,
     borderColor: "#475569",
     borderRadius: 6,
@@ -232,7 +232,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   secondaryButton: {
-    backgroundColor: "rgba(15,23,42,0.96)",
+    backgroundColor: "rgba(46,32,20,0.96)",
     borderWidth: 2,
     borderColor: "#A78BFA",
     borderRadius: 6,

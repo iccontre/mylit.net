@@ -63,10 +63,10 @@ export function ThreeHourPreviewModal({
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: "rgba(2,4,10,0.82)", alignItems: "center", justifyContent: "center", padding: 18 },
-  panel: { width: "100%", maxWidth: 360, backgroundColor: "rgba(8,13,24,0.98)", borderWidth: 3, borderColor: "#334155", borderRadius: 12, padding: 16 },
+  panel: { width: "100%", maxWidth: 360, backgroundColor: "rgba(46,32,20,0.98)", borderWidth: 3, borderColor: "#5C4425", borderRadius: 12, padding: 16 },
   title: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900", textAlign: "center", marginBottom: 10, letterSpacing: 1 },
   emptyText: { color: "#94A3B8", fontSize: 11, fontWeight: "700", textAlign: "center", marginBottom: 10 },
-  slotCard: { flexDirection: "row", alignItems: "center", borderWidth: 2, borderRadius: 6, padding: 8, marginBottom: 6, backgroundColor: "rgba(15,23,42,0.9)" },
+  slotCard: { flexDirection: "row", alignItems: "center", borderWidth: 2, borderRadius: 6, padding: 8, marginBottom: 6, backgroundColor: "rgba(46,32,20,0.9)" },
   slotProgress: { borderColor: "#FBBF24" },
   slotRecovery: { borderColor: "#A78BFA" },
   slotTime: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", width: 62 },

@@ -5,12 +5,16 @@ import { Image, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity,
 
 import { BottomNav } from "../components/BottomNav";
 import { FeedToGuideButton } from "../components/parchment/FeedToGuideButton";
+import { WorldChrome } from "../components/parchment/WorldChrome";
 import { FormScreen } from "../components/FormScreen";
 import { formPageContent } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
+import { hubPalettes } from "../constants/worldTokens";
 import { LOG_HISTORY_HEADING, uiAssets } from "../constants/uiAssets";
 import type { GuideContextSourceType } from "../lib/agentTypes";
 import { LOG_HISTORY_KEYS } from "../lib/storageKeys";
+
+const palette = hubPalettes.mind;
 
 // Read-only history view. It reads the same synced, array-merged keys the entry pages
 // write to (see LOG_HISTORY_KEYS), so logs restore across devices after login. We never
@@ -260,11 +264,13 @@ export default function LogHistoryScreen() {
         </View>
         <View style={styles.worldOverlay}>
           <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.hudContent]}>
-            <View style={styles.hero}>
-              <Text style={styles.heroKicker}>YOUR ACCOUNT</Text>
-              <Text style={styles.title}>{LOG_HISTORY_HEADING}</Text>
-              <Text style={styles.subtitle}>Everything you&apos;ve saved, synced to your account and restored on any device.</Text>
-            </View>
+            <WorldChrome
+              hub="mind"
+              kicker="YOUR ACCOUNT"
+              title={LOG_HISTORY_HEADING}
+              subtitle="Everything you've saved, synced to your account and restored on any device."
+              style={styles.hero}
+            />
 
             {totalCount === 0 ? (
               <View style={styles.emptyCard}>
@@ -349,7 +355,7 @@ export default function LogHistoryScreen() {
             </View>
           </Modal>
 
-          <BottomNav activeRoute="stats" theme="purple" bottomOffset={mobile.bottomNavOffset} />
+          <BottomNav activeRoute="stats" bottomOffset={mobile.bottomNavOffset} />
         </View>
       </View>
     </View>
@@ -357,10 +363,10 @@ export default function LogHistoryScreen() {
 }
 
 const styles = StyleSheet.create({
-  pageRoot: { flex: 1, backgroundColor: "#02040A" },
+  pageRoot: { flex: 1, backgroundColor: "#140F0A" },
   phoneStage: {
     alignSelf: "center",
-    backgroundColor: "#050814",
+    backgroundColor: "#1C1410",
     overflow: "hidden",
     position: "relative",
     borderWidth: 2,
@@ -375,22 +381,7 @@ const styles = StyleSheet.create({
   backgroundImage: { ...StyleSheet.absoluteFillObject, width: "100%", height: "100%" },
   worldOverlay: { flex: 1, backgroundColor: "rgba(4, 8, 14, 0.22)" },
   hudContent: { paddingTop: 8 },
-  hero: {
-    backgroundColor: "rgba(31, 27, 75, 0.95)",
-    borderWidth: 4,
-    borderColor: "#A78BFA",
-    borderRadius: 8,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOpacity: 0.7,
-    shadowRadius: 0,
-    shadowOffset: { width: 4, height: 4 },
-  },
-  heroKicker: { color: "#C4A7FF", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 2, marginBottom: 8 },
-  title: { color: "#F9FAFB", fontFamily: pixelFont, fontSize: 30, fontWeight: "900", letterSpacing: 1, lineHeight: 36, textAlign: "center" },
-  subtitle: { color: "#F8F1D7", fontFamily: pixelFont, fontSize: 12, fontWeight: "800", lineHeight: 18, marginTop: 8 },
+  hero: { marginBottom: 14 },
   emptyCard: {
     backgroundColor: "#EAD9B6",
     borderWidth: 3,
@@ -454,17 +445,17 @@ const styles = StyleSheet.create({
   modalScroll: { maxHeight: 420 },
   modalMeta: { color: "#92610A", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", marginBottom: 10 },
   modalBody: { color: "#3D2C18", fontFamily: pixelFont, fontSize: 13, fontWeight: "700", lineHeight: 20 },
-  modalDoneBtn: { marginTop: 12, borderWidth: 2, borderColor: "#A78BFA", borderRadius: 6, paddingVertical: 12, alignItems: "center", backgroundColor: "rgba(15,23,42,0.9)" },
-  modalDoneBtnText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 0.8 },
+  modalDoneBtn: { marginTop: 12, borderWidth: 2, borderColor: "#5C4425", borderRadius: 6, paddingVertical: 12, alignItems: "center", backgroundColor: "#E7D3A9" },
+  modalDoneBtnText: { color: "#4A3620", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 0.8 },
   feedToLunaRow: { marginTop: 12 },
   backButton: {
-    backgroundColor: "rgba(8, 13, 24, 0.94)",
+    backgroundColor: "rgba(46,32,20, 0.94)",
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#7C3AED",
     borderRadius: 6,
     paddingVertical: 13,
     alignItems: "center",
     marginTop: 4,
   },
-  backButtonText: { color: "#F9FAFB", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", textTransform: "uppercase" },
+  backButtonText: { color: "#ECE4FB", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", textTransform: "uppercase" },
 });

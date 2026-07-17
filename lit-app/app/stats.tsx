@@ -44,6 +44,7 @@ import { fetchLiveVersion } from "../lib/pwaUpdate";
 import { ProgressRecoveryModal } from "../components/ProgressRecoveryModal";
 import { BottomNav } from "../components/BottomNav";
 import { GuideFoundationCard } from "../components/GuideFoundationCard";
+import { WorldChrome } from "../components/parchment/WorldChrome";
 
 type ActivePanel = "weekly" | "skill" | "rank" | "behavior" | null;
 type ActiveInfo =
@@ -500,16 +501,10 @@ export default function StatsScreen() {
             <ScrollView style={styles.screenScroller} contentContainerStyle={[styles.hudContent, { paddingBottom: mobile.scrollPaddingBottom }]} showsVerticalScrollIndicator={false} bounces={false}>
 
               <View style={styles.heroPanel}>
-                <View style={styles.heroCopyRow}>
-                  <View style={styles.heroCopy}>
-                    <Text style={styles.heroLabel}>STATS BOARD</Text>
-                    <Text style={styles.heroTitle}>STATS</Text>
-                    <Text style={styles.heroSubtitle}>Know your journey. Level up with insight.</Text>
-                  </View>
-                  <TouchableOpacity style={styles.infoBtn} onPress={() => setActiveInfo("stats")}>
-                    <Text style={styles.infoBtnText}>?</Text>
-                  </TouchableOpacity>
-                </View>
+                <WorldChrome hub="stats" kicker="STATS BOARD" title="STATS" subtitle="Know your journey. Level up with insight." />
+                <TouchableOpacity style={styles.infoBtn} onPress={() => setActiveInfo("stats")}>
+                  <Text style={styles.infoBtnText}>?</Text>
+                </TouchableOpacity>
               </View>
 
               <View style={styles.eviePanel}>
@@ -901,30 +896,30 @@ const styles = StyleSheet.create({
   learningLoopButtonText: { color: "#BAE6FD", fontFamily: "monospace", fontSize: 13, fontWeight: "900", letterSpacing: 0.5 },
   learningLoopNote: { color: "#94A3B8", fontSize: 10, fontWeight: "700", textAlign: "center", marginTop: 6, marginBottom: 12 },
   learningLoopBackdrop: { flex: 1, backgroundColor: "rgba(2,4,10,0.88)", padding: 18, paddingTop: 60, paddingBottom: 40 },
-  learningLoopPanel: { flex: 1, backgroundColor: "rgba(8,13,24,0.98)", borderWidth: 3, borderColor: "#334155", borderRadius: 12 },
+  learningLoopPanel: { flex: 1, backgroundColor: "rgba(46,32,20,0.98)", borderWidth: 3, borderColor: "#5C4425", borderRadius: 12 },
   learningLoopContent: { padding: 16 },
   learningLoopCloseBtn: { marginTop: 8, alignItems: "center", paddingVertical: 10 },
   learningLoopCloseBtnText: { color: "#94A3B8", fontFamily: "monospace", fontSize: 11, fontWeight: "900" },
-  pageRoot: { flex: 1, backgroundColor: "#02040A" },
-  phoneStage: { alignSelf: "center", backgroundColor: "#050814", overflow: "hidden", position: "relative", borderWidth: 2, borderColor: "rgba(251,191,36,0.55)", shadowColor: "#000", shadowOpacity: 0.85, shadowRadius: 0, shadowOffset: { width: 6, height: 6 } },
+  pageRoot: { flex: 1, backgroundColor: "#140F0A" },
+  phoneStage: { alignSelf: "center", backgroundColor: "#1C1410", overflow: "hidden", position: "relative", borderWidth: 2, borderColor: "rgba(251,191,36,0.55)", shadowColor: "#000", shadowOpacity: 0.85, shadowRadius: 0, shadowOffset: { width: 6, height: 6 } },
   phoneStageFullscreen: { borderWidth: 0, shadowOpacity: 0 },
   backgroundLayer: { ...StyleSheet.absoluteFillObject },
   backgroundImage: { width: "100%", height: "100%" },
   worldOverlay: { flex: 1, backgroundColor: "rgba(2, 6, 12, 0.65)" },
   screenScroller: { flex: 1 },
   hudContent: { minHeight: "100%", paddingTop: 14, paddingHorizontal: 14, paddingBottom: 82 },
-  heroPanel: { backgroundColor: "rgba(5,12,24,0.94)", borderWidth: 3, borderColor: "#D99B2B", borderRadius: 8, padding: 10, marginBottom: 8 },
+  heroPanel: { position: "relative", marginBottom: 8 },
   heroCopyRow: { flexDirection: "row", alignItems: "center" },
   heroCopy: { flex: 1 },
   heroLabel: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 10, fontWeight: "900", letterSpacing: 1.2 },
   heroTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 28, fontWeight: "900", letterSpacing: 2, textAlign: "center" },
   heroSubtitle: { color: "#F8E7A1", fontSize: 11, fontWeight: "800", lineHeight: 16 },
-  eviePanel: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(8,13,24,0.95)", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, padding: 8, marginBottom: 8 },
+  eviePanel: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(46,32,20,0.95)", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, padding: 8, marginBottom: 8 },
   evieAvatar: { width: 44, height: 50, marginRight: 8 },
   evieCopy: { flex: 1 },
   evieName: { color: "#FDE047", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
   evieText: { color: "#CBD5E1", fontSize: 12, lineHeight: 16, fontWeight: "700", marginTop: 2 },
-  infoBtn: { width: 26, height: 26, borderWidth: 2, borderColor: "#92610A", borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "#F4E8CE", marginLeft: 8 },
+  infoBtn: { position: "absolute", top: 10, right: 10, width: 26, height: 26, borderWidth: 2, borderColor: "#8A6D3A", borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "#F5EFE2" },
   infoBtnText: { color: "#4A3620", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
   chestCard: { flexDirection: "row", alignItems: "center", backgroundColor: "#EAD9B6", borderWidth: 3, borderColor: "#5C4425", borderRadius: 8, padding: 10, marginBottom: 8, minHeight: 80, shadowColor: "#000", shadowOpacity: 0.5, shadowRadius: 0, shadowOffset: { width: 3, height: 3 } },
   goldChest: { borderLeftWidth: 6, borderLeftColor: "#FBBF24" }, greenChest: { borderLeftWidth: 6, borderLeftColor: "#22C55E" }, purpleChest: { borderLeftWidth: 6, borderLeftColor: "#A855F7" },
@@ -954,10 +949,10 @@ const styles = StyleSheet.create({
   miniProgressFill: { height: "100%", backgroundColor: "#FBBF24" },
   rankCaption: { color: "#7C5B2B", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", textAlign: "center" },
   pageFooter: { flexDirection: "row", alignItems: "center", paddingVertical: 10, marginBottom: 2 },
-  pageFooterLine: { flex: 1, height: 1, backgroundColor: "#1E293B" },
-  pageFooterText: { color: "#334155", fontFamily: pixelFont, fontSize: 8, fontWeight: "900", letterSpacing: 1.5, marginHorizontal: 10 },
+  pageFooterLine: { flex: 1, height: 1, backgroundColor: "#3E2A1A" },
+  pageFooterText: { color: "#5C4425", fontFamily: pixelFont, fontSize: 8, fontWeight: "900", letterSpacing: 1.5, marginHorizontal: 10 },
   bottomNav: { position: "absolute", bottom: 8, left: 8, right: 8, height: 62, flexDirection: "row", justifyContent: "space-between", backgroundColor: "rgba(4,8,16,0.98)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 5, padding: 4 },
-  navButton: { flex: 1, backgroundColor: "#111827", borderWidth: 2, borderColor: "#3A4558", borderRadius: 3, paddingVertical: 4, marginHorizontal: 2, alignItems: "center", justifyContent: "center" },
+  navButton: { flex: 1, backgroundColor: "#3E2A1A", borderWidth: 2, borderColor: "#3A4558", borderRadius: 3, paddingVertical: 4, marginHorizontal: 2, alignItems: "center", justifyContent: "center" },
   navButtonActive: { backgroundColor: "#162314", borderColor: "#FBBF24" },
   navIcon: { fontSize: 18 },
   navLabel: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", marginTop: 1 },
@@ -980,7 +975,7 @@ const styles = StyleSheet.create({
   recoveryMode: { color: "#C084FC", fontFamily: pixelFont, fontSize: 15, fontWeight: "900" },
   detailText: { color: "#CBD5E1", fontSize: 11, lineHeight: 15, marginTop: 4 },
   statsGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", marginBottom: 4 },
-  statCard: { width: "48%", backgroundColor: "rgba(15,23,42,0.96)", borderWidth: 2, borderColor: "#334155", borderRadius: 8, padding: 10, marginBottom: 8, minHeight: 68, justifyContent: "center" },
+  statCard: { width: "48%", backgroundColor: "rgba(46,32,20,0.96)", borderWidth: 2, borderColor: "#5C4425", borderRadius: 8, padding: 10, marginBottom: 8, minHeight: 68, justifyContent: "center" },
   statValue: { fontFamily: pixelFont, fontSize: 20, fontWeight: "900", textAlign: "center" },
   statLabel: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", textAlign: "center", marginTop: 4, lineHeight: 12 },
   smallWinCard: { borderWidth: 2, borderColor: "#FBBF24", backgroundColor: "rgba(69,43,8,0.35)", borderRadius: 8, padding: 10, marginTop: 4, marginBottom: 10 },
@@ -994,7 +989,7 @@ const styles = StyleSheet.create({
   lunaInfoRow: { flexDirection: "row", alignItems: "center", marginTop: 10, marginBottom: 4 },
   lunaInfoImage: { width: 28, height: 34, marginRight: 8 },
   lunaInfoText: { color: "#A78BFA", fontFamily: pixelFont, fontSize: 9, fontWeight: "900" },
-  rankDuelCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 2, borderColor: "#334155", backgroundColor: "rgba(7,19,38,0.98)", borderRadius: 8, padding: 12, marginBottom: 10 },
+  rankDuelCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 2, borderColor: "#5C4425", backgroundColor: "rgba(7,19,38,0.98)", borderRadius: 8, padding: 12, marginBottom: 10 },
   rankBlock: { flex: 1, alignItems: "center" },
   rankBadge: { fontSize: 26, marginTop: 4 },
   rankName: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900", textAlign: "center", marginTop: 4 },
@@ -1008,11 +1003,11 @@ const styles = StyleSheet.create({
   progressFillGreen: { height: "100%", backgroundColor: "#22C55E" },
   progressFillPurple: { height: "100%", backgroundColor: "#A855F7" },
   progressCaption: { color: "#7C5B2B", textAlign: "center", fontFamily: pixelFont, fontSize: 10, fontWeight: "900", marginTop: 6 },
-  balanceCard: { borderWidth: 2, borderColor: "#334155", backgroundColor: "rgba(7,19,38,0.98)", borderRadius: 8, padding: 12, marginBottom: 10 },
+  balanceCard: { borderWidth: 2, borderColor: "#5C4425", backgroundColor: "rgba(7,19,38,0.98)", borderRadius: 8, padding: 12, marginBottom: 10 },
   balanceRow: { flexDirection: "row", justifyContent: "space-between", marginTop: 6, marginBottom: 8 },
   sectionTitle: { color: "#FBBF24", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", marginTop: 4, marginBottom: 8, letterSpacing: 1 },
   infoOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.86)", justifyContent: "center", alignItems: "center", padding: 20, zIndex: 25 },
-  infoCard: { backgroundColor: "rgba(8,13,24,0.99)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 12, padding: 16 },
+  infoCard: { backgroundColor: "rgba(46,32,20,0.99)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 12, padding: 16 },
   infoTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 14, fontWeight: "900", marginBottom: 10 },
   infoBody: { color: "#CBD5E1", fontSize: 13, lineHeight: 20, fontWeight: "700", marginBottom: 14 },
   returnButton: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", borderRadius: 6, paddingVertical: 11, alignItems: "center", marginTop: 6 },
@@ -1050,7 +1045,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   recoveryButton: {
-    backgroundColor: "rgba(15,23,42,0.96)",
+    backgroundColor: "rgba(46,32,20,0.96)",
     borderWidth: 2,
     borderColor: "#A78BFA",
     borderRadius: 6,
@@ -1080,11 +1075,11 @@ const styles = StyleSheet.create({
   diagnosticsToggle: {
     marginTop: 8,
     borderWidth: 1,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     borderRadius: 6,
     paddingVertical: 8,
     alignItems: "center",
-    backgroundColor: "rgba(15,23,42,0.5)",
+    backgroundColor: "rgba(46,32,20,0.5)",
   },
   diagnosticsToggleText: {
     color: "#64748B",
@@ -1096,7 +1091,7 @@ const styles = StyleSheet.create({
   diagnosticsCard: {
     marginTop: 6,
     borderWidth: 1,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     borderRadius: 6,
     padding: 10,
     backgroundColor: "rgba(2,4,10,0.6)",
@@ -1112,11 +1107,11 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 12,
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     borderRadius: 6,
     paddingVertical: 10,
     alignItems: "center",
-    backgroundColor: "rgba(15,23,42,0.75)",
+    backgroundColor: "rgba(46,32,20,0.75)",
   },
   logoutButtonText: {
     color: "#94A3B8",
@@ -1129,7 +1124,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 12,
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     borderRadius: 8,
     padding: 12,
     backgroundColor: "rgba(7,19,38,0.85)",

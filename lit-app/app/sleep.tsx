@@ -14,7 +14,11 @@ import {
 
 import { BottomNav } from "../components/BottomNav";
 import { GuideInfoModal } from "../components/GuideInfoModal";
+import { GuidePanel } from "../components/parchment/GuidePanel";
+import { ParchmentSurface, parchmentTextStyles } from "../components/parchment/ParchmentSurface";
+import { WorldChrome } from "../components/parchment/WorldChrome";
 import { useMobileFrame } from "../constants/mobileLayout";
+import { hubPalettes } from "../constants/worldTokens";
 import { uiAssets } from "../constants/uiAssets";
 
 const LUNA_SLEEP_HUB_BULLETS = [
@@ -45,8 +49,7 @@ type SleepCard = {
   buttonText: string;
   icon: string;
   route: "/pre-sleep-intention" | "/morning-intention-reflection" | "/sleep-calendar" | "/dream-journal";
-  featured?: boolean;
-  unlockable?: boolean;
+  locked?: boolean;
 };
 
 const DREAM_JOURNAL_KEY = "lit_dream_journal";
@@ -57,6 +60,8 @@ const pixelFont = Platform.select({
   web: "monospace",
   default: "monospace",
 });
+
+const palette = hubPalettes.sleep;
 
 export default function SleepScreen() {
   const router = useRouter();
@@ -77,7 +82,6 @@ export default function SleepScreen() {
         description: "Set one clear signal for tomorrow before bed.",
         buttonText: "Set Intention",
         icon: "☾",
-        featured: true,
         route: "/pre-sleep-intention",
       },
       {
@@ -85,7 +89,7 @@ export default function SleepScreen() {
         description: "Reflect on sleep and set the morning tone.",
         buttonText: "Open Reflection",
         icon: "✦",
-        unlockable: true,
+        locked: true,
         route: "/morning-intention-reflection",
       },
       {
@@ -102,7 +106,6 @@ export default function SleepScreen() {
           : "Capture dreams before they fade.",
         buttonText: "Open Dream Journal",
         icon: "📖",
-        featured: true,
         route: "/dream-journal",
       },
     ],
@@ -140,29 +143,29 @@ export default function SleepScreen() {
 
   function renderSleepCard(card: SleepCard) {
     return (
-      <View key={card.title} style={[styles.card, card.featured && styles.featuredCard]}>
-        <View style={styles.cardTopRow}>
-          <View style={styles.iconBox}>
-            <Text style={styles.cardIcon}>{card.icon}</Text>
-          </View>
-          <View style={styles.cardCopy}>
-            <Text style={styles.cardTitle}>{card.title}</Text>
-            <Text style={styles.cardText}>{card.description}</Text>
-            {card.unlockable ? <Text style={styles.unlockBadge}>🔓 UNLOCK</Text> : null}
-          </View>
-        </View>
-        <View style={styles.cardDivider} />
-        <TouchableOpacity style={styles.actionButton} onPress={() => navigate(card.route)}>
-          <Text style={styles.actionText}>{card.buttonText}</Text>
-          <Text style={styles.actionArrow}>›</Text>
+      <ParchmentSurface
+        key={card.title}
+        accent="sleep"
+        kicker={`${card.icon}  ${card.title.toUpperCase()}`}
+        trailingLabel={card.locked ? "LOCKED" : undefined}
+      >
+        <Text style={parchmentTextStyles.body}>{card.description}</Text>
+        <TouchableOpacity
+          style={[styles.actionButton, card.locked ? styles.actionButtonLocked : { backgroundColor: palette.edge, borderColor: palette.accent }]}
+          onPress={() => navigate(card.route)}
+        >
+          <Text style={[styles.actionText, card.locked && styles.actionTextLocked]}>
+            {card.locked ? `🔒 ${card.buttonText.toUpperCase()}` : card.buttonText.toUpperCase()}
+          </Text>
+          {!card.locked ? <Text style={styles.actionArrow}>›</Text> : null}
         </TouchableOpacity>
-      </View>
+      </ParchmentSurface>
     );
   }
 
   return (
     <View style={[styles.pageRoot, mobile.pageRootStyle]}>
-      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen]}>
+      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen, { borderColor: palette.edge }]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={uiAssets.backgrounds.recovery} style={styles.backgroundImage} resizeMode="cover" />
         </View>
@@ -173,24 +176,15 @@ export default function SleepScreen() {
             showsVerticalScrollIndicator={false}
             bounces={false}
           >
-            <View style={styles.titlePanel}>
-              <Text style={styles.kicker}>SLEEP HUB</Text>
-              <Text style={[styles.title, { fontSize: 34, letterSpacing: 3 }]}>SLEEP HUB</Text>
-              <Text style={styles.subtitle}>Rest, intention, and dream tools.</Text>
-            </View>
+            <WorldChrome hub="sleep" kicker="MOONLIT REST" title="SLEEP" subtitle="Rest, intention, and dream tools." style={styles.chrome} />
 
-            <View style={styles.lunaPanel}>
-              <Image source={uiAssets.guides.luna} style={styles.lunaAvatar} resizeMode="contain" />
-              <View style={styles.lunaCopy}>
-                <Text style={styles.lunaText}>
-                  It's okay to take it slow, stargazer. Rest is part of becoming your brightest self.
-                </Text>
-                <Text style={styles.lunaName}>Luna ♥</Text>
-              </View>
-              <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
-                <Text style={styles.infoBtnText}>?</Text>
-              </TouchableOpacity>
-            </View>
+            <GuidePanel
+              hub="sleep"
+              guideName="Luna"
+              guideAvatar={uiAssets.guides.luna}
+              message="It's okay to take it slow, stargazer. Rest is part of becoming your brightest self."
+              onInfoPress={() => setShowInfo(true)}
+            />
 
             <View style={styles.cardStack}>{sleepCards.map(renderSleepCard)}</View>
           </ScrollView>
@@ -202,10 +196,10 @@ export default function SleepScreen() {
             guideName="Luna"
             title="How Sleep Hub Works"
             bullets={LUNA_SLEEP_HUB_BULLETS}
-            accentColor="#C4A7FF"
+            accentColor={palette.accent}
           />
 
-          <BottomNav activeRoute="sleep" theme="purple" bottomOffset={mobile.bottomNavOffset} />
+          <BottomNav activeRoute="sleep" bottomOffset={mobile.bottomNavOffset} />
         </View>
       </View>
     </View>
@@ -215,15 +209,14 @@ export default function SleepScreen() {
 const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
-    backgroundColor: "#02040A",
+    backgroundColor: "#140F0A",
   },
   phoneStage: {
     alignSelf: "center",
-    backgroundColor: "#050814",
+    backgroundColor: "#1C1410",
     overflow: "hidden",
     position: "relative",
     borderWidth: 2,
-    borderColor: "rgba(196, 167, 255, 0.72)",
     shadowColor: "#000",
     shadowOpacity: 0.85,
     shadowRadius: 0,
@@ -253,268 +246,45 @@ const styles = StyleSheet.create({
   },
   hudContent: {
     flexGrow: 1,
-    paddingTop: 28,
+    paddingTop: 16,
     paddingHorizontal: 14,
   },
-  titlePanel: {
-    width: "100%",
-    alignSelf: "stretch",
-    backgroundColor: "rgba(7, 11, 27, 0.94)",
-    borderWidth: 4,
-    borderColor: "#8B5CF6",
-    borderRadius: 8,
-    paddingVertical: 15,
-    paddingHorizontal: 14,
-    marginBottom: 34,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.7,
-    shadowRadius: 0,
-    shadowOffset: { width: 4, height: 4 },
-  },
-  kicker: {
-    color: "#C084FC",
-    fontSize: 12,
-    fontWeight: "900",
-    letterSpacing: 2,
-    marginBottom: 7,
-    textTransform: "uppercase",
-    fontFamily: pixelFont,
-  },
-  title: {
-    color: "#E9D5FF",
-    fontSize: 40,
-    fontWeight: "900",
-    letterSpacing: 5,
-    lineHeight: 46,
-    fontFamily: pixelFont,
-    textAlign: "center",
-    textShadowColor: "#000",
-    textShadowOffset: { width: 3, height: 3 },
-    textShadowRadius: 0,
-  },
-  subtitle: {
-    color: "#FDE68A",
-    fontSize: 13,
-    lineHeight: 19,
-    marginTop: 8,
-    textAlign: "center",
-    fontWeight: "800",
-    fontFamily: pixelFont,
-  },
-  lunaPanel: {
-    minHeight: 88,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(7, 11, 27, 0.94)",
-    borderWidth: 4,
-    borderColor: "#A78BFA",
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginBottom: 22,
-    shadowColor: "#000",
-    shadowOpacity: 0.7,
-    shadowRadius: 0,
-    shadowOffset: { width: 4, height: 4 },
-  },
-  lunaAvatar: {
-    height: 68,
-    width: 68,
-    borderRadius: 34,
-    borderWidth: 3,
-    borderColor: "#C4A7FF",
-    backgroundColor: "rgba(21, 16, 48, 0.72)",
-    marginRight: 12,
-  },
-  lunaCopy: {
-    flex: 1,
-  },
-  lunaText: {
-    color: "#F8F1D7",
-    fontSize: 13,
-    fontWeight: "800",
-    lineHeight: 19,
-    fontFamily: pixelFont,
-  },
-  lunaName: {
-    color: "#C084FC",
-    fontSize: 15,
-    fontWeight: "900",
-    marginTop: 6,
-    fontFamily: pixelFont,
-  },
-  infoBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 4,
-    borderWidth: 2,
-    borderColor: "#A78BFA",
-    backgroundColor: "rgba(49,46,129,0.72)",
-    alignItems: "center",
-    justifyContent: "center",
-    alignSelf: "flex-start",
-  },
-  infoBtnText: {
-    color: "#C4A7FF",
-    fontFamily: pixelFont,
-    fontSize: 14,
-    fontWeight: "900",
-    lineHeight: 18,
-  },
+  chrome: { marginBottom: 14 },
   cardStack: {
-    gap: 14,
+    gap: 12,
+    marginTop: 14,
     paddingBottom: 8,
   },
-  card: {
-    backgroundColor: "rgba(7, 11, 27, 0.95)",
+  actionButton: {
+    minHeight: 44,
     borderWidth: 3,
-    borderColor: "#8B5CF6",
-    borderRadius: 8,
-    padding: 13,
-    shadowColor: "#000",
-    shadowOpacity: 0.68,
-    shadowRadius: 0,
-    shadowOffset: { width: 4, height: 4 },
-  },
-  featuredCard: {
-    borderColor: "#A78BFA",
-  },
-  cardTopRow: {
+    borderRadius: 5,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginTop: 10,
     flexDirection: "row",
-    alignItems: "flex-start",
-  },
-  iconBox: {
-    height: 62,
-    width: 62,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(49, 46, 129, 0.68)",
-    borderWidth: 2,
-    borderColor: "#4C1D95",
-    borderRadius: 5,
-    marginRight: 12,
+    gap: 6,
   },
-  cardIcon: {
-    fontSize: 34,
-    textShadowColor: "#000",
-    textShadowOffset: { width: 2, height: 2 },
-    textShadowRadius: 0,
-  },
-  cardCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  cardTitle: {
-    color: "#F5F3FF",
-    fontFamily: pixelFont,
-    fontSize: 18,
-    fontWeight: "900",
-    lineHeight: 24,
-    flexShrink: 1,
-  },
-  cardText: {
-    color: "#EDE9FE",
-    fontFamily: pixelFont,
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 6,
-    fontWeight: "700",
-    flexShrink: 1,
-  },
-  unlockBadge: {
-    color: "#FDE68A",
-    fontFamily: pixelFont,
-    fontSize: 10,
-    fontWeight: "900",
-    marginTop: 5,
-    letterSpacing: 0.5,
-  },
-  cardDivider: {
-    height: 2,
-    backgroundColor: "rgba(196, 167, 255, 0.28)",
-    marginVertical: 11,
-  },
-  actionButton: {
-    minHeight: 38,
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
-    borderWidth: 2,
-    borderColor: "#A78BFA",
-    borderRadius: 4,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+  actionButtonLocked: {
+    backgroundColor: "#57534E",
+    borderColor: "#78716C",
   },
   actionText: {
-    color: "#FDE68A",
+    color: "#FFFFFF",
     fontFamily: pixelFont,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "900",
     letterSpacing: 0.4,
     textTransform: "uppercase",
-    flex: 1,
-    flexShrink: 1,
-    paddingRight: 8,
+  },
+  actionTextLocked: {
+    color: "#D6D3D1",
   },
   actionArrow: {
-    color: "#C084FC",
-    fontSize: 24,
+    color: "#FFFFFF",
+    fontSize: 18,
     fontWeight: "900",
-    lineHeight: 26,
-  },
-  bottomNav: {
-    position: "absolute",
-    left: 8,
-    right: 8,
-    bottom: 8,
-    height: 62,
-    backgroundColor: "rgba(4, 8, 16, 0.98)",
-    borderWidth: 3,
-    borderColor: "#A78BFA",
-    borderRadius: 5,
-    padding: 4,
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  navButton: {
-    flex: 1,
-    backgroundColor: "#111827",
-    borderWidth: 2,
-    borderColor: "#3A4558",
-    borderRadius: 3,
-    paddingVertical: 4,
-    marginHorizontal: 2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  navButtonActive: {
-    backgroundColor: "#4C1D95",
-    borderColor: "#FDE68A",
-  },
-  navText: {
-    color: "#E2E8F0",
-    fontSize: 17,
-    fontWeight: "900",
-  },
-  navTextActive: {
-    color: "#FDE68A",
-    fontSize: 17,
-    fontWeight: "900",
-  },
-  navLabel: {
-    color: "#CBD5E1",
-    fontSize: 8,
-    fontWeight: "900",
-    marginTop: 1,
-    fontFamily: pixelFont,
-  },
-  navLabelActive: {
-    color: "#FDE68A",
-    fontSize: 8,
-    fontWeight: "900",
-    marginTop: 1,
-    fontFamily: pixelFont,
   },
 });

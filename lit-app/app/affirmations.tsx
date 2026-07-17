@@ -217,7 +217,7 @@ export default function AffirmationsScreen() {
             accentColor="#C4A7FF"
           />
 
-          <BottomNav activeRoute="mind" theme="purple" bottomOffset={mobile.bottomNavOffset} />
+          <BottomNav activeRoute="mind" bottomOffset={mobile.bottomNavOffset} />
         </View>
       </View>
     </View>
@@ -227,11 +227,11 @@ export default function AffirmationsScreen() {
 const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
-    backgroundColor: "#02040A",
+    backgroundColor: "#140F0A",
   },
   phoneStage: {
     alignSelf: "center",
-    backgroundColor: "#050814",
+    backgroundColor: "#1C1410",
     overflow: "hidden",
     position: "relative",
     borderWidth: 2,
@@ -370,7 +370,7 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   saveButtonDisabled: {
-    backgroundColor: "#334155",
+    backgroundColor: "#5C4425",
     borderColor: "#475569",
   },
   saveButtonText: {
@@ -392,7 +392,7 @@ const styles = StyleSheet.create({
   emptyCard: {
     backgroundColor: "#EAD9B6",
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     borderRadius: 6,
     padding: 12,
   },
@@ -406,7 +406,7 @@ const styles = StyleSheet.create({
   entryCard: {
     backgroundColor: "#EAD9B6",
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     borderRadius: 6,
     padding: 12,
     marginBottom: 10,
@@ -426,9 +426,9 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   clearButton: {
-    backgroundColor: "rgba(8, 13, 24, 0.94)",
+    backgroundColor: "rgba(46,32,20, 0.94)",
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     borderRadius: 6,
     paddingVertical: 12,
     alignItems: "center",
@@ -442,9 +442,9 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   homeButton: {
-    backgroundColor: "rgba(8, 13, 24, 0.94)",
+    backgroundColor: "rgba(46,32,20, 0.94)",
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     borderRadius: 6,
     paddingVertical: 12,
     alignItems: "center",

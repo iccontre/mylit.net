@@ -512,10 +512,10 @@ export default function LifeProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  pageRoot: { flex: 1, backgroundColor: "#02040A" },
+  pageRoot: { flex: 1, backgroundColor: "#140F0A" },
   phoneStage: {
     alignSelf: "center",
-    backgroundColor: "#050814",
+    backgroundColor: "#1C1410",
     overflow: "hidden",
     position: "relative",
     borderWidth: 2,
@@ -531,7 +531,7 @@ const styles = StyleSheet.create({
   worldOverlay: { flex: 1, backgroundColor: "rgba(4, 8, 14, 0.4)" },
   hudContent: { paddingTop: 8 },
   hero: {
-    backgroundColor: "rgba(8, 13, 24, 0.95)",
+    backgroundColor: "rgba(46,32,20, 0.95)",
     borderWidth: 3,
     borderColor: "#D99B2B",
     borderRadius: 8,
@@ -544,9 +544,9 @@ const styles = StyleSheet.create({
   guideRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(8, 13, 24, 0.95)",
+    backgroundColor: "rgba(46,32,20, 0.95)",
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     borderRadius: 8,
     padding: 10,
     marginBottom: 12,
@@ -554,12 +554,12 @@ const styles = StyleSheet.create({
   guideAvatar: { width: 44, height: 44, marginRight: 10 },
   guideText: { flex: 1, color: "#E2E8F0", fontSize: 12, lineHeight: 17, fontWeight: "700" },
   panel: {
-    backgroundColor: "rgba(8, 13, 24, 0.95)",
+    backgroundColor: "rgba(46,32,20, 0.95)",
     borderRadius: 8,
     padding: 12,
     marginBottom: 12,
     borderWidth: 3,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
   },
   evieAccent: { borderColor: "#FBBF24" },
   lunaAccent: { borderColor: "#A78BFA" },
@@ -596,8 +596,8 @@ const styles = StyleSheet.create({
   helperText: { color: "#94A3B8", fontSize: 11, lineHeight: 16, fontWeight: "700", textAlign: "center", marginBottom: 10 },
   choiceRow: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
   choiceColumn: { gap: 8 },
-  choiceButton: { flex: 1, borderWidth: 2, borderColor: "#475569", borderRadius: 6, paddingVertical: 10, alignItems: "center", backgroundColor: "rgba(15,23,42,0.9)", minWidth: 90 },
-  choiceButtonWide: { borderWidth: 2, borderColor: "#475569", borderRadius: 6, paddingVertical: 10, paddingHorizontal: 10, alignItems: "center", backgroundColor: "rgba(15,23,42,0.9)" },
+  choiceButton: { flex: 1, borderWidth: 2, borderColor: "#475569", borderRadius: 6, paddingVertical: 10, alignItems: "center", backgroundColor: "rgba(46,32,20,0.9)", minWidth: 90 },
+  choiceButtonWide: { borderWidth: 2, borderColor: "#475569", borderRadius: 6, paddingVertical: 10, paddingHorizontal: 10, alignItems: "center", backgroundColor: "rgba(46,32,20,0.9)" },
   choiceButtonActive: { borderColor: "#FBBF24", backgroundColor: "rgba(69,43,8,0.7)" },
   choiceButtonDisabled: { opacity: 0.4 },
   choiceText: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", textAlign: "center" },
@@ -637,7 +637,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 10,
   },
-  saveButtonDisabled: { backgroundColor: "rgba(22,101,52,0.4)", borderColor: "#334155" },
+  saveButtonDisabled: { backgroundColor: "rgba(22,101,52,0.4)", borderColor: "#5C4425" },
   saveButtonText: { color: "#F0FDF4", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", letterSpacing: 0.8 },
   backButton: { alignItems: "center", paddingVertical: 12, marginBottom: 90 },
   backButtonText: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },

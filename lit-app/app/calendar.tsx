@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Image, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { BottomNav } from "../components/BottomNav";
+import { WorldChrome } from "../components/parchment/WorldChrome";
 import { QuickThoughtsModal } from "../components/QuickThoughtsModal";
 import { LunaGuideModal } from "../components/LunaGuideModal";
 import { EvieGuideModal } from "../components/EvieGuideModal";
@@ -619,13 +620,7 @@ export default function CalendarScreen() {
         <View pointerEvents="none" style={styles.backgroundLayer}><Image source={uiAssets.backgrounds.neutral} style={styles.backgroundImage} resizeMode="cover" /></View>
         <View style={styles.worldOverlay}>
           <ScrollView style={styles.screenScroller} contentContainerStyle={[styles.hudContent, { paddingBottom: mobile.scrollPaddingBottom }]} showsVerticalScrollIndicator={false} bounces={false}>
-            <View style={styles.heroPanel}>
-              <View style={styles.heroCopy}>
-                <Text style={styles.heroLabel}>SCHEDULE BOARD</Text>
-                <Text style={styles.heroTitle}>CALENDAR</Text>
-                <Text style={styles.heroSubtitle}>Plan quests, habits, and recovery.</Text>
-              </View>
-            </View>
+            <WorldChrome hub="calendar" kicker="SCHEDULE BOARD" title="CALENDAR" subtitle="Plan quests, habits, and recovery." style={styles.heroPanel} />
 
             <View style={styles.legendRow}>
               <Legend tone="green" label="Habit/Quest" />
@@ -971,8 +966,8 @@ function InfoOverlay({ onClose }: { onClose: () => void }) {
 }
 
 const styles = StyleSheet.create({
-  pageRoot: { flex: 1, backgroundColor: "#02040A" },
-  phoneStage: { alignSelf: "center", backgroundColor: "#050814", overflow: "hidden", position: "relative", borderWidth: 2, borderColor: "#FBBF24" },
+  pageRoot: { flex: 1, backgroundColor: "#140F0A" },
+  phoneStage: { alignSelf: "center", backgroundColor: "#1C1410", overflow: "hidden", position: "relative", borderWidth: 2, borderColor: "#FBBF24" },
   phoneStageFullscreen: { borderWidth: 0, maxWidth: undefined, aspectRatio: undefined },
   backgroundLayer: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, zIndex: 0 },
   backgroundImage: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, width: "100%", height: "100%" },
@@ -980,13 +975,13 @@ const styles = StyleSheet.create({
   screenScroller: { flex: 1 },
   hudContent: { minHeight: "100%", paddingTop: 18, paddingHorizontal: 12, paddingBottom: 104 },
 
-  heroPanel: { backgroundColor: "rgba(5, 12, 24, 0.92)", borderWidth: 3, borderColor: "#D99B2B", borderRadius: 8, padding: 12, marginBottom: 12, flexDirection: "row", alignItems: "center" },
+  heroPanel: { marginBottom: 12 },
   heroCopy: { flex: 1, alignItems: "center", paddingHorizontal: 6 },
   heroLabel: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 10, fontWeight: "900", letterSpacing: 1.2, textAlign: "center" },
   heroTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 27, fontWeight: "900", letterSpacing: 1, textAlign: "center" },
   heroSubtitle: { color: "#F8E7A1", fontSize: 12, lineHeight: 17, fontWeight: "800", textAlign: "center" },
 
-  eviePanel: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(8,13,24,0.95)", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, padding: 10, marginBottom: 10 },
+  eviePanel: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(46,32,20,0.95)", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, padding: 10, marginBottom: 10 },
   evieAvatar: { width: 44, height: 52, marginRight: 10 },
   evieCopy: { flex: 1 },
   evieName: { color: "#FDE047", fontFamily: pixelFont, fontSize: 10, fontWeight: "900" },
@@ -994,7 +989,7 @@ const styles = StyleSheet.create({
   infoBtn: { width: 28, height: 28, borderWidth: 2, borderColor: "#FBBF24", borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(113,63,18,0.7)", marginLeft: 8 },
   infoBtnText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 14, fontWeight: "900" },
 
-  weekNavPanel: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(8,13,24,0.95)", borderWidth: 2, borderColor: "#334155", borderRadius: 8, padding: 8, marginBottom: 10 },
+  weekNavPanel: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(46,32,20,0.95)", borderWidth: 2, borderColor: "#5C4425", borderRadius: 8, padding: 8, marginBottom: 10 },
   weekArrow: { width: 42, height: 38, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "#FBBF24", backgroundColor: "rgba(69,43,8,0.55)" },
   weekArrowText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 18, fontWeight: "900" },
   weekCenter: { flex: 1, alignItems: "center" },
@@ -1030,14 +1025,14 @@ const styles = StyleSheet.create({
   dayBadgeBody: { backgroundColor: "#EAD9B6", paddingVertical: 6, alignItems: "center" },
   dayBadgeDate: { color: "#4A3620", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
 
-  selectedDayPanel: { backgroundColor: "rgba(8,13,24,0.94)", borderWidth: 2, borderColor: "#334155", borderRadius: 8, padding: 12, marginBottom: 10 },
+  selectedDayPanel: { backgroundColor: "rgba(46,32,20,0.94)", borderWidth: 2, borderColor: "#5C4425", borderRadius: 8, padding: 12, marginBottom: 10 },
   selectedDayHeaderRow: { flexDirection: "row", alignItems: "center", marginBottom: 10 },
   selectedDayHeaderCopy: { flex: 1 },
   selectedDayHeading: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900", letterSpacing: 0.5 },
   selectedDaySupportLine: { color: "#CBD5E1", fontSize: 12, fontWeight: "700", marginTop: 3 },
 
   summaryGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", marginBottom: 10 },
-  summaryCard: { width: "49%", minHeight: 98, backgroundColor: "rgba(8,13,24,0.92)", borderWidth: 2, borderColor: "#334155", borderRadius: 8, padding: 9, marginBottom: 8 },
+  summaryCard: { width: "49%", minHeight: 98, backgroundColor: "rgba(46,32,20,0.92)", borderWidth: 2, borderColor: "#5C4425", borderRadius: 8, padding: 9, marginBottom: 8 },
   summaryIcon: { fontSize: 18 }, summaryLabel: { color: "#FDE047", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", marginTop: 2 }, summaryValue: { color: "#F8FAFC", fontSize: 12, lineHeight: 17, fontWeight: "800", marginTop: 4 }, summaryHint: { color: "#94A3B8", fontSize: 10, marginTop: 4 },
 
   schedulePreviewTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 10, fontWeight: "900", letterSpacing: 1, marginBottom: 6 },
@@ -1053,13 +1048,13 @@ const styles = StyleSheet.create({
   openDayViewButtonSubtext: { color: "#F8E7A1", fontSize: 11, fontWeight: "700", marginTop: 3 },
 
   actionGrid: { marginBottom: 10 },
-  actionButton: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(8,13,24,0.95)", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, padding: 10, marginBottom: 8 },
+  actionButton: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(46,32,20,0.95)", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, padding: 10, marginBottom: 8 },
   actionIcon: { fontSize: 22, marginRight: 10 }, actionCopy: { flex: 1 }, actionTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900" }, actionSubtitle: { color: "#CBD5E1", fontSize: 11, fontWeight: "700", marginTop: 2 }, actionArrow: { color: "#FBBF24", fontSize: 28, fontWeight: "900" },
 
-  returnButton: { backgroundColor: "rgba(8,13,24,0.95)", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, paddingVertical: 12, alignItems: "center", marginBottom: 10 },
+  returnButton: { backgroundColor: "rgba(46,32,20,0.95)", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, paddingVertical: 12, alignItems: "center", marginBottom: 10 },
   returnButtonText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", letterSpacing: 0.6 },
 
-  dayViewHeadingRow: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(8,13,24,0.94)", borderWidth: 2, borderColor: "#334155", borderRadius: 8, padding: 10, marginBottom: 10 },
+  dayViewHeadingRow: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(46,32,20,0.94)", borderWidth: 2, borderColor: "#5C4425", borderRadius: 8, padding: 10, marginBottom: 10 },
 
   legendRow: { flexDirection: "row", flexWrap: "wrap", gap: 7, marginBottom: 8 }, legendItem: { flexDirection: "row", alignItems: "center" }, legendDot: { width: 12, height: 12, borderRadius: 2, marginRight: 4 }, legendText: { color: "#CBD5E1", fontSize: 10, fontWeight: "800" },
   quickThoughtsBtn: { borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, paddingVertical: 12, alignItems: "center", backgroundColor: "rgba(69,43,8,0.65)", marginBottom: 4 },
@@ -1067,7 +1062,7 @@ const styles = StyleSheet.create({
   quickThoughtsNote: { color: "#94A3B8", fontSize: 10, fontWeight: "700", textAlign: "center", marginBottom: 10 },
 
   // Day View — dark RPG timeline board.
-  dayViewPanel: { backgroundColor: "rgba(8,13,24,0.92)", borderWidth: 2, borderColor: "#334155", borderRadius: 8, padding: 8, marginBottom: 8 },
+  dayViewPanel: { backgroundColor: "rgba(46,32,20,0.92)", borderWidth: 2, borderColor: "#5C4425", borderRadius: 8, padding: 8, marginBottom: 8 },
   dayViewPinnedBanner: { flexDirection: "row", alignItems: "center", minHeight: 30, borderWidth: 1, borderRadius: 4, paddingHorizontal: 8, marginBottom: 6 },
   // Pinned "final item" variant (phone/blue-screen cutoff) — sits below the timeline
   // instead of above it, so it's always visible as the last item even when its actual
@@ -1078,7 +1073,7 @@ const styles = StyleSheet.create({
   dayViewPinnedBannerIcon: { fontSize: 13, marginRight: 6 },
   dayViewPinnedBannerText: { color: "#F8FAFC", fontSize: 11, fontWeight: "900", flex: 1 },
   dayViewTimelineRow: { flexDirection: "row" },
-  dayViewTimeColumn: { width: 52, borderRightWidth: 1, borderRightColor: "#334155" },
+  dayViewTimeColumn: { width: 52, borderRightWidth: 1, borderRightColor: "#5C4425" },
   dayViewTimeLabel: { height: HOUR_HEIGHT, color: "#94A3B8", fontFamily: pixelFont, fontSize: 10, textAlign: "center", paddingTop: 4 },
   dayViewGrid: { position: "relative", flex: 1, height: GRID_HEIGHT },
   dayViewHourRowBg: { height: HOUR_HEIGHT, borderTopWidth: 1, borderTopColor: "rgba(51,65,85,0.55)" },
@@ -1090,10 +1085,10 @@ const styles = StyleSheet.create({
 
   eventGold: { backgroundColor: "rgba(113,63,18,0.85)", borderColor: "#FBBF24" }, eventPurple: { backgroundColor: "rgba(88,28,135,0.85)", borderColor: "#A78BFA" }, eventBlue: { backgroundColor: "rgba(14,116,144,0.85)", borderColor: "#67E8F9" }, eventGreen: { backgroundColor: "rgba(20,83,45,0.65)", borderColor: "#86EFAC" }, eventPinkLight: { backgroundColor: "rgba(157,23,77,0.4)", borderColor: "#F9A8D4" }, eventPinkDark: { backgroundColor: "rgba(80,7,36,0.85)", borderColor: "#DB2777" },
 
-  popupOverlay: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "center", padding: 18, zIndex: 10 }, popupCard: { backgroundColor: "rgba(8,13,24,0.98)", borderWidth: 3, borderRadius: 12, padding: 16 }, popupGold: { borderColor: "#FBBF24" }, popupPurple: { borderColor: "#A78BFA" }, popupBlue: { borderColor: "#67E8F9" }, popupGreen: { borderColor: "#86EFAC" }, popupPinkLight: { borderColor: "#F9A8D4" }, popupPinkDark: { borderColor: "#DB2777" }, popupTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 20, fontWeight: "900", marginBottom: 4 }, popupSource: { color: "#FDE047", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", marginBottom: 12 }, popupRow: { flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: "#1F2937", paddingVertical: 6 }, popupLabel: { color: "#94A3B8", fontSize: 12, fontWeight: "800" }, popupValue: { color: "#F8FAFC", fontSize: 12, fontWeight: "900", maxWidth: "60%", textAlign: "right" }, popupNote: { color: "#CBD5E1", fontSize: 13, lineHeight: 19, marginTop: 12 }, popupButton: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", paddingVertical: 12, alignItems: "center", marginTop: 14 }, popupButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900" },
+  popupOverlay: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, backgroundColor: "rgba(0,0,0,0.72)", justifyContent: "center", padding: 18, zIndex: 10 }, popupCard: { backgroundColor: "rgba(46,32,20,0.98)", borderWidth: 3, borderRadius: 12, padding: 16 }, popupGold: { borderColor: "#FBBF24" }, popupPurple: { borderColor: "#A78BFA" }, popupBlue: { borderColor: "#67E8F9" }, popupGreen: { borderColor: "#86EFAC" }, popupPinkLight: { borderColor: "#F9A8D4" }, popupPinkDark: { borderColor: "#DB2777" }, popupTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 20, fontWeight: "900", marginBottom: 4 }, popupSource: { color: "#FDE047", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", marginBottom: 12 }, popupRow: { flexDirection: "row", justifyContent: "space-between", borderBottomWidth: 1, borderBottomColor: "#1F2937", paddingVertical: 6 }, popupLabel: { color: "#94A3B8", fontSize: 12, fontWeight: "800" }, popupValue: { color: "#F8FAFC", fontSize: 12, fontWeight: "900", maxWidth: "60%", textAlign: "right" }, popupNote: { color: "#CBD5E1", fontSize: 13, lineHeight: 19, marginTop: 12 }, popupButton: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", paddingVertical: 12, alignItems: "center", marginTop: 14 }, popupButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900" },
 
   infoOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.82)", justifyContent: "center", alignItems: "center", padding: 20, zIndex: 25 },
-  infoCard: { backgroundColor: "rgba(8,13,24,0.99)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 12, padding: 16, width: "100%" },
+  infoCard: { backgroundColor: "rgba(46,32,20,0.99)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 12, padding: 16, width: "100%" },
   infoTitle: { color: "#FDE047", fontFamily: pixelFont, fontSize: 15, fontWeight: "900", marginBottom: 10 },
   infoScroll: { maxHeight: 280 },
   infoBullet: { color: "#CBD5E1", fontSize: 13, lineHeight: 20, fontWeight: "700", marginBottom: 6 },

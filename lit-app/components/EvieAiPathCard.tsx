@@ -234,12 +234,12 @@ export function EvieAiPathCard() {
 
 const styles = StyleSheet.create({
   panel: {
-    backgroundColor: "rgba(8, 13, 24, 0.95)",
+    backgroundColor: "rgba(46,32,20, 0.95)",
     borderRadius: 8,
     padding: 12,
     marginBottom: 12,
     borderWidth: 3,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
   },
   panelTitle: {
     color: "#FDE047",
@@ -253,7 +253,7 @@ const styles = StyleSheet.create({
   helperText: { color: "#CBD5E1", fontSize: 11, lineHeight: 16, fontWeight: "700", textAlign: "center", marginBottom: 10 },
   promptInput: {
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     borderRadius: 6,
     padding: 9,
     color: "#F1F5F9",
@@ -261,7 +261,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     minHeight: 64,
     textAlignVertical: "top",
-    backgroundColor: "rgba(15,23,42,0.7)",
+    backgroundColor: "rgba(46,32,20,0.7)",
     marginBottom: 10,
   },
   askButton: {
@@ -285,12 +285,12 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     padding: 9,
     marginBottom: 8,
-    backgroundColor: "rgba(15,23,42,0.7)",
+    backgroundColor: "rgba(46,32,20,0.7)",
   },
   rowLabel: { fontFamily: pixelFont, fontSize: 10, fontWeight: "900", letterSpacing: 1, marginBottom: 4 },
   rowText: { color: "#F1F5F9", fontSize: 12, lineHeight: 17, fontWeight: "700" },
   rowSubText: { color: "#94A3B8", fontSize: 11, lineHeight: 16, fontWeight: "700", marginTop: 4 },
-  questItem: { marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: "#334155" },
+  questItem: { marginTop: 6, paddingTop: 6, borderTopWidth: 1, borderTopColor: "#5C4425" },
   saveButton: {
     marginTop: 8,
     borderWidth: 2,

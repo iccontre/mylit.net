@@ -12,7 +12,11 @@ import {
 
 import { BottomNav } from "../components/BottomNav";
 import { GuideInfoModal } from "../components/GuideInfoModal";
+import { GuidePanel } from "../components/parchment/GuidePanel";
+import { ParchmentSurface, parchmentTextStyles } from "../components/parchment/ParchmentSurface";
+import { WorldChrome } from "../components/parchment/WorldChrome";
 import { useMobileFrame } from "../constants/mobileLayout";
+import { hubPalettes } from "../constants/worldTokens";
 import { uiAssets } from "../constants/uiAssets";
 
 const LUNA_MIND_BULLETS = [
@@ -76,6 +80,8 @@ const MIND_CARDS: MindCard[] = [
   },
 ];
 
+const palette = hubPalettes.mind;
+
 export default function MindScreen() {
   const router = useRouter();
   const mobile = useMobileFrame();
@@ -83,28 +89,22 @@ export default function MindScreen() {
 
   function renderMindCard(card: MindCard) {
     return (
-      <View key={card.title} style={styles.card}>
-        <View style={styles.cardTopRow}>
-          <View style={styles.iconBox}>
-            <Text style={styles.cardIcon}>{card.icon}</Text>
-          </View>
-          <View style={styles.cardCopy}>
-            <Text style={styles.cardTitle}>{card.title}</Text>
-            <Text style={styles.cardText}>{card.description}</Text>
-          </View>
-        </View>
-        <View style={styles.cardDivider} />
-        <TouchableOpacity style={styles.actionButton} onPress={() => router.push(card.route)}>
-          <Text style={styles.actionText}>{card.buttonText}</Text>
+      <ParchmentSurface key={card.title} accent="mind" kicker={`${card.icon}  ${card.title.toUpperCase()}`}>
+        <Text style={parchmentTextStyles.body}>{card.description}</Text>
+        <TouchableOpacity
+          style={[styles.actionButton, { backgroundColor: palette.edge, borderColor: palette.accent }]}
+          onPress={() => router.push(card.route)}
+        >
+          <Text style={styles.actionText}>{card.buttonText.toUpperCase()}</Text>
           <Text style={styles.actionArrow}>›</Text>
         </TouchableOpacity>
-      </View>
+      </ParchmentSurface>
     );
   }
 
   return (
     <View style={[styles.pageRoot, mobile.pageRootStyle]}>
-      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen]}>
+      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen, { borderColor: palette.edge }]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={uiAssets.backgrounds.neutral} style={styles.backgroundImage} resizeMode="cover" />
         </View>
@@ -115,24 +115,15 @@ export default function MindScreen() {
             showsVerticalScrollIndicator={false}
             bounces={false}
           >
-            <View style={styles.hero}>
-              <Text style={styles.heroLabel}>MIND HUB</Text>
-              <Text style={[styles.title, { fontSize: 34, letterSpacing: 3 }]}>MIND HUB</Text>
-              <Text style={styles.subtitle}>Write, notice, and reflect — without judgment.</Text>
-            </View>
+            <WorldChrome hub="mind" kicker="INNER WORLD" title="MIND" subtitle="Write, notice, and reflect — without judgment." style={styles.chrome} />
 
-            <View style={styles.lunaPanel}>
-              <Image source={uiAssets.guides.luna} style={styles.lunaAvatar} resizeMode="contain" />
-              <View style={styles.lunaCopy}>
-                <Text style={styles.lunaText}>
-                  One honest note can change how the day feels. Start with what is actually true.
-                </Text>
-                <Text style={styles.lunaName}>Luna ♥</Text>
-              </View>
-              <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
-                <Text style={styles.infoBtnText}>?</Text>
-              </TouchableOpacity>
-            </View>
+            <GuidePanel
+              hub="mind"
+              guideName="Luna"
+              guideAvatar={uiAssets.guides.luna}
+              message="One honest note can change how the day feels. Start with what is actually true."
+              onInfoPress={() => setShowInfo(true)}
+            />
 
             <View style={styles.cardStack}>{MIND_CARDS.map(renderMindCard)}</View>
           </ScrollView>
@@ -144,10 +135,10 @@ export default function MindScreen() {
             guideName="Luna"
             title="How Mind Hub Works"
             bullets={LUNA_MIND_BULLETS}
-            accentColor="#C4A7FF"
+            accentColor={palette.accent}
           />
 
-          <BottomNav activeRoute="mind" theme="purple" bottomOffset={mobile.bottomNavOffset} />
+          <BottomNav activeRoute="mind" bottomOffset={mobile.bottomNavOffset} />
         </View>
       </View>
     </View>
@@ -157,15 +148,14 @@ export default function MindScreen() {
 const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
-    backgroundColor: "#02040A",
+    backgroundColor: "#140F0A",
   },
   phoneStage: {
     alignSelf: "center",
-    backgroundColor: "#050814",
+    backgroundColor: "#1C1410",
     overflow: "hidden",
     position: "relative",
     borderWidth: 2,
-    borderColor: "rgba(251, 191, 36, 0.64)",
     shadowColor: "#000",
     shadowOpacity: 0.85,
     shadowRadius: 0,
@@ -195,245 +185,38 @@ const styles = StyleSheet.create({
   },
   hudContent: {
     flexGrow: 1,
-    paddingTop: 28,
+    paddingTop: 16,
     paddingHorizontal: 14,
   },
-  hero: {
-    width: "100%",
-    alignSelf: "stretch",
-    backgroundColor: "#EAD9B6",
-    borderWidth: 3,
-    borderColor: "#5C4425",
-    borderRadius: 8,
-    paddingVertical: 16,
-    paddingHorizontal: 14,
-    marginBottom: 34,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.68,
-    shadowRadius: 0,
-    shadowOffset: { width: 4, height: 4 },
-  },
-  heroLabel: {
-    color: "#7C5B2B",
-    fontFamily: pixelFont,
-    fontSize: 12,
-    letterSpacing: 2,
-    fontWeight: "900",
-    marginBottom: 7,
-    textTransform: "uppercase",
-  },
-  title: {
-    color: "#4A3620",
-    fontFamily: pixelFont,
-    fontSize: 38,
-    fontWeight: "900",
-    letterSpacing: 5,
-    lineHeight: 44,
-    textAlign: "center",
-  },
-  subtitle: {
-    color: "#7C5B2B",
-    fontFamily: pixelFont,
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 8,
-    textAlign: "center",
-    fontWeight: "800",
-  },
-  lunaPanel: {
-    minHeight: 88,
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#EAD9B6",
-    borderWidth: 3,
-    borderColor: "#5C4425",
-    borderRadius: 8,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    marginBottom: 22,
-    shadowColor: "#000",
-    shadowOpacity: 0.68,
-    shadowRadius: 0,
-    shadowOffset: { width: 4, height: 4 },
-  },
-  lunaAvatar: {
-    height: 68,
-    width: 68,
-    borderRadius: 34,
-    borderWidth: 3,
-    borderColor: "#5C4425",
-    backgroundColor: "#F4E8CE",
-    marginRight: 12,
-  },
-  lunaCopy: {
-    flex: 1,
-  },
-  lunaText: {
-    color: "#4A3620",
-    fontSize: 13,
-    fontWeight: "800",
-    lineHeight: 19,
-    fontFamily: pixelFont,
-  },
-  lunaName: {
-    color: "#7C3AED",
-    fontSize: 15,
-    fontWeight: "900",
-    marginTop: 6,
-    fontFamily: pixelFont,
-  },
-  infoBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 5,
-    borderWidth: 2,
-    borderColor: "#5C4425",
-    backgroundColor: "#F4E8CE",
-    alignItems: "center",
-    justifyContent: "center",
-    alignSelf: "flex-start",
-  },
-  infoBtnText: {
-    color: "#4A3620",
-    fontFamily: pixelFont,
-    fontSize: 14,
-    fontWeight: "900",
-    lineHeight: 18,
-  },
+  chrome: { marginBottom: 14 },
   cardStack: {
-    gap: 16,
-  },
-  card: {
-    backgroundColor: "#EAD9B6",
-    borderWidth: 3,
-    borderColor: "#5C4425",
-    borderRadius: 8,
-    padding: 13,
-    shadowColor: "#000",
-    shadowOpacity: 0.68,
-    shadowRadius: 0,
-    shadowOffset: { width: 4, height: 4 },
-  },
-  cardTopRow: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  iconBox: {
-    height: 62,
-    width: 62,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#F4E8CE",
-    borderWidth: 2,
-    borderColor: "#5C4425",
-    borderRadius: 6,
-    marginRight: 12,
-  },
-  cardIcon: {
-    fontSize: 34,
-  },
-  cardCopy: {
-    flex: 1,
-    minWidth: 0,
-  },
-  cardTitle: {
-    color: "#4A3620",
-    fontFamily: pixelFont,
-    fontSize: 20,
-    fontWeight: "900",
-    lineHeight: 25,
-  },
-  cardText: {
-    color: "#7C5B2B",
-    fontFamily: pixelFont,
-    fontSize: 12,
-    lineHeight: 18,
-    marginTop: 7,
-    fontWeight: "700",
-  },
-  cardDivider: {
-    height: 2,
-    backgroundColor: "rgba(92, 68, 37, 0.3)",
-    marginVertical: 11,
+    gap: 12,
+    marginTop: 14,
+    paddingBottom: 8,
   },
   actionButton: {
-    minHeight: 38,
-    backgroundColor: "#7C3AED",
+    minHeight: 44,
     borderWidth: 3,
-    borderColor: "#4C1D95",
-    borderRadius: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    borderRadius: 5,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginTop: 10,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "center",
+    gap: 6,
   },
   actionText: {
     color: "#FFFFFF",
     fontFamily: pixelFont,
     fontSize: 12,
     fontWeight: "900",
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
     textTransform: "uppercase",
   },
   actionArrow: {
     color: "#FFFFFF",
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: "900",
-    lineHeight: 26,
-  },
-  bottomNav: {
-    position: "absolute",
-    left: 8,
-    right: 8,
-    bottom: 8,
-    height: 62,
-    backgroundColor: "rgba(4, 8, 16, 0.98)",
-    borderWidth: 3,
-    borderColor: "#A78BFA",
-    borderRadius: 5,
-    padding: 4,
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  navButton: {
-    flex: 1,
-    backgroundColor: "#111827",
-    borderWidth: 2,
-    borderColor: "#3A4558",
-    borderRadius: 3,
-    paddingVertical: 4,
-    marginHorizontal: 2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  navButtonActive: {
-    backgroundColor: "#162314",
-    borderColor: "#FDE68A",
-  },
-  navText: {
-    color: "#E2E8F0",
-    fontSize: 17,
-    fontWeight: "900",
-  },
-  navTextActive: {
-    color: "#FDE68A",
-    fontSize: 17,
-    fontWeight: "900",
-  },
-  navLabel: {
-    color: "#CBD5E1",
-    fontSize: 8,
-    fontWeight: "900",
-    marginTop: 1,
-    fontFamily: pixelFont,
-  },
-  navLabelActive: {
-    color: "#FDE68A",
-    fontSize: 8,
-    fontWeight: "900",
-    marginTop: 1,
-    fontFamily: pixelFont,
   },
 });

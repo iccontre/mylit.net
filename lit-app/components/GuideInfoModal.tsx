@@ -60,7 +60,7 @@ const styles = StyleSheet.create({
     zIndex: 20,
   },
   card: {
-    backgroundColor: "rgba(8,13,24,0.99)",
+    backgroundColor: "rgba(46,32,20,0.99)",
     borderWidth: 3,
     borderRadius: 10,
     padding: 16,

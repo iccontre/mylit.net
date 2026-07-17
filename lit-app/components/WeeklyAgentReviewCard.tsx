@@ -91,12 +91,12 @@ export function WeeklyAgentReviewCard() {
 
 const styles = StyleSheet.create({
   panel: {
-    backgroundColor: "rgba(8, 13, 24, 0.95)",
+    backgroundColor: "rgba(46,32,20, 0.95)",
     borderRadius: 8,
     padding: 12,
     marginBottom: 12,
     borderWidth: 3,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
   },
   headerRow: { flexDirection: "row", alignItems: "center", marginBottom: 4 },
   panelTitle: {
@@ -114,11 +114,11 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     borderRadius: 6,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(15,23,42,0.9)",
+    backgroundColor: "rgba(46,32,20,0.9)",
   },
   regenButtonText: { color: "#CBD5E1", fontSize: 16, fontWeight: "900" },
   row: {
@@ -126,7 +126,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     padding: 9,
     marginBottom: 8,
-    backgroundColor: "rgba(15,23,42,0.7)",
+    backgroundColor: "rgba(46,32,20,0.7)",
   },
   rowLabel: { fontFamily: pixelFont, fontSize: 10, fontWeight: "900", letterSpacing: 1, marginBottom: 4 },
   rowText: { color: "#F1F5F9", fontSize: 12, lineHeight: 17, fontWeight: "700" },

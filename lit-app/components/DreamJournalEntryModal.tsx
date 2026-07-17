@@ -3,9 +3,12 @@ import { Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextIn
 
 import { formStyles } from "../constants/formStyles";
 import { uiAssets } from "../constants/uiAssets";
+import { hubPalettes } from "../constants/worldTokens";
 import { saveDreamEntry } from "../lib/dreamJournal";
+import { SaveButton, type SaveState } from "./parchment/SaveButton";
 
 const pixelFont = Platform.select({ ios: "Menlo", android: "monospace", web: "monospace", default: "monospace" });
+const palette = hubPalettes.sleep;
 
 const FEELING_OPTIONS = [
   { emoji: "😊", label: "Happy" },
@@ -37,32 +40,31 @@ export function DreamJournalEntryModal({ visible, onClose, onSaved }: DreamJourn
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [feeling, setFeeling] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [justSaved, setJustSaved] = useState(false);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const saving = saveState === "saving";
 
   useEffect(() => {
     if (!visible) return;
     setTitle("");
     setSummary("");
     setFeeling("");
-    setSaving(false);
-    setJustSaved(false);
+    setSaveState("idle");
   }, [visible]);
 
   async function handleSave() {
-    if (saving || justSaved) return;
-    setSaving(true);
+    if (saveState === "saving" || saveState === "saved") return;
+    setSaveState("saving");
     try {
       const entry = await saveDreamEntry({ title, summary, feeling });
       if (!entry) {
-        setSaving(false);
+        setSaveState("idle");
         return;
       }
-      setJustSaved(true);
+      setSaveState("saved");
       onSaved?.();
       setTimeout(onClose, 600);
-    } finally {
-      setSaving(false);
+    } catch {
+      setSaveState("error");
     }
   }
 
@@ -70,7 +72,7 @@ export function DreamJournalEntryModal({ visible, onClose, onSaved }: DreamJourn
     <Modal visible={visible} transparent animationType="fade" onRequestClose={saving ? undefined : onClose}>
       <Pressable style={styles.backdrop} onPress={saving ? undefined : onClose} accessibilityLabel="Close">
         <Pressable style={styles.panel} onPress={() => {}}>
-          <View style={styles.titleStrip}>
+          <View style={[styles.titleStrip, { backgroundColor: palette.chrome }]}>
             <Text style={styles.title}>🌙 Dream Journal</Text>
             <TouchableOpacity style={styles.closeBtn} onPress={onClose} disabled={saving} accessibilityLabel="Close">
               <Text style={styles.closeBtnText}>✕</Text>
@@ -104,7 +106,7 @@ export function DreamJournalEntryModal({ visible, onClose, onSaved }: DreamJourn
                 return (
                   <TouchableOpacity
                     key={opt.label}
-                    style={[styles.chip, selected && styles.chipActive]}
+                    style={[styles.chip, selected && { backgroundColor: palette.edge, borderColor: palette.chrome }]}
                     onPress={() => setFeeling(selected ? "" : `${opt.emoji} ${opt.label}`)}
                   >
                     <Text style={[styles.chipText, selected && styles.chipTextActive]}>{opt.emoji} {opt.label}</Text>
@@ -118,9 +120,7 @@ export function DreamJournalEntryModal({ visible, onClose, onSaved }: DreamJourn
             <TouchableOpacity style={styles.cancelBtn} onPress={onClose} disabled={saving} accessibilityLabel="Cancel">
               <Text style={styles.cancelBtnText}>CANCEL</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.saveBtn, (saving || justSaved) && styles.saveBtnDisabled]} disabled={saving || justSaved} onPress={handleSave}>
-              <Text style={styles.saveBtnText}>{justSaved ? "SAVED ✓" : saving ? "SAVING…" : "SAVE DREAM · +1 STEP"}</Text>
-            </TouchableOpacity>
+            <SaveButton state={saveState} onPress={handleSave} idleLabel="SAVE DREAM · +1 STEP" style={styles.saveBtn} />
           </View>
         </Pressable>
       </Pressable>
@@ -185,13 +185,10 @@ const styles = StyleSheet.create({
   textArea: { minHeight: 90, maxHeight: 140 },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginTop: 4 },
   chip: { borderWidth: 2, borderColor: "#8B6B3D", borderRadius: 6, paddingVertical: 6, paddingHorizontal: 8, backgroundColor: "#E7D3A9" },
-  chipActive: { backgroundColor: "#7C3AED", borderColor: "#4C1D95" },
   chipText: { color: "#4A3620", fontFamily: pixelFont, fontSize: 11, fontWeight: "800" },
   chipTextActive: { color: "#FFFFFF" },
   buttonRow: { flexDirection: "row", gap: 10, marginTop: 12, paddingHorizontal: 14, paddingBottom: 14 },
   cancelBtn: { flex: 1, borderWidth: 2, borderColor: "#5C4425", borderRadius: 6, paddingVertical: 11, alignItems: "center", backgroundColor: "#E7D3A9" },
   cancelBtnText: { color: "#4A3620", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
-  saveBtn: { flex: 2, borderWidth: 3, borderColor: "#4C1D95", borderRadius: 6, paddingVertical: 11, alignItems: "center", backgroundColor: "#7C3AED" },
-  saveBtnDisabled: { opacity: 0.7 },
-  saveBtnText: { color: "#FFFFFF", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", letterSpacing: 0.3 },
+  saveBtn: { flex: 2, paddingVertical: 11 },
 });

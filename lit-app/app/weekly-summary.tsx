@@ -5,6 +5,7 @@ import { Image, ImageBackground, Platform, ScrollView, StyleSheet, Text, Touchab
 
 import { uiAssets } from "../constants/uiAssets";
 import { WeeklyAgentReviewCard } from "../components/WeeklyAgentReviewCard";
+import { WorldChrome } from "../components/parchment/WorldChrome";
 
 type Mode = "Recovery" | "Progress";
 
@@ -148,14 +149,7 @@ export default function WeeklySummaryScreen() {
           <View style={styles.overlay}>
             <ScrollView style={styles.scroller} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false} bounces={false}>
 
-              <View style={styles.heroPanel}>
-                <View style={styles.bannerIconWrap}><Text style={styles.bannerIconText}>🎒</Text></View>
-                <View style={styles.heroCopy}>
-                  <Text style={styles.heroLabel}>STATS BOARD</Text>
-                  <Text style={styles.heroTitle}>WEEKLY SUMMARY</Text>
-                  <Text style={styles.heroSubtitle}>{weekRange()} · Review your week honestly.</Text>
-                </View>
-              </View>
+              <WorldChrome hub="calendar" kicker="WEEK IN REVIEW" title="SUMMARY" subtitle="Review your week honestly." extra={weekRange()} style={styles.heroPanel} />
 
               <View style={styles.evieCard}>
                 <Image source={uiAssets.guides.evie} style={styles.evieImage} resizeMode="contain" />
@@ -250,29 +244,29 @@ function BottomNav({ router }: { router: ReturnType<typeof useRouter> }) {
 }
 
 const styles = StyleSheet.create({
-  pageRoot: { flex: 1, backgroundColor: "#02040A", alignItems: "center", justifyContent: "center" },
-  phoneStage: { width: "100%", maxWidth: 520, flex: 1, alignSelf: "center", backgroundColor: "#050814", overflow: "hidden", position: "relative" },
+  pageRoot: { flex: 1, backgroundColor: "#140F0A", alignItems: "center", justifyContent: "center" },
+  phoneStage: { width: "100%", maxWidth: 520, flex: 1, alignSelf: "center", backgroundColor: "#1C1410", overflow: "hidden", position: "relative" },
   backgroundLayer: { flex: 1 },
   backgroundImage: { width: "100%", height: "100%" },
   overlay: { flex: 1, backgroundColor: "rgba(2, 6, 12, 0.72)" },
   scroller: { flex: 1 },
   content: { paddingTop: 18, paddingHorizontal: 14, paddingBottom: 90 },
-  heroPanel: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(5,12,24,0.94)", borderWidth: 3, borderColor: "#D99B2B", borderRadius: 8, padding: 12, marginBottom: 10 },
+  heroPanel: { marginBottom: 10 },
   bannerIconWrap: { width: 46, height: 66, backgroundColor: "rgba(70,28,112,0.86)", borderWidth: 2, borderColor: "#FDE047", alignItems: "center", justifyContent: "center", marginRight: 12, borderRadius: 4 },
   bannerIconText: { fontSize: 26 },
   heroCopy: { flex: 1 },
   heroLabel: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", letterSpacing: 1.2 },
   heroTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 22, fontWeight: "900", letterSpacing: 2, marginTop: 2, textAlign: "center" },
   heroSubtitle: { color: "#F8E7A1", fontSize: 12, fontWeight: "800", lineHeight: 17, marginTop: 2 },
-  evieCard: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(8,13,24,0.95)", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, padding: 10, marginBottom: 10 },
+  evieCard: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(46,32,20,0.95)", borderWidth: 2, borderColor: "#FBBF24", borderRadius: 8, padding: 10, marginBottom: 10 },
   evieImage: { width: 50, height: 58, marginRight: 10 },
   evieCopy: { flex: 1 },
   evieName: { color: "#FDE047", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
   evieText: { color: "#CBD5E1", fontSize: 12, lineHeight: 16, fontWeight: "700", marginTop: 2 },
-  stepsCard: { backgroundColor: "rgba(5,12,24,0.96)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 8, padding: 14, marginBottom: 10, alignItems: "center" },
+  stepsCard: { backgroundColor: "rgba(46,32,20,0.96)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 8, padding: 14, marginBottom: 10, alignItems: "center" },
   stepsNumber: { color: "#FBBF24", fontFamily: pixelFont, fontSize: 44, fontWeight: "900", marginTop: 4 },
   stepsCaption: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 10, fontWeight: "900", marginTop: 4, textAlign: "center" },
-  latestCard: { flexDirection: "row", backgroundColor: "rgba(7,19,38,0.96)", borderWidth: 2, borderColor: "#334155", borderRadius: 8, padding: 12, marginBottom: 10 },
+  latestCard: { flexDirection: "row", backgroundColor: "rgba(7,19,38,0.96)", borderWidth: 2, borderColor: "#5C4425", borderRadius: 8, padding: 12, marginBottom: 10 },
   latestHalf: { flex: 1 },
   divider: { width: 1, backgroundColor: "#475569", marginHorizontal: 10 },
   cardKicker: { color: "#E5E7EB", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", letterSpacing: 0.8, marginBottom: 4 },
@@ -282,7 +276,7 @@ const styles = StyleSheet.create({
   recoveryMode: { color: "#C084FC", fontFamily: pixelFont, fontSize: 15, fontWeight: "900" },
   detailText: { color: "#CBD5E1", fontSize: 11, lineHeight: 15, marginTop: 4 },
   grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", marginBottom: 4 },
-  statCard: { width: "48%", backgroundColor: "rgba(15,23,42,0.96)", borderWidth: 2, borderColor: "#334155", borderRadius: 8, padding: 10, marginBottom: 8, minHeight: 68, justifyContent: "center" },
+  statCard: { width: "48%", backgroundColor: "rgba(46,32,20,0.96)", borderWidth: 2, borderColor: "#5C4425", borderRadius: 8, padding: 10, marginBottom: 8, minHeight: 68, justifyContent: "center" },
   statValue: { fontFamily: pixelFont, fontSize: 20, fontWeight: "900", textAlign: "center" },
   statLabel: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", textAlign: "center", marginTop: 4, lineHeight: 12 },
   sectionTitle: { color: "#FBBF24", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", marginBottom: 8, letterSpacing: 1 },
@@ -294,7 +288,7 @@ const styles = StyleSheet.create({
   homeButton: { backgroundColor: "#14532D", borderWidth: 2, borderColor: "#22C55E", borderRadius: 6, paddingVertical: 11, alignItems: "center" },
   homeButtonText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", letterSpacing: 1 },
   bottomNav: { position: "absolute", bottom: 8, left: 8, right: 8, height: 62, flexDirection: "row", justifyContent: "space-between", backgroundColor: "rgba(4,8,16,0.98)", borderWidth: 3, borderColor: "#FBBF24", borderRadius: 5, padding: 4 },
-  navButton: { flex: 1, backgroundColor: "#111827", borderWidth: 2, borderColor: "#3A4558", borderRadius: 3, paddingVertical: 4, marginHorizontal: 2, alignItems: "center", justifyContent: "center" },
+  navButton: { flex: 1, backgroundColor: "#3E2A1A", borderWidth: 2, borderColor: "#3A4558", borderRadius: 3, paddingVertical: 4, marginHorizontal: 2, alignItems: "center", justifyContent: "center" },
   navButtonActive: { backgroundColor: "#162314", borderColor: "#FBBF24" },
   navIcon: { fontSize: 18 },
   navLabel: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", marginTop: 1 },

@@ -270,11 +270,11 @@ export default function DreamJournalScreen() {
 const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
-    backgroundColor: "#02040A",
+    backgroundColor: "#140F0A",
   },
   phoneStage: {
     alignSelf: "center",
-    backgroundColor: "#050814",
+    backgroundColor: "#1C1410",
     overflow: "hidden",
     position: "relative",
     borderWidth: 2,
@@ -357,7 +357,7 @@ const styles = StyleSheet.create({
     width: 66,
     borderRadius: 33,
     borderWidth: 3,
-    backgroundColor: "rgba(8, 13, 24, 0.65)",
+    backgroundColor: "rgba(46,32,20, 0.65)",
   },
   lunaCard: {
     backgroundColor: "rgba(8, 12, 20, 0.94)",
@@ -437,10 +437,10 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   chip: {
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
+    backgroundColor: "rgba(46,32,20, 0.96)",
     borderRadius: 4,
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     paddingVertical: 7,
     paddingHorizontal: 10,
   },
@@ -486,7 +486,7 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   clearButton: {
-    backgroundColor: "#111827",
+    backgroundColor: "#3E2A1A",
     borderRadius: 4,
     borderWidth: 2,
     borderColor: "#475569",
@@ -511,7 +511,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#EAD9B6",
     borderRadius: 4,
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     padding: 11,
     marginTop: 8,
   },
@@ -550,7 +550,7 @@ const styles = StyleSheet.create({
   },
   tag: {
     color: "#F8F1D7",
-    backgroundColor: "#111827",
+    backgroundColor: "#3E2A1A",
     borderWidth: 1,
     borderColor: "#475569",
     borderRadius: 4,
@@ -573,12 +573,12 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   backButton: {
-    backgroundColor: "rgba(8, 13, 24, 0.94)",
+    backgroundColor: "rgba(46,32,20, 0.94)",
     padding: 12,
     borderRadius: 4,
     alignItems: "center",
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
   },
   backButtonText: {
     color: "#E2E8F0",

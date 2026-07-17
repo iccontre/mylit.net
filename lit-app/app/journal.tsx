@@ -14,8 +14,14 @@ import {
 import { FormScreen } from "../components/FormScreen";
 import { BottomNav } from "../components/BottomNav";
 import { GuideInfoModal } from "../components/GuideInfoModal";
-import { formPageContent, formStyles } from "../constants/formStyles";
+import { GuidePanel } from "../components/parchment/GuidePanel";
+import { ParchmentField } from "../components/parchment/ParchmentField";
+import { ParchmentSurface, parchmentTextStyles } from "../components/parchment/ParchmentSurface";
+import { SaveButton, type SaveState } from "../components/parchment/SaveButton";
+import { WorldChrome } from "../components/parchment/WorldChrome";
+import { formPageContent } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
+import { hubPalettes } from "../constants/worldTokens";
 import { uiAssets } from "../constants/uiAssets";
 import { persistProgressKeys } from "../lib/progressStore";
 import { JOURNAL_ENTRIES_KEY } from "../lib/storageKeys";
@@ -52,6 +58,8 @@ const pixelFont = Platform.select({
   default: "monospace",
 });
 
+const palette = hubPalettes.mind;
+
 export default function JournalScreen() {
   const router = useRouter();
   const mobile = useMobileFrame();
@@ -61,11 +69,12 @@ export default function JournalScreen() {
   const [content, setContent] = useState("");
   const [entries, setEntries] = useState<JournalEntry[]>([]);
   const [showHistory, setShowHistory] = useState(false);
-  const [justSaved, setJustSaved] = useState(false);
-  const justSavedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const savedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     return () => {
-      if (justSavedTimeout.current) clearTimeout(justSavedTimeout.current);
+      if (savedTimeout.current) clearTimeout(savedTimeout.current);
     };
   }, []);
 
@@ -87,31 +96,35 @@ export default function JournalScreen() {
 
   async function saveJournalEntry() {
     const hasEntry = content.trim() || mood.trim();
+    if (!hasEntry || saveState === "saving" || saveState === "saved") return;
+    setSaveState("saving");
 
-    if (!hasEntry) return;
+    try {
+      const newEntry: JournalEntry = {
+        id: String(Date.now()),
+        type: entryType,
+        mood,
+        content: content.trim(),
+        thoughtPattern: "",
+        thoughtImpact: "Neutral",
+        honestReframe: "",
+        mindLesson: "",
+        createdAt: new Date().toLocaleString(),
+      };
 
-    const newEntry: JournalEntry = {
-      id: String(Date.now()),
-      type: entryType,
-      mood,
-      content: content.trim(),
-      thoughtPattern: "",
-      thoughtImpact: "Neutral",
-      honestReframe: "",
-      mindLesson: "",
-      createdAt: new Date().toLocaleString(),
-    };
+      const nextEntries = [newEntry, ...entries];
+      await saveEntries(nextEntries);
+      void recordAgentEvent({ type: "journal_saved", sourcePage: "journal", relatedItemId: newEntry.id, metadata: { entryType } });
 
-    const nextEntries = [newEntry, ...entries];
-    await saveEntries(nextEntries);
-    void recordAgentEvent({ type: "journal_saved", sourcePage: "journal", relatedItemId: newEntry.id, metadata: { entryType } });
+      setContent("");
+      setMood("");
 
-    setContent("");
-    setMood("");
-
-    setJustSaved(true);
-    if (justSavedTimeout.current) clearTimeout(justSavedTimeout.current);
-    justSavedTimeout.current = setTimeout(() => setJustSaved(false), 2500);
+      setSaveState("saved");
+      if (savedTimeout.current) clearTimeout(savedTimeout.current);
+      savedTimeout.current = setTimeout(() => setSaveState("idle"), 2000);
+    } catch {
+      setSaveState("error");
+    }
   }
 
   async function clearEntries() {
@@ -120,101 +133,84 @@ export default function JournalScreen() {
 
   return (
     <View style={[styles.pageRoot, mobile.pageRootStyle]}>
-      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen]}>
+      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen, { borderColor: palette.edge }]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={uiAssets.backgrounds.neutral} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
           <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.hudContent]}>
-            <View style={styles.hero}>
-              <Text style={styles.heroKicker}>MIND LOG</Text>
-              <Text style={styles.title}>JOURNAL</Text>
-              <Text style={styles.subtitle}>Write what happened. Notice the pattern.</Text>
-            </View>
+            <WorldChrome hub="mind" kicker="MIND LOG" title="JOURNAL" subtitle="Write what happened. Notice the pattern." style={styles.chrome} />
 
-            <View style={styles.lunaCard}>
-              <Image source={uiAssets.guides.luna} style={styles.lunaAvatar} resizeMode="contain" />
-              <View style={styles.lunaCopy}>
-                <Text style={styles.lunaName}>Luna</Text>
-                <Text style={styles.lunaText}>
-                  Write what is actually happening. It does not need to sound perfect.
-                </Text>
-              </View>
-              <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
-                <Text style={styles.infoBtnText}>?</Text>
-              </TouchableOpacity>
-            </View>
+            <GuidePanel
+              hub="mind"
+              guideName="Luna"
+              guideAvatar={uiAssets.guides.luna}
+              message="Write what is actually happening. It does not need to sound perfect."
+              onInfoPress={() => setShowInfo(true)}
+            />
 
-            <View style={styles.panel}>
-              <Text style={styles.pageLabel}>Entry Type</Text>
+            <ParchmentSurface accent="mind" title="NEW ENTRY" style={styles.formCard}>
+              <Text style={styles.label}>Entry Type</Text>
               <View style={styles.toggleRow}>
                 <TouchableOpacity
-                  style={[styles.toggleButton, entryType === "Morning" && styles.activeToggle]}
+                  style={[styles.toggleButton, entryType === "Morning" && { backgroundColor: palette.edge, borderColor: palette.chrome }]}
                   onPress={() => setEntryType("Morning")}
                 >
-                  <Text style={entryType === "Morning" ? styles.activeToggleText : styles.toggleText}>
-                    Morning
-                  </Text>
+                  <Text style={entryType === "Morning" ? styles.activeToggleText : styles.toggleText}>Morning</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={[styles.toggleButton, entryType === "Evening" && styles.activeToggle]}
+                  style={[styles.toggleButton, entryType === "Evening" && { backgroundColor: palette.edge, borderColor: palette.chrome }]}
                   onPress={() => setEntryType("Evening")}
                 >
-                  <Text style={entryType === "Evening" ? styles.activeToggleText : styles.toggleText}>
-                    Evening
-                  </Text>
+                  <Text style={entryType === "Evening" ? styles.activeToggleText : styles.toggleText}>Evening</Text>
                 </TouchableOpacity>
               </View>
 
-              <Text style={styles.pageLabel}>Mood (1–10)</Text>
-              <TextInput
-                style={[formStyles.input, styles.input]}
+              <Text style={styles.label}>Mood (1–10)</Text>
+              <ParchmentField
+                style={styles.input}
                 keyboardType="numeric"
                 placeholder="Optional"
-                placeholderTextColor="#94A3B8"
                 value={mood}
                 onChangeText={setMood}
               />
 
-              <Text style={styles.pageLabel}>Be honest and write whatever is on your mind</Text>
-              <TextInput
-                style={[formStyles.textArea, styles.largeTextArea]}
+              <Text style={styles.label}>Be honest and write whatever is on your mind</Text>
+              <ParchmentField
+                style={styles.largeTextArea}
                 multiline
                 scrollEnabled
                 textAlignVertical="top"
                 placeholder="Write freely. A moment, a feeling, a win, a mistake, or anything that stayed with you."
-                placeholderTextColor="#94A3B8"
                 value={content}
                 onChangeText={setContent}
               />
-            </View>
 
-            <TouchableOpacity style={styles.saveButton} disabled={justSaved} onPress={saveJournalEntry}>
-              <Text style={styles.saveButtonText}>{justSaved ? "Saved" : "Save Journal Entry"}</Text>
-            </TouchableOpacity>
+              <SaveButton state={saveState} onPress={saveJournalEntry} idleLabel="SAVE JOURNAL ENTRY" style={styles.saveButton} />
+            </ParchmentSurface>
 
-            <TouchableOpacity style={styles.backButton} onPress={() => setShowHistory(true)}>
+            <TouchableOpacity style={[styles.backButton, { marginBottom: 8 }]} onPress={() => setShowHistory(true)}>
               <Text style={styles.backButtonText}>📖 Journal History</Text>
             </TouchableOpacity>
 
             <Text style={styles.sectionTitle}>RECENT LOGS</Text>
 
             {entries.length === 0 ? (
-              <View style={styles.emptyCard}>
-                <Text style={styles.emptyText}>No journal logs yet. Start with one honest sentence.</Text>
-              </View>
+              <ParchmentSurface accent="mind" style={styles.emptyCard}>
+                <Text style={parchmentTextStyles.body}>No journal logs yet. Start with one honest sentence.</Text>
+              </ParchmentSurface>
             ) : (
               entries.map((entry) => (
-                <View key={entry.id} style={styles.entryCard}>
+                <ParchmentSurface key={entry.id} accent="mind" edgeStrip style={styles.entryCard}>
                   <Text style={styles.entryType}>{entry.type} Log</Text>
-                  <Text style={styles.entryDate}>{entry.createdAt}</Text>
+                  <Text style={parchmentTextStyles.meta}>{entry.createdAt}</Text>
                   <Text style={styles.entryMood}>
                     Mood: {entry.mood.trim() ? `${entry.mood}/10` : "Not entered"}
                   </Text>
 
-                  {entry.content ? <Text style={styles.entryText}>{entry.content}</Text> : null}
-                </View>
+                  {entry.content ? <Text style={[parchmentTextStyles.body, styles.entryText]}>{entry.content}</Text> : null}
+                </ParchmentSurface>
               ))
             )}
 
@@ -236,7 +232,7 @@ export default function JournalScreen() {
             guideName="Luna"
             title="How Journal Works"
             bullets={LUNA_JOURNAL_BULLETS}
-            accentColor="#C4A7FF"
+            accentColor={palette.accent}
           />
 
           <HistoryModal
@@ -245,10 +241,10 @@ export default function JournalScreen() {
             title="Journal History"
             storageKey={JOURNAL_ENTRIES_KEY}
             normalize={normalizeJournalLogs}
-            accent="#C4A7FF"
+            accent={palette.accent}
           />
 
-          <BottomNav activeRoute="mind" theme="purple" bottomOffset={mobile.bottomNavOffset} />
+          <BottomNav activeRoute="mind" bottomOffset={mobile.bottomNavOffset} />
         </View>
       </View>
     </View>
@@ -258,15 +254,14 @@ export default function JournalScreen() {
 const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
-    backgroundColor: "#02040A",
+    backgroundColor: "#140F0A",
   },
   phoneStage: {
     alignSelf: "center",
-    backgroundColor: "#050814",
+    backgroundColor: "#1C1410",
     overflow: "hidden",
     position: "relative",
     borderWidth: 2,
-    borderColor: "rgba(251, 191, 36, 0.64)",
     shadowColor: "#000",
     shadowOpacity: 0.85,
     shadowRadius: 0,
@@ -291,132 +286,45 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "rgba(4, 8, 14, 0.16)",
   },
-  screenScroller: {
-    flex: 1,
-  },
   hudContent: {
-    paddingTop: 8,
+    paddingTop: 16,
+    paddingHorizontal: 14,
   },
-  hero: {
-    backgroundColor: "#EAD9B6",
-    borderWidth: 4,
-    borderColor: "#A78BFA",
-    borderRadius: 8,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    marginBottom: 16,
-    shadowColor: "#000",
-    shadowOpacity: 0.7,
-    shadowRadius: 0,
-    shadowOffset: { width: 4, height: 4 },
-  },
-  heroKicker: {
+  chrome: { marginBottom: 12 },
+  formCard: { marginTop: 12, marginBottom: 12 },
+  label: {
+    fontFamily: pixelFont,
+    fontSize: 11,
+    fontWeight: "900",
     color: "#7C5B2B",
-    fontFamily: pixelFont,
-    fontSize: 12,
-    fontWeight: "900",
-    letterSpacing: 2,
-    marginBottom: 8,
-  },
-  title: {
-    color: "#4A3620",
-    fontFamily: pixelFont,
-    fontSize: 32,
-    fontWeight: "900",
-    letterSpacing: 1,
-    lineHeight: 38,
-    textAlign: "center",
-  },
-  subtitle: {
-    color: "#7C5B2B",
-    fontFamily: pixelFont,
-    fontSize: 13,
-    fontWeight: "800",
-    lineHeight: 19,
-    marginTop: 8,
-  },
-  lunaCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#EAD9B6",
-    borderWidth: 3,
-    borderColor: "#A78BFA",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-  },
-  lunaAvatar: {
-    height: 58,
-    width: 58,
-    borderRadius: 29,
-    borderWidth: 2,
-    borderColor: "#C4A7FF",
-    backgroundColor: "rgba(49, 46, 129, 0.72)",
-    marginRight: 12,
-  },
-  lunaCopy: {
-    flex: 1,
-  },
-  lunaName: {
-    color: "#7C3AED",
-    fontFamily: pixelFont,
-    fontSize: 15,
-    fontWeight: "900",
+    marginTop: 10,
     marginBottom: 6,
     textTransform: "uppercase",
-  },
-  lunaText: {
-    color: "#4A3620",
-    fontFamily: pixelFont,
-    fontSize: 12,
-    fontWeight: "800",
-    lineHeight: 18,
-  },
-  panel: {
-    backgroundColor: "#EAD9B6",
-    borderWidth: 4,
-    borderColor: "#FBBF24",
-    borderRadius: 8,
-    padding: 14,
-    marginBottom: 16,
-  },
-  pageLabel: {
-    color: "#4A3620",
-    fontFamily: pixelFont,
-    fontSize: 12,
-    fontWeight: "900",
-    letterSpacing: 1,
-    marginTop: 12,
-    marginBottom: 8,
-    textTransform: "uppercase",
+    letterSpacing: 0.6,
   },
   toggleRow: {
     flexDirection: "row",
     gap: 10,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   toggleButton: {
     flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
+    backgroundColor: "#F4E8CE",
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     borderRadius: 6,
     alignItems: "center",
-    paddingVertical: 12,
-  },
-  activeToggle: {
-    backgroundColor: "rgba(49, 46, 129, 0.96)",
-    borderColor: "#A78BFA",
+    paddingVertical: 10,
   },
   toggleText: {
-    color: "#CBD5E1",
+    color: "#4A3620",
     fontFamily: pixelFont,
     fontSize: 12,
     fontWeight: "900",
     textTransform: "uppercase",
   },
   activeToggleText: {
-    color: "#F9FAFB",
+    color: "#FFFFFF",
     fontFamily: pixelFont,
     fontSize: 12,
     fontWeight: "900",
@@ -426,27 +334,11 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   largeTextArea: {
-    minHeight: 200,
-    maxHeight: 320,
-    marginBottom: 4,
+    minHeight: 160,
+    maxHeight: 280,
+    marginBottom: 8,
   },
-  saveButton: {
-    backgroundColor: "#A78BFA",
-    borderWidth: 3,
-    borderColor: "#E9D5FF",
-    borderRadius: 6,
-    paddingVertical: 14,
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  saveButtonText: {
-    color: "#0F172A",
-    fontFamily: pixelFont,
-    fontSize: 13,
-    fontWeight: "900",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-  },
+  saveButton: { marginTop: 4 },
   sectionTitle: {
     color: "#FDE68A",
     fontFamily: pixelFont,
@@ -455,40 +347,13 @@ const styles = StyleSheet.create({
     letterSpacing: 1.2,
     marginBottom: 8,
   },
-  emptyCard: {
-    backgroundColor: "#EAD9B6",
-    borderWidth: 2,
-    borderColor: "#334155",
-    borderRadius: 6,
-    padding: 12,
-  },
-  emptyText: {
-    color: "#7C5B2B",
-    fontFamily: pixelFont,
-    fontSize: 12,
-    lineHeight: 18,
-    fontWeight: "800",
-  },
-  entryCard: {
-    backgroundColor: "#EAD9B6",
-    borderWidth: 2,
-    borderColor: "#334155",
-    borderRadius: 6,
-    padding: 12,
-    marginBottom: 10,
-  },
+  emptyCard: {},
+  entryCard: { marginBottom: 10 },
   entryType: {
     color: "#5B21B6",
     fontFamily: pixelFont,
     fontSize: 13,
     fontWeight: "900",
-  },
-  entryDate: {
-    color: "#7C5B2B",
-    fontFamily: pixelFont,
-    fontSize: 10,
-    fontWeight: "800",
-    marginTop: 4,
   },
   entryMood: {
     color: "#92610A",
@@ -498,17 +363,12 @@ const styles = StyleSheet.create({
     marginTop: 7,
   },
   entryText: {
-    color: "#4A3620",
-    fontFamily: pixelFont,
-    fontSize: 12,
-    fontWeight: "700",
-    lineHeight: 18,
     marginTop: 8,
   },
   clearButton: {
-    backgroundColor: "rgba(8, 13, 24, 0.94)",
+    backgroundColor: "#3E2A1A",
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#5C4425",
     borderRadius: 6,
     paddingVertical: 12,
     alignItems: "center",
@@ -523,90 +383,19 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
   },
   backButton: {
-    backgroundColor: "rgba(8, 13, 24, 0.94)",
+    backgroundColor: "rgba(46,32,20, 0.94)",
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#8B7BC7",
     borderRadius: 6,
     paddingVertical: 13,
     alignItems: "center",
     marginTop: 4,
   },
   backButtonText: {
-    color: "#F9FAFB",
+    color: "#ECE4FB",
     fontFamily: pixelFont,
     fontSize: 12,
     fontWeight: "900",
     textTransform: "uppercase",
-  },
-  infoBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 4,
-    borderWidth: 2,
-    borderColor: "#A78BFA",
-    backgroundColor: "rgba(49,46,129,0.72)",
-    alignItems: "center",
-    justifyContent: "center",
-    alignSelf: "flex-start",
-  },
-  infoBtnText: {
-    color: "#C4A7FF",
-    fontFamily: pixelFont,
-    fontSize: 14,
-    fontWeight: "900",
-    lineHeight: 18,
-  },
-  bottomNav: {
-    position: "absolute",
-    left: 8,
-    right: 8,
-    bottom: 8,
-    height: 62,
-    backgroundColor: "rgba(4, 8, 16, 0.98)",
-    borderWidth: 3,
-    borderColor: "#A78BFA",
-    borderRadius: 5,
-    padding: 4,
-    flexDirection: "row",
-    justifyContent: "space-between",
-  },
-  navButton: {
-    flex: 1,
-    backgroundColor: "#111827",
-    borderWidth: 2,
-    borderColor: "#3A4558",
-    borderRadius: 3,
-    paddingVertical: 4,
-    marginHorizontal: 2,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  navButtonActive: {
-    backgroundColor: "#162314",
-    borderColor: "#FDE68A",
-  },
-  navText: {
-    color: "#E2E8F0",
-    fontSize: 17,
-    fontWeight: "900",
-  },
-  navTextActive: {
-    color: "#FDE68A",
-    fontSize: 17,
-    fontWeight: "900",
-  },
-  navLabel: {
-    color: "#CBD5E1",
-    fontSize: 8,
-    fontWeight: "900",
-    marginTop: 1,
-    fontFamily: pixelFont,
-  },
-  navLabelActive: {
-    color: "#FDE68A",
-    fontSize: 8,
-    fontWeight: "900",
-    marginTop: 1,
-    fontFamily: pixelFont,
   },
 });

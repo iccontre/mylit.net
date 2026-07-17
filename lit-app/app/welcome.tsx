@@ -147,7 +147,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   copyPanel: {
-    backgroundColor: "rgba(15, 23, 42, 0.82)",
+    backgroundColor: "rgba(46,32,20, 0.82)",
     borderWidth: 2,
     borderColor: "#D99A16",
     borderRadius: 8,

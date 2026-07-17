@@ -7,22 +7,28 @@ import {
   Platform,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 
+import { BottomNav } from "../components/BottomNav";
 import { FormScreen } from "../components/FormScreen";
 import { GuideInfoModal } from "../components/GuideInfoModal";
-import { formPageContent, formStyles } from "../constants/formStyles";
+import { HistoryModal } from "../components/HistoryModal";
+import { GuidePanel } from "../components/parchment/GuidePanel";
+import { ParchmentField } from "../components/parchment/ParchmentField";
+import { ParchmentSurface, parchmentTextStyles } from "../components/parchment/ParchmentSurface";
+import { SaveButton, type SaveState } from "../components/parchment/SaveButton";
+import { WorldChrome } from "../components/parchment/WorldChrome";
+import { formPageContent } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
+import { hubPalettes } from "../constants/worldTokens";
 import { persistProgressKeys } from "../lib/progressStore";
 import {
   LATEST_PRE_SLEEP_INTENTION_KEY,
   PRE_SLEEP_INTENTIONS_KEY,
 } from "../lib/storageKeys";
-import { HistoryModal } from "../components/HistoryModal";
 import { normalizePreSleepLogs } from "../lib/logHistory";
 import { USER_STATS_KEY } from "../lib/questProgress";
 import { recordAgentEvent } from "../lib/mylitAgents";
@@ -63,7 +69,7 @@ const pixelFont = Platform.select({
   default: "monospace",
 });
 
-const theme = { accent: "#C4A7FF", glow: "#E9D5FF", panel: "rgba(18, 16, 34, 0.94)", soft: "#DDD6FE" };
+const palette = hubPalettes.sleep;
 
 export default function PreSleepIntentionScreen() {
   const router = useRouter();
@@ -74,9 +80,7 @@ export default function PreSleepIntentionScreen() {
   const [support, setSupport] = useState<string[]>([]);
   const [showInfo, setShowInfo] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [saveFailed, setSaveFailed] = useState(false);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
 
   async function successHaptic() {
     try {
@@ -95,9 +99,8 @@ export default function PreSleepIntentionScreen() {
   }
 
   async function saveIntention() {
-    if (saving || saved || !intention.trim()) return;
-    setSaving(true);
-    setSaveFailed(false);
+    if (saveState === "saving" || saveState === "saved" || !intention.trim()) return;
+    setSaveState("saving");
 
     try {
       // Quest-day key (6 AM boundary), matching every other consumer of this record —
@@ -142,16 +145,14 @@ export default function PreSleepIntentionScreen() {
         metadata: { feeling },
       });
 
-      setSaving(false);
-      setSaved(true);
+      setSaveState("saved");
       // Hold the green ✓ SAVED confirmation on screen briefly before returning, per the shared
       // Save-state pattern, rather than navigating away the instant persistence resolves.
       setTimeout(() => router.push("/"), 800);
     } catch {
       // Input stays exactly as the user left it (no reset here) and the button surfaces a
       // visible failure + retry affordance instead of silently reverting to its idle label.
-      setSaving(false);
-      setSaveFailed(true);
+      setSaveState("error");
     }
   }
 
@@ -161,42 +162,30 @@ export default function PreSleepIntentionScreen() {
 
   return (
     <View style={[styles.pageRoot, mobile.pageRootStyle]}>
-      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen, { borderColor: theme.accent }]}>
+      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen, { borderColor: palette.edge }]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={uiAssets.backgrounds.recovery} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
           <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.hudContent]}>
-            <View style={[styles.hero, { borderColor: theme.accent, backgroundColor: theme.panel }]}>
-              <View style={styles.heroTopRow}>
-                <View style={styles.heroCopy}>
-                  <Text style={[styles.heroKicker, { color: theme.glow }]}>SLEEP HUB</Text>
-                  <Text style={styles.title}>PRE-SLEEP INTENTION</Text>
-                  <Text style={[styles.subtitle, { color: theme.soft }]}>Set one signal for tomorrow.</Text>
-                </View>
-                <Image source={uiAssets.guides.luna} style={[styles.guideAvatar, { borderColor: theme.accent }]} resizeMode="contain" />
-              </View>
-            </View>
+            <WorldChrome hub="sleep" kicker="TONIGHT" title="INTENTION" subtitle="One clear signal for tomorrow." style={styles.chrome} />
 
-            <View style={[styles.lunaCard, { borderColor: theme.accent }]}>
-              <View style={styles.lunaCardHeader}>
-                <Text style={[styles.lunaName, { color: theme.glow }]}>🌙 Luna</Text>
-                <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
-                  <Text style={styles.infoBtnText}>?</Text>
-                </TouchableOpacity>
-              </View>
-              <Text style={styles.lunaText}>Setting an intention before sleep helps program tomorrow's mindset. One clear direction is enough — the mind works on it while you rest.</Text>
-            </View>
+            <GuidePanel
+              hub="sleep"
+              guideName="Luna"
+              guideAvatar={uiAssets.guides.luna}
+              message="Keep it small and kind. One sentence is enough to guide the morning."
+              onInfoPress={() => setShowInfo(true)}
+            />
 
-            <View style={[styles.formCard, { borderColor: theme.accent }]}>
-              <Text style={styles.label}>What do you want to carry into tomorrow?</Text>
-              <TextInput
-                style={[formStyles.textArea, styles.textArea]}
+            <ParchmentSurface accent="sleep" title="SET YOUR INTENTION" style={styles.formCard}>
+              <Text style={styles.label}>Tomorrow, I want to…</Text>
+              <ParchmentField
+                style={styles.textArea}
                 multiline
                 scrollEnabled
                 textAlignVertical="top"
-                placeholder="Tonight, I want to focus on…"
-                placeholderTextColor="#94A3B8"
+                placeholder="Start the day slow — one gentle win before noon."
                 value={intention}
                 onChangeText={setIntention}
               />
@@ -208,10 +197,10 @@ export default function PreSleepIntentionScreen() {
                   return (
                     <TouchableOpacity
                       key={opt}
-                      style={[styles.chip, selected && { backgroundColor: "rgba(49, 46, 129, 0.94)", borderColor: theme.accent }]}
+                      style={[styles.chip, selected && { backgroundColor: palette.edge, borderColor: palette.chrome }]}
                       onPress={() => setFeeling(selected ? "" : opt)}
                     >
-                      <Text style={selected ? [styles.chipText, { color: theme.glow }] : styles.chipText}>{opt}</Text>
+                      <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{selected ? "✓ " : ""}{opt}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -224,41 +213,32 @@ export default function PreSleepIntentionScreen() {
                   return (
                     <TouchableOpacity
                       key={opt}
-                      style={[styles.chip, selected && { backgroundColor: "rgba(49, 46, 129, 0.94)", borderColor: theme.accent }]}
+                      style={[styles.chip, selected && { backgroundColor: palette.edge, borderColor: palette.chrome }]}
                       onPress={() => toggleSupport(opt)}
                     >
-                      <Text style={selected ? [styles.chipText, { color: theme.glow }] : styles.chipText}>{opt}</Text>
+                      <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{selected ? "✓ " : ""}{opt}</Text>
                     </TouchableOpacity>
                   );
                 })}
               </View>
               {support.filter((opt) => SUPPORT_HELPER_TEXT[opt]).map((opt) => (
-                <Text key={`helper-${opt}`} style={[styles.supportHelperText, { color: theme.soft }]}>{SUPPORT_HELPER_TEXT[opt]}</Text>
+                <Text key={`helper-${opt}`} style={parchmentTextStyles.meta}>{SUPPORT_HELPER_TEXT[opt]}</Text>
               ))}
 
-              <TouchableOpacity
-                style={[
-                  styles.saveButton,
-                  { borderColor: theme.accent },
-                  saving && { opacity: 0.6 },
-                  saved && styles.saveButtonSaved,
-                  saveFailed && styles.saveButtonError,
-                ]}
-                disabled={saving || saved}
+              <SaveButton
+                state={saveState}
                 onPress={saveIntention}
-              >
-                <Text style={styles.saveButtonText}>
-                  {saving ? "SAVING…" : saved ? "✓ SAVED" : saveFailed ? "SAVE FAILED — RETRY" : "Save Intention · +1 Step"}
-                </Text>
-              </TouchableOpacity>
-            </View>
+                idleLabel="SAVE INTENTION"
+                style={styles.saveButton}
+              />
+            </ParchmentSurface>
 
             <TouchableOpacity style={[styles.backButton, { marginBottom: 8 }]} onPress={() => setShowHistory(true)}>
               <Text style={styles.backButtonText}>✨ Pre-Sleep History</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={styles.backButton} onPress={() => router.push("/sleep")}>
-              <Text style={styles.backButtonText}>Back to Sleep Hub</Text>
+              <Text style={styles.backButtonText}>← Back to Sleep Hub</Text>
             </TouchableOpacity>
           </FormScreen>
 
@@ -268,7 +248,7 @@ export default function PreSleepIntentionScreen() {
             title="Pre-Sleep History"
             storageKey={PRE_SLEEP_INTENTIONS_KEY}
             normalize={normalizePreSleepLogs}
-            accent="#C4A7FF"
+            accent={palette.accent}
           />
 
           <GuideInfoModal
@@ -278,8 +258,10 @@ export default function PreSleepIntentionScreen() {
             guideName="Luna"
             title="How Pre-Sleep Intention Works"
             bullets={LUNA_PRE_SLEEP_BULLETS}
-            accentColor="#C4A7FF"
+            accentColor={palette.accent}
           />
+
+          <BottomNav activeRoute="sleep" bottomOffset={mobile.bottomNavOffset} />
         </View>
       </View>
     </View>
@@ -289,11 +271,11 @@ export default function PreSleepIntentionScreen() {
 const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
-    backgroundColor: "#02040A",
+    backgroundColor: "#140F0A",
   },
   phoneStage: {
     alignSelf: "center",
-    backgroundColor: "#050814",
+    backgroundColor: "#1C1410",
     overflow: "hidden",
     position: "relative",
     borderWidth: 2,
@@ -321,129 +303,26 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "rgba(2, 6, 12, 0.16)",
   },
-  screenScroller: {
-    flex: 1,
-  },
   hudContent: {
     flexGrow: 1,
-    paddingTop: 18,
+    paddingTop: 16,
     paddingHorizontal: 16,
   },
-  hero: {
-    borderWidth: 4,
-    borderRadius: 8,
-    padding: 14,
-    marginBottom: 10,
-    shadowColor: "#000",
-    shadowOpacity: 0.65,
-    shadowRadius: 0,
-    shadowOffset: { width: 4, height: 4 },
-  },
-  heroTopRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  heroCopy: {
-    flex: 1,
-    marginRight: 12,
-  },
-  heroKicker: {
-    fontFamily: pixelFont,
-    fontSize: 11,
-    letterSpacing: 1.5,
-    fontWeight: "900",
-    marginBottom: 6,
-    textTransform: "uppercase",
-  },
-  title: {
-    fontFamily: pixelFont,
-    fontSize: 24,
-    fontWeight: "900",
-    color: "#4A3620",
-    marginBottom: 6,
-    lineHeight: 30,
-    textAlign: "center",
-  },
-  subtitle: {
-    fontFamily: pixelFont,
-    fontSize: 13,
-    lineHeight: 19,
-    fontWeight: "900",
-  },
-  guideAvatar: {
-    height: 66,
-    width: 66,
-    borderRadius: 33,
-    borderWidth: 3,
-    backgroundColor: "rgba(8, 13, 24, 0.65)",
-  },
-  lunaCard: {
-    backgroundColor: "rgba(8, 12, 20, 0.94)",
-    borderRadius: 6,
-    padding: 13,
-    marginBottom: 10,
-    borderWidth: 3,
-  },
-  lunaCardHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 6,
-  },
-  infoBtn: {
-    width: 26,
-    height: 26,
-    borderRadius: 4,
-    borderWidth: 2,
-    borderColor: "#A78BFA",
-    backgroundColor: "rgba(49,46,129,0.72)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  infoBtnText: {
-    color: "#C4A7FF",
-    fontFamily: pixelFont,
-    fontSize: 13,
-    fontWeight: "900",
-    lineHeight: 17,
-  },
-  lunaName: {
-    fontFamily: pixelFont,
-    fontSize: 15,
-    fontWeight: "900",
-    marginBottom: 6,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  lunaText: {
-    fontFamily: pixelFont,
-    fontSize: 13,
-    lineHeight: 19,
-    color: "#4A3620",
-    fontWeight: "700",
-  },
-  formCard: {
-    backgroundColor: "#EAD9B6",
-    borderRadius: 6,
-    padding: 13,
-    marginBottom: 10,
-    borderWidth: 3,
-  },
+  chrome: { marginBottom: 12 },
+  formCard: { marginTop: 12 },
   label: {
     fontFamily: pixelFont,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "900",
-    color: "#E5E7EB",
+    color: "#7C5B2B",
     marginBottom: 8,
     marginTop: 12,
     textTransform: "uppercase",
     letterSpacing: 0.8,
-    lineHeight: 16,
   },
   textArea: {
-    borderRadius: 8,
     marginBottom: 6,
+    minHeight: 90,
   },
   chipRow: {
     flexDirection: "row",
@@ -452,60 +331,33 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   chip: {
-    backgroundColor: "rgba(15, 23, 42, 0.96)",
-    borderRadius: 4,
+    backgroundColor: "#F4E8CE",
+    borderRadius: 5,
     borderWidth: 2,
-    borderColor: "#334155",
-    paddingVertical: 7,
-    paddingHorizontal: 11,
-  },
-  supportHelperText: {
-    fontFamily: pixelFont,
-    fontSize: 11,
-    fontWeight: "700",
-    marginTop: -6,
-    marginBottom: 10,
+    borderColor: "#5C4425",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
   },
   chipText: {
-    color: "#CBD5E1",
+    color: "#4A3620",
     fontFamily: pixelFont,
     fontSize: 12,
     fontWeight: "800",
   },
-  saveButton: {
-    backgroundColor: "#312E81",
-    padding: 14,
-    borderRadius: 4,
-    alignItems: "center",
-    marginTop: 14,
-    borderWidth: 3,
+  chipTextSelected: {
+    color: "#FFFFFF",
   },
-  saveButtonSaved: {
-    backgroundColor: "#15803D",
-    borderColor: "#4ADE80",
-  },
-  saveButtonError: {
-    backgroundColor: "#7F1D1D",
-    borderColor: "#F87171",
-  },
-  saveButtonText: {
-    color: "#F9FAFB",
-    fontSize: 15,
-    fontWeight: "900",
-    fontFamily: pixelFont,
-    textTransform: "uppercase",
-    letterSpacing: 0.7,
-  },
+  saveButton: { marginTop: 8 },
   backButton: {
-    backgroundColor: "rgba(8, 13, 24, 0.94)",
+    backgroundColor: "rgba(46,32,20, 0.94)",
     padding: 12,
-    borderRadius: 4,
+    borderRadius: 5,
     alignItems: "center",
     borderWidth: 2,
-    borderColor: "#334155",
+    borderColor: "#8B7BC7",
   },
   backButtonText: {
-    color: "#E2E8F0",
+    color: "#EFEAFB",
     fontSize: 13,
     fontWeight: "900",
     fontFamily: pixelFont,

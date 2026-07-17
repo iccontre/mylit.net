@@ -2,6 +2,7 @@ import { Platform, Pressable, StyleSheet, Text, TouchableOpacity, View, type Sty
 import { Modal, KeyboardAvoidingView, ScrollView } from "react-native";
 
 import { accentByParchmentAccent, parchmentBody, parchmentBorder, parchmentGeometry, parchmentInk, type ParchmentAccent } from "../../constants/parchmentTokens";
+import { SaveButton, type SaveState } from "./SaveButton";
 
 const pixelFont = Platform.select({ ios: "Menlo", android: "monospace", web: "monospace", default: "monospace" });
 
@@ -17,6 +18,8 @@ type EditorModalProps = {
   onSave?: () => void;
   saveDisabled?: boolean;
   saving?: boolean;
+  /** Full idle/saving/saved/error state — overrides `saving` for rendering when provided. */
+  saveState?: SaveState;
   /** Hide the footer entirely when the screen provides its own action row. */
   hideFooter?: boolean;
   contentStyle?: StyleProp<ViewStyle>;
@@ -41,11 +44,13 @@ export function EditorModal({
   onSave,
   saveDisabled,
   saving,
+  saveState,
   hideFooter,
   contentStyle,
   children,
 }: EditorModalProps) {
   const accentColor = accentByParchmentAccent[accent];
+  const resolvedSaveState: SaveState = saveState ?? (saving ? "saving" : "idle");
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={saving ? undefined : onClose}>
@@ -89,14 +94,13 @@ export function EditorModal({
                   <Text style={styles.cancelBtnText}>{cancelLabel}</Text>
                 </TouchableOpacity>
                 {onSave ? (
-                  <TouchableOpacity
-                    style={[styles.saveBtn, (saveDisabled || saving) && styles.saveBtnDisabled]}
+                  <SaveButton
+                    state={resolvedSaveState}
+                    disabled={saveDisabled}
                     onPress={onSave}
-                    disabled={saveDisabled || saving}
-                    accessibilityLabel={saveLabel}
-                  >
-                    <Text style={styles.saveBtnText}>{saving ? "SAVING…" : saveLabel}</Text>
-                  </TouchableOpacity>
+                    idleLabel={saveLabel}
+                    style={styles.saveBtn}
+                  />
                 ) : null}
               </View>
             ) : null}
@@ -130,7 +134,5 @@ const styles = StyleSheet.create({
   footer: { flexDirection: "row", gap: 10, padding: 14, paddingTop: 4 },
   cancelBtn: { flex: 1, borderWidth: 2, borderColor: parchmentBorder, borderRadius: parchmentGeometry.actionRadius, paddingVertical: 12, alignItems: "center", backgroundColor: "#E7D3A9" },
   cancelBtnText: { color: parchmentInk, fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
-  saveBtn: { flex: 2, borderWidth: 3, borderColor: "#4C1D95", borderRadius: parchmentGeometry.actionRadius, paddingVertical: 12, alignItems: "center", backgroundColor: "#7C3AED" },
-  saveBtnDisabled: { opacity: 0.65 },
-  saveBtnText: { color: "#FFFFFF", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 0.3 },
+  saveBtn: { flex: 2, paddingVertical: 12 },
 });

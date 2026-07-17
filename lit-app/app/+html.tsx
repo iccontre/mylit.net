@@ -37,7 +37,7 @@ export default function Root({ children }: PropsWithChildren) {
                 max-height: var(--mylit-layout-height, 100svh);
                 margin: 0;
                 padding: 0;
-                background: #02040A;
+                background: #140F0A;
                 overflow: hidden;
               }
               body {
