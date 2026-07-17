@@ -78,6 +78,7 @@ import {
   getQuestDayKey,
   getStepsForItem,
   isLdmActive,
+  isOvernightBeforeQuestDay,
   isMandatoryQuestTitle,
   MANDATORY_ENERGY_QUEST_TITLE,
   MANDATORY_FOOD_QUEST_TITLE,
@@ -1422,6 +1423,9 @@ export default function HomeScreen() {
   // LDM (Lucid Dreaming Mode) is fully automatic — 9:00 PM through the shared 6:00 AM quest-day
   // boundary — recomputed from timeNow, no button/session/route (see PRE_SLEEP_ROUTINE_* above).
   const ldmActive = isLdmActive(timeNow);
+  // Wider than ldmActive: 9 PM through the 6 AM quest-day boundary. LDM itself now ends at
+  // 1 AM, but daytime Progress quests / check-in prompts must stay hidden through 5:59 AM.
+  const overnightBeforeQuestDay = isOvernightBeforeQuestDay(timeNow);
   const preSleepRoutineQuestDone = completedQuests.some((entry) => entry.title === PRE_SLEEP_ROUTINE_TITLE);
   const preSleepRoutineCheckedToday = preSleepRoutineChecked.questDayKey === getTodayKey() ? preSleepRoutineChecked.checkedIds : {};
   const preSleepRoutineAllChecked = PRE_SLEEP_ROUTINE_ITEMS.every((item) => Boolean(preSleepRoutineCheckedToday[item.id]));
@@ -1447,8 +1451,9 @@ export default function HomeScreen() {
   const afternoonUnlockDisplayLabel = afternoonUnlockAt ? formatMinutesAsTime(afternoonUnlockAt.getHours() * 60 + afternoonUnlockAt.getMinutes()) : afternoonUnlockLabel;
   const afternoonCheckInDoneToday =
     latestCheckIn?.afternoonCheckInCompletedToday === true && latestCheckIn?.afternoonCheckInQuestDayKey === getTodayKey();
-  // Never unlocks during LDM, even once 6 hours have elapsed since waking.
-  const afternoonCheckInUnlocked = !ldmActive && afternoonUnlockChecked && afternoonUnlockReached;
+  // Never unlocks overnight (9 PM-5:59 AM), even once 6 hours have elapsed since waking —
+  // wider than ldmActive so this can't flip on right at 1 AM when LDM itself ends.
+  const afternoonCheckInUnlocked = !overnightBeforeQuestDay && afternoonUnlockChecked && afternoonUnlockReached;
   // Only meaningful once Morning Check-In is already done (hasEnergyData) — Neutral mode has
   // its own separate "Complete Morning Check-In" prompt in generateQuests().
   const isAfternoonCheckInGateActive = hasEnergyData && afternoonCheckInUnlocked && !afternoonCheckInDoneToday;
@@ -1703,10 +1708,12 @@ export default function HomeScreen() {
   // Progress quests. Filtered BEFORE capacity math so the 120-min LDM cap only ever considers
   // LDM-eligible items; nothing is deleted, items that don't fit are simply deferred (hiddenCount).
   const availableItemsRaw = allHomeItems.filter((item) => item.id !== activeItem?.id);
-  const availableItems = ldmActive
+  // Use the wider overnight window (not just ldmActive) so daytime Progress quests stay
+  // filtered out through 5:59 AM even after LDM itself ends at 1 AM.
+  const availableItems = overnightBeforeQuestDay
     ? availableItemsRaw.filter((item) => item.mandatory || item.kind === "recovery" || item.source === "Sleep")
     : availableItemsRaw;
-  const boardCapacity = applyQuestBoardCapacity(availableItems, boardMode, ldmActive ? LDM_BOARD_CAPACITY_MINUTES : undefined);
+  const boardCapacity = applyQuestBoardCapacity(availableItems, boardMode, overnightBeforeQuestDay ? LDM_BOARD_CAPACITY_MINUTES : undefined);
   const visibleItems = boardCapacity.visibleItems;
   const extraItemCount = boardCapacity.hiddenCount;
   const capacityLabel = ldmActive ? "LDM" : formatCapacityHeader(boardCapacity.plannedMinutes, boardMode);
@@ -2158,7 +2165,7 @@ export default function HomeScreen() {
               <LunaGuideModal visible={showHomeLunaModal} onClose={() => setShowHomeLunaModal(false)} />
               <EvieGuideModal visible={showHomeEvieModal} onClose={() => setShowHomeEvieModal(false)} />
 
-              {!ldmActive ? (
+              {!overnightBeforeQuestDay ? (
                 <View style={styles.checkInRow}>
                   <TouchableOpacity style={[styles.checkInCard, { borderColor: theme.accent }]} onPress={() => navigateWithHaptic("/sleep-checkin")}>
                     <View style={styles.checkIconBox}><Text style={styles.checkIcon}>🌄</Text></View>
@@ -2198,7 +2205,7 @@ export default function HomeScreen() {
                 </View>
               ) : null}
 
-              {!ldmActive ? (
+              {!overnightBeforeQuestDay ? (
                 <>
                   <TouchableOpacity style={styles.createQuestBtn} onPress={() => setShowQuestChooserModal(true)}>
                     <Text style={styles.createQuestBtnText}>+ CREATE A QUEST</Text>
@@ -2274,10 +2281,12 @@ export default function HomeScreen() {
                 </LdmErrorBoundary>
               ) : null}
 
-              {isNeutral && !ldmActive ? (
+              {isNeutral && !overnightBeforeQuestDay ? (
                 // LDM's quest board must never fall behind the "do a morning check-in" lock —
                 // LDM is time-derived and reachable regardless of the day's check-in-derived
                 // mode, which otherwise hid the whole LDM board behind this prompt overnight.
+                // Gated on the wider overnight window (not just ldmActive) so the 1-5:59 AM gap
+                // after LDM ends still keeps this daytime check-in prompt hidden.
                 <View style={styles.lockedBoardStrip}>
                   <Text style={styles.lockedBoardStripText}>Complete morning check-in to unlock</Text>
                   <TouchableOpacity style={styles.lockedBoardStripBtn} onPress={() => navigateWithHaptic("/sleep-checkin")}>
@@ -2296,18 +2305,18 @@ export default function HomeScreen() {
                     ) : null}
                   </View>
                   <Text style={[styles.questCount, { color: theme.accent }]}>
-                    {isNeutral && !ldmActive ? "LOCKED" : isBoardLocked ? "LOCKED" : isRecoveryLocked ? "RECOVERY" : capacityLabel}
+                    {isNeutral && !overnightBeforeQuestDay ? "LOCKED" : isBoardLocked ? "LOCKED" : isRecoveryLocked ? "RECOVERY" : capacityLabel}
                   </Text>
                 </View>
 
-                {!isNeutral && !ldmActive && todayQuestUnset ? (
+                {!isNeutral && !overnightBeforeQuestDay && todayQuestUnset ? (
                   <TouchableOpacity style={styles.setMainQuestBtn} onPress={() => navigateWithHaptic("/day-plan")}>
                     <Text style={styles.setMainQuestBtnTitle}>SET TODAY’S QUEST</Text>
                     <Text style={styles.setMainQuestBtnHint}>Choose your main quest for today.</Text>
                   </TouchableOpacity>
                 ) : null}
 
-                {isNeutral && !ldmActive ? (
+                {isNeutral && !overnightBeforeQuestDay ? (
                   <View style={styles.questLockedCard}>
                     <Text style={styles.questLockedTitle}>Quest Board Locked</Text>
                     <Text style={styles.questLockedText} numberOfLines={2}>Check in to reveal today&apos;s quests.</Text>

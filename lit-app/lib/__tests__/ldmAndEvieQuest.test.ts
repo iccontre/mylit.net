@@ -1,4 +1,4 @@
-import { isLdmActive } from "../scheduling";
+import { isLdmActive, isOvernightBeforeQuestDay } from "../scheduling";
 import { applyQuestBoardCapacity, type HomeQuestItem } from "../questProgress";
 import { generateQuestFromMorningIntent } from "../questGeneration";
 import { mergeEvieMorningQuest } from "../progressStore";
@@ -9,7 +9,7 @@ function at(hours: number, minutes: number): Date {
   return d;
 }
 
-describe("LDM 9:00 PM / 6:00 AM boundaries", () => {
+describe("LDM 9:00 PM / 1:00 AM boundaries", () => {
   it("is inactive right before 9:00 PM", () => {
     expect(isLdmActive(at(20, 59))).toBe(false);
   });
@@ -18,20 +18,48 @@ describe("LDM 9:00 PM / 6:00 AM boundaries", () => {
     expect(isLdmActive(at(21, 0))).toBe(true);
   });
 
-  it("stays active through the night", () => {
+  it("stays active through midnight and up to 12:59 AM", () => {
     expect(isLdmActive(at(23, 30))).toBe(true);
     expect(isLdmActive(at(0, 0))).toBe(true);
-    expect(isLdmActive(at(3, 0))).toBe(true);
+    expect(isLdmActive(at(0, 59))).toBe(true);
   });
 
-  it("is active up to 5:59 AM and ends at 6:00 AM", () => {
-    expect(isLdmActive(at(5, 59))).toBe(true);
-    expect(isLdmActive(at(6, 0))).toBe(false);
+  it("ends at exactly 1:00 AM — no longer active for the rest of the night", () => {
+    expect(isLdmActive(at(1, 0))).toBe(false);
+    expect(isLdmActive(at(3, 0))).toBe(false);
+    expect(isLdmActive(at(5, 59))).toBe(false);
   });
 
   it("is inactive during normal daytime hours", () => {
     expect(isLdmActive(at(12, 0))).toBe(false);
     expect(isLdmActive(at(18, 0))).toBe(false);
+  });
+});
+
+describe("isOvernightBeforeQuestDay 9:00 PM / 6:00 AM boundaries (wider than LDM — still suppresses daytime UI in the 1-5:59 AM gap)", () => {
+  it("is inactive right before 9:00 PM", () => {
+    expect(isOvernightBeforeQuestDay(at(20, 59))).toBe(false);
+  });
+
+  it("is active at exactly 9:00 PM", () => {
+    expect(isOvernightBeforeQuestDay(at(21, 0))).toBe(true);
+  });
+
+  it("stays active through the night, including after LDM itself has ended at 1 AM", () => {
+    expect(isOvernightBeforeQuestDay(at(23, 30))).toBe(true);
+    expect(isOvernightBeforeQuestDay(at(0, 0))).toBe(true);
+    expect(isOvernightBeforeQuestDay(at(1, 0))).toBe(true);
+    expect(isOvernightBeforeQuestDay(at(3, 0))).toBe(true);
+  });
+
+  it("is active up to 5:59 AM and ends at 6:00 AM", () => {
+    expect(isOvernightBeforeQuestDay(at(5, 59))).toBe(true);
+    expect(isOvernightBeforeQuestDay(at(6, 0))).toBe(false);
+  });
+
+  it("is inactive during normal daytime hours", () => {
+    expect(isOvernightBeforeQuestDay(at(12, 0))).toBe(false);
+    expect(isOvernightBeforeQuestDay(at(18, 0))).toBe(false);
   });
 });
 

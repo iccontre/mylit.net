@@ -4,6 +4,7 @@ import {
   computeAfternoonUnlockLabel,
   computeAfternoonUnlockTimestamp,
   isLdmActive,
+  isOvernightBeforeQuestDay,
   resolveWakeTimestamp,
 } from "../scheduling";
 
@@ -99,17 +100,64 @@ describe("Afternoon Check-In unlocks exactly 6 hours after wake", () => {
   }
 });
 
-describe("LDM overrides never fire outside its 9 PM–5:59 AM window (guide/flame/check-in gating source of truth)", () => {
-  it("is false at the 6:00 AM restoration boundary — normal mode resumes immediately", () => {
-    expect(isLdmActive(at(6, 0))).toBe(false);
+describe("LDM overrides never fire outside its 9 PM–12:59 AM window (guide/flame/check-in gating source of truth)", () => {
+  it("is inactive at 8:59 PM — one minute before LDM starts", () => {
+    expect(isLdmActive(at(20, 59))).toBe(false);
   });
 
-  it("is true one minute before the boundary — still forcing LDM overrides", () => {
-    expect(isLdmActive(at(5, 59))).toBe(true);
+  it("is active at exactly 9:00 PM — LDM begins", () => {
+    expect(isLdmActive(at(21, 0))).toBe(true);
+  });
+
+  it("remains active at 11:59 PM", () => {
+    expect(isLdmActive(at(23, 59))).toBe(true);
+  });
+
+  it("remains active at midnight (12:00 AM)", () => {
+    expect(isLdmActive(at(0, 0))).toBe(true);
+  });
+
+  it("remains active at 12:59 AM — the last minute of LDM", () => {
+    expect(isLdmActive(at(0, 59))).toBe(true);
+  });
+
+  it("is inactive at exactly 1:00 AM — LDM ends", () => {
+    expect(isLdmActive(at(1, 0))).toBe(false);
+  });
+
+  it("is false at the 6:00 AM quest-day boundary", () => {
+    expect(isLdmActive(at(6, 0))).toBe(false);
   });
 
   it("is false throughout the Afternoon Check-In's unlock window (early afternoon)", () => {
     expect(isLdmActive(at(11, 30))).toBe(false);
     expect(isLdmActive(at(16, 30))).toBe(false);
+  });
+});
+
+describe("isOvernightBeforeQuestDay covers the wider 9 PM–5:59 AM span that must keep hiding daytime UI even after LDM itself ends at 1 AM", () => {
+  it("is inactive at 8:59 PM", () => {
+    expect(isOvernightBeforeQuestDay(at(20, 59))).toBe(false);
+  });
+
+  it("is active at 9:00 PM", () => {
+    expect(isOvernightBeforeQuestDay(at(21, 0))).toBe(true);
+  });
+
+  it("is active at midnight", () => {
+    expect(isOvernightBeforeQuestDay(at(0, 0))).toBe(true);
+  });
+
+  it("stays active at 1:00 AM, unlike isLdmActive — this is the gap where LDM has ended but daytime UI must still stay hidden", () => {
+    expect(isOvernightBeforeQuestDay(at(1, 0))).toBe(true);
+    expect(isLdmActive(at(1, 0))).toBe(false);
+  });
+
+  it("stays active at 5:59 AM", () => {
+    expect(isOvernightBeforeQuestDay(at(5, 59))).toBe(true);
+  });
+
+  it("is inactive at exactly 6:00 AM — the quest-day boundary", () => {
+    expect(isOvernightBeforeQuestDay(at(6, 0))).toBe(false);
   });
 });

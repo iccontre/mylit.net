@@ -46,6 +46,15 @@ type AwarenessCheck = {
   broughtBack?: string;
 };
 
+// createdAt is stored as ISO (see saveAwarenessCheck) but legacy entries saved before this fix
+// may still hold an already-human-readable locale string — display those as-is rather than
+// running them through Date.parse a second time.
+function formatEntryDate(createdAt: string): string {
+  const parsed = Date.parse(createdAt);
+  if (Number.isNaN(parsed)) return createdAt;
+  return new Date(parsed).toLocaleString();
+}
+
 const pixelFont = Platform.select({
   ios: "Menlo",
   android: "monospace",
@@ -97,7 +106,7 @@ export default function AwarenessCheckScreen() {
       id: String(Date.now()),
       mood,
       truth: truth.trim(),
-      createdAt: new Date().toLocaleString(),
+      createdAt: new Date().toISOString(),
     };
 
     const nextChecks = [newCheck, ...checks];
@@ -194,7 +203,7 @@ export default function AwarenessCheckScreen() {
               checks.map((check) => (
                 <View key={check.id} style={styles.entryCard}>
                   <Text style={styles.entryTitle}>{check.mood || check.automaticOrIntentional || "Meditation"}</Text>
-                  <Text style={styles.entryDate}>{check.createdAt}</Text>
+                  <Text style={styles.entryDate}>{formatEntryDate(check.createdAt)}</Text>
 
                   {check.truth ? (
                     <Text style={styles.entryText}>{check.truth}</Text>

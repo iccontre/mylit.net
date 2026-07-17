@@ -104,9 +104,30 @@ export function getGuideMessageSlot(date: Date = new Date()): number {
   return Math.floor((clamped - GUIDE_MESSAGE_WINDOW_START_MINUTES) / GUIDE_MESSAGE_SLOT_MINUTES);
 }
 
-/** Lucid Dreaming Mode is active 9:00 PM through the shared 6:00 AM quest-day boundary. */
+/**
+ * Lucid Dreaming Mode is active local 9:00 PM through 12:59:59 AM — it ends at 1:00 AM, NOT at
+ * the 6:00 AM quest-day boundary (those are deliberately different constants: LDM_END_HOUR
+ * governs the Luna/Low-Flame/Recovery-background/routine-only-board overlay specifically, while
+ * QUEST_DAY_BOUNDARY_HOUR still governs the logical day the pre-sleep routine and its checked
+ * items belong to — the routine must NOT regenerate or reset at 1 AM just because LDM ends;
+ * see isOvernightBeforeQuestDay below for the wider 9 PM-5:59 AM window that still needs to
+ * suppress daytime Progress quests/Morning Check-In after LDM itself has ended).
+ */
 export const LDM_START_HOUR = 21;
+export const LDM_END_HOUR = 1;
 export function isLdmActive(date: Date = new Date()): boolean {
+  const minutes = date.getHours() * 60 + date.getMinutes();
+  return minutes >= LDM_START_HOUR * 60 || minutes < LDM_END_HOUR * 60;
+}
+
+/**
+ * The full overnight span (9 PM through the 6 AM quest-day boundary) that must never show
+ * daytime Progress quests or Morning/Afternoon Check-In prompts — wider than isLdmActive now
+ * that LDM itself ends at 1 AM. Between 1:00 AM and 5:59 AM the app is no longer IN Lucid
+ * Dreaming Mode (no routine-only board override, no forced Luna/Low-Flame), but it is also not
+ * yet a new logical day, so this still gates out same daytime-only UI isLdmActive used to.
+ */
+export function isOvernightBeforeQuestDay(date: Date = new Date()): boolean {
   const minutes = date.getHours() * 60 + date.getMinutes();
   return minutes >= LDM_START_HOUR * 60 || minutes < QUEST_DAY_BOUNDARY_HOUR * 60;
 }

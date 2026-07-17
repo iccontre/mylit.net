@@ -52,6 +52,15 @@ type JournalEntry = {
 
 const STORAGE_KEY = JOURNAL_ENTRIES_KEY;
 
+// createdAt is stored as ISO (see saveJournalEntry) but legacy entries saved before this fix
+// may still hold an already-human-readable locale string — display those as-is rather than
+// running them through Date.parse a second time.
+function formatEntryDate(createdAt: string): string {
+  const parsed = Date.parse(createdAt);
+  if (Number.isNaN(parsed)) return createdAt;
+  return new Date(parsed).toLocaleString();
+}
+
 const pixelFont = Platform.select({
   ios: "Menlo",
   android: "monospace",
@@ -119,7 +128,7 @@ export default function JournalScreen() {
           thoughtImpact: "Neutral",
           honestReframe: "",
           mindLesson: "",
-          createdAt: new Date().toLocaleString(),
+          createdAt: new Date().toISOString(),
         };
         nextEntries = [newEntry, ...entries];
         relatedId = newEntry.id;
@@ -256,7 +265,7 @@ export default function JournalScreen() {
                       <Text style={styles.editBtnText}>✎</Text>
                     </TouchableOpacity>
                   </View>
-                  <Text style={parchmentTextStyles.meta}>{entry.createdAt}{entry.updatedAt ? " · edited" : ""}</Text>
+                  <Text style={parchmentTextStyles.meta}>{formatEntryDate(entry.createdAt)}{entry.updatedAt ? " · edited" : ""}</Text>
                   <Text style={styles.entryMood}>
                     Mood: {entry.mood.trim() ? `${entry.mood}/10` : "Not entered"}
                   </Text>
