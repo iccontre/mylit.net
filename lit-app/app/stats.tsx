@@ -22,6 +22,7 @@ import { useMobileFrame } from "../constants/mobileLayout";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { getSession, signOut } from "../lib/auth";
 import {
+  computeAuthoritativeLifetimeSteps,
   computeFreshRankBonuses,
   computeItemStepsFromSources,
   computeTodayScopedEarnedSteps,
@@ -431,12 +432,12 @@ export default function StatsScreen() {
       todayCompletions,
     });
     const affirmationsCount = Array.isArray(affirmations) ? affirmations.length : 0;
-    // Already all-time cumulative on their own — added on top of the per-day ledger rather
-    // than banked into it (banking them too would double count them every future day).
-    const alwaysCumulativeSteps = affirmationsCount + safeNumber(userStats.totalSteps, 0);
-    // Same authoritative per-day ledger Home reads (see reconcileMonotonicTotalSteps) — this
+    // Same reconciled per-day ledger Home reads (see reconcileMonotonicTotalSteps) — this
     // actually accumulates across days instead of freezing at one historical peak.
-    const displayEarnedSteps = (await reconcileMonotonicTotalSteps(todayScopedEarnedSteps)) + alwaysCumulativeSteps;
+    const stepsFloor = await reconcileMonotonicTotalSteps(todayScopedEarnedSteps);
+    // computeAuthoritativeLifetimeSteps is THE single shared formula Home and the leaderboard
+    // also use — Stats no longer re-derives it inline (see lib/questProgress.ts).
+    const displayEarnedSteps = computeAuthoritativeLifetimeSteps({ stepsFloor, affirmationsCount, userStats });
     const { rankBonusPool, awardedThresholds } = computeFreshRankBonuses(displayEarnedSteps);
     const prevAwarded = Array.isArray(userStats.rankBonusesAwarded) ? userStats.rankBonusesAwarded : [];
     const hasNewBonuses = awardedThresholds.some(t => !prevAwarded.includes(t));

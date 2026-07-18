@@ -34,7 +34,8 @@ import {
   buildForcedRecoveryItem,
   collectExpiredUnresolvedQuickThoughts,
   collectTodayCalendarItems,
-  computeFreshRankBonuses,
+  computeAuthoritativeLifetimeSteps,
+  computeAuthoritativeStepsForRank,
   computeTodayScopedEarnedSteps,
   findNextScheduledItem,
   FORCED_RECOVERY_MESSAGE,
@@ -1864,18 +1865,15 @@ export default function HomeScreen() {
     quickThoughts: queueItems,
     todayCompletions: completedQuests,
   });
-  // Already all-time cumulative on their own (never reset day-to-day), so they're added on
-  // top of the per-day ledger rather than banked into it — banking them too would double
-  // count them on every future day. See reconcileMonotonicTotalSteps.
-  const alwaysCumulativeSteps = affirmationsCount + (userStats.totalSteps ?? 0);
   const completedCount = completedQuests.length;
   const totalCount = allHomeItems.length + completedCount;
   // stepsFloor is the sum of the per-day earned-steps ledger (see reconcileMonotonicTotalSteps)
   // — it actually accumulates across days, unlike a same-day-only recompute maxed against a
   // single historical peak (the old behavior, which is why totals appeared to stop growing).
-  const displayedTotalSteps = stepsFloor + alwaysCumulativeSteps;
-  // Same bonus-inclusive total the Stats page ranks with, so Home and Stats agree.
-  const totalStepsForRank = displayedTotalSteps + computeFreshRankBonuses(displayedTotalSteps).rankBonusPool;
+  // computeAuthoritativeLifetimeSteps/computeAuthoritativeStepsForRank are the SAME functions
+  // Stats and the server-side leaderboard use — Home no longer re-derives this formula inline.
+  const displayedTotalSteps = computeAuthoritativeLifetimeSteps({ stepsFloor, affirmationsCount, userStats });
+  const totalStepsForRank = computeAuthoritativeStepsForRank({ stepsFloor, affirmationsCount, userStats });
   const rankDisplay = stepRank ? `#${stepRank.rank}` : "Unranked";
 
   useEffect(() => {

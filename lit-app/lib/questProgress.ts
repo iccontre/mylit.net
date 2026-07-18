@@ -1184,6 +1184,34 @@ export function computeFreshRankBonuses(earnedSteps: number): { rankBonusPool: n
 }
 
 /**
+ * THE single authoritative lifetime-steps formula — Home and Stats each used to re-derive this
+ * same sum inline and independently (stepsFloor + alwaysCumulativeSteps), which is how a future
+ * edit to one screen's inline copy could silently diverge from the other's. Both now call this
+ * instead. `stepsFloor` is the already-reconciled per-day ledger sum (see
+ * reconcileMonotonicTotalSteps) — this function does not itself reconcile anything, it only
+ * combines the reconciled floor with the two all-time-cumulative-on-their-own inputs
+ * (affirmations, direct USER_STATS_KEY.totalSteps) exactly once, matching the "never double-bank
+ * these into the daily ledger" rule documented on computeTodayScopedEarnedSteps.
+ */
+export function computeAuthoritativeLifetimeSteps(input: {
+  stepsFloor: number;
+  affirmationsCount: number;
+  userStats?: { totalSteps?: number };
+}): number {
+  return safeNumber(input.stepsFloor, 0) + safeNumber(input.affirmationsCount, 0) + safeNumber(input.userStats?.totalSteps, 0);
+}
+
+/** Adds the one-time skill-tier rank bonus pool on top of computeAuthoritativeLifetimeSteps's
+ *  result — this exact sum is what Home, Stats, and the server-side leaderboard rank/compare
+ *  against (see lib/stepRank.ts's syncAndGetStepRank and get_leaderboard_top3 in
+ *  supabase/migrations/20260718000000_leaderboard.sql, which both ultimately store/compare this
+ *  same value). */
+export function computeAuthoritativeStepsForRank(input: { stepsFloor: number; affirmationsCount: number; userStats?: { totalSteps?: number } }): number {
+  const lifetimeSteps = computeAuthoritativeLifetimeSteps(input);
+  return lifetimeSteps + computeFreshRankBonuses(lifetimeSteps).rankBonusPool;
+}
+
+/**
  * ROOT CAUSE of "steps not being added" for recurring checklist habits: buildStableItemId
  * returns the bare rawId (no date component) whenever one is supplied — which checklist,
  * quick-thought, and calendar items all do — so the SAME item has the SAME id every day. A

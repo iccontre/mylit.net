@@ -1,6 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import {
+  computeAuthoritativeLifetimeSteps,
+  computeAuthoritativeStepsForRank,
   computeTodayScopedEarnedSteps,
   computeTotalEarnedSteps,
   getTodayKey,
@@ -157,6 +159,34 @@ describe("Home and Stats read the same authoritative total", () => {
     const statsInput = { dayPlan: null, quickThoughts: [], todayCompletions, userStats: { totalSteps: 10 } };
     expect(computeTotalEarnedSteps(homeInput)).toBe(computeTotalEarnedSteps(statsInput));
     expect(computeTotalEarnedSteps(homeInput)).toBe(14);
+  });
+});
+
+describe("computeAuthoritativeLifetimeSteps/computeAuthoritativeStepsForRank — the single formula Home, Stats, and the server-side leaderboard all use", () => {
+  it("combines the reconciled floor with affirmations and userStats.totalSteps exactly once each", () => {
+    const total = computeAuthoritativeLifetimeSteps({ stepsFloor: 100, affirmationsCount: 5, userStats: { totalSteps: 20 } });
+    expect(total).toBe(125);
+  });
+
+  it("Home's inputs and Stats' inputs produce an identical lifetime total from the same underlying data", () => {
+    const homeResult = computeAuthoritativeLifetimeSteps({ stepsFloor: 156, affirmationsCount: 3, userStats: { totalSteps: 7 } });
+    const statsResult = computeAuthoritativeLifetimeSteps({ stepsFloor: 156, affirmationsCount: 3, userStats: { totalSteps: 7 } });
+    expect(homeResult).toBe(statsResult);
+    expect(homeResult).toBe(166);
+  });
+
+  it("totals above 156 remain correct (no cap, no reset)", () => {
+    expect(computeAuthoritativeLifetimeSteps({ stepsFloor: 5000, affirmationsCount: 200, userStats: { totalSteps: 300 } })).toBe(5500);
+  });
+
+  it("computeAuthoritativeStepsForRank adds the skill-tier rank bonus pool on top — the exact value synced to the leaderboard", () => {
+    // 250 lifetime steps crosses the 100 and 200 tiers (+10 each) = +20 rank bonus pool.
+    const forRank = computeAuthoritativeStepsForRank({ stepsFloor: 250, affirmationsCount: 0, userStats: {} });
+    expect(forRank).toBe(270);
+  });
+
+  it("missing/undefined inputs default safely to zero rather than throwing or producing NaN", () => {
+    expect(computeAuthoritativeLifetimeSteps({ stepsFloor: 0, affirmationsCount: 0 })).toBe(0);
   });
 });
 
