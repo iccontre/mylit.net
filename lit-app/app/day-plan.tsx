@@ -288,7 +288,7 @@ function timeInInterval(time: string, interval: Interval) {
   return total >= interval.start && total < interval.end;
 }
 
-function createChecklist(day: WeekdayName, saved: Partial<ChecklistItem>[] = []): ChecklistItem[] {
+export function createChecklist(day: WeekdayName, saved: Partial<ChecklistItem>[] = []): ChecklistItem[] {
   if (saved.length === 0) return [];
   return saved.map((item, index) => {
     const text = item.text?.trim() || "Habit action";
@@ -303,6 +303,18 @@ function createChecklist(day: WeekdayName, saved: Partial<ChecklistItem>[] = [])
       text,
       checked: Boolean(item.checked),
       checkedDate: item.checkedDate,
+      // checkedAt/updatedAt/deletedAt were previously dropped here — createChecklist's return
+      // was an explicit field list with no passthrough, so every normalization (every
+      // loadDayPlan call) silently stripped a checklist item's tombstone. That's the root cause
+      // of deleted checklist items resurrecting: once dropped from BOTH dayPlan and
+      // committedPlanRef.current (both built via normalizePlan -> createChecklist), the item
+      // reappeared in the UI on next load, and loadDayPlan's own migration re-persist could then
+      // permanently overwrite canonical storage with the now-tombstone-free version. See
+      // getChecklistItemsForDay's deletedAt filter, which depends on this field actually
+      // surviving normalization to have anything to check.
+      checkedAt: item.checkedAt,
+      updatedAt: item.updatedAt,
+      deletedAt: item.deletedAt,
       steps: item.steps ?? stepsForItem(durationMinutes, kind),
       startTime: item.startTime || TIME_SLOTS[(index + 4) % TIME_SLOTS.length] || "9:00 AM",
       duration: item.duration || formatDurationLabel(durationMinutes),

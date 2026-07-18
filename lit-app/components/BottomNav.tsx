@@ -1,6 +1,7 @@
 import { useRouter } from "expo-router";
 import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
+import { CalendarDateIcon } from "./CalendarDateIcon";
 import { BOTTOM_NAV_HEIGHT } from "../constants/mobileLayout";
 import { hubPalettes, woodBorder, woodVoid } from "../constants/worldTokens";
 
@@ -59,7 +60,13 @@ export function BottomNav({ activeRoute, homeAccent, bottomOffset = 8 }: BottomN
             style={[styles.navButton, active && { borderColor: accent, backgroundColor: "rgba(0,0,0,0.25)" }]}
             onPress={() => router.push(route.href as "/")}
           >
-            <Text style={[styles.navIcon, active && { color: accent }]}>{route.icon}</Text>
+            {route.key === "calendar" ? (
+              <View style={styles.calendarIconWrap}>
+                <CalendarDateIcon selected={active} accent={ROUTE_ACCENTS.calendar} />
+              </View>
+            ) : (
+              <Text style={[styles.navIcon, active && { color: accent }]}>{route.icon}</Text>
+            )}
             <Text style={[styles.navLabel, active && { color: accent }]}>{route.label}</Text>
           </TouchableOpacity>
         );
@@ -99,6 +106,7 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     lineHeight: 20,
   },
+  calendarIconWrap: { height: 20, alignItems: "center", justifyContent: "center" },
   navLabel: {
     color: "#D8C9A3",
     fontFamily: pixelFont,

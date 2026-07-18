@@ -28,6 +28,7 @@ import {
   inferScheduledClassification,
   isPlannedAheadEligible,
   isScheduledItemExpired,
+  QUEST_DAY_BOUNDARY_HOUR,
   parseDurationMinutes,
   parseTimeToMinutes,
   TODAY_QUEST_DURATION_MINUTES,
@@ -777,8 +778,9 @@ export function getChecklistItemsForDay(plan: DayPlanRaw | null | undefined, day
 
 /** "Set Pre-Sleep Intention" only appears on the Quest Board at/after this local hour. */
 export const PRE_SLEEP_INTENTION_UNLOCK_HOUR = 21;
-/** Matches morning-intention-reflection.tsx's MORNING_UNLOCK_HOUR — Pre-Sleep Intention's window closes when Morning Reflection's opens. */
-const MORNING_REFLECTION_UNLOCK_HOUR = 7;
+/** Matches isMorningReflectionAvailable's opening edge (QUEST_DAY_BOUNDARY_HOUR, 6:00 AM) in
+ *  scheduling.ts — Pre-Sleep Intention's window closes exactly when Morning Reflection's opens. */
+const MORNING_REFLECTION_UNLOCK_HOUR = QUEST_DAY_BOUNDARY_HOUR;
 
 export function normalizeQuestItems(input: {
   quests: QuestLike[];
