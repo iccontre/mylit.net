@@ -9,6 +9,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
   useWindowDimensions,
@@ -39,6 +40,12 @@ import {
 import { TODAY_QUEST_STEPS } from "../lib/scheduling";
 import { isSupabaseConfigured } from "../lib/supabase";
 import { syncAndGetStepRank, type StepRank } from "../lib/stepRank";
+import {
+  getLeaderboardTop3,
+  loadMyLeaderboardSettings,
+  updateMyLeaderboardSettings,
+  type LeaderboardEntry,
+} from "../lib/leaderboard";
 import { APP_VERSION } from "../lib/appVersion.generated";
 import { fetchLiveVersion } from "../lib/pwaUpdate";
 import { ProgressRecoveryModal } from "../components/ProgressRecoveryModal";
@@ -819,7 +826,50 @@ function SkillPanel({ computed }: { computed: ComputedStats }) {
   );
 }
 
+const MEDALS: Record<1 | 2 | 3, { emoji: string; label: string; accent: string }> = {
+  1: { emoji: "🥇", label: "1st", accent: "#EAB308" },
+  2: { emoji: "🥈", label: "2nd", accent: "#94A3B8" },
+  3: { emoji: "🥉", label: "3rd", accent: "#B45309" },
+};
+
 function RankPanel({ stepRank }: { stepRank: StepRank | null }) {
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[] | null>(null);
+  const [leaderboardLoaded, setLeaderboardLoaded] = useState(false);
+  const [showLeaderboardInfo, setShowLeaderboardInfo] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsVisible, setSettingsVisible] = useState(true);
+  const [settingsName, setSettingsName] = useState("");
+  const [settingsSaveState, setSettingsSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  useEffect(() => {
+    // Fetch-once on open — a leaderboard refresh only ever reads (getLeaderboardTop3 never
+    // touches user_step_totals.total_steps), so it can never change the user's own displayed
+    // step total on this or any other panel.
+    void getLeaderboardTop3().then((entries) => {
+      setLeaderboard(entries);
+      setLeaderboardLoaded(true);
+    });
+    void loadMyLeaderboardSettings().then((settings) => {
+      if (!settings) return;
+      setSettingsVisible(settings.visible);
+      setSettingsName(settings.displayName);
+    });
+  }, []);
+
+  async function saveSettings() {
+    if (settingsSaveState === "saving") return;
+    setSettingsSaveState("saving");
+    const ok = await updateMyLeaderboardSettings({ visible: settingsVisible, displayName: settingsName });
+    if (ok) {
+      setSettingsSaveState("saved");
+      const refreshed = await getLeaderboardTop3();
+      setLeaderboard(refreshed);
+      setTimeout(() => setSettingsSaveState("idle"), 1500);
+    } else {
+      setSettingsSaveState("error");
+    }
+  }
+
   return (
     <>
       <Text style={styles.modalTitle}>RANK</Text>
@@ -831,6 +881,43 @@ function RankPanel({ stepRank }: { stepRank: StepRank | null }) {
           <Text style={styles.levelText}>{stepRank ? `of ${stepRank.totalPlayers} players` : "Sign in to rank"}</Text>
         </View>
       </View>
+
+      <View style={styles.leaderboardHeaderRow}>
+        <Text style={styles.sectionTitle}>LEADERBOARD</Text>
+        <TouchableOpacity style={styles.leaderboardInfoBtn} onPress={() => setShowLeaderboardInfo(true)} accessibilityLabel="How the leaderboard works">
+          <Text style={styles.leaderboardInfoBtnText}>?</Text>
+        </TouchableOpacity>
+      </View>
+
+      {!leaderboardLoaded ? null : leaderboard === null ? (
+        <View style={styles.smallWinCard}>
+          <Text style={styles.smallWinText}>Leaderboard isn&apos;t available right now — sign in and try again later.</Text>
+        </View>
+      ) : leaderboard.length === 0 ? (
+        <View style={styles.smallWinCard}>
+          <Text style={styles.smallWinText}>No one&apos;s on the board yet — keep earning steps to be the first.</Text>
+        </View>
+      ) : (
+        leaderboard.map((entry) => {
+          const medal = MEDALS[entry.rank];
+          return (
+            <View key={entry.userId} style={[styles.leaderboardRow, { borderColor: medal.accent }, entry.isCurrentUser && styles.leaderboardRowMine]}>
+              <Text style={styles.leaderboardMedal}>{medal.emoji}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.leaderboardName} numberOfLines={1}>
+                  {medal.label} — {entry.displayName}{entry.isCurrentUser ? " (you)" : ""}
+                </Text>
+              </View>
+              <Text style={[styles.leaderboardSteps, { color: medal.accent }]}>{entry.totalSteps.toLocaleString()} steps</Text>
+            </View>
+          );
+        })
+      )}
+
+      <TouchableOpacity style={styles.leaderboardSettingsLink} onPress={() => setShowSettings(true)}>
+        <Text style={styles.leaderboardSettingsLinkText}>Leaderboard privacy settings ›</Text>
+      </TouchableOpacity>
+
       <View style={styles.smallWinCard}>
         <Text style={styles.smallWinTitle}>HOW RANK WORKS</Text>
         <Text style={styles.smallWinText}>
@@ -840,6 +927,53 @@ function RankPanel({ stepRank }: { stepRank: StepRank | null }) {
         </Text>
       </View>
       <LunaNote text="Rank is a mirror, not a judgment. Compare kindly." />
+
+      <Modal visible={showLeaderboardInfo} transparent animationType="fade" onRequestClose={() => setShowLeaderboardInfo(false)}>
+        <View style={styles.leaderboardInfoBackdrop}>
+          <View style={styles.leaderboardInfoPanel}>
+            <Text style={styles.smallWinTitle}>WHAT WILL BE SHARED?</Text>
+            <Text style={styles.smallWinText}>
+              • The leaderboard uses your lifetime earned steps — the same total shown on Home and Stats.{"\n\n"}
+              • Only your public or anonymized identity is shown — never your email or private profile data.{"\n\n"}
+              • You can hide yourself from the leaderboard or set a display name any time in Leaderboard privacy settings.{"\n\n"}
+              • The leaderboard is motivational, not a judgment of your recovery or wellbeing.
+            </Text>
+            <TouchableOpacity style={styles.leaderboardInfoCloseBtn} onPress={() => setShowLeaderboardInfo(false)}>
+              <Text style={styles.leaderboardInfoCloseBtnText}>CLOSE</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={showSettings} transparent animationType="fade" onRequestClose={() => setShowSettings(false)}>
+        <View style={styles.leaderboardInfoBackdrop}>
+          <View style={styles.leaderboardInfoPanel}>
+            <Text style={styles.smallWinTitle}>LEADERBOARD PRIVACY</Text>
+            <TouchableOpacity style={styles.leaderboardToggleRow} onPress={() => setSettingsVisible((v) => !v)}>
+              <View style={[styles.leaderboardCheckbox, settingsVisible && styles.leaderboardCheckboxChecked]}>
+                {settingsVisible ? <Text style={styles.leaderboardCheckboxMark}>✓</Text> : null}
+              </View>
+              <Text style={styles.smallWinText}>Show me on the leaderboard (anonymized unless I set a name below)</Text>
+            </TouchableOpacity>
+            <TextInput
+              style={styles.leaderboardNameInput}
+              placeholder="Optional display name"
+              placeholderTextColor="#94A3B8"
+              value={settingsName}
+              onChangeText={setSettingsName}
+              maxLength={40}
+            />
+            <TouchableOpacity style={styles.leaderboardSaveBtn} disabled={settingsSaveState === "saving"} onPress={() => void saveSettings()}>
+              <Text style={styles.leaderboardSaveBtnText}>
+                {settingsSaveState === "saving" ? "SAVING…" : settingsSaveState === "saved" ? "✓ SAVED" : settingsSaveState === "error" ? "⚠ FAILED — RETRY" : "SAVE"}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.leaderboardInfoCloseBtn} onPress={() => setShowSettings(false)}>
+              <Text style={styles.leaderboardInfoCloseBtnText}>CLOSE</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }
@@ -994,6 +1128,27 @@ const styles = StyleSheet.create({
   rankBadge: { fontSize: 26, marginTop: 4 },
   rankName: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 14, fontWeight: "900", textAlign: "center", marginTop: 4 },
   levelText: { color: "#67E8F9", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", marginTop: 2 },
+  leaderboardHeaderRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 6, marginBottom: 8 },
+  leaderboardInfoBtn: { width: 26, height: 26, borderRadius: 13, borderWidth: 2, borderColor: "#FBBF24", alignItems: "center", justifyContent: "center" },
+  leaderboardInfoBtnText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
+  leaderboardRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#EAD9B6", borderWidth: 3, borderRadius: 8, padding: 10, marginBottom: 8, gap: 10, shadowColor: "#000", shadowOpacity: 0.5, shadowRadius: 0, shadowOffset: { width: 3, height: 3 } },
+  leaderboardRowMine: { backgroundColor: "#F4E8CE" },
+  leaderboardMedal: { fontSize: 22 },
+  leaderboardName: { color: "#4A3620", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
+  leaderboardSteps: { fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
+  leaderboardSettingsLink: { alignItems: "center", paddingVertical: 8, marginBottom: 6 },
+  leaderboardSettingsLinkText: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 11, fontWeight: "800" },
+  leaderboardInfoBackdrop: { flex: 1, backgroundColor: "rgba(2,4,10,0.82)", alignItems: "center", justifyContent: "center", padding: 18 },
+  leaderboardInfoPanel: { width: "100%", maxWidth: 360, backgroundColor: "#EAD9B6", borderWidth: 3, borderColor: "#5C4425", borderRadius: 8, padding: 16, shadowColor: "#000", shadowOpacity: 0.6, shadowRadius: 0, shadowOffset: { width: 4, height: 4 } },
+  leaderboardInfoCloseBtn: { marginTop: 12, borderWidth: 2, borderColor: "#5C4425", borderRadius: 6, paddingVertical: 11, alignItems: "center", backgroundColor: "#E7D3A9" },
+  leaderboardInfoCloseBtnText: { color: "#4A3620", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
+  leaderboardToggleRow: { flexDirection: "row", alignItems: "flex-start", gap: 9, marginTop: 10, marginBottom: 10 },
+  leaderboardCheckbox: { width: 20, height: 20, borderWidth: 2, borderColor: "#5C4425", borderRadius: 4, alignItems: "center", justifyContent: "center", backgroundColor: "#F4E8CE", marginTop: 1 },
+  leaderboardCheckboxChecked: { backgroundColor: "#7C3AED", borderColor: "#4C1D95" },
+  leaderboardCheckboxMark: { color: "#FFFFFF", fontFamily: pixelFont, fontSize: 13, fontWeight: "900" },
+  leaderboardNameInput: { backgroundColor: "#F4E8CE", borderWidth: 2, borderColor: "#5C4425", borderRadius: 7, paddingVertical: 10, paddingHorizontal: 12, color: "#4A3620", fontFamily: pixelFont, fontSize: 13, marginBottom: 12 },
+  leaderboardSaveBtn: { borderWidth: 3, borderColor: "#166534", borderRadius: 7, paddingVertical: 12, alignItems: "center", backgroundColor: "#22C55E" },
+  leaderboardSaveBtnText: { color: "#FFFFFF", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 0.5 },
   rankArrow: { color: "#FBBF24", fontSize: 22, fontWeight: "900", marginHorizontal: 6 },
   progressCard: { borderWidth: 3, borderColor: "#92610A", backgroundColor: "#EAD9B6", borderRadius: 8, padding: 12, marginBottom: 10, shadowColor: "#000", shadowOpacity: 0.5, shadowRadius: 0, shadowOffset: { width: 3, height: 3 } },
   progressTotal: { color: "#4A3620", fontFamily: pixelFont, fontSize: 24, fontWeight: "900", textAlign: "center", marginTop: 4 },
