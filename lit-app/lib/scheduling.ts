@@ -148,6 +148,51 @@ export function isMorningReflectionAvailable(now: Date = new Date(), _timezone?:
 }
 
 /**
+ * Monday-anchored week key (YYYY-MM-DD of that week's Monday) — used specifically for
+ * planned-ahead reward eligibility (targetWeekStartsAt is defined as "local Monday at 6:00 AM
+ * for the scheduled quest week"). Deliberately separate from Calendar's own Sunday-first
+ * week-view convention (see app/calendar.tsx's weekOffset) — those are two different concerns
+ * (how a week is displayed vs. where a reward-eligibility boundary falls) that happen to use
+ * different week-start conventions in this app.
+ */
+export function getMondayWeekKey(date: Date = new Date()): string {
+  const d = new Date(date);
+  const day = d.getDay(); // 0=Sun..6=Sat
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diffToMonday);
+  d.setHours(0, 0, 0, 0);
+  return getDateKey(d);
+}
+
+/** The Monday-anchored week key for the week that starts 7 days after `date`'s own week. */
+export function getNextMondayWeekKey(date: Date = new Date()): string {
+  const nextWeek = new Date(date);
+  nextWeek.setDate(nextWeek.getDate() + 7);
+  return getMondayWeekKey(nextWeek);
+}
+
+/**
+ * The exact instant a given Monday-anchored week "starts" for planned-ahead reward eligibility:
+ * local Monday at 6:00 AM (QUEST_DAY_BOUNDARY_HOUR) — the same quest-day boundary used
+ * everywhere else in the app, not midnight.
+ */
+export function getTargetWeekStartsAt(weekKey: string): Date {
+  const [year, month, day] = weekKey.split("-").map(Number);
+  const d = new Date(year, (month || 1) - 1, day || 1);
+  d.setHours(QUEST_DAY_BOUNDARY_HOUR, 0, 0, 0);
+  return d;
+}
+
+/**
+ * A user-created quest is "planned ahead" (eligible for the 1.5x completion reward) only if it
+ * was created strictly before the local Monday 6:00 AM start of the week it's scheduled for —
+ * see getTargetWeekStartsAt. Created at or after that instant earns the normal 1x rate.
+ */
+export function isPlannedAheadEligible(createdAt: Date, targetWeekKey: string): boolean {
+  return createdAt.getTime() < getTargetWeekStartsAt(targetWeekKey).getTime();
+}
+
+/**
  * Deterministic pick from `pool` for a given salt (typically `${userSalt}-${questDayKey}-${slot}`)
  * — same hash approach as questGeneration.ts's pickRotatingTemplate. The same account resolves
  * the same salt to the same index everywhere, so every device shows identical content for the
@@ -748,32 +793,38 @@ export function isScheduledItemExpired(
 
 export function collectQuickThoughtScheduledItems(items: unknown[] = []): ScheduledQuestLike[] {
   if (!Array.isArray(items)) return [];
-  return items.map((raw, index) => {
-    const item = raw as Partial<ScheduledQuestLike>;
-    const durationMinutes = parseDurationMinutes(item.durationMinutes ?? item.duration, 30);
-    const classification = inferScheduledClassification(item);
-    return {
-      id: String(item.id ?? `quick-thought-${index}`),
-      source: "quickThought",
-      title: getItemTitle(item),
-      text: item.text,
-      task: item.task,
-      note: item.note,
-      type: item.type,
-      date: item.date ?? item.dateKey,
-      weekday: item.weekday,
-      startTime: item.startTime ?? item.time,
-      time: item.time ?? item.startTime,
-      duration: item.duration ?? formatDurationLabel(durationMinutes),
-      durationMinutes,
-      steps: item.steps ?? getQuickThoughtSteps(durationMinutes),
-      status: item.status ?? "scheduled",
-      kind: "quickThought",
-      classification,
-      createdAt: item.createdAt,
-      completedAt: item.completedAt,
-    };
-  });
+  // Tombstoned items (deletedAt set — see TOMORROW_QUEUE_KEY's array-merge deletion ratchet in
+  // progressStore.ts) are kept in storage for cross-device merge correctness but must never
+  // surface here — this is the single shared mapper Day Plan, Calendar, and Home's board all
+  // read scheduled quick-thought/future quests through.
+  return items
+    .filter((raw) => !(raw as { deletedAt?: string } | null)?.deletedAt)
+    .map((raw, index) => {
+      const item = raw as Partial<ScheduledQuestLike>;
+      const durationMinutes = parseDurationMinutes(item.durationMinutes ?? item.duration, 30);
+      const classification = inferScheduledClassification(item);
+      return {
+        id: String(item.id ?? `quick-thought-${index}`),
+        source: "quickThought",
+        title: getItemTitle(item),
+        text: item.text,
+        task: item.task,
+        note: item.note,
+        type: item.type,
+        date: item.date ?? item.dateKey,
+        weekday: item.weekday,
+        startTime: item.startTime ?? item.time,
+        time: item.time ?? item.startTime,
+        duration: item.duration ?? formatDurationLabel(durationMinutes),
+        durationMinutes,
+        steps: item.steps ?? getQuickThoughtSteps(durationMinutes),
+        status: item.status ?? "scheduled",
+        kind: "quickThought",
+        classification,
+        createdAt: item.createdAt,
+        completedAt: item.completedAt,
+      };
+    });
 }
 
 function normalizeChecklistItems(raw: unknown): unknown[] {

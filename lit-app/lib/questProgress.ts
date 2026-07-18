@@ -26,6 +26,7 @@ import {
   getStepsForDuration,
   getStepsForItem,
   inferScheduledClassification,
+  isPlannedAheadEligible,
   isScheduledItemExpired,
   parseDurationMinutes,
   parseTimeToMinutes,
@@ -108,6 +109,40 @@ export type QuestKind = "progress" | "recovery";
 /** User-facing label for a quest source — "Quick Thought" displays as "Quest" everywhere in the UI. */
 export function questSourceLabel(source: QuestSource): string {
   return source === "Quick Thought" ? "Quest" : source;
+}
+
+/**
+ * Persisted once at creation (or recomputed on a reschedule to a different week) — never
+ * re-derived from whether a badge happens to be rendered. See computePlannedAheadReward and
+ * lib/scheduling.ts's isPlannedAheadEligible/getTargetWeekStartsAt for the actual eligibility
+ * rule (created strictly before the target week's local Monday 6:00 AM).
+ */
+export type PlannedAheadReward = {
+  eligible: boolean;
+  multiplier: 1 | 1.5;
+  targetWeekKey: string;
+  baseSteps: number;
+  finalSteps: number;
+};
+
+/**
+ * Computes the planned-ahead reward metadata for a quest being created (or rescheduled) for
+ * `targetWeekKey`, given when it was actually created (`createdAt`) and its base step value
+ * (already duration/kind-derived via getStepsForItem). Excludes mandatory Eat/Rest gates and
+ * system-generated events by construction — this is only ever called from explicit
+ * user-planned-quest creation flows (see app/day-plan.tsx's future-quest section), never from
+ * gate/system quest generation.
+ */
+export function computePlannedAheadReward(createdAt: Date, targetWeekKey: string, baseSteps: number): PlannedAheadReward {
+  const eligible = isPlannedAheadEligible(createdAt, targetWeekKey);
+  const multiplier: 1 | 1.5 = eligible ? 1.5 : 1;
+  return {
+    eligible,
+    multiplier,
+    targetWeekKey,
+    baseSteps,
+    finalSteps: Math.ceil(baseSteps * multiplier),
+  };
 }
 
 export type CompletionEntry = {

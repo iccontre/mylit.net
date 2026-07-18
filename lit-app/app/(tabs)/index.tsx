@@ -77,6 +77,7 @@ import {
   getMandatoryQuestRestoreEnergy,
   getQuestDayKey,
   getStepsForItem,
+  getNextMondayWeekKey,
   isLdmActive,
   isOvernightBeforeQuestDay,
   isMandatoryQuestTitle,
@@ -2211,6 +2212,17 @@ export default function HomeScreen() {
                     <Text style={styles.createQuestBtnText}>+ CREATE A QUEST</Text>
                   </TouchableOpacity>
                   <Text style={styles.createQuestNote}>Create a quest for today or a day you choose.</Text>
+                  <TouchableOpacity
+                    style={[styles.manageNextWeekBtn, { borderColor: theme.accent }]}
+                    onPress={() =>
+                      navigateWithHaptic({
+                        pathname: "/day-plan",
+                        params: { weekKey: getNextMondayWeekKey(timeNow), source: "home-next-week" },
+                      })
+                    }
+                  >
+                    <Text style={[styles.manageNextWeekBtnText, { color: theme.accent }]}>📅 MANAGE NEXT WEEK&apos;S QUESTS</Text>
+                  </TouchableOpacity>
                 </>
               ) : null}
 
@@ -2953,6 +2965,17 @@ const styles = StyleSheet.create({
   },
   createQuestBtnText: { color: "#F8FAFC", fontFamily: "monospace", fontSize: 13, fontWeight: "900", letterSpacing: 0.5 },
   createQuestNote: { color: "#94A3B8", fontSize: 10, fontWeight: "700", textAlign: "center", marginTop: 6, marginBottom: 10 },
+  manageNextWeekBtn: {
+    borderWidth: 2,
+    borderRadius: 8,
+    minHeight: 44,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(62,42,26,0.85)",
+    marginBottom: 10,
+  },
+  manageNextWeekBtnText: { fontFamily: "monospace", fontSize: 12, fontWeight: "900", letterSpacing: 0.4 },
   hubGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 10 },
   hubGridBtn: {
     flexBasis: "48%",

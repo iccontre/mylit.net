@@ -224,6 +224,7 @@ export const ARRAY_MERGE_PROGRESS_KEYS = new Set<SyncableProgressKey>([
   FOOD_LOGS_KEY,
   GUIDE_CONTEXT_RECORDS_KEY,
   QUEST_FULFILLMENT_KEY,
+  TOMORROW_QUEUE_KEY,
 ]);
 
 export function isSyncableProgressKey(key: string): key is SyncableProgressKey {

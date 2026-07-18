@@ -20,11 +20,13 @@ import {
   TOMORROW_QUEUE_KEY,
   checkUserScheduledQuestCapacity,
   computeChecklistMinutesForDay,
+  computePlannedAheadReward,
   computeUserScheduledMinutesForDay,
   formatChecklistTimeLabel,
   formatPlannedDurationLabel,
   getChecklistItemsForDay,
   getQuestCapacityMinutes,
+  type PlannedAheadReward,
 } from "../lib/questProgress";
 import { sanitizeDayPlanChecklists } from "../lib/dayPlanChecklist";
 import { emitQuestCompletionFeedback } from "../lib/completionFeedback";
@@ -38,8 +40,10 @@ import {
   generateTimeSlots,
   getDateKey,
   getEnergyDelta,
+  getMondayWeekKey,
   getRequiredRecoveryBlockForDate,
   getStepsForItem,
+  getTargetWeekStartsAt,
   inferScheduledClassification,
   parseDurationMinutes,
   parseTimeToMinutes,
@@ -134,6 +138,14 @@ type QuickThoughtLike = {
   completedAt?: string;
   title?: string;
   text?: string;
+  steps?: number;
+  classification?: "progress" | "recovery";
+  createdAt?: string;
+  updatedAt?: string;
+  /** Tombstone — see collectQuickThoughtScheduledItems's filter in lib/scheduling.ts. Kept in
+   *  storage (never physically removed) so a deletion survives cross-device merge. */
+  deletedAt?: string;
+  plannedAheadReward?: PlannedAheadReward;
 };
 
 const CHECKIN_KEY = "lit_latest_checkin";
@@ -405,14 +417,23 @@ function checklistItemSignature(item: ChecklistItem): string {
 
 export default function DayPlanScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ openTodayQuest?: string; openHobby?: string }>();
+  const params = useLocalSearchParams<{ openTodayQuest?: string; openHobby?: string; weekKey?: string; source?: string }>();
   const mobile = useMobileFrame();
   const [dayPlan, setDayPlan] = useState<DayPlan>(() => createDefaultPlan());
   const [selectedDay, setSelectedDay] = useState<WeekdayName>(todayWeekday());
-  // Purely a display concern — browsing another week's actual dates never changes what
-  // "selectedDay" (a recurring weekday) means, or which real week capacity checks resolve
-  // against (resolveDateForWeekday always anchors to the true current week).
-  const [weekOffset, setWeekOffset] = useState(0);
+  // Browsing another week only ever changes what recurring-weekday editing DISPLAYS as (the
+  // Weekly Habit / checklist template itself stays the same across every week —
+  // resolveDateForWeekday always anchors to the true current week for that). Weeks beyond the
+  // current one (weekOffset > 0) additionally unlock the Future Quests section below, which
+  // creates real dated, one-time quests for the selected day in that specific week (see
+  // futureSelectedDateKey) — that part is NOT a display-only concern.
+  const [weekOffset, setWeekOffset] = useState<number>(() => {
+    if (!params.weekKey) return 0;
+    const targetMs = getTargetWeekStartsAt(params.weekKey).getTime();
+    const thisWeekMs = getTargetWeekStartsAt(getMondayWeekKey(new Date())).getTime();
+    const offset = Math.round((targetMs - thisWeekMs) / (7 * 24 * 60 * 60 * 1000));
+    return Number.isFinite(offset) ? Math.max(0, Math.min(offset, 8)) : 0;
+  });
   const displayWeekDays = useMemo(() => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -445,6 +466,14 @@ export default function DayPlanScreen() {
   const openedFromParamsRef = useRef(false);
   const [quickThoughts, setQuickThoughts] = useState<QuickThoughtLike[]>([]);
   const committedPlanRef = useRef<DayPlan>(createDefaultPlan());
+
+  // --- Future Quests (weekOffset > 0): dated, one-time quests for a future week, written to
+  // the same canonical TOMORROW_QUEUE_KEY / QueueItem record Calendar and Home's board already
+  // read (see collectQuickThoughtScheduledItems) — no parallel store. ---
+  const [futureTitle, setFutureTitle] = useState("");
+  const [futureDuration, setFutureDuration] = useState<string>(CHECKLIST_DURATIONS[1]);
+  const [futureKind, setFutureKind] = useState<"progress" | "recovery">("progress");
+  const [futureSaveState, setFutureSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
   useEffect(() => {
     void (async () => {
@@ -1103,6 +1132,74 @@ export default function DayPlanScreen() {
   const selectedDayChecklistMinutes = computeChecklistMinutesForDay(committedPlanRef.current, selectedDay);
   const selectedDayChecklistAtLimit = selectedDayChecklistMinutes >= MAX_CHECKLIST_MINUTES_PER_DAY;
   const selectedDayDateKey = useMemo(() => resolveDateForWeekday(selectedDay), [selectedDay]);
+
+  // The real calendar date being viewed in Future Quests — unlike selectedDayDateKey (which
+  // always anchors to the CURRENT week regardless of weekOffset), this one actually moves with
+  // weekOffset, since Future Quests creates dated items for a specific future day, not a
+  // recurring weekday template.
+  const futureSelectedDate = displayWeekDays[WEEKDAYS.indexOf(selectedDay)];
+  const futureSelectedDateKey = getDateKey(futureSelectedDate);
+  const futureWeekKey = useMemo(() => getMondayWeekKey(displayWeekDays[0]), [displayWeekDays]);
+  const futureWeekLabel = weekOffset === 0 ? "CURRENT WEEK" : weekOffset === 1 ? "NEXT WEEK" : "FUTURE WEEK";
+  const futureDayItems = quickThoughts.filter((item) => !item.deletedAt && (item.date ?? item.dateKey) === futureSelectedDateKey);
+
+  async function saveFutureQuest() {
+    if (futureSaveState === "saving" || futureSaveState === "saved" || !futureTitle.trim()) return;
+    setFutureSaveState("saving");
+    try {
+      const durationMinutes = parseDurationMinutes(futureDuration, 30);
+      const baseSteps = getStepsForItem(durationMinutes, futureKind);
+      const now = new Date();
+      const reward = computePlannedAheadReward(now, futureWeekKey, baseSteps);
+      const newItem: QuickThoughtLike = {
+        id: `future-${Date.now()}`,
+        date: futureSelectedDateKey,
+        dateKey: futureSelectedDateKey,
+        title: futureTitle.trim(),
+        text: futureTitle.trim(),
+        duration: futureDuration,
+        durationMinutes,
+        classification: futureKind,
+        status: "scheduled",
+        steps: reward.finalSteps,
+        plannedAheadReward: reward,
+        createdAt: now.toISOString(),
+        updatedAt: now.toISOString(),
+      };
+      const existingRaw = await AsyncStorage.getItem(TOMORROW_QUEUE_KEY);
+      let existing: QuickThoughtLike[] = [];
+      if (existingRaw) {
+        try {
+          const parsed = JSON.parse(existingRaw);
+          if (Array.isArray(parsed)) existing = parsed;
+        } catch {
+          existing = [];
+        }
+      }
+      const next = [newItem, ...existing];
+      await persistProgressKeys({ [TOMORROW_QUEUE_KEY]: JSON.stringify(next) });
+      setQuickThoughts(next);
+      void recordAgentEvent({
+        type: "path_updated",
+        sourcePage: "day-plan",
+        relatedItemId: newItem.id,
+        metadata: { action: "future_quest_created", targetWeekKey: futureWeekKey, plannedAheadEligible: reward.eligible },
+      });
+      setFutureTitle("");
+      setFutureSaveState("saved");
+      setTimeout(() => setFutureSaveState("idle"), 1500);
+    } catch (error) {
+      console.warn("saveFutureQuest error:", error);
+      setFutureSaveState("error");
+    }
+  }
+
+  async function deleteFutureQuest(id: string) {
+    const now = new Date().toISOString();
+    const next = quickThoughts.map((item) => (item.id === id ? { ...item, deletedAt: now, updatedAt: now } : item));
+    setQuickThoughts(next);
+    await persistProgressKeys({ [TOMORROW_QUEUE_KEY]: JSON.stringify(next) });
+  }
   // `checked` is a single mutable flag on a recurring item, not one per day — display must
   // compare checkedDate to the day being viewed, or a repeating item completed once shows
   // checked on every day it repeats on. Ambiguous/legacy data (checked but no checkedDate)
@@ -1181,12 +1278,13 @@ export default function DayPlanScreen() {
               })()}
             </View>
 
+            <Text style={styles.futureWeekLabel}>{futureWeekLabel}</Text>
             <WeekDaySelector
               weekDays={displayWeekDays}
               selectedIndex={WEEKDAYS.indexOf(selectedDay)}
               onSelectDay={(index) => setSelectedDay(WEEKDAYS[index])}
-              onPrevWeek={() => setWeekOffset((current) => current - 1)}
-              onNextWeek={() => setWeekOffset((current) => current + 1)}
+              onPrevWeek={() => setWeekOffset((current) => Math.max(0, current - 1))}
+              onNextWeek={() => setWeekOffset((current) => Math.min(8, current + 1))}
               isToday={(date) => getDateKey(date) === getDateKey(new Date())}
             />
 
@@ -1198,6 +1296,89 @@ export default function DayPlanScreen() {
                 {formatPlannedDurationLabel(selectedDayRemainingMinutes)} left today · {boardMode} ({boardMode === "Recovery" ? "5h" : "8h"} limit)
               </Text>
             </View>
+
+            {weekOffset > 0 ? (
+              <View style={styles.futureQuestsCard}>
+                <Text style={styles.futureQuestsTitle}>
+                  📅 FUTURE QUESTS — {new Date(`${futureSelectedDateKey}T00:00:00`).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })}
+                </Text>
+                <Text style={styles.futureQuestsHint}>
+                  Planned this far ahead earns 1.5× steps on completion — quests created after this week begins earn the normal rate.
+                </Text>
+
+                {futureDayItems.map((item) => (
+                  <View key={item.id} style={styles.futureQuestRow}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.futureQuestRowTitle}>{item.title || item.text}</Text>
+                      <Text style={styles.futureQuestRowMeta}>
+                        {item.duration} · {item.classification === "recovery" ? "Recovery" : "Progress"} · +{item.steps ?? 0} steps
+                      </Text>
+                      {item.plannedAheadReward?.eligible ? (
+                        <Text style={styles.futureQuestBadge}>✨ PLANNED AHEAD · 1.5× STEPS</Text>
+                      ) : null}
+                    </View>
+                    <TouchableOpacity style={styles.futureQuestDeleteBtn} onPress={() => void deleteFutureQuest(item.id!)}>
+                      <Text style={styles.futureQuestDeleteBtnText}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+                {futureDayItems.length === 0 ? (
+                  <Text style={styles.futureQuestsEmpty}>No quests planned for this day yet.</Text>
+                ) : null}
+
+                <TextInput
+                  style={formStyles.input}
+                  placeholder="Quest title"
+                  placeholderTextColor="#94A3B8"
+                  value={futureTitle}
+                  onChangeText={setFutureTitle}
+                />
+                <View style={styles.futureQuestOptionRow}>
+                  {CHECKLIST_DURATIONS.map((option) => (
+                    <TouchableOpacity
+                      key={option}
+                      style={[styles.futureQuestChip, futureDuration === option && styles.futureQuestChipActive]}
+                      onPress={() => setFutureDuration(option)}
+                    >
+                      <Text style={[styles.futureQuestChipText, futureDuration === option && styles.futureQuestChipTextActive]}>{option}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <View style={styles.futureQuestOptionRow}>
+                  {(["progress", "recovery"] as const).map((option) => (
+                    <TouchableOpacity
+                      key={option}
+                      style={[styles.futureQuestChip, futureKind === option && styles.futureQuestChipActive]}
+                      onPress={() => setFutureKind(option)}
+                    >
+                      <Text style={[styles.futureQuestChipText, futureKind === option && styles.futureQuestChipTextActive]}>
+                        {option === "progress" ? "Progress" : "Recovery"}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+
+                <TouchableOpacity
+                  style={[
+                    styles.futureQuestSaveBtn,
+                    (!futureTitle.trim() || futureSaveState === "saving") && styles.futureQuestSaveBtnDisabled,
+                    futureSaveState === "error" && styles.futureQuestSaveBtnError,
+                  ]}
+                  disabled={!futureTitle.trim() || futureSaveState === "saving"}
+                  onPress={() => void saveFutureQuest()}
+                >
+                  <Text style={styles.futureQuestSaveBtnText}>
+                    {futureSaveState === "saving"
+                      ? "SAVING…"
+                      : futureSaveState === "saved"
+                        ? "✓ SAVED"
+                        : futureSaveState === "error"
+                          ? "⚠ SAVE FAILED — RETRY"
+                          : "ADD FUTURE QUEST"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : null}
 
             <LunaReminderCard selectedDay={selectedDay} selectedDateKey={resolveDateForWeekday(selectedDay)} />
 
@@ -1597,6 +1778,26 @@ const styles = StyleSheet.create({
   daySummaryStrip: { alignItems: "center", marginBottom: 10 },
   daySummaryText: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900" },
   daySummarySubtext: { color: "#94A3B8", fontSize: 10, fontWeight: "700", marginTop: 2 },
+  futureWeekLabel: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 11, fontWeight: "900", letterSpacing: 1.5, textAlign: "center", marginBottom: 6 },
+  futureQuestsCard: { backgroundColor: "#EAD9B6", borderRadius: 8, padding: 12, marginBottom: 12, borderWidth: 3, borderColor: "#92610A" },
+  futureQuestsTitle: { color: "#4A3620", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", marginBottom: 4 },
+  futureQuestsHint: { color: "#7C5B2B", fontSize: 11, lineHeight: 15, fontWeight: "700", marginBottom: 10 },
+  futureQuestsEmpty: { color: "#7C5B2B", fontSize: 11, fontWeight: "700", marginBottom: 8, fontStyle: "italic" },
+  futureQuestRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#F4E8CE", borderWidth: 2, borderColor: "#5C4425", borderRadius: 7, padding: 10, marginBottom: 8, gap: 8 },
+  futureQuestRowTitle: { color: "#4A3620", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
+  futureQuestRowMeta: { color: "#7C5B2B", fontSize: 10, fontWeight: "700", marginTop: 2 },
+  futureQuestBadge: { color: "#92610A", fontFamily: pixelFont, fontSize: 9, fontWeight: "900", marginTop: 4 },
+  futureQuestDeleteBtn: { width: 32, height: 32, borderRadius: 6, borderWidth: 2, borderColor: "#B3261E", alignItems: "center", justifyContent: "center" },
+  futureQuestDeleteBtnText: { color: "#B3261E", fontFamily: pixelFont, fontSize: 13, fontWeight: "900" },
+  futureQuestOptionRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 },
+  futureQuestChip: { borderWidth: 2, borderColor: "#5C4425", borderRadius: 6, paddingVertical: 8, paddingHorizontal: 12, backgroundColor: "#F4E8CE" },
+  futureQuestChipActive: { backgroundColor: "#92610A", borderColor: "#FDE68A" },
+  futureQuestChipText: { color: "#4A3620", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
+  futureQuestChipTextActive: { color: "#FFFFFF" },
+  futureQuestSaveBtn: { marginTop: 12, borderWidth: 3, borderColor: "#166534", borderRadius: 7, paddingVertical: 12, alignItems: "center", backgroundColor: "#22C55E" },
+  futureQuestSaveBtnDisabled: { opacity: 0.6 },
+  futureQuestSaveBtnError: { backgroundColor: "#7F1D1D", borderColor: "#FCA5A5", opacity: 1 },
+  futureQuestSaveBtnText: { color: "#FFFFFF", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 0.5 },
   panel: { backgroundColor: "#EAD9B6", borderRadius: 8, padding: 12, marginBottom: 12, borderWidth: 3, borderColor: "#5C4425" },
   panelGold: { backgroundColor: "#EAD9B6", borderRadius: 8, padding: 12, marginBottom: 12, borderWidth: 3, borderColor: "#92610A" },
   panelPurple: { backgroundColor: "#EAD9B6", borderRadius: 8, padding: 12, marginBottom: 12, borderWidth: 3, borderColor: "#4C1D95" },
