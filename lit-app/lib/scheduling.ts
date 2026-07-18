@@ -133,6 +133,21 @@ export function isOvernightBeforeQuestDay(date: Date = new Date()): boolean {
 }
 
 /**
+ * Morning Reflection is a daytime action — available local 6:00 AM through 8:59:59 PM, sharing
+ * the same 6:00 AM quest-day boundary (QUEST_DAY_BOUNDARY_HOUR) as its opening edge and the same
+ * 9:00 PM LDM start (LDM_START_HOUR) as its closing edge, so it locks at exactly the moment
+ * Pre-Sleep Intention becomes the active Sleep action instead of drifting out of sync with LDM.
+ * `timezone` is accepted for interface symmetry with other availability helpers (the caller is
+ * expected to have already resolved `now` into that timezone's wall-clock time) — this function
+ * itself only ever reads `date`'s own getHours()/getMinutes(), matching isLdmActive/
+ * isOvernightBeforeQuestDay's existing convention in this file.
+ */
+export function isMorningReflectionAvailable(now: Date = new Date(), _timezone?: string): boolean {
+  const minutes = now.getHours() * 60 + now.getMinutes();
+  return minutes >= QUEST_DAY_BOUNDARY_HOUR * 60 && minutes < LDM_START_HOUR * 60;
+}
+
+/**
  * Deterministic pick from `pool` for a given salt (typically `${userSalt}-${questDayKey}-${slot}`)
  * — same hash approach as questGeneration.ts's pickRotatingTemplate. The same account resolves
  * the same salt to the same index everywhere, so every device shows identical content for the

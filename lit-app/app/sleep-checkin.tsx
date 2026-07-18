@@ -19,7 +19,7 @@ import { uiAssets } from "../constants/uiAssets";
 import { formPageContent } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
-import { getSession } from "../lib/auth";
+import { getSessionSafe } from "../lib/auth";
 import { isDuplicateFoodLog, type FoodLog } from "../lib/fuel";
 import { persistProgressKeys } from "../lib/progressStore";
 import { readJson } from "../lib/readJson";
@@ -535,7 +535,8 @@ export default function SleepCheckInScreen() {
     const eatenAt = eatenAtDate.toISOString();
     if (isDuplicateFoodLog(existing, { eatenAt, entryType: "meal" })) return;
 
-    const session = await getSession();
+    // A session-lookup failure here must never block this local-first save — see getSessionSafe.
+    const session = await getSessionSafe();
     const now = new Date().toISOString();
     const log: FoodLog = {
       id: `foodlog-${Date.now()}`,
@@ -615,8 +616,18 @@ export default function SleepCheckInScreen() {
         createdAt: new Date().toISOString(),
       };
 
+      // Self-heals corrupted/unparseable history instead of letting it block today's check-in —
+      // a stranded old record is not a reason to refuse a save that has nothing to do with it.
       const savedHistory = await AsyncStorage.getItem(CHECKIN_HISTORY_KEY);
-      const history: CheckIn[] = savedHistory ? JSON.parse(savedHistory) : [];
+      let history: CheckIn[] = [];
+      if (savedHistory) {
+        try {
+          const parsed = JSON.parse(savedHistory);
+          if (Array.isArray(parsed)) history = parsed;
+        } catch {
+          history = [];
+        }
+      }
       const nextHistory = [checkIn, ...history];
 
       await persistProgressKeys({
@@ -624,8 +635,16 @@ export default function SleepCheckInScreen() {
         [CHECKIN_HISTORY_KEY]: JSON.stringify(nextHistory),
       });
 
+      // The check-in record above is already safely persisted at this point — a failure in this
+      // secondary meal-log sub-step (e.g. a network hiccup during its own session lookup) must
+      // never report the whole check-in as failed and make the user re-submit answers that
+      // already saved. See getSessionSafe for the specific network-fragility this guards against.
       if (mealEatenAtDate) {
-        await logMealFromCheckIn(mealEatenAtDate);
+        try {
+          await logMealFromCheckIn(mealEatenAtDate);
+        } catch (error) {
+          console.warn("logMealFromCheckIn failed after a successful check-in save:", error);
+        }
       }
 
       if (!isAfternoon) {

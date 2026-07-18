@@ -4,6 +4,7 @@ import {
   computeAfternoonUnlockLabel,
   computeAfternoonUnlockTimestamp,
   isLdmActive,
+  isMorningReflectionAvailable,
   isOvernightBeforeQuestDay,
   resolveWakeTimestamp,
 } from "../scheduling";
@@ -159,5 +160,33 @@ describe("isOvernightBeforeQuestDay covers the wider 9 PM–5:59 AM span that mu
 
   it("is inactive at exactly 6:00 AM — the quest-day boundary", () => {
     expect(isOvernightBeforeQuestDay(at(6, 0))).toBe(false);
+  });
+});
+
+describe("isMorningReflectionAvailable is available 6:00 AM through 8:59:59 PM", () => {
+  it("is locked at 5:59 AM", () => {
+    expect(isMorningReflectionAvailable(at(5, 59))).toBe(false);
+  });
+
+  it("is available at exactly 6:00 AM", () => {
+    expect(isMorningReflectionAvailable(at(6, 0))).toBe(true);
+  });
+
+  it("is available at noon", () => {
+    expect(isMorningReflectionAvailable(at(12, 0))).toBe(true);
+  });
+
+  it("is available at 8:59 PM — the last minute before it locks", () => {
+    expect(isMorningReflectionAvailable(at(20, 59))).toBe(true);
+  });
+
+  it("is locked at exactly 9:00 PM — the same moment LDM starts", () => {
+    expect(isMorningReflectionAvailable(at(21, 0))).toBe(false);
+  });
+
+  it("is locked through the night", () => {
+    expect(isMorningReflectionAvailable(at(23, 30))).toBe(false);
+    expect(isMorningReflectionAvailable(at(0, 0))).toBe(false);
+    expect(isMorningReflectionAvailable(at(3, 0))).toBe(false);
   });
 });

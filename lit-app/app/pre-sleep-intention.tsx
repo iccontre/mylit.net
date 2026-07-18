@@ -33,7 +33,7 @@ import { normalizePreSleepLogs } from "../lib/logHistory";
 import { USER_STATS_KEY } from "../lib/questProgress";
 import { recordAgentEvent } from "../lib/mylitAgents";
 import { getQuestDayKey } from "../lib/scheduling";
-import { getSession } from "../lib/auth";
+import { getSessionSafe } from "../lib/auth";
 
 const LUNA_PRE_SLEEP_BULLETS = [
   "Pre-Sleep Intention gives your mind one clear signal before bed.",
@@ -114,7 +114,8 @@ export default function PreSleepIntentionScreen() {
       const existingRaw = await AsyncStorage.getItem(PRE_SLEEP_INTENTIONS_KEY);
       const history: PreSleepIntention[] = existingRaw ? JSON.parse(existingRaw) : [];
       const alreadyEarnedToday = history.some((past) => past.date === todayKey);
-      const session = await getSession();
+      // A session-lookup failure here must never block this local-first save — see getSessionSafe.
+      const session = await getSessionSafe();
 
       const entry: PreSleepIntention = {
         id: String(Date.now()),

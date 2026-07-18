@@ -109,6 +109,23 @@ export async function getSession() {
   return data.session;
 }
 
+/**
+ * Same as getSession(), but never throws — a transient network blip or token-refresh failure
+ * resolves to null instead of rejecting. Use this at any local-first save call site that only
+ * wants an optional userId stamp (falls back to "local" when there's no session either way) —
+ * a save that already succeeded locally must never be reported as failed just because this
+ * best-effort session lookup hit a network error. Real auth-flow code that needs to know the
+ * actual session state should keep using getSession() directly.
+ */
+export async function getSessionSafe() {
+  try {
+    return await getSession();
+  } catch (error) {
+    console.warn("getSessionSafe: session lookup failed, continuing without it:", error);
+    return null;
+  }
+}
+
 export function isProfileComplete(profile: BetaProfile | null): boolean {
   return Boolean(clean(profile?.display_name));
 }

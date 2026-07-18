@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Modal, Platform, Pressable, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
-import { getSession } from "../lib/auth";
+import { getSessionSafe } from "../lib/auth";
 import { emitQuestCompletionFeedback } from "../lib/completionFeedback";
 import { isDuplicateFoodLog, type FoodEntryType, type FoodLog } from "../lib/fuel";
 import { persistProgressKeys } from "../lib/progressStore";
@@ -73,7 +73,9 @@ export function FoodLogModal({ visible, onClose, onSaved }: FoodLogModalProps) {
         return;
       }
 
-      const session = await getSession();
+      // A session-lookup failure (network blip, token refresh) must never block this local-first
+      // save — see getSessionSafe.
+      const session = await getSessionSafe();
       const now = new Date().toISOString();
       const log: FoodLog = {
         id: `foodlog-${Date.now()}`,

@@ -23,6 +23,7 @@ import { AWARENESS_CHECKS_KEY } from "../lib/storageKeys";
 import { HistoryModal } from "../components/HistoryModal";
 import { normalizeMeditationLogs } from "../lib/logHistory";
 import { recordAgentEvent } from "../lib/mylitAgents";
+import { SaveButton, type SaveState } from "../components/parchment/SaveButton";
 
 const LUNA_MEDITATIONS_BULLETS = [
   "Meditation/Awareness is for grounding and honesty — not traditional seated meditation.",
@@ -31,7 +32,15 @@ const LUNA_MEDITATIONS_BULLETS = [
   "Use this after a work session, before bed, or any time you want clarity.",
 ];
 
-const MOOD_OPTIONS = ["Calm", "Tired", "Stressed", "Restless", "Hopeful", "Heavy", "Focused", "Unsure"];
+/** "Tired" was renamed to "Faded" — see normalizeMeditationMood for the historic-data mapper
+ *  that keeps old "tired" entries loading and displaying correctly under the new label. */
+const MOOD_OPTIONS = ["Calm", "Faded", "Stressed", "Restless", "Hopeful", "Heavy", "Focused", "Unsure"];
+
+/** Maps a stored mood value to what should actually be shown/selected in the UI — only "tired"
+ *  (the old label) needs remapping; every other historic value already matches its option as-is. */
+export function normalizeMeditationMood(value: string): string {
+  return value.toLowerCase() === "tired" ? "Faded" : value;
+}
 
 type AwarenessCheck = {
   id: string;
@@ -70,11 +79,11 @@ export default function AwarenessCheckScreen() {
   const [truth, setTruth] = useState("");
   const [checks, setChecks] = useState<AwarenessCheck[]>([]);
   const [showInfo, setShowInfo] = useState(false);
-  const [justSaved, setJustSaved] = useState(false);
-  const justSavedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
+  const savedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     return () => {
-      if (justSavedTimeout.current) clearTimeout(justSavedTimeout.current);
+      if (savedTimeout.current) clearTimeout(savedTimeout.current);
     };
   }, []);
   const [showHistory, setShowHistory] = useState(false);
@@ -100,7 +109,8 @@ export default function AwarenessCheckScreen() {
   }
 
   async function saveAwarenessCheck() {
-    if (!truth.trim()) return;
+    if (!truth.trim() || saveState === "saving" || saveState === "saved") return;
+    setSaveState("saving");
 
     const newCheck: AwarenessCheck = {
       id: String(Date.now()),
@@ -111,18 +121,27 @@ export default function AwarenessCheckScreen() {
 
     const nextChecks = [newCheck, ...checks];
 
-    setChecks(nextChecks);
-    await persistProgressKeys({ [AWARENESS_CHECKS_KEY]: JSON.stringify(nextChecks) });
-    void recordAgentEvent({ type: "meditation_saved", sourcePage: "awareness-check", relatedItemId: newCheck.id, metadata: { mood } });
+    try {
+      // Persist first — the visible history list only ever shows a record that's actually
+      // confirmed saved, never an optimistic row inserted ahead of persistence.
+      await persistProgressKeys({ [AWARENESS_CHECKS_KEY]: JSON.stringify(nextChecks) });
+      void recordAgentEvent({ type: "meditation_saved", sourcePage: "awareness-check", relatedItemId: newCheck.id, metadata: { mood } });
 
-    setMood("");
-    setTruth("");
+      setChecks(nextChecks);
+      setMood("");
+      setTruth("");
 
-    await successHaptic();
+      await successHaptic();
 
-    setJustSaved(true);
-    if (justSavedTimeout.current) clearTimeout(justSavedTimeout.current);
-    justSavedTimeout.current = setTimeout(() => setJustSaved(false), 2500);
+      setSaveState("saved");
+      if (savedTimeout.current) clearTimeout(savedTimeout.current);
+      savedTimeout.current = setTimeout(() => setSaveState("idle"), 2500);
+    } catch (error) {
+      console.warn("saveAwarenessCheck error:", error);
+      // Input stays exactly as entered — no optimistic row was ever inserted, so there's
+      // nothing to roll back besides showing the retry affordance.
+      setSaveState("error");
+    }
   }
 
   async function clearChecks() {
@@ -188,9 +207,13 @@ export default function AwarenessCheckScreen() {
                 onChangeText={setTruth}
               />
 
-              <TouchableOpacity style={[styles.saveButton, (!truth.trim() || justSaved) && styles.saveButtonDisabled]} disabled={!truth.trim() || justSaved} onPress={saveAwarenessCheck}>
-                <Text style={styles.saveButtonText}>{justSaved ? "Saved" : "Save Meditation"}</Text>
-              </TouchableOpacity>
+              <SaveButton
+                state={saveState}
+                onPress={saveAwarenessCheck}
+                disabled={!truth.trim()}
+                idleLabel="SAVE MEDITATION"
+                style={styles.saveButton}
+              />
             </View>
 
             <Text style={styles.sectionTitle}>RECENT MEDITATIONS</Text>
@@ -202,7 +225,7 @@ export default function AwarenessCheckScreen() {
             ) : (
               checks.map((check) => (
                 <View key={check.id} style={styles.entryCard}>
-                  <Text style={styles.entryTitle}>{check.mood || check.automaticOrIntentional || "Meditation"}</Text>
+                  <Text style={styles.entryTitle}>{(check.mood ? normalizeMeditationMood(check.mood) : "") || check.automaticOrIntentional || "Meditation"}</Text>
                   <Text style={styles.entryDate}>{formatEntryDate(check.createdAt)}</Text>
 
                   {check.truth ? (
@@ -435,25 +458,7 @@ const styles = StyleSheet.create({
     fontWeight: "900",
   },
   saveButton: {
-    backgroundColor: "#A78BFA",
-    borderWidth: 3,
-    borderColor: "#E9D5FF",
-    borderRadius: 6,
-    paddingVertical: 14,
-    alignItems: "center",
     marginTop: 16,
-  },
-  saveButtonDisabled: {
-    backgroundColor: "#5C4425",
-    borderColor: "#475569",
-  },
-  saveButtonText: {
-    color: "#0F172A",
-    fontFamily: pixelFont,
-    fontSize: 13,
-    fontWeight: "900",
-    letterSpacing: 1,
-    textTransform: "uppercase",
   },
   sectionTitle: {
     color: "#FDE68A",

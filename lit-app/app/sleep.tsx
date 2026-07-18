@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import { useFocusEffect, useRouter } from "expo-router";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Image,
   Platform,
@@ -20,6 +20,7 @@ import { WorldChrome } from "../components/parchment/WorldChrome";
 import { useMobileFrame } from "../constants/mobileLayout";
 import { hubPalettes } from "../constants/worldTokens";
 import { uiAssets } from "../constants/uiAssets";
+import { isMorningReflectionAvailable } from "../lib/scheduling";
 
 const LUNA_SLEEP_HUB_BULLETS = [
   "Sleep is the foundation of your energy mode — rest supports everything else in MYLIT.",
@@ -68,12 +69,21 @@ export default function SleepScreen() {
   const mobile = useMobileFrame();
   const [latestDream, setLatestDream] = useState<DreamEntry | null>(null);
   const [showInfo, setShowInfo] = useState(false);
+  const [now, setNow] = useState<Date>(() => new Date());
 
   useFocusEffect(
     useCallback(() => {
       loadLatestDream();
+      setNow(new Date());
     }, [])
   );
+
+  // Re-check regularly so this card's lock state crosses the 6:00 AM / 9:00 PM boundaries
+  // without needing a reload — matches morning-intention-reflection.tsx's own polling.
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30000);
+    return () => clearInterval(id);
+  }, []);
 
   const sleepCards = useMemo<SleepCard[]>(
     () => [
@@ -86,10 +96,12 @@ export default function SleepScreen() {
       },
       {
         title: "Morning Reflection",
-        description: "Reflect on sleep and set the morning tone.",
+        description: isMorningReflectionAvailable(now)
+          ? "Reflect on sleep and set the morning tone."
+          : "Opens 6:00 AM–8:59 PM. Set tonight's Pre-Sleep Intention instead.",
         buttonText: "Open Reflection",
         icon: "✦",
-        locked: true,
+        locked: !isMorningReflectionAvailable(now),
         route: "/morning-intention-reflection",
       },
       {
@@ -109,7 +121,7 @@ export default function SleepScreen() {
         route: "/dream-journal",
       },
     ],
-    [latestDream]
+    [latestDream, now]
   );
 
   async function lightHaptic() {

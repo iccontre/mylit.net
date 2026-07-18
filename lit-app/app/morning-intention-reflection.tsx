@@ -19,7 +19,7 @@ import { useMobileFrame } from "../constants/mobileLayout";
 import { uiAssets } from "../constants/uiAssets";
 import { USER_STATS_KEY } from "../lib/questProgress";
 import { persistProgressKeys } from "../lib/progressStore";
-import { computeSleepSession, sleepInterruptionPenalty } from "../lib/scheduling";
+import { computeSleepSession, isMorningReflectionAvailable, LDM_START_HOUR, sleepInterruptionPenalty } from "../lib/scheduling";
 import { recordAgentEvent } from "../lib/mylitAgents";
 import {
   LATEST_PRE_SLEEP_INTENTION_KEY,
@@ -122,8 +122,6 @@ function getYesterdayKey() {
 
 const theme = { accent: "#FBBF24", glow: "#FEF3C7", panel: "rgba(18, 16, 12, 0.94)", soft: "#FDE68A", active: "rgba(58, 42, 10, 0.94)" };
 
-// Morning Reflection is a start-of-day ritual — it stays locked until 7:00 AM local time.
-const MORNING_UNLOCK_HOUR = 7;
 
 export default function MorningIntentionReflectionScreen() {
   const router = useRouter();
@@ -140,8 +138,11 @@ export default function MorningIntentionReflectionScreen() {
   const [showInfo, setShowInfo] = useState(false);
   const [now, setNow] = useState<Date>(() => new Date());
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
 
-  const morningUnlocked = now.getHours() >= MORNING_UNLOCK_HOUR;
+  // Available local 6:00 AM through 8:59:59 PM — locks at 9:00 PM, the same moment LDM starts
+  // and Pre-Sleep Intention becomes the active Sleep action. See isMorningReflectionAvailable.
+  const morningUnlocked = isMorningReflectionAvailable(now);
   const sleepTimesEntered = sleptTimeInput.trim() !== "" && wokeTimeInput.trim() !== "";
   const interruptionAnswered = sleepInterrupted !== "";
   const interruptionTimesEntered = interruptionWakeInput.trim() !== "" && interruptionSleepAgainInput.trim() !== "";
@@ -179,7 +180,8 @@ export default function MorningIntentionReflectionScreen() {
     }, [])
   );
 
-  // Re-check the time each minute so the page auto-unlocks at 7:00 AM without a reload.
+  // Re-check the time regularly so the page auto-unlocks at 6:00 AM and auto-locks at
+  // 9:00 PM without a reload.
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 30000);
     return () => clearInterval(id);
@@ -196,7 +198,7 @@ export default function MorningIntentionReflectionScreen() {
       // "Last night" can be dated either yesterday OR today: Pre-Sleep Intention unlocks
       // at 9 PM and many users save it after midnight, which stamps it with TODAY's date,
       // not yesterday's — that mismatch was hiding it here. Both are safe to accept since
-      // this screen is itself locked until 7 AM, so a "today"-dated intention can only mean
+      // this screen is itself locked until 6 AM, so a "today"-dated intention can only mean
       // it was set between midnight and now, i.e. genuinely last night.
       const isFromLastNight = parsed.date === getYesterdayKey() || parsed.date === getTodayKey();
       setLatestIntention(isFromLastNight ? parsed : null);
@@ -224,6 +226,7 @@ export default function MorningIntentionReflectionScreen() {
   async function saveReflection() {
     if (saving || !canSaveReflection || effectiveSleepMinutes === null) return;
     setSaving(true);
+    setSaveError(false);
     const todayKey = getTodayKey();
 
     const saved = await AsyncStorage.getItem(MORNING_INTENTION_REFLECTIONS_KEY);
@@ -271,8 +274,12 @@ export default function MorningIntentionReflectionScreen() {
         metadata: { interrupted: sleepInterrupted === "yes" },
       });
       router.push("/");
-    } catch {
+    } catch (error) {
+      console.warn("saveReflection error:", error);
+      // All answers stay exactly as entered — the button surfaces a visible failure + retry
+      // affordance instead of silently reverting to its idle label.
       setSaving(false);
+      setSaveError(true);
     }
   }
 
@@ -332,7 +339,9 @@ export default function MorningIntentionReflectionScreen() {
                 <Text style={styles.lockedIcon}>🌙</Text>
                 <Text style={[styles.lockedTitle, { color: theme.glow }]}>MORNING REFLECTION LOCKED</Text>
                 <Text style={styles.lockedText}>
-                  This ritual opens at 7:00 AM. Rest a little longer, then return to reflect on your night and set the day.
+                  {now.getHours() >= LDM_START_HOUR
+                    ? "This ritual is done for today — it reopens at 6:00 AM. Set tonight's Pre-Sleep Intention instead."
+                    : "This ritual opens at 6:00 AM. Rest a little longer, then return to reflect on your night and set the day."}
                 </Text>
               </View>
             ) : (
@@ -447,11 +456,24 @@ export default function MorningIntentionReflectionScreen() {
                 </View>
 
                 <TouchableOpacity
-                  style={[styles.saveButton, { borderColor: theme.accent }, (!canSaveReflection || saving) && styles.saveButtonDisabled]}
+                  style={[
+                    styles.saveButton,
+                    { borderColor: theme.accent },
+                    (!canSaveReflection || saving) && styles.saveButtonDisabled,
+                    saveError && styles.saveButtonError,
+                  ]}
                   disabled={!canSaveReflection || saving}
                   onPress={saveReflection}
                 >
-                  <Text style={styles.saveButtonText}>{saving ? "Saving…" : canSaveReflection ? "Save Reflection" : "Enter Sleep & Wake Times"}</Text>
+                  <Text style={styles.saveButtonText}>
+                    {saving
+                      ? "Saving…"
+                      : saveError
+                        ? "⚠ Save Failed — Retry"
+                        : canSaveReflection
+                          ? "Save Reflection"
+                          : "Enter Sleep & Wake Times"}
+                  </Text>
                 </TouchableOpacity>
               </>
             )}
@@ -773,6 +795,11 @@ const styles = StyleSheet.create({
   },
   saveButtonDisabled: {
     opacity: 0.6,
+  },
+  saveButtonError: {
+    backgroundColor: "#7F1D1D",
+    borderColor: "#FCA5A5",
+    opacity: 1,
   },
   sleepErrorText: {
     color: "#FCA5A5",
