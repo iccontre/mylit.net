@@ -30,6 +30,7 @@ import { generateSupplementaryQuest, getActiveSuggestedQuest, getQuestGoalAnchor
 import { persistProgressKeys } from "../lib/progressStore";
 import {
   collectDayPlanScheduledItems,
+  findScheduleConflicts,
   findScheduleOverlap,
   formatDurationLabel,
   formatEnergyDelta,
@@ -44,11 +45,13 @@ import {
   shiftTimeSlot,
   wouldCrossMidnight,
   wouldTriggerRecoveryLock,
+  type ScheduleConflict,
   type ScheduledClassification,
   type ScheduledQuestLike,
   type ScheduledStatus,
   type WeekdayName,
 } from "../lib/scheduling";
+import { ScheduleConflictModal } from "../components/parchment/ScheduleConflictModal";
 
 type QuestKind = "progress" | "recovery";
 
@@ -70,6 +73,12 @@ type QueueItem = {
   status: ScheduledStatus;
   createdAt: string;
   completedAt?: string;
+  updatedAt?: string;
+  /** Tombstone — set by Day Plan's Future Quests section (shares this same TOMORROW_QUEUE_KEY
+   *  storage) instead of physically removing the entry, so a deletion survives cross-device
+   *  sync. Must be preserved through normalizeQueueItem and filtered out of every read path
+   *  here, or a deleted Future Quest reappears active when viewed from Tomorrow Queue. */
+  deletedAt?: string;
 };
 
 function parseTimeInput(raw: string): string {
@@ -151,7 +160,7 @@ function generateWeek(weekOffset: number): QuestDay[] {
   });
 }
 
-function normalizeQueueItem(raw: Partial<QueueItem>, index: number): QueueItem {
+export function normalizeQueueItem(raw: Partial<QueueItem>, index: number): QueueItem {
   const text = raw.text?.trim() || raw.title?.trim() || "Untitled quest";
   const durationMinutes = parseDurationMinutes(raw.durationMinutes ?? raw.duration, 30);
   const classification = raw.classification || normalizeKind(inferScheduledClassification(raw));
@@ -173,6 +182,8 @@ function normalizeQueueItem(raw: Partial<QueueItem>, index: number): QueueItem {
     status: raw.status || (raw.completedAt ? "completed" : "scheduled"),
     createdAt: raw.createdAt || new Date().toISOString(),
     completedAt: raw.completedAt,
+    updatedAt: raw.updatedAt,
+    deletedAt: raw.deletedAt,
   };
 }
 
@@ -218,6 +229,9 @@ export default function TomorrowQueueScreen() {
   const [selectedKind, setSelectedKind] = useState<QuestKind>("progress");
   const [message, setMessage] = useState("");
   const [conflictMessage, setConflictMessage] = useState("");
+  const [scheduleConflicts, setScheduleConflicts] = useState<ScheduleConflict[]>([]);
+  const [scheduleConflictTitle, setScheduleConflictTitle] = useState("");
+  const [scheduleConflictRetry, setScheduleConflictRetry] = useState<(() => void) | null>(null);
   const [recoveryWarning, setRecoveryWarning] = useState("");
   const [pendingRecoveryConfirm, setPendingRecoveryConfirm] = useState(false);
   const [justSaved, setJustSaved] = useState(false);
@@ -243,7 +257,7 @@ export default function TomorrowQueueScreen() {
   const selectedDayCapacityMinutes = getQuestCapacityMinutes(boardMode);
   const selectedDayRemainingMinutes = Math.max(0, selectedDayCapacityMinutes - selectedDayPlannedMinutes);
   const selectedDayAtCapacity = selectedDayRemainingMinutes <= 0;
-  const savedItemsForSelectedDay = items.filter((item: QueueItem) => item.date === selectedDateKey);
+  const savedItemsForSelectedDay = items.filter((item: QueueItem) => !item.deletedAt && item.date === selectedDateKey);
 
   function resolveDateForWeekday(weekday: string): string | undefined {
     return weekDays.find((day: QuestDay) => day.weekday === weekday)?.dateKey;
@@ -321,7 +335,7 @@ export default function TomorrowQueueScreen() {
   function existingScheduledItemsExcluding(excludeId: string): Partial<ScheduledQuestLike>[] {
     const dayPlanItems = collectDayPlanScheduledItems(dayPlan, resolveDateForWeekday);
     const questItems = items
-      .filter((item) => item.id !== excludeId)
+      .filter((item) => item.id !== excludeId && !item.deletedAt)
       .map((item) => ({ id: item.id, title: item.title, date: item.date, startTime: item.startTime, durationMinutes: item.durationMinutes }));
     return [...dayPlanItems, ...questItems];
   }
@@ -337,7 +351,7 @@ export default function TomorrowQueueScreen() {
   ): string {
     const dayPlanItems = collectDayPlanScheduledItems(planArg, resolveDateForWeekday);
     const questItems = itemsList
-      .filter((item) => item.id !== excludeId)
+      .filter((item) => item.id !== excludeId && !item.deletedAt)
       .map((item) => ({ id: item.id, title: item.title, date: item.date, startTime: item.startTime, durationMinutes: item.durationMinutes }));
     const existing = [...dayPlanItems, ...questItems];
 
@@ -367,7 +381,7 @@ export default function TomorrowQueueScreen() {
     setTimeInputDraft(free);
   }
 
-  async function saveQuest() {
+  async function saveQuest(forceThroughConflict = false) {
     const trimmed = request.trim();
     if (!trimmed) {
       setMessage("Write the quest first, then choose when it should happen.");
@@ -425,16 +439,19 @@ export default function TomorrowQueueScreen() {
       originalItem.durationMinutes === durationMinutes;
 
     if (!scheduleUnchanged) {
-      const conflict = findScheduleOverlap(candidate, existing, candidateId);
-      if (conflict) {
-        const conflictTitle = (conflict as { title?: string }).title || "another scheduled item";
-        setConflictMessage(`This time interferes with "${conflictTitle}" — change the time.`);
+      const conflicts = findScheduleConflicts(candidate, existing, candidateId);
+      if (conflicts.length > 0 && !forceThroughConflict) {
+        setScheduleConflicts(conflicts);
+        setScheduleConflictTitle(trimmed);
+        setScheduleConflictRetry(() => () => void saveQuest(true));
         setRecoveryWarning("");
         setPendingRecoveryConfirm(false);
         return;
       }
     }
     setConflictMessage("");
+    setScheduleConflicts([]);
+    setScheduleConflictRetry(null);
 
     if (!scheduleUnchanged && !pendingRecoveryConfirm && wouldTriggerRecoveryLock(candidate, existing, selectedDay.dateKey)) {
       setRecoveryWarning(RECOVERY_LOCK_WARNING);
@@ -724,10 +741,25 @@ export default function TomorrowQueueScreen() {
               {message ? <Text style={message.includes("deleted") || message.includes("Saved") || message.includes("updated") ? styles.statusMessage : styles.errorMessage}>{message}</Text> : null}
               {conflictMessage ? <Text style={styles.errorMessage}>{conflictMessage}</Text> : null}
               {recoveryWarning ? <Text style={styles.recoveryWarning}>{recoveryWarning}</Text> : null}
+              <ScheduleConflictModal
+                visible={scheduleConflicts.length > 0}
+                proposedTitle={scheduleConflictTitle}
+                conflicts={scheduleConflicts}
+                onAdjustTime={() => {
+                  setScheduleConflicts([]);
+                  setScheduleConflictRetry(null);
+                }}
+                onSaveAnyway={() => {
+                  const retry = scheduleConflictRetry;
+                  setScheduleConflicts([]);
+                  setScheduleConflictRetry(null);
+                  retry?.();
+                }}
+              />
               <TouchableOpacity
                 style={[styles.saveButton, (selectedDayIsPast || selectedDayAtCapacity || !request.trim()) && styles.saveButtonDisabled]}
                 disabled={selectedDayIsPast || selectedDayAtCapacity || !request.trim()}
-                onPress={saveQuest}
+                onPress={() => void saveQuest()}
               >
                 <Text style={styles.saveButtonText}>
                   {justSaved ? "SAVED" : pendingRecoveryConfirm ? "CONFIRM & SAVE" : editingId ? "SAVE CHANGES" : "SAVE QUEST"}

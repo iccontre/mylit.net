@@ -664,6 +664,79 @@ export function findScheduleOverlap(candidate: Partial<ScheduledQuestLike>, exis
   return null;
 }
 
+export type ScheduleConflict = {
+  conflictingRecordId: string;
+  conflictingTitle: string;
+  conflictingType: string;
+  existingStart: string;
+  existingEnd: string;
+  proposedStart: string;
+  proposedEnd: string;
+  overlapMinutes: number;
+};
+
+/**
+ * Every overlap between `proposedItem` and `scheduledItems` (not just the first — see
+ * findScheduleOverlap for that), as themed-warning-ready metadata. One shared helper for the
+ * checklist, quest/task, and hobby editors instead of a separate ad hoc check per screen.
+ *
+ * - Uses the same minute-of-day range math as findScheduleOverlap (getRange/sameScheduledDay),
+ *   so exact local start/end comparison and the 6:00 AM logical-day/midnight-crossing behavior
+ *   stay identical between the two functions — getRange never wraps at 1440, so an item ending
+ *   after midnight (e.g. 11:30 PM + 90min = minute 1520) still compares correctly against
+ *   another item later the same civil evening; formatMinutesAsTime wraps only for display.
+ * - Ignores the same record being edited (ignoreId, or the proposed item's own id).
+ * - Ignores tombstoned records defensively (the canonical collectors — collectDayPlanScheduledItems/
+ *   collectQuickThoughtScheduledItems/collectTodayCalendarItems — already filter deletedAt before
+ *   producing ScheduledQuestLike items, so this is belt-and-suspenders for any other caller).
+ * - Ignores completed/expired records — a finished or lapsed item is history, not a live
+ *   schedule slot, so it can never block a new one.
+ * - Ignores anything with no parseable start time (flexible/unscheduled items) — they never
+ *   create a false conflict.
+ * - Sorted by the conflicting item's own start time, earliest first.
+ */
+export function findScheduleConflicts(
+  proposedItem: Partial<ScheduledQuestLike>,
+  scheduledItems: Partial<ScheduledQuestLike>[],
+  ignoreId?: string
+): ScheduleConflict[] {
+  const proposedRange = getRange(proposedItem);
+  if (!proposedRange) return [];
+
+  const conflicts: (ScheduleConflict & { _sortStart: number })[] = [];
+
+  for (const item of scheduledItems) {
+    if (!item) continue;
+    if ((item as { deletedAt?: string }).deletedAt) continue;
+    if (ignoreId && item.id === ignoreId) continue;
+    if (proposedItem.id && item.id === proposedItem.id) continue;
+    if (item.status === "completed" || item.status === "expired") continue;
+    if (!sameScheduledDay(proposedItem, item)) continue;
+
+    const itemRange = getRange(item);
+    if (!itemRange) continue;
+
+    const overlapStart = Math.max(proposedRange.start, itemRange.start);
+    const overlapEnd = Math.min(proposedRange.end, itemRange.end);
+    const overlapMinutes = overlapEnd - overlapStart;
+    if (overlapMinutes <= 0) continue;
+
+    conflicts.push({
+      conflictingRecordId: String(item.id ?? ""),
+      conflictingTitle: getItemTitle(item),
+      conflictingType: String(item.source ?? item.kind ?? "Scheduled item"),
+      existingStart: formatMinutesAsTime(itemRange.start),
+      existingEnd: formatMinutesAsTime(itemRange.end),
+      proposedStart: formatMinutesAsTime(proposedRange.start),
+      proposedEnd: formatMinutesAsTime(proposedRange.end),
+      overlapMinutes,
+      _sortStart: itemRange.start,
+    });
+  }
+
+  return conflicts.sort((a, b) => a._sortStart - b._sortStart).map(({ _sortStart, ...conflict }) => conflict);
+}
+
 /**
  * After 120 minutes of *contiguous* (back-to-back, no gap) scheduled PROGRESS items on
  * a day, MYLIT auto-inserts a 1-hour recovery block right after. Recovery items do not
@@ -851,7 +924,15 @@ export function collectDayPlanScheduledItems(plan: unknown, resolveDateForWeekda
       const bucketItems = weekdayChecklists[bucketDay];
       if (!Array.isArray(bucketItems)) continue;
       bucketItems.forEach((raw, index) => {
-        const item = raw as Partial<ScheduledQuestLike> & { weekdays?: WeekdayName[] };
+        const item = raw as Partial<ScheduledQuestLike> & { weekdays?: WeekdayName[]; deletedAt?: string };
+        // Tombstoned items (see deleteChecklistItem in day-plan.tsx and the deletedAt-aware
+        // array merge in progressStore.ts) must never surface here — this is the function
+        // Calendar's timeline, Tomorrow Queue's conflict check, and quest-capacity calculations
+        // all read the Day Plan checklist schedule through. Previously the only checklist reader
+        // that did NOT filter deletedAt, so a deleted item could still show on Calendar and
+        // still count toward scheduling conflicts/capacity even after getChecklistItemsForDay
+        // and normalizeQuestItems correctly stopped showing it on the Quest Board.
+        if (item.deletedAt) return;
         const itemWeekdays =
           Array.isArray(item.weekdays) && item.weekdays.length > 0 ? item.weekdays : [bucketDay];
         if (!itemWeekdays.includes(weekday)) return;

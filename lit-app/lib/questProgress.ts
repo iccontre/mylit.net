@@ -264,6 +264,9 @@ type QueueItem = {
   completedAt?: string;
   classification?: QuestKind;
   kind?: string;
+  /** Tombstone — see collectQuickThoughtScheduledItems's filter in lib/scheduling.ts. A
+   *  tombstoned quick-thought/Future Quest must never count toward scheduled-minutes capacity. */
+  deletedAt?: string;
 };
 
 type DayPlanRaw = {
@@ -344,6 +347,7 @@ export function computeUserScheduledMinutesForDay(input: {
   let total = 0;
 
   for (const raw of input.quickThoughts) {
+    if (raw.deletedAt) continue;
     const itemDate = raw.date ?? raw.dateKey;
     if (itemDate !== input.dateKey) continue;
     if (!isActiveScheduledItem(raw.status, raw.completedAt)) continue;
@@ -510,6 +514,7 @@ export function hasUserDayPlanItems(input: {
 
 export function hasTodayQuickThoughts(input: { quickThoughts: QueueItem[]; todayKey: string }): boolean {
   return input.quickThoughts.some((item) => {
+    if (item.deletedAt) return false;
     const itemDate = item.date ?? item.dateKey ?? input.todayKey;
     if (itemDate !== input.todayKey) return false;
     if (item.status === "completed" || item.completedAt || String(item.status) === "missed") return false;
@@ -962,6 +967,7 @@ export function collectExpiredUnresolvedQuickThoughts(input: {
 }): { id: string; title: string }[] {
   const results: { id: string; title: string }[] = [];
   input.quickThoughts.forEach((raw, index) => {
+    if (raw.deletedAt) return;
     if (raw.status === "completed" || raw.completedAt || String(raw.status) === "missed") return;
     const title = (raw.text || raw.title || raw.task || raw.note || "").trim();
     if (!title) return;

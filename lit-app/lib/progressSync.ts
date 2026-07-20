@@ -235,6 +235,7 @@ export async function syncDayPlanScheduledItems(): Promise<void> {
         if (!Array.isArray(checklist)) continue;
         for (const entry of checklist) {
           const row = entry as Record<string, unknown>;
+          if (row.deletedAt) continue;
           const title = String(row.text ?? row.title ?? "").trim();
           if (!title) continue;
           const localId = String(row.id ?? `checklist-${weekday}-${title.slice(0, 24)}`);

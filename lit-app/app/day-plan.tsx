@@ -6,6 +6,7 @@ import { Image, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, Toucha
 import { FormScreen } from "../components/FormScreen";
 import { BottomNav } from "../components/BottomNav";
 import { WorldChrome } from "../components/parchment/WorldChrome";
+import { ScheduleConflictModal } from "../components/parchment/ScheduleConflictModal";
 import { WeekDaySelector } from "../components/WeekDaySelector";
 import { LunaReminderCard } from "../components/LunaReminderCard";
 import { formPageContent, formStyles } from "../constants/formStyles";
@@ -34,7 +35,7 @@ import { persistProgressKeys } from "../lib/progressStore";
 import { setChecklistItemChecked, syncDayPlanScheduledItems } from "../lib/progressSync";
 import {
   collectQuickThoughtScheduledItems,
-  findScheduleOverlap,
+  findScheduleConflicts,
   formatDurationLabel,
   formatEnergyDelta,
   generateTimeSlots,
@@ -55,6 +56,7 @@ import {
   TODAY_QUEST_TWO_HOUR_STEPS,
   wouldCrossMidnight,
   wouldTriggerRecoveryLock,
+  type ScheduleConflict,
   type ScheduledClassification,
   type ScheduledQuestLike,
   type ScheduledStatus,
@@ -467,6 +469,11 @@ export default function DayPlanScreen() {
   const [weeklyHabitSaved, setWeeklyHabitSaved] = useState(false);
   const weeklyHabitSavedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [conflictMessage, setConflictMessage] = useState("");
+  // Schedule-conflict WARNING (soft — save-anyway is allowed), distinct from conflictMessage's
+  // hard-blocking messages above (midnight-crossing, daily capacity — those still fully block).
+  const [scheduleConflicts, setScheduleConflicts] = useState<ScheduleConflict[]>([]);
+  const [scheduleConflictTitle, setScheduleConflictTitle] = useState("");
+  const [scheduleConflictRetry, setScheduleConflictRetry] = useState<(() => void) | null>(null);
   const [recoveryWarning, setRecoveryWarning] = useState("");
   const [pendingRecoveryConfirmId, setPendingRecoveryConfirmId] = useState<string | null>(null);
   const [showInfo, setShowInfo] = useState(false);
@@ -563,7 +570,7 @@ export default function DayPlanScreen() {
     const slots: { id: string; title: string; weekday: WeekdayName; startTime: string; durationMinutes: number }[] = [];
     for (const day of WEEKDAYS) {
       for (const entry of committedPlanRef.current.weekdayChecklists[day] ?? []) {
-        if (entry.id === excludeId) continue;
+        if (entry.id === excludeId || entry.deletedAt) continue;
         for (const weekday of entry.weekdays) {
           slots.push({ id: entry.id, title: entry.text, weekday, startTime: entry.startTime, durationMinutes: entry.durationMinutes });
         }
@@ -577,18 +584,26 @@ export default function DayPlanScreen() {
     return slots;
   }
 
-  /** Checklist items/Today's Quest don't run on a timer, but their times still can't overlap another scheduled item on the same day. */
-  function findTimeConflictTitle(candidateId: string, weekdays: WeekdayName[], startTime: string, durationMinutes: number): string | null {
+  /**
+   * Checklist items/Today's Quest don't run on a timer, but their times still can't silently
+   * clash with another scheduled item on the same day — see findScheduleConflicts (the one
+   * shared conflict helper also used by Tomorrow Queue). Checked across every weekday the item
+   * recurs on; each weekday's own scheduled items (checklist habits, Today's Quest, and Quick
+   * Thoughts resolved to that weekday's real date) are the comparison pool.
+   */
+  function findTimeConflicts(candidateId: string, weekdays: WeekdayName[], startTime: string, durationMinutes: number): ScheduleConflict[] {
     const slots = collectCommittedSlots(candidateId);
+    const quickThoughtItems = collectQuickThoughtScheduledItems(quickThoughts);
+    const conflicts: ScheduleConflict[] = [];
     for (const weekday of weekdays) {
-      const conflict = findScheduleOverlap(
-        { id: candidateId, weekday, startTime, durationMinutes },
-        slots.filter((slot) => slot.weekday === weekday),
-        candidateId
-      );
-      if (conflict) return (conflict as { title?: string }).title || "another scheduled item";
+      const dateKey = resolveDateForWeekday(weekday);
+      const pool = [
+        ...slots.filter((slot) => slot.weekday === weekday).map((slot) => ({ ...slot, date: dateKey })),
+        ...quickThoughtItems.filter((item) => item.date === dateKey),
+      ];
+      conflicts.push(...findScheduleConflicts({ id: candidateId, date: dateKey, startTime, durationMinutes }, pool, candidateId));
     }
-    return null;
+    return conflicts;
   }
 
   /** Everything already saved (checklist habits + Today's Quest + Quests), converted to date-based items for recovery-lock math. */
@@ -614,7 +629,7 @@ export default function DayPlanScreen() {
   }
 
   /** Persists exactly one checklist item into the committed plan without pulling in other unsaved drafts. */
-  async function saveChecklistItem(itemId: string) {
+  async function saveChecklistItem(itemId: string, forceThroughConflict = false) {
     const bucketDay = findChecklistBucket(dayPlan, itemId);
     const item = bucketDay ? dayPlan.weekdayChecklists[bucketDay].find((entry) => entry.id === itemId) : null;
     if (!bucketDay || !item || !item.text.trim()) return;
@@ -626,9 +641,15 @@ export default function DayPlanScreen() {
       return;
     }
 
-    const conflictTitle = findTimeConflictTitle(itemId, item.weekdays, item.startTime, item.durationMinutes);
-    if (conflictTitle) {
-      setConflictMessage(`${item.startTime} interferes with "${conflictTitle}" — change the time.`);
+    // Soft warning, not a hard block — re-checked fresh here every call (including the
+    // "Save Anyway" retry) so stale modal state can never miss a conflict newly created by
+    // another device in the meantime; forceThroughConflict only changes whether a conflict
+    // stops the save, never whether it's checked.
+    const conflicts = findTimeConflicts(itemId, item.weekdays, item.startTime, item.durationMinutes);
+    if (conflicts.length > 0 && !forceThroughConflict) {
+      setScheduleConflicts(conflicts);
+      setScheduleConflictTitle(item.text.trim());
+      setScheduleConflictRetry(() => () => void saveChecklistItem(itemId, true));
       setRecoveryWarning("");
       setPendingRecoveryConfirmId(null);
       return;
@@ -698,12 +719,14 @@ export default function DayPlanScreen() {
     committedPlanRef.current = nextCommitted;
     await persistProgressKeys({ [DAY_PLAN_KEY]: JSON.stringify(nextCommitted) });
     setSavedMessage("Checklist item saved.");
+    setScheduleConflicts([]);
+    setScheduleConflictRetry(null);
     void trackEvent(ANALYTICS_EVENTS.day_plan_saved, { scope: "checklistItem" });
     void syncDayPlanScheduledItems();
   }
 
   /** Persists Today's Quest (title/time) into the committed plan independently of Weekly Habit or checklist drafts. */
-  async function saveTodayQuest() {
+  async function saveTodayQuest(forceThroughConflict = false) {
     if (!dayPlan.todayQuest.title.trim()) return;
 
     if (wouldCrossMidnight(dayPlan.todayQuest.startTime, dayPlan.todayQuest.durationMinutes)) {
@@ -713,14 +736,18 @@ export default function DayPlanScreen() {
       return;
     }
 
-    const conflictTitle = findTimeConflictTitle(
+    // Soft warning, not a hard block — see saveChecklistItem for why this is re-checked fresh
+    // on every call, including the "Save Anyway" retry.
+    const conflicts = findTimeConflicts(
       dayPlan.todayQuest.id,
       [dayPlan.todayQuest.weekday],
       dayPlan.todayQuest.startTime,
       dayPlan.todayQuest.durationMinutes
     );
-    if (conflictTitle) {
-      setConflictMessage(`${dayPlan.todayQuest.startTime} interferes with "${conflictTitle}" — change the time.`);
+    if (conflicts.length > 0 && !forceThroughConflict) {
+      setScheduleConflicts(conflicts);
+      setScheduleConflictTitle(dayPlan.todayQuest.title.trim());
+      setScheduleConflictRetry(() => () => void saveTodayQuest(true));
       setRecoveryWarning("");
       setPendingRecoveryConfirmId(null);
       return;
@@ -760,6 +787,8 @@ export default function DayPlanScreen() {
     committedPlanRef.current = nextCommitted;
     await persistProgressKeys({ [DAY_PLAN_KEY]: JSON.stringify(nextCommitted) });
     setSavedMessage("Today's Main Quest saved.");
+    setScheduleConflicts([]);
+    setScheduleConflictRetry(null);
     void trackEvent(ANALYTICS_EVENTS.day_plan_saved, { scope: "todayQuest" });
     void syncDayPlanScheduledItems();
   }
@@ -1472,7 +1501,7 @@ export default function DayPlanScreen() {
               <TouchableOpacity
                 style={[styles.saveQuestButton, !isTodayQuestDirty() && styles.saveQuestButtonDisabled]}
                 disabled={!isTodayQuestDirty() || !dayPlan.todayQuest.title.trim()}
-                onPress={saveTodayQuest}
+                onPress={() => void saveTodayQuest()}
               >
                 <Text style={styles.saveQuestButtonText}>
                   {!isTodayQuestDirty() ? "SAVED" : "SET TODAY’S MAIN QUEST"}
@@ -1706,6 +1735,22 @@ export default function DayPlanScreen() {
 
             {conflictMessage ? <Text style={styles.conflictMessage}>{conflictMessage}</Text> : null}
             {savedMessage ? <Text style={styles.savedMessage}>{savedMessage}</Text> : null}
+
+            <ScheduleConflictModal
+              visible={scheduleConflicts.length > 0}
+              proposedTitle={scheduleConflictTitle}
+              conflicts={scheduleConflicts}
+              onAdjustTime={() => {
+                setScheduleConflicts([]);
+                setScheduleConflictRetry(null);
+              }}
+              onSaveAnyway={() => {
+                const retry = scheduleConflictRetry;
+                setScheduleConflicts([]);
+                setScheduleConflictRetry(null);
+                retry?.();
+              }}
+            />
 
             <TouchableOpacity style={styles.backButton} onPress={() => router.push("/calendar")}><Text style={styles.backButtonText}>BACK TO CALENDAR</Text></TouchableOpacity>
           </FormScreen>

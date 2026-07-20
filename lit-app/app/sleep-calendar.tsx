@@ -1,10 +1,22 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
-import { Image, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Image, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
+import { BottomNav } from "../components/BottomNav";
+import { FormScreen } from "../components/FormScreen";
 import { GuideInfoModal } from "../components/GuideInfoModal";
+import { GuidePanel } from "../components/parchment/GuidePanel";
+import { ParchmentField } from "../components/parchment/ParchmentField";
+import { ParchmentSurface, parchmentTextStyles } from "../components/parchment/ParchmentSurface";
+import { SaveButton, type SaveState } from "../components/parchment/SaveButton";
+import { WorldChrome } from "../components/parchment/WorldChrome";
+import { formPageContent } from "../constants/formStyles";
+import { useMobileFrame } from "../constants/mobileLayout";
+import { parchmentBorder, parchmentField, parchmentInk, parchmentInkMuted } from "../constants/parchmentTokens";
 import { uiAssets } from "../constants/uiAssets";
+import { hubPalettes } from "../constants/worldTokens";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { persistProgressKeys } from "../lib/progressStore";
 import { LATEST_CHECKIN_KEY } from "../lib/storageKeys";
@@ -49,8 +61,6 @@ type Suggestion = {
 };
 
 const CHECKIN_KEY = LATEST_CHECKIN_KEY;
-const APP_FRAME_ASPECT_RATIO = 1024 / 1792;
-const MAX_FRAME_WIDTH = 520;
 const MIN_SLEEP_HOURS = 9;
 /** Desired sleep time can be set from 7 PM through 2 AM, but not past 2 AM. */
 const SLEEP_TIME_FLOOR_MINUTES = 19 * 60;
@@ -66,6 +76,8 @@ const pixelFont = Platform.select({
   web: "monospace",
   default: "monospace",
 });
+
+const palette = hubPalettes.sleep;
 
 function parseTimeToMinutes(time: string) {
   const match = time.trim().match(/^(\d{1,2}):(\d{2})\s?(AM|PM)$/i);
@@ -144,8 +156,29 @@ function buildSuggestions(sleepTime: string): Suggestion[] {
   ];
 }
 
+function TimeStepper({ label, icon, value, onChange }: { label: string; icon: string; value: string; onChange: (next: string) => void }) {
+  return (
+    <View style={styles.timeCard}>
+      <Text style={styles.timeLabel}>{label}</Text>
+      <View style={styles.timeStepperRow}>
+        <TouchableOpacity style={styles.timeStepButton} onPress={() => onChange(shiftTime(value, -30))}>
+          <Text style={styles.timeStepText}>‹</Text>
+        </TouchableOpacity>
+        <View style={styles.timeValueBox}>
+          <Text style={styles.timeIcon}>{icon}</Text>
+          <Text style={styles.timeValue}>{value}</Text>
+        </View>
+        <TouchableOpacity style={styles.timeStepButton} onPress={() => onChange(shiftTime(value, 30))}>
+          <Text style={styles.timeStepText}>›</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 export default function SleepCalendarScreen() {
   const router = useRouter();
+  const mobile = useMobileFrame();
   const [desiredSleepTime, setDesiredSleepTime] = useState("11:00 PM");
   const [desiredWakeTime, setDesiredWakeTime] = useState("8:00 AM");
   const [windDownMinutes, setWindDownMinutes] = useState<number>(DEFAULT_WIND_DOWN_MINUTES);
@@ -153,12 +186,13 @@ export default function SleepCalendarScreen() {
   const [windDownAvoid, setWindDownAvoid] = useState("");
   const [windDownReminder, setWindDownReminder] = useState("");
   const [windDownActivities, setWindDownActivities] = useState("");
-  const [savedMessage, setSavedMessage] = useState("");
-  const [isDirty, setIsDirty] = useState(false);
+  const [saveState, setSaveState] = useState<SaveState>("idle");
   const [showInfo, setShowInfo] = useState(false);
+  const savedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     loadSleepGuide();
+    return () => { if (savedTimeout.current) clearTimeout(savedTimeout.current); };
   }, []);
 
   async function loadSleepGuide() {
@@ -180,219 +214,175 @@ export default function SleepCalendarScreen() {
   }
 
   function markDirty() {
-    setIsDirty(true);
+    if (saveState !== "idle") setSaveState("idle");
   }
 
   const sleepDuration = useMemo(() => getSleepDurationHours(desiredSleepTime, desiredWakeTime), [desiredSleepTime, desiredWakeTime]);
   const hasEnoughSleepWindow = sleepDuration >= MIN_SLEEP_HOURS;
   const suggestions = useMemo(() => buildSuggestions(desiredSleepTime), [desiredSleepTime]);
 
-  async function saveSleepGuide() {
-    if (!hasEnoughSleepWindow) {
-      setSavedMessage("Try to leave at least 9 hours between sleep and wake time.");
-      return;
+  async function successHaptic() {
+    try {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch {
+      // Haptics may not run in every web preview.
     }
-
-    let current: CheckIn = {};
-    const saved = await AsyncStorage.getItem(CHECKIN_KEY);
-    if (saved) {
-      try {
-        current = JSON.parse(saved) as CheckIn;
-      } catch {
-        current = {};
-      }
-    }
-
-    const [caffeine, meal, blueScreen, exercise] = suggestions;
-    const next: CheckIn = {
-      ...current,
-      desiredSleepTime,
-      desiredWakeTime,
-      wakeTime: desiredWakeTime,
-      estimatedSleepWindow: `${desiredSleepTime} – ${desiredWakeTime} (${formatDuration(sleepDuration)})`,
-      caffeineCutoffSuggestion: caffeine.value,
-      mealCutoffSuggestion: meal.value,
-      blueScreenCutoffSuggestion: blueScreen.value,
-      exerciseCutoffSuggestion: exercise.value,
-      windDownMinutes: Math.min(60, windDownMinutes),
-      windDownHelps: windDownHelps.trim() || undefined,
-      windDownAvoid: windDownAvoid.trim() || undefined,
-      windDownReminder: windDownReminder.trim() || undefined,
-      windDownActivities: windDownActivities.trim() || undefined,
-      createdAt: current.createdAt || new Date().toISOString(),
-    };
-
-    await persistProgressKeys({ [CHECKIN_KEY]: JSON.stringify(next) });
-    setSavedMessage("Sleep guide saved.");
-    setIsDirty(false);
-    void trackEvent(ANALYTICS_EVENTS.sleep_guide_saved);
   }
 
-  function TimeStepper({ label, icon, value, onChange }: { label: string; icon: string; value: string; onChange: (next: string) => void }) {
-    return (
-      <View style={styles.timeCard}>
-        <Text style={styles.timeLabel}>{label}</Text>
-        <View style={styles.timeStepperRow}>
-          <TouchableOpacity style={styles.timeStepButton} onPress={() => onChange(shiftTime(value, -30))}>
-            <Text style={styles.timeStepText}>‹</Text>
-          </TouchableOpacity>
-          <View style={styles.timeValueBox}>
-            <Text style={styles.timeIcon}>{icon}</Text>
-            <Text style={styles.timeValue}>{value}</Text>
-          </View>
-          <TouchableOpacity style={styles.timeStepButton} onPress={() => onChange(shiftTime(value, 30))}>
-            <Text style={styles.timeStepText}>›</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    );
+  async function saveSleepGuide() {
+    if (!hasEnoughSleepWindow || saveState === "saving" || saveState === "saved") return;
+    setSaveState("saving");
+
+    try {
+      let current: CheckIn = {};
+      const saved = await AsyncStorage.getItem(CHECKIN_KEY);
+      if (saved) {
+        try {
+          current = JSON.parse(saved) as CheckIn;
+        } catch {
+          current = {};
+        }
+      }
+
+      const [caffeine, meal, blueScreen, exercise] = suggestions;
+      const next: CheckIn = {
+        ...current,
+        desiredSleepTime,
+        desiredWakeTime,
+        wakeTime: desiredWakeTime,
+        estimatedSleepWindow: `${desiredSleepTime} – ${desiredWakeTime} (${formatDuration(sleepDuration)})`,
+        caffeineCutoffSuggestion: caffeine.value,
+        mealCutoffSuggestion: meal.value,
+        blueScreenCutoffSuggestion: blueScreen.value,
+        exerciseCutoffSuggestion: exercise.value,
+        windDownMinutes: Math.min(60, windDownMinutes),
+        windDownHelps: windDownHelps.trim() || undefined,
+        windDownAvoid: windDownAvoid.trim() || undefined,
+        windDownReminder: windDownReminder.trim() || undefined,
+        windDownActivities: windDownActivities.trim() || undefined,
+        createdAt: current.createdAt || new Date().toISOString(),
+      };
+
+      await persistProgressKeys({ [CHECKIN_KEY]: JSON.stringify(next) });
+      void trackEvent(ANALYTICS_EVENTS.sleep_guide_saved);
+      await successHaptic();
+
+      setSaveState("saved");
+      if (savedTimeout.current) clearTimeout(savedTimeout.current);
+      savedTimeout.current = setTimeout(() => setSaveState("idle"), 2500);
+    } catch {
+      // Fields stay exactly as entered — nothing to roll back, just surface retry.
+      setSaveState("error");
+    }
   }
 
   return (
-    <View style={styles.pageRoot}>
-      <View style={styles.phoneStage}>
+    <View style={[styles.pageRoot, mobile.pageRootStyle]}>
+      <View style={[styles.phoneStage, mobile.stageShellStyle, mobile.touchMobile && styles.phoneStageFullscreen, { borderColor: palette.edge }]}>
         <View pointerEvents="none" style={styles.backgroundLayer}>
           <Image source={uiAssets.backgrounds.recovery} style={styles.backgroundImage} resizeMode="cover" />
         </View>
         <View style={styles.worldOverlay}>
-          <ScrollView style={styles.screenScroller} contentContainerStyle={styles.hudContent} showsVerticalScrollIndicator={false} bounces={false}>
-            <View style={styles.headerCard}>
-              <View style={styles.headerCopy}>
-                <Text style={styles.kicker}>SLEEP HUB</Text>
-                <Text style={styles.title}>SLEEP GUIDE</Text>
-                <Text style={styles.subtitle}>Set your sleep window and daily cutoffs.</Text>
-              </View>
-              <Text style={styles.headerMoon}>☾</Text>
-            </View>
+        <FormScreen scrollPaddingBottom={mobile.formScrollPaddingBottom} contentContainerStyle={[formPageContent, styles.hudContent]}>
+          <WorldChrome hub="sleep" kicker="SLEEP HUB" title="SLEEP GUIDE" subtitle="Sleep window and daily cutoffs." style={styles.chrome} />
 
-            <View style={styles.lunaCard}>
-              <Image source={uiAssets.guides.luna} style={styles.lunaImage} resizeMode="contain" />
-              <View style={styles.lunaCopy}>
-                <Text style={styles.lunaTitle}>LUNA, YOUR GUIDE</Text>
-                <Text style={styles.lunaText}>These are suggestions, not rules. Sleep can vary — especially with anxiety or sleep problems. Be kind to yourself.</Text>
-              </View>
-              <TouchableOpacity style={styles.infoBtn} onPress={() => setShowInfo(true)}>
-                <Text style={styles.infoBtnText}>?</Text>
-              </TouchableOpacity>
-            </View>
+          <GuidePanel
+            hub="sleep"
+            guideName="Luna"
+            guideAvatar={uiAssets.guides.luna}
+            message="These are suggestions, not rules — be kind to yourself."
+            onInfoPress={() => setShowInfo(true)}
+          />
 
-            <View style={styles.panel}>
-              <Text style={styles.panelTitle}>☽ YOUR SLEEP GOALS</Text>
-              <View style={styles.goalRow}>
-                <TimeStepper
-                  label="DESIRED SLEEP TIME"
-                  icon="🌙"
-                  value={desiredSleepTime}
-                  onChange={(next) => {
-                    // Desired sleep time can be set until 2 AM, but not past it.
-                    if (isWithinSleepTimeWindow(parseTimeToMinutes(next))) { setDesiredSleepTime(next); markDirty(); }
-                  }}
-                />
-                <Text style={styles.goalArrow}>›</Text>
-                <TimeStepper label="DESIRED WAKE TIME" icon="☀️" value={desiredWakeTime} onChange={(next) => { setDesiredWakeTime(next); markDirty(); }} />
-              </View>
-              <View style={[styles.validationBox, !hasEnoughSleepWindow && styles.validationBoxWarning]}>
-                <Text style={[styles.validationText, !hasEnoughSleepWindow && styles.validationTextWarning]}>
-                  {hasEnoughSleepWindow
-                    ? `✓ ${formatDuration(sleepDuration)} between sleep and wake time.`
-                    : "Try to leave at least 9 hours between sleep and wake time."}
-                </Text>
-              </View>
+          <ParchmentSurface accent="sleep" title="☽ SLEEP WINDOW" style={styles.panel}>
+            <View style={styles.goalRow}>
+              <TimeStepper
+                label="SLEEP TIME"
+                icon="🌙"
+                value={desiredSleepTime}
+                onChange={(next) => {
+                  // Desired sleep time can be set until 2 AM, but not past it.
+                  if (isWithinSleepTimeWindow(parseTimeToMinutes(next))) { setDesiredSleepTime(next); markDirty(); }
+                }}
+              />
+              <Text style={styles.goalArrow}>›</Text>
+              <TimeStepper label="WAKE TIME" icon="☀️" value={desiredWakeTime} onChange={(next) => { setDesiredWakeTime(next); markDirty(); }} />
             </View>
-
-            <View style={styles.panel}>
-              <Text style={styles.panelTitle}>☾ WIND-DOWN</Text>
-              <Text style={styles.validationText}>
-                Progress quests lock once wind-down starts, and Luna will prompt "Start your pre-sleep routine." Recovery/sleep tasks stay open.
+            <View style={[styles.validationBox, !hasEnoughSleepWindow && styles.validationBoxWarning]}>
+              <Text style={[styles.validationText, !hasEnoughSleepWindow && styles.validationTextWarning]}>
+                {hasEnoughSleepWindow
+                  ? `✓ ${formatDuration(sleepDuration)} between sleep and wake time.`
+                  : "Try to leave at least 9 hours between sleep and wake time."}
               </Text>
-              <View style={styles.goalRow}>
-                {WIND_DOWN_OPTIONS.map((minutes) => (
-                  <TouchableOpacity
-                    key={minutes}
-                    style={[styles.windDownOption, windDownMinutes === minutes && styles.windDownOptionActive]}
-                    onPress={() => { setWindDownMinutes(minutes); markDirty(); }}
-                  >
-                    <Text style={[styles.windDownOptionText, windDownMinutes === minutes && styles.windDownOptionTextActive]}>{minutes} min</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              <Text style={styles.fieldLabel}>What helps you slow down before bed?</Text>
-              <TextInput style={styles.fieldInput} value={windDownHelps} onChangeText={(t) => { setWindDownHelps(t); markDirty(); }} placeholder="Optional" placeholderTextColor="#8A6D4A" />
-
-              <Text style={styles.fieldLabel}>What should you avoid during wind-down?</Text>
-              <TextInput style={styles.fieldInput} value={windDownAvoid} onChangeText={(t) => { setWindDownAvoid(t); markDirty(); }} placeholder="Optional" placeholderTextColor="#8A6D4A" />
-
-              <Text style={styles.fieldLabel}>What is one calming thing Luna can remind you to do?</Text>
-              <TextInput style={styles.fieldInput} value={windDownReminder} onChangeText={(t) => { setWindDownReminder(t); markDirty(); }} placeholder="Optional" placeholderTextColor="#8A6D4A" />
-
-              <Text style={styles.fieldLabel}>Stretching, journaling, reading, hygiene, or no-screen time?</Text>
-              <TextInput style={styles.fieldInput} value={windDownActivities} onChangeText={(t) => { setWindDownActivities(t); markDirty(); }} placeholder="Optional" placeholderTextColor="#8A6D4A" />
             </View>
+          </ParchmentSurface>
 
-            <View style={styles.panel}>
-              <Text style={styles.panelTitle}>✦ LUNA’S SUGGESTIONS</Text>
-              {suggestions.map((item) => (
-                <View key={item.label} style={styles.suggestionRow}>
-                  <View style={styles.suggestionIconBox}>
-                    <Text style={styles.suggestionIcon}>{item.icon}</Text>
-                  </View>
-                  <View style={styles.suggestionCopy}>
-                    <Text style={styles.suggestionLabel}>{item.label}</Text>
-                    <Text style={styles.suggestionNote}>{item.note}</Text>
-                  </View>
-                  <Text style={styles.suggestionValue}>{item.value}</Text>
-                </View>
+          <ParchmentSurface accent="sleep" title="☾ PRE-SLEEP ROUTINE" style={styles.panel}>
+            <Text style={parchmentTextStyles.meta}>Progress quests lock once wind-down starts. Recovery/sleep tasks stay open.</Text>
+            <View style={[styles.goalRow, styles.windDownRow]}>
+              {WIND_DOWN_OPTIONS.map((minutes) => (
+                <TouchableOpacity
+                  key={minutes}
+                  style={[styles.windDownOption, windDownMinutes === minutes && styles.windDownOptionActive]}
+                  onPress={() => { setWindDownMinutes(minutes); markDirty(); }}
+                >
+                  <Text style={[styles.windDownOptionText, windDownMinutes === minutes && styles.windDownOptionTextActive]}>{minutes} min</Text>
+                </TouchableOpacity>
               ))}
             </View>
 
-            {savedMessage ? <Text style={hasEnoughSleepWindow ? styles.savedMessage : styles.warningMessage}>{savedMessage}</Text> : null}
+            <Text style={styles.fieldLabel}>What helps you slow down before bed?</Text>
+            <ParchmentField value={windDownHelps} onChangeText={(t) => { setWindDownHelps(t); markDirty(); }} placeholder="Optional" />
 
-            <TouchableOpacity style={[styles.saveButton, !hasEnoughSleepWindow && styles.saveButtonDisabled]} onPress={saveSleepGuide}>
-              <Text style={styles.saveButtonText}>{!isDirty && savedMessage ? "SAVED" : "☾ SAVE SLEEP GUIDE ☽"}</Text>
-            </TouchableOpacity>
+            <Text style={styles.fieldLabel}>What should you avoid during wind-down?</Text>
+            <ParchmentField value={windDownAvoid} onChangeText={(t) => { setWindDownAvoid(t); markDirty(); }} placeholder="Optional" />
 
-            <TouchableOpacity style={styles.backButton} onPress={() => router.push("/")}>
-              <Text style={styles.backButtonText}>Back to Today</Text>
-            </TouchableOpacity>
-          </ScrollView>
+            <Text style={styles.fieldLabel}>One calming reminder from Luna?</Text>
+            <ParchmentField value={windDownReminder} onChangeText={(t) => { setWindDownReminder(t); markDirty(); }} placeholder="Optional" />
 
-          <GuideInfoModal
-            visible={showInfo}
-            onClose={() => setShowInfo(false)}
-            guideAvatar={uiAssets.guides.luna}
-            guideName="Luna"
-            title="How Sleep Guide Works"
-            bullets={LUNA_SLEEP_GUIDE_BULLETS}
-            accentColor="#A78BFA"
+            <Text style={styles.fieldLabel}>Stretching, journaling, reading, hygiene, or no screens?</Text>
+            <ParchmentField style={styles.lastField} value={windDownActivities} onChangeText={(t) => { setWindDownActivities(t); markDirty(); }} placeholder="Optional" />
+          </ParchmentSurface>
+
+          <ParchmentSurface accent="sleep" title="✦ DAILY CUTOFFS" style={styles.panel}>
+            {suggestions.map((item) => (
+              <View key={item.label} style={styles.suggestionRow}>
+                <View style={styles.suggestionIconBox}>
+                  <Text style={styles.suggestionIcon}>{item.icon}</Text>
+                </View>
+                <View style={styles.suggestionCopy}>
+                  <Text style={styles.suggestionLabel}>{item.label}</Text>
+                  <Text style={parchmentTextStyles.meta}>{item.note}</Text>
+                </View>
+                <Text style={styles.suggestionValue}>{item.value}</Text>
+              </View>
+            ))}
+          </ParchmentSurface>
+
+          <SaveButton
+            state={saveState}
+            onPress={saveSleepGuide}
+            idleLabel="SAVE SLEEP GUIDE"
+            disabled={!hasEnoughSleepWindow}
+            style={styles.saveButton}
           />
 
-          <View style={styles.bottomNav}>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/")}>
-              <Text style={styles.navIcon}>🏠</Text>
-              <Text style={styles.navLabel}>HOME</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={[styles.navButton, styles.navButtonActive]} onPress={() => router.push("/sleep")}>
-              <Text style={styles.navIcon}>🌙</Text>
-              <Text style={[styles.navLabel, styles.navLabelActive]}>SLEEP</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/mind")}>
-              <Text style={styles.navIcon}>🧠</Text>
-              <Text style={styles.navLabel}>MIND</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/path")}>
-              <Text style={styles.navIcon}>🌲</Text>
-              <Text style={styles.navLabel}>PATH</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/calendar")}>
-              <Text style={styles.navIcon}>📅</Text>
-              <Text style={styles.navLabel}>CAL</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.navButton} onPress={() => router.push("/stats")}>
-              <Text style={styles.navIcon}>🎒</Text>
-              <Text style={styles.navLabel}>BAG</Text>
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity style={styles.backButton} onPress={() => router.push("/sleep")}>
+            <Text style={styles.backButtonText}>← Back to Sleep Hub</Text>
+          </TouchableOpacity>
+        </FormScreen>
+
+        <GuideInfoModal
+          visible={showInfo}
+          onClose={() => setShowInfo(false)}
+          guideAvatar={uiAssets.guides.luna}
+          guideName="Luna"
+          title="How Sleep Guide Works"
+          bullets={LUNA_SLEEP_GUIDE_BULLETS}
+          accentColor={palette.accent}
+        />
+
+        <BottomNav activeRoute="sleep" bottomOffset={mobile.bottomNavOffset} />
         </View>
       </View>
     </View>
@@ -403,23 +393,23 @@ const styles = StyleSheet.create({
   pageRoot: {
     flex: 1,
     backgroundColor: "#140F0A",
-    alignItems: "center",
-    justifyContent: "center",
   },
   phoneStage: {
-    width: "100%",
-    maxWidth: MAX_FRAME_WIDTH,
-    aspectRatio: APP_FRAME_ASPECT_RATIO,
     alignSelf: "center",
     backgroundColor: "#1C1410",
     overflow: "hidden",
     position: "relative",
     borderWidth: 2,
-    borderColor: "#A78BFA",
     shadowColor: "#000",
     shadowOpacity: 0.85,
     shadowRadius: 0,
     shadowOffset: { width: 6, height: 6 },
+  },
+  phoneStageFullscreen: {
+    borderWidth: 0,
+    maxWidth: undefined,
+    aspectRatio: undefined,
+    shadowOpacity: 0,
   },
   backgroundLayer: {
     ...StyleSheet.absoluteFillObject,
@@ -432,135 +422,46 @@ const styles = StyleSheet.create({
   },
   worldOverlay: {
     flex: 1,
-    backgroundColor: "rgba(8, 7, 24, 0.34)",
-  },
-  screenScroller: {
-    flex: 1,
+    backgroundColor: "rgba(2, 6, 12, 0.16)",
   },
   hudContent: {
-    minHeight: "100%",
+    flexGrow: 1,
     paddingTop: 16,
     paddingHorizontal: 14,
-    paddingBottom: 104,
   },
-  headerCard: {
-    minHeight: 122,
-    backgroundColor: "rgba(7, 12, 28, 0.93)",
-    borderWidth: 3,
-    borderColor: "#A78BFA",
-    borderRadius: 8,
-    padding: 14,
-    marginBottom: 10,
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  headerCopy: {
-    flex: 1,
-  },
-  kicker: {
-    color: "#C4B5FD",
-    fontFamily: pixelFont,
-    fontSize: 11,
-    fontWeight: "900",
-    letterSpacing: 1.4,
-    marginBottom: 6,
-  },
-  title: {
-    color: "#F8FAFC",
-    fontFamily: pixelFont,
-    fontSize: 33,
-    fontWeight: "900",
-    letterSpacing: 1.2,
-    lineHeight: 40,
-    textAlign: "center",
-    textShadowColor: "#111827",
-    textShadowOffset: { width: 2, height: 2 },
-    textShadowRadius: 0,
-  },
-  subtitle: {
-    color: "#E9D5FF",
-    fontFamily: pixelFont,
-    fontSize: 12,
-    fontWeight: "800",
-    lineHeight: 17,
-    marginTop: 5,
-  },
-  headerMoon: {
-    color: "#C4B5FD",
-    fontSize: 56,
-    marginLeft: 10,
-  },
-  lunaCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "rgba(8, 13, 30, 0.94)",
-    borderWidth: 3,
-    borderColor: "#A78BFA",
-    borderRadius: 8,
-    padding: 11,
-    marginBottom: 10,
-  },
-  lunaImage: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    marginRight: 12,
-  },
-  lunaCopy: {
-    flex: 1,
-  },
-  lunaTitle: {
-    color: "#C4B5FD",
-    fontFamily: pixelFont,
-    fontSize: 14,
-    fontWeight: "900",
-    letterSpacing: 1,
-    marginBottom: 6,
-  },
-  lunaText: {
-    color: "#F8FAFC",
-    fontFamily: pixelFont,
-    fontSize: 12,
-    fontWeight: "800",
-    lineHeight: 18,
-  },
-  panel: {
-    backgroundColor: "rgba(8, 13, 30, 0.95)",
-    borderWidth: 3,
-    borderColor: "#7C3AED",
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 10,
-  },
-  panelTitle: {
-    color: "#C4B5FD",
-    fontFamily: pixelFont,
-    fontSize: 14,
-    fontWeight: "900",
-    letterSpacing: 1,
-    marginBottom: 10,
-  },
+  chrome: { marginBottom: 12 },
+  panel: { marginTop: 12 },
   goalRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
   },
-  windDownOption: { flex: 1, borderWidth: 2, borderColor: "#475569", borderRadius: 6, paddingVertical: 9, alignItems: "center", backgroundColor: "rgba(30,41,59,0.6)" },
-  windDownOptionActive: { borderColor: "#A78BFA", backgroundColor: "rgba(88,28,135,0.5)" },
-  windDownOptionText: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
-  windDownOptionTextActive: { color: "#E9D5FF" },
-  fieldLabel: { color: "#CBD5E1", fontSize: 11, fontWeight: "800", marginTop: 10, marginBottom: 4 },
-  fieldInput: { backgroundColor: "rgba(46,32,20,0.9)", borderWidth: 2, borderColor: "#475569", borderRadius: 6, padding: 10, fontSize: 14, color: "#F9FAFB", fontWeight: "700" },
+  windDownRow: { marginTop: 4, marginBottom: 4 },
+  windDownOption: { flex: 1, borderWidth: 2, borderColor: parchmentBorder, borderRadius: 6, paddingVertical: 9, alignItems: "center", backgroundColor: parchmentField },
+  windDownOptionActive: { borderColor: palette.edge, backgroundColor: palette.chrome },
+  windDownOptionText: { color: parchmentInkMuted, fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
+  windDownOptionTextActive: { color: palette.text },
+  fieldLabel: {
+    fontFamily: pixelFont,
+    fontSize: 11,
+    fontWeight: "900",
+    color: parchmentInkMuted,
+    marginTop: 12,
+    marginBottom: 6,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  lastField: { marginBottom: 2 },
   timeCard: {
     flex: 1,
-    backgroundColor: "rgba(46,32,20, 0.92)",
+    backgroundColor: parchmentField,
     borderWidth: 2,
-    borderColor: "#4C1D95",
-    borderRadius: 6,
+    borderColor: parchmentBorder,
+    borderRadius: 7,
     padding: 8,
   },
   timeLabel: {
-    color: "#C4B5FD",
+    color: parchmentInkMuted,
     fontFamily: pixelFont,
     fontSize: 10,
     fontWeight: "900",
@@ -578,12 +479,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
-    borderColor: "#7C3AED",
+    borderColor: palette.edge,
     borderRadius: 5,
-    backgroundColor: "rgba(49, 46, 129, 0.8)",
+    backgroundColor: palette.chrome,
   },
   timeStepText: {
-    color: "#F8FAFC",
+    color: palette.text,
     fontFamily: pixelFont,
     fontSize: 24,
     fontWeight: "900",
@@ -595,55 +496,55 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
-    borderColor: "#312E81",
+    borderColor: parchmentBorder,
     borderRadius: 5,
-    backgroundColor: "rgba(2, 6, 23, 0.85)",
+    backgroundColor: "#FFFDF6",
   },
   timeIcon: {
     fontSize: 15,
     marginBottom: 1,
   },
   timeValue: {
-    color: "#F8E7D1",
+    color: parchmentInk,
     fontFamily: pixelFont,
     fontSize: 13,
     fontWeight: "900",
     textAlign: "center",
   },
   goalArrow: {
-    color: "#E9D5FF",
+    color: parchmentInkMuted,
     fontFamily: pixelFont,
     fontSize: 28,
     fontWeight: "900",
   },
   validationBox: {
     borderWidth: 2,
-    borderColor: "#475569",
-    borderRadius: 5,
+    borderColor: parchmentBorder,
+    borderRadius: 6,
     padding: 9,
     marginTop: 10,
-    backgroundColor: "rgba(46,32,20, 0.72)",
+    backgroundColor: parchmentField,
   },
   validationBoxWarning: {
-    borderColor: "#F59E0B",
-    backgroundColor: "rgba(113, 63, 18, 0.42)",
+    borderColor: "#B45309",
+    backgroundColor: "#F3D9A8",
   },
   validationText: {
-    color: "#F8FAFC",
+    color: parchmentInk,
     fontFamily: pixelFont,
     fontSize: 11,
     fontWeight: "800",
     lineHeight: 16,
   },
   validationTextWarning: {
-    color: "#FDE68A",
+    color: "#92400E",
   },
   suggestionRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(46,32,20, 0.86)",
+    backgroundColor: parchmentField,
     borderWidth: 2,
-    borderColor: "#312E81",
+    borderColor: parchmentBorder,
     borderRadius: 6,
     padding: 9,
     marginBottom: 8,
@@ -652,11 +553,11 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderWidth: 2,
-    borderColor: "#4C1D95",
+    borderColor: parchmentBorder,
     borderRadius: 6,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(2, 6, 23, 0.76)",
+    backgroundColor: "#FFFDF6",
     marginRight: 10,
   },
   suggestionIcon: {
@@ -667,139 +568,36 @@ const styles = StyleSheet.create({
     paddingRight: 8,
   },
   suggestionLabel: {
-    color: "#C4B5FD",
+    color: parchmentInk,
     fontFamily: pixelFont,
     fontSize: 12,
     fontWeight: "900",
     letterSpacing: 0.5,
     marginBottom: 3,
   },
-  suggestionNote: {
-    color: "#CBD5E1",
-    fontFamily: pixelFont,
-    fontSize: 10,
-    fontWeight: "800",
-    lineHeight: 14,
-  },
   suggestionValue: {
     width: 112,
-    color: "#F8E7D1",
+    color: parchmentInk,
     fontFamily: pixelFont,
     fontSize: 13,
     fontWeight: "900",
     textAlign: "right",
     lineHeight: 18,
   },
-  savedMessage: {
-    color: "#86EFAC",
-    fontFamily: pixelFont,
-    fontSize: 12,
-    fontWeight: "900",
-    marginBottom: 9,
-  },
-  warningMessage: {
-    color: "#FDE68A",
-    fontFamily: pixelFont,
-    fontSize: 12,
-    fontWeight: "900",
-    marginBottom: 9,
-  },
-  saveButton: {
-    backgroundColor: "rgba(109, 40, 217, 0.96)",
-    borderWidth: 3,
-    borderColor: "#C4B5FD",
-    borderRadius: 8,
-    paddingVertical: 15,
-    alignItems: "center",
-    marginBottom: 10,
-    shadowColor: "#000",
-    shadowOpacity: 0.72,
-    shadowRadius: 0,
-    shadowOffset: { width: 4, height: 4 },
-  },
-  saveButtonDisabled: {
-    opacity: 0.62,
-    borderColor: "#64748B",
-  },
-  saveButtonText: {
-    color: "#F8FAFC",
-    fontFamily: pixelFont,
-    fontSize: 17,
-    fontWeight: "900",
-    letterSpacing: 0.8,
-  },
+  saveButton: { marginTop: 4 },
   backButton: {
     backgroundColor: "rgba(46,32,20, 0.94)",
     padding: 12,
-    borderRadius: 4,
+    borderRadius: 5,
     alignItems: "center",
     borderWidth: 2,
-    borderColor: "#5C4425",
-    marginBottom: 10,
+    borderColor: palette.edge,
+    marginTop: 10,
   },
   backButtonText: {
-    color: "#E2E8F0",
+    color: "#EFEAFB",
     fontFamily: pixelFont,
     fontSize: 13,
     fontWeight: "900",
-  },
-  infoBtn: {
-    width: 26,
-    height: 26,
-    borderRadius: 4,
-    borderWidth: 2,
-    borderColor: "#A78BFA",
-    backgroundColor: "rgba(49,46,129,0.72)",
-    alignItems: "center",
-    justifyContent: "center",
-    alignSelf: "flex-start",
-  },
-  infoBtnText: {
-    color: "#C4B5FD",
-    fontFamily: pixelFont,
-    fontSize: 13,
-    fontWeight: "900",
-    lineHeight: 17,
-  },
-  bottomNav: {
-    position: "absolute",
-    left: 8,
-    right: 8,
-    bottom: 8,
-    backgroundColor: "rgba(46,32,20, 0.96)",
-    borderWidth: 3,
-    borderColor: "#A78BFA",
-    borderRadius: 6,
-    padding: 6,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    gap: 5,
-  },
-  navButton: {
-    flex: 1,
-    minHeight: 58,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(46,32,20, 0.94)",
-    borderWidth: 2,
-    borderColor: "#5C4425",
-    borderRadius: 4,
-  },
-  navButtonActive: {
-    backgroundColor: "rgba(76, 29, 149, 0.92)",
-    borderColor: "#C4B5FD",
-  },
-  navIcon: {
-    fontSize: 21,
-    marginBottom: 3,
-  },
-  navLabel: {
-    color: "#E5E7EB",
-    fontFamily: pixelFont,
-    fontSize: 9,
-    fontWeight: "900",
-  },
-  navLabelActive: {
-    color: "#E9D5FF",
   },
 });
