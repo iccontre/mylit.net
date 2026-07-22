@@ -15,8 +15,10 @@ import {
   STARTER_QUESTS_FALLBACK,
   type StarterMode,
 } from "../constants/questStarters";
-import { getTodayKey } from "./questProgress";
-import { getStepsForItem, inferScheduledClassification } from "./scheduling";
+// Sourced from lib/scheduling.ts (not lib/questProgress.ts, whose getTodayKey is just a
+// passthrough to this same function) so this file stays free of questProgress.ts's
+// AsyncStorage import chain — it is imported server-side by lib/questGenerationFallback.ts.
+import { getQuestDayKey as getTodayKey, getStepsForItem, inferScheduledClassification } from "./scheduling";
 
 export type GeneratedQuest = {
   title: string;

@@ -1,8 +1,9 @@
 import { generateQuestFromMorningIntent, type GeneratedQuest } from "./questGeneration";
 import { persistProgressKeys } from "./progressStore";
 import { readJson } from "./readJson";
-import { getQuestDayKey } from "./scheduling";
+import { getQuestDayKey, getStepsForItem } from "./scheduling";
 import { EVIE_MORNING_QUEST_KEY } from "./storageKeys";
+import type { GeneratedQuestProposal } from "./agentTypes";
 
 export type EvieMorningQuest = GeneratedQuest & {
   id: string;
@@ -44,6 +45,33 @@ export async function ensureEvieMorningQuest(sourceText: string): Promise<EvieMo
     id: `evie-morning-quest-${getQuestDayKey()}`,
     questDayKey: getQuestDayKey(),
     sourceText: trimmed,
+    createdAt: new Date().toISOString(),
+    source: "evie_path",
+  };
+
+  await persistProgressKeys({ [EVIE_MORNING_QUEST_KEY]: JSON.stringify(quest) });
+  return quest;
+}
+
+/**
+ * Accepts a user-chosen AI-generated proposal (Push Forward / Focused Pace, see
+ * lib/questGenerationAi.ts) as today's Evie Morning quest — the SAME canonical slot
+ * ensureEvieMorningQuest writes to, so an accepted proposal flows through every existing
+ * Home/Calendar/completion/reward path unchanged. Idempotent per quest-day: accepting again
+ * (e.g. a retried save) simply replaces this same single-record slot, never duplicates it.
+ */
+export async function acceptGeneratedMorningQuest(proposal: GeneratedQuestProposal, sourceText: string): Promise<EvieMorningQuest> {
+  const quest: EvieMorningQuest = {
+    title: proposal.title,
+    type: "Evie Path",
+    kind: proposal.mode,
+    steps: getStepsForItem(proposal.durationMinutes, proposal.mode),
+    durationMinutes: proposal.durationMinutes,
+    suggested: true,
+    description: proposal.rationale || proposal.description,
+    id: `evie-morning-quest-${getQuestDayKey()}`,
+    questDayKey: getQuestDayKey(),
+    sourceText: sourceText.trim(),
     createdAt: new Date().toISOString(),
     source: "evie_path",
   };

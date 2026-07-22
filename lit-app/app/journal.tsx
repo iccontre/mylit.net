@@ -14,6 +14,7 @@ import {
 import { FormScreen } from "../components/FormScreen";
 import { BottomNav } from "../components/BottomNav";
 import { GuideInfoModal } from "../components/GuideInfoModal";
+import { FeedToGuideButton } from "../components/parchment/FeedToGuideButton";
 import { GuidePanel } from "../components/parchment/GuidePanel";
 import { ParchmentField } from "../components/parchment/ParchmentField";
 import { ParchmentSurface, parchmentTextStyles } from "../components/parchment/ParchmentSurface";
@@ -81,6 +82,7 @@ export default function JournalScreen() {
   const [showHistory, setShowHistory] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [lastSavedEntry, setLastSavedEntry] = useState<{ id: string; text: string } | null>(null);
   const savedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -137,6 +139,7 @@ export default function JournalScreen() {
       await saveEntries(nextEntries);
       void recordAgentEvent({ type: "journal_saved", sourcePage: "journal", relatedItemId: relatedId, metadata: { entryType } });
 
+      setLastSavedEntry({ id: relatedId, text: content.trim() });
       setSaveState("saved");
       if (savedTimeout.current) clearTimeout(savedTimeout.current);
       savedTimeout.current = setTimeout(() => {
@@ -239,6 +242,11 @@ export default function JournalScreen() {
                   style={styles.saveButton}
                 />
               </View>
+              {lastSavedEntry ? (
+                <View style={styles.feedToLunaRow}>
+                  <FeedToGuideButton guide="luna" sourceType="journal" sourceId={lastSavedEntry.id} sourceText={lastSavedEntry.text} />
+                </View>
+              ) : null}
             </ParchmentSurface>
 
             <TouchableOpacity style={[styles.backButton, { marginBottom: 8 }]} onPress={() => setShowHistory(true)}>
@@ -400,6 +408,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   saveRow: { flexDirection: "row", gap: 10, marginTop: 4 },
+  feedToLunaRow: { marginTop: 10 },
   saveButton: { flex: 1 },
   cancelEditBtn: {
     flex: 1,

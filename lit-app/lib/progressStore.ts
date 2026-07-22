@@ -28,6 +28,7 @@ import {
   EVIE_MORNING_QUEST_KEY,
   SLEEP_ROUTINE_KEY,
   MANDATORY_GATE_EVIDENCE_KEY,
+  USER_RHYTHM_PROFILE_KEY,
 } from "./storageKeys";
 import { computeNextQuestDayBoundary, getDateKey } from "./scheduling";
 import { sanitizeDayPlanChecklists } from "./dayPlanChecklist";
@@ -118,6 +119,7 @@ const OBJECT_MERGE_PROGRESS_KEYS = new Set<SyncableProgressKey>([
   // in mergePayload. A single-session object (nightKey/enteredAt/rewardApplied) needs
   // whole-object-freshest-valid-wins, not field-by-field merging.
   SLEEP_ROUTINE_KEY,
+  USER_RHYTHM_PROFILE_KEY,
   // EVIE_MORNING_QUEST_KEY is deliberately NOT here — see mergeEvieMorningQuest below, which
   // needs "same quest-day -> earliest createdAt wins" so two devices can never each generate
   // their own quest for the same day.

@@ -39,6 +39,9 @@ function sourceLabel(type: GuideContextRecord["sourceType"]): string {
     case "affirmation": return "Affirmation";
     case "lifeProfile": return "Life Profile — Recovery";
     case "pathGoal": return "Life Profile — Path Goals";
+    case "sleepCheckIn": return "Sleep Check-In";
+    case "foodLog": return "Food Log";
+    case "quickThought": return "Quick Thought";
     default: return type;
   }
 }

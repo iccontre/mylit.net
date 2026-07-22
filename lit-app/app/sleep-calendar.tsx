@@ -20,6 +20,7 @@ import { hubPalettes } from "../constants/worldTokens";
 import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { persistProgressKeys } from "../lib/progressStore";
 import { LATEST_CHECKIN_KEY } from "../lib/storageKeys";
+import { saveUserRhythmProfile } from "../lib/userRhythmProfile";
 
 const LUNA_SLEEP_GUIDE_BULLETS = [
   "The Sleep Guide suggests timing — not strict rules.",
@@ -264,6 +265,13 @@ export default function SleepCalendarScreen() {
       };
 
       await persistProgressKeys({ [CHECKIN_KEY]: JSON.stringify(next) });
+      // Sleep Guide is the canonical rhythm profile's other writer besides onboarding — keeping
+      // this in sync here means the profile never diverges from whatever the user last set here.
+      void saveUserRhythmProfile({
+        typicalWakeTime: desiredWakeTime,
+        typicalSleepTime: desiredSleepTime,
+        preferredRoutineStart: shiftTime(desiredSleepTime, -windDownMinutes),
+      });
       void trackEvent(ANALYTICS_EVENTS.sleep_guide_saved);
       await successHaptic();
 

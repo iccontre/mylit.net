@@ -705,7 +705,8 @@ export type GuideContextSourceType =
   | "lifeProfile"
   | "pathGoal"
   | "sleepCheckIn"
-  | "foodLog";
+  | "foodLog"
+  | "quickThought";
 
 /**
  * What a consent grant actually permits, independent of which guide holds the record:
@@ -833,4 +834,123 @@ export type WeeklyAgentReview = {
   calendarAdjustment: string;
   suggestedNextWeekFocus: string;
   createdAt: string;
+};
+
+// ---------------------------------------------------------------------------
+// Shared quest-generation contract — ONE reusable, server-backed request/response pair used
+// by Morning Check-In, Afternoon Check-In, and onboarding weekly-plan generation. Mirrors the
+// exact EvieAiPathPipeline/LunaSupportModifier pattern: server-only model call, deterministic
+// fallback (see lib/questGenerationFallback.ts, itself built on the existing template-based
+// generateQuestFromMorningIntent/generateProgressQuests/generateRecoveryQuests in
+// lib/questGeneration.ts — no parallel quest-generation system), proposals are drafts until
+// the user explicitly accepts. See api/agents/quest-generation.ts and lib/questGenerationAi.ts.
+// ---------------------------------------------------------------------------
+
+export type QuestGenerationSource = "morning_checkin" | "afternoon_checkin" | "onboarding_week";
+
+export type QuestGenerationMode = "neutral" | "progress" | "recovery" | "ldm";
+
+/** Compact milestone/description context — only ever populated for source === "onboarding_week". */
+export type QuestGenerationMilestones = {
+  twoWeek?: string;
+  oneMonth?: string;
+  threeMonth?: string;
+  longTermDream?: string;
+  /** The user's own longer "what these goals mean to you" description — sent as-is, this IS the
+   *  explicitly-authorized Path content Evie may read (see onboarding.tsx), not a private journal. */
+  description?: string;
+};
+
+export type QuestGenerationContext = {
+  requestId: string;
+  logicalDayKey: string;
+  source: QuestGenerationSource;
+  intention?: string;
+  currentEnergy?: number;
+  currentMode?: QuestGenerationMode;
+  availableMinutes?: number;
+  wakeTime?: string;
+  sleepTime?: string;
+  /** GuideContextRecord ids the user has authorized Evie to see — never raw text, see lib/guideContext.ts. */
+  acceptedPathContextIds: string[];
+  /** GuideContextRecord ids (or a Luna structured accommodation summary) authorized for Luna — see GuidePermissionScope. */
+  acceptedLunaContextIds: string[];
+  calendarSnapshotHash: string;
+  lifeProfile: UserLifeProfile;
+  learningMemory: LearningMemory;
+  patternContext?: GuidePatternContext;
+  /** Titles already active/completed today — source == "afternoon_checkin" duplicate guard. */
+  activeQuestTitles?: string[];
+  /** Which weekday date keys (YYYY-MM-DD) to propose for — source == "onboarding_week" only. */
+  targetWeekDates?: string[];
+  milestones?: QuestGenerationMilestones;
+  /** Luna's own structured, non-diagnostic accommodation summary — never raw journal text (see
+   *  lib/guideOrchestration.ts's shouldRunEvieHandoff / luna_to_evie_summary scope). */
+  lunaAccommodationSummary?: string;
+  /** Path/Luna context snapshots explicitly authorized for this request — compact text only,
+   *  never a full journal entry (see privacy rules: raw Mind/Sleep text never reaches Evie). */
+  acceptedPathContextText?: string[];
+  acceptedLunaContextText?: string[];
+};
+
+export type GeneratedQuestProposal = {
+  proposalId: string;
+  title: string;
+  description: string;
+  mode: "progress" | "recovery";
+  durationMinutes: number;
+  /** Negative = costs energy, positive = restores energy (recovery quests typically restore). */
+  energyCost: number;
+  suggestedStartAt?: string;
+  rationale: string;
+  /** Short attribution shown on the card, e.g. "Suggested by Evie from today's intention". */
+  sourceLabel: string;
+  /** Only set for onboarding_week proposals — which day (YYYY-MM-DD) this targets. */
+  targetDateKey?: string;
+  /** Groups a Push-Forward/Focused-Pace pair (or a weekly day's Progress+Recovery pair) — same
+   *  underlying intention, different proposal. */
+  variantGroup?: string;
+  variantLabel?: "push_forward" | "focused_pace" | "progress" | "recovery";
+};
+
+export type QuestGenerationResult = {
+  requestId: string;
+  proposals: GeneratedQuestProposal[];
+  generatedAt: string;
+  contextVersion: string;
+  /** Set only when this result is the deterministic fallback, not a real model result. */
+  aiUnavailableReason?: AiUnavailableReason;
+};
+
+// ---------------------------------------------------------------------------
+// Canonical wake/sleep rhythm profile — one source of truth for the user's typical schedule,
+// fed by onboarding and kept in sync by Sleep Guide (see app/sleep-calendar.tsx). Consumed by
+// quest-generation timing, checklist/weekly-habit defaults, and Luna's sleep observations.
+// ---------------------------------------------------------------------------
+
+export type UserRhythmProfile = {
+  typicalWakeTime: string;
+  typicalSleepTime: string;
+  preferredRoutineStart?: string;
+  timezone: string;
+  updatedAt: string;
+};
+
+// ---------------------------------------------------------------------------
+// Learning-over-time metadata for generated proposals — deliberately small and structured
+// (no raw prompts), feeding the SAME completion/fulfillment ledger the rest of the app already
+// uses (lib/questFulfillment.ts) rather than a parallel metrics store.
+// ---------------------------------------------------------------------------
+
+export type GuidePlanFeedback = {
+  proposalId: string;
+  source: "morning" | "afternoon" | "onboarding";
+  accepted: boolean;
+  edited: boolean;
+  originalDuration: number;
+  acceptedDuration?: number;
+  completed?: boolean;
+  fulfillmentRating?: number;
+  createdAt: string;
+  updatedAt: string;
 };

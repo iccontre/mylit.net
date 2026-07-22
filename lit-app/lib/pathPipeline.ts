@@ -398,7 +398,11 @@ export async function saveDailyQuestSuggestion(suggestion: DailyQuestSuggestion,
   const startTime = suggestion.suggestedTimeWindow ? WINDOW_TO_TIME_SLOT[suggestion.suggestedTimeWindow as TimeOfDayWindow] ?? "9:00 AM" : "9:00 AM";
   const steps = getStepsForItem(suggestion.durationMinutes, suggestion.kind);
   const nextItem = {
-    id: `pipeline-${slugify(suggestion.title)}-${Date.now()}`,
+    // Reuses the suggestion's own id (already unique per caller — see adaptAiDailyQuestSuggestion
+    // and adaptGeneratedProposalToDailyQuestSuggestion) rather than minting a fresh one, so a
+    // caller tracking this suggestion by id (e.g. GuidePlanFeedback) can still find the saved
+    // item afterward.
+    id: suggestion.id,
     source: "quickThought",
     text: suggestion.title,
     title: suggestion.title,

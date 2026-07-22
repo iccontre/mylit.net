@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { clearProgressKey, persistProgressKeys } from "./progressStore";
+import { markGuidePlanFeedbackCompleted } from "./guidePlanFeedback";
 import {
   ACTIVE_TIMED_ITEM_KEY,
   COMPLETED_QUESTS_KEY,
@@ -1407,6 +1408,9 @@ export async function markItemComplete(item: HomeQuestItem, existing: Completion
   };
 
   await syncSourceCompletion(item);
+  // No-ops when this item didn't come from a tracked guide-generated proposal (a manually
+  // created quest, or one predating this system) — see markGuidePlanFeedbackCompleted.
+  void markGuidePlanFeedbackCompleted(item.id);
   const next = [...existing, entry];
   await saveTodayCompletions(next);
   await appendFocusBlockLogEntry({

@@ -29,7 +29,8 @@ type LogType =
   | "affirmation"
   | "morning_reflection"
   | "sleep_checkin"
-  | "food_log";
+  | "food_log"
+  | "quick_thought";
 
 type LogEntry = {
   id: string;
@@ -56,6 +57,7 @@ const LOG_TYPE_TO_GUIDE_SOURCE: Record<LogType, GuideContextSourceType> = {
   morning_reflection: "morningIntentionReflection",
   sleep_checkin: "sleepCheckIn",
   food_log: "foodLog",
+  quick_thought: "quickThought",
 };
 
 const SECTIONS: { type: LogType; title: string; icon: string }[] = [
@@ -68,6 +70,7 @@ const SECTIONS: { type: LogType; title: string; icon: string }[] = [
   { type: "morning_reflection", title: "Morning Reflections", icon: "🌄" },
   { type: "sleep_checkin", title: "Sleep Check-Ins", icon: "🌤️" },
   { type: "food_log", title: "Food Log Notes", icon: "🍽️" },
+  { type: "quick_thought", title: "Quick Thoughts", icon: "💭" },
 ];
 
 /** Left-edge accent per entry type — pure presentation, not tied to any behavior. */
@@ -81,6 +84,7 @@ const SECTION_ACCENT: Record<LogType, string> = {
   morning_reflection: "#FDBA74",
   sleep_checkin: "#7DD3FC",
   food_log: "#86EFAC",
+  quick_thought: "#818CF8",
 };
 
 function readArray(raw: string | null): Record<string, unknown>[] {
@@ -327,6 +331,25 @@ function normalizeFoodLog(items: Record<string, unknown>[]): LogEntry[] {
     .filter((e): e is LogEntry => e !== null);
 }
 
+function normalizeQuickThought(items: Record<string, unknown>[]): LogEntry[] {
+  return items
+    .map((it, index): LogEntry | null => {
+      const title = str(it.title);
+      const body = str(it.body);
+      if (!title && !body) return null;
+      return {
+        id: `quick_thought-${str(it.id) || index}`,
+        type: "quick_thought" as const,
+        label: title || "Quick Thought",
+        preview: clip(body || title),
+        body: body || title,
+        when: whenLabel(it.createdAt),
+        sortAt: toSortMs(it.createdAt, it.id),
+      };
+    })
+    .filter((e): e is LogEntry => e !== null);
+}
+
 export default function LogHistoryScreen() {
   const router = useRouter();
   const mobile = useMobileFrame();
@@ -341,22 +364,34 @@ export default function LogHistoryScreen() {
     morning_reflection: [],
     sleep_checkin: [],
     food_log: [],
+    quick_thought: [],
   });
   const [selectedEntry, setSelectedEntry] = useState<LogEntry | null>(null);
 
   const loadLogs = useCallback(async () => {
-    const [journalRaw, reflectionRaw, meditationRaw, dreamRaw, preSleepRaw, affirmationRaw, morningReflectionRaw, sleepCheckInRaw, foodLogRaw] =
-      await Promise.all([
-        AsyncStorage.getItem(LOG_HISTORY_KEYS.journal),
-        AsyncStorage.getItem(LOG_HISTORY_KEYS.reflection),
-        AsyncStorage.getItem(LOG_HISTORY_KEYS.meditation),
-        AsyncStorage.getItem(LOG_HISTORY_KEYS.dream),
-        AsyncStorage.getItem(LOG_HISTORY_KEYS.preSleepIntention),
-        AsyncStorage.getItem(LOG_HISTORY_KEYS.affirmation),
-        AsyncStorage.getItem(LOG_HISTORY_KEYS.morningReflection),
-        AsyncStorage.getItem(LOG_HISTORY_KEYS.sleepCheckIn),
-        AsyncStorage.getItem(LOG_HISTORY_KEYS.foodLog),
-      ]);
+    const [
+      journalRaw,
+      reflectionRaw,
+      meditationRaw,
+      dreamRaw,
+      preSleepRaw,
+      affirmationRaw,
+      morningReflectionRaw,
+      sleepCheckInRaw,
+      foodLogRaw,
+      quickThoughtRaw,
+    ] = await Promise.all([
+      AsyncStorage.getItem(LOG_HISTORY_KEYS.journal),
+      AsyncStorage.getItem(LOG_HISTORY_KEYS.reflection),
+      AsyncStorage.getItem(LOG_HISTORY_KEYS.meditation),
+      AsyncStorage.getItem(LOG_HISTORY_KEYS.dream),
+      AsyncStorage.getItem(LOG_HISTORY_KEYS.preSleepIntention),
+      AsyncStorage.getItem(LOG_HISTORY_KEYS.affirmation),
+      AsyncStorage.getItem(LOG_HISTORY_KEYS.morningReflection),
+      AsyncStorage.getItem(LOG_HISTORY_KEYS.sleepCheckIn),
+      AsyncStorage.getItem(LOG_HISTORY_KEYS.foodLog),
+      AsyncStorage.getItem(LOG_HISTORY_KEYS.quickThought),
+    ]);
 
     const sortDesc = (list: LogEntry[]) => [...list].sort((a, b) => b.sortAt - a.sortAt);
 
@@ -370,6 +405,7 @@ export default function LogHistoryScreen() {
       morning_reflection: sortDesc(normalizeMorningReflection(readArray(morningReflectionRaw))),
       sleep_checkin: sortDesc(normalizeSleepCheckIn(readArray(sleepCheckInRaw))),
       food_log: sortDesc(normalizeFoodLog(readArray(foodLogRaw))),
+      quick_thought: sortDesc(normalizeQuickThought(readArray(quickThoughtRaw))),
     });
   }, []);
 

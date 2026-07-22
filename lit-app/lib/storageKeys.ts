@@ -121,6 +121,19 @@ export const MANDATORY_GATE_EVIDENCE_KEY = "mylit_mandatory_gate_evidence";
  *  completionId the completion itself uses (see lib/questFulfillment.ts). Array-merged by id
  *  like every other log, so a retry/resubmit of the same completion never duplicates. */
 export const QUEST_FULFILLMENT_KEY = "lit_quest_fulfillment_feedback";
+/** QuestGenerationResult[] — one per requestId, newest-first, capped history. Array-merged by
+ *  id (= requestId) so a retried generation call always resolves back to the SAME saved draft
+ *  instead of creating a duplicate — see lib/questGenerationAi.ts. */
+export const QUEST_GENERATION_RESULTS_KEY = "lit_quest_generation_results";
+/** UserRhythmProfile | null — canonical wake/sleep rhythm, seeded by onboarding and kept in
+ *  sync by Sleep Guide. Object-merged (prefer non-empty/newest field), never diverges into two
+ *  separate copies. See lib/agentTypes.ts's UserRhythmProfile. */
+export const USER_RHYTHM_PROFILE_KEY = "lit_user_rhythm_profile";
+/** GuidePlanFeedback[] — learning metadata for generated proposals, keyed by proposalId. */
+export const GUIDE_PLAN_FEEDBACK_KEY = "lit_guide_plan_feedback";
+/** WeeklyPlanDraft[] — one per weekStart, regenerating replaces (never duplicates); cleared
+ *  once accepted into the canonical schedule. See lib/weeklyPlanGeneration.ts. */
+export const WEEKLY_PLAN_DRAFTS_KEY = "lit_weekly_plan_drafts";
 
 /**
  * Canonical synced keys that back the Log History screen. These are the SAME keys the
@@ -140,6 +153,7 @@ export const LOG_HISTORY_KEYS = {
   morningReflection: MORNING_INTENTION_REFLECTIONS_KEY,
   sleepCheckIn: CHECKIN_HISTORY_KEY,
   foodLog: FOOD_LOGS_KEY,
+  quickThought: QUICK_THOUGHT_NOTES_KEY,
 } as const;
 
 /** AsyncStorage keys mirrored to the signed-in user's cloud profile. */
@@ -194,6 +208,10 @@ export const SYNCABLE_PROGRESS_KEYS = [
   GUIDE_CONTEXT_RECORDS_KEY,
   MANDATORY_GATE_EVIDENCE_KEY,
   QUEST_FULFILLMENT_KEY,
+  QUEST_GENERATION_RESULTS_KEY,
+  USER_RHYTHM_PROFILE_KEY,
+  GUIDE_PLAN_FEEDBACK_KEY,
+  WEEKLY_PLAN_DRAFTS_KEY,
 ] as const;
 
 export type SyncableProgressKey = (typeof SYNCABLE_PROGRESS_KEYS)[number];
@@ -225,6 +243,9 @@ export const ARRAY_MERGE_PROGRESS_KEYS = new Set<SyncableProgressKey>([
   GUIDE_CONTEXT_RECORDS_KEY,
   QUEST_FULFILLMENT_KEY,
   TOMORROW_QUEUE_KEY,
+  QUEST_GENERATION_RESULTS_KEY,
+  GUIDE_PLAN_FEEDBACK_KEY,
+  WEEKLY_PLAN_DRAFTS_KEY,
 ]);
 
 export function isSyncableProgressKey(key: string): key is SyncableProgressKey {

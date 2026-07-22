@@ -13,6 +13,7 @@ import {
 
 import { FormScreen } from "../components/FormScreen";
 import { GuideInfoModal } from "../components/GuideInfoModal";
+import { FeedToGuideButton } from "../components/parchment/FeedToGuideButton";
 import { SaveButton, type SaveState } from "../components/parchment/SaveButton";
 import { formPageContent, formStyles } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
@@ -82,6 +83,7 @@ export default function DreamJournalScreen() {
   const [showInfo, setShowInfo] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [lastSavedEntry, setLastSavedEntry] = useState<{ id: string; text: string } | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const saveStateTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
@@ -129,6 +131,7 @@ export default function DreamJournalScreen() {
           return;
         }
         setEntries((current) => current.map((e) => (e.id === updated.id ? updated : e)));
+        setLastSavedEntry({ id: updated.id, text: `${updated.title}\n${updated.summary}`.trim() });
       } else {
         const entry = await saveDreamEntry({ title, summary, feeling });
         if (!entry) {
@@ -136,6 +139,7 @@ export default function DreamJournalScreen() {
           return;
         }
         setEntries((current) => [entry, ...current]);
+        setLastSavedEntry({ id: entry.id, text: `${entry.title}\n${entry.summary}`.trim() });
       }
 
       await successHaptic();
@@ -252,6 +256,11 @@ export default function DreamJournalScreen() {
                   style={styles.saveButton}
                 />
               </View>
+              {lastSavedEntry ? (
+                <View style={styles.feedToLunaRow}>
+                  <FeedToGuideButton guide="luna" sourceType="dream" sourceId={lastSavedEntry.id} sourceText={lastSavedEntry.text} />
+                </View>
+              ) : null}
             </View>
 
             <View style={[styles.historyCard, { borderColor: theme.accent }]}>
@@ -514,6 +523,7 @@ const styles = StyleSheet.create({
   },
   saveRow: { flexDirection: "row", gap: 10, marginTop: 14 },
   saveButton: { flex: 1 },
+  feedToLunaRow: { marginTop: 10 },
   cancelEditBtn: {
     flex: 1,
     backgroundColor: "#3E2A1A",

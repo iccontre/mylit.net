@@ -29,6 +29,7 @@ import { ANALYTICS_EVENTS, trackEvent } from "../lib/analytics";
 import { isSupabaseConfigured } from "../lib/supabase";
 import { logGoalFeedback } from "../lib/feedbackLog";
 import { loadUserLifeProfile, saveUserLifeProfile } from "../lib/mylitAgents";
+import { loadUserRhythmProfile, saveUserRhythmProfile } from "../lib/userRhythmProfile";
 import { MAX_STRONGEST_SKILL_CATEGORIES, SKILL_CATEGORIES, type SkillCategory } from "../lib/agentTypes";
 import {
   generateFromDatabase,
@@ -63,6 +64,10 @@ type UserProfile = {
   hasGymAccess: boolean;
   hasQuietSpace: boolean;
   hasFoodControl: boolean;
+  /** "WRITE YOUR TRUTH" — why these goals matter, what success looks like, obstacles,
+   *  responsibilities, and preferred pace, all in the user's own words. Sent to Evie/Luna as
+   *  already-authorized Path context for weekly-plan generation (see lib/weeklyPlanGeneration.ts). */
+  goalContextDescription?: string;
 };
 
 const PROFILE_KEY = LOCAL_PROFILE_KEY;
@@ -249,6 +254,9 @@ export default function OnboardingScreen() {
   const [strongestSkillCategories, setStrongestSkillCategories] = useState<SkillCategory[]>([]);
   const [customSkillCategoryText, setCustomSkillCategoryText] = useState("");
   const [pathGenerating, setPathGenerating] = useState(false);
+  const [goalContextDescription, setGoalContextDescription] = useState("");
+  const [typicalWakeTime, setTypicalWakeTime] = useState("");
+  const [typicalSleepTime, setTypicalSleepTime] = useState("");
 
   useEffect(() => {
     loadProfile();
@@ -352,6 +360,7 @@ export default function OnboardingScreen() {
         setHasGymAccess(profile.hasGymAccess ?? false);
         setHasQuietSpace(profile.hasQuietSpace ?? false);
         setHasFoodControl(profile.hasFoodControl ?? false);
+        setGoalContextDescription(profile.goalContextDescription || "");
       } catch {
         // Keep defaults on parse failure
       }
@@ -360,6 +369,12 @@ export default function OnboardingScreen() {
     const betaProfile = await getOrCreateProfile();
     if (betaProfile?.display_name) {
       setName((current) => current || betaProfile.display_name || "");
+    }
+
+    const rhythmProfile = await loadUserRhythmProfile();
+    if (rhythmProfile) {
+      setTypicalWakeTime(rhythmProfile.typicalWakeTime || "");
+      setTypicalSleepTime(rhythmProfile.typicalSleepTime || "");
     }
 
     // Optional/additive — an existing user who never answered this simply sees nothing preselected.
@@ -444,9 +459,19 @@ export default function OnboardingScreen() {
       hasGymAccess,
       hasQuietSpace,
       hasFoodControl,
+      goalContextDescription: goalContextDescription.trim() || undefined,
     };
 
     await persistProgressKeys({ [PROFILE_KEY]: JSON.stringify(profile) });
+
+    // Additive — only written when the user actually entered a rhythm; never overwrites an
+    // existing rhythm (e.g. one already set via Sleep Guide) with blanks.
+    if (typicalWakeTime.trim() || typicalSleepTime.trim()) {
+      await saveUserRhythmProfile({
+        typicalWakeTime: typicalWakeTime.trim() || undefined,
+        typicalSleepTime: typicalSleepTime.trim() || undefined,
+      });
+    }
 
     // Optional/additive — only written when the user actually picked at least one, never forced.
     if (strongestSkillCategories.length > 0) {
@@ -478,7 +503,10 @@ export default function OnboardingScreen() {
       final: finalMilestones,
     });
 
-    router.replace(isEditPath ? "/path" : "/(tabs)");
+    // First-time onboarding routes through the reviewable first-week plan; editing an existing
+    // Path from settings returns straight to Path (regenerating a "first week" mid-life doesn't
+    // apply there).
+    router.replace(isEditPath ? "/path" : "/weekly-plan-review");
   }
 
   const canRegenerate =
@@ -723,6 +751,42 @@ export default function OnboardingScreen() {
                 onChangeText={setCustomSkillCategoryText}
               />
             ) : null}
+          </SectionShell>
+
+          <SectionShell number="10" title="WRITE YOUR TRUTH">
+            <Text style={styles.helperText}>
+              The guides will help you find a path that fits your real life. The more specific you are, the more useful your plan becomes.
+            </Text>
+            <TextInput
+              style={[styles.input, styles.truthInput]}
+              placeholder="Tell Evie and Luna what these goals mean to you, what might get in the way, and what kind of week would feel realistic."
+              placeholderTextColor="#8A5D2B"
+              value={goalContextDescription}
+              onChangeText={setGoalContextDescription}
+              multiline
+              scrollEnabled
+              textAlignVertical="top"
+            />
+          </SectionShell>
+
+          <SectionShell number="11" title="YOUR TYPICAL RHYTHM">
+            <Text style={styles.helperText}>Used to schedule quests within your real waking hours — you can change this any time in Sleep Guide.</Text>
+            <Text style={styles.rhythmLabel}>Typical wake time</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Example: 7:30 AM"
+              placeholderTextColor="#8A5D2B"
+              value={typicalWakeTime}
+              onChangeText={setTypicalWakeTime}
+            />
+            <Text style={styles.rhythmLabel}>Typical sleep time</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Example: 11:00 PM"
+              placeholderTextColor="#8A5D2B"
+              value={typicalSleepTime}
+              onChangeText={setTypicalSleepTime}
+            />
           </SectionShell>
 
           {validationMessage ? <Text style={styles.validationText}>{validationMessage}</Text> : null}
@@ -1126,6 +1190,21 @@ const styles = StyleSheet.create({
     marginTop: 0,
     minHeight: 58,
     fontSize: 15,
+  },
+  truthInput: {
+    marginTop: 8,
+    minHeight: 110,
+    fontSize: 14,
+  },
+  rhythmLabel: {
+    fontFamily: pixelFont,
+    fontSize: 11,
+    fontWeight: "900",
+    color: "#8A5D2B",
+    marginTop: 10,
+    marginBottom: 4,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
   validationText: {
     color: "#7F1D1D",

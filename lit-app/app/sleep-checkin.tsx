@@ -31,13 +31,16 @@ import {
   computeSleepSession,
   DEFAULT_AFTERNOON_UNLOCK_TIME,
   formatMinutesAsTime,
+  getEnergyDelta,
   getQuestDayKey,
   parseTimeToMinutes,
   sleepInterruptionPenalty,
 } from "../lib/scheduling";
 import { loadGuideMemory, loadUserLifeProfile, recordAgentEvent, saveGuideMemory } from "../lib/mylitAgents";
-import { ensureEvieMorningQuest } from "../lib/evieMorningQuest";
-import type { WakeRhythm } from "../lib/agentTypes";
+import { acceptGeneratedMorningQuest, ensureEvieMorningQuest, loadTodaysEvieMorningQuest } from "../lib/evieMorningQuest";
+import { acceptGeneratedProposalAsDailyQuest, loadCachedQuestGeneration, requestQuestGeneration } from "../lib/questGenerationAi";
+import { recordGuidePlanFeedback } from "../lib/guidePlanFeedback";
+import type { GeneratedQuestProposal, WakeRhythm } from "../lib/agentTypes";
 
 type CheckInMode = "Recovery" | "Progress";
 type CheckInType = "morning" | "afternoon";
@@ -267,6 +270,20 @@ export default function SleepCheckInScreen() {
   const [interruptionSleepAgainInput, setInterruptionSleepAgainInput] = useState("");
   const [dreamedTonight, setDreamedTonight] = useState<"yes" | "no" | "">("");
   const [todayIntentText, setTodayIntentText] = useState("");
+  // Morning quest generation (see lib/questGenerationAi.ts) — optional, user-driven; never
+  // fires automatically on load/foreground/reopen (see the cache-restore effect below).
+  const [morningGenState, setMorningGenState] = useState<"idle" | "generating" | "ready" | "error">("idle");
+  const [morningProposals, setMorningProposals] = useState<GeneratedQuestProposal[]>([]);
+  const [selectedMorningProposalId, setSelectedMorningProposalId] = useState<string | null>(null);
+  const [hasRegeneratedMorning, setHasRegeneratedMorning] = useState(false);
+  const [editingMorningProposal, setEditingMorningProposal] = useState(false);
+  const [editedMorningTitle, setEditedMorningTitle] = useState("");
+  const [editedMorningDuration, setEditedMorningDuration] = useState<15 | 30 | 45 | 60>(30);
+  // Afternoon quest generation — same shared contract, up to one Progress + one Recovery.
+  const [afternoonGenState, setAfternoonGenState] = useState<"idle" | "generating" | "ready" | "error">("idle");
+  const [afternoonProposals, setAfternoonProposals] = useState<GeneratedQuestProposal[]>([]);
+  const [acceptedAfternoonProposalIds, setAcceptedAfternoonProposalIds] = useState<Set<string>>(new Set());
+  const [hasRegeneratedAfternoon, setHasRegeneratedAfternoon] = useState(false);
   const [tookNap, setTookNap] = useState<"yes" | "no" | "">("");
   const [napDuration, setNapDuration] = useState<number | null>(null);
   const [hadCaffeine, setHadCaffeine] = useState<"yes" | "no" | "">("");
@@ -355,6 +372,22 @@ export default function SleepCheckInScreen() {
       setAfternoonUnlockChecked(true);
     })();
   }, []);
+
+  // Restore any already-generated proposals for today's quest day WITHOUT calling the network —
+  // reopening/foregrounding/rerendering this screen must never trigger a fresh generation call.
+  useEffect(() => {
+    const requestId = checkInType === "afternoon" ? `afternoon-${getQuestDayKey()}` : `morning-${getQuestDayKey()}`;
+    void loadCachedQuestGeneration(requestId).then((cached) => {
+      if (!cached) return;
+      if (checkInType === "afternoon") {
+        setAfternoonProposals(cached.proposals);
+        setAfternoonGenState("ready");
+      } else {
+        setMorningProposals(cached.proposals);
+        setMorningGenState("ready");
+      }
+    });
+  }, [checkInType]);
 
   async function loadLatestCheckIn() {
     const saved = await AsyncStorage.getItem(LATEST_CHECKIN_KEY);
@@ -551,6 +584,90 @@ export default function SleepCheckInScreen() {
     await persistProgressKeys({ [FOOD_LOGS_KEY]: JSON.stringify([log, ...existing]) });
   }
 
+  const selectedMorningProposal = morningProposals.find((p) => p.proposalId === selectedMorningProposalId) ?? null;
+  /** The proposal as it will actually be accepted — reflects any inline edit. */
+  const effectiveMorningProposal: GeneratedQuestProposal | null = selectedMorningProposal
+    ? editingMorningProposal
+      ? {
+          ...selectedMorningProposal,
+          title: editedMorningTitle.trim() || selectedMorningProposal.title,
+          durationMinutes: editedMorningDuration,
+          energyCost: getEnergyDelta({ kind: selectedMorningProposal.mode, durationMinutes: editedMorningDuration }),
+        }
+      : selectedMorningProposal
+    : null;
+
+  async function generateMorningQuests(forceRegenerate = false) {
+    if (!todayIntentText.trim() || morningGenState === "generating") return;
+    setMorningGenState("generating");
+    const requestId = forceRegenerate ? `morning-${getQuestDayKey()}-regen-${Date.now()}` : `morning-${getQuestDayKey()}`;
+    const result = await requestQuestGeneration({
+      requestId,
+      logicalDayKey: getQuestDayKey(),
+      source: "morning_checkin",
+      intention: todayIntentText.trim(),
+      currentEnergy: energy,
+      currentMode: mode === "Recovery" ? "recovery" : mode === "Progress" ? "progress" : "neutral",
+    });
+    if (!result.ok) {
+      setMorningGenState("error");
+      return;
+    }
+    setMorningProposals(result.result.proposals);
+    setSelectedMorningProposalId(null);
+    setEditingMorningProposal(false);
+    setMorningGenState("ready");
+    if (forceRegenerate) setHasRegeneratedMorning(true);
+  }
+
+  function selectMorningProposal(proposalId: string) {
+    const proposal = morningProposals.find((p) => p.proposalId === proposalId);
+    if (!proposal) return;
+    setSelectedMorningProposalId(proposalId);
+    setEditingMorningProposal(false);
+    setEditedMorningTitle(proposal.title);
+    setEditedMorningDuration(proposal.durationMinutes as 15 | 30 | 45 | 60);
+  }
+
+  function dismissMorningProposals() {
+    setSelectedMorningProposalId(null);
+    setEditingMorningProposal(false);
+  }
+
+  async function generateAfternoonQuests(forceRegenerate = false) {
+    if (afternoonGenState === "generating") return;
+    setAfternoonGenState("generating");
+    const requestId = forceRegenerate ? `afternoon-${getQuestDayKey()}-regen-${Date.now()}` : `afternoon-${getQuestDayKey()}`;
+    // Afternoon Check-In has no intention field of its own — reuse this morning's original
+    // intention (if any) so generation still pursues the same underlying goal for the day.
+    const morningQuest = await loadTodaysEvieMorningQuest();
+    const result = await requestQuestGeneration({
+      requestId,
+      logicalDayKey: getQuestDayKey(),
+      source: "afternoon_checkin",
+      intention: morningQuest?.sourceText,
+      currentEnergy: currentEnergyFeeling ? Number(currentEnergyFeeling) || energy : energy,
+      currentMode: mode === "Recovery" ? "recovery" : mode === "Progress" ? "progress" : "neutral",
+    });
+    if (!result.ok) {
+      setAfternoonGenState("error");
+      return;
+    }
+    setAfternoonProposals(result.result.proposals);
+    setAcceptedAfternoonProposalIds(new Set());
+    setAfternoonGenState("ready");
+    if (forceRegenerate) setHasRegeneratedAfternoon(true);
+  }
+
+  function toggleAfternoonProposal(proposalId: string) {
+    setAcceptedAfternoonProposalIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(proposalId)) next.delete(proposalId);
+      else next.add(proposalId);
+      return next;
+    });
+  }
+
   async function saveCheckIn() {
     if (!hasAllInputs || saveState === "saving" || saveState === "saved") return;
 
@@ -658,9 +775,32 @@ export default function SleepCheckInScreen() {
       }
 
       if (!isAfternoon && todayIntentText.trim()) {
-        // Idempotent per quest-day — a retry/refresh/another device never generates a second
-        // quest for the same day (see ensureEvieMorningQuest).
-        void ensureEvieMorningQuest(todayIntentText.trim());
+        if (effectiveMorningProposal) {
+          // Idempotent per quest-day — replaces the same single EVIE_MORNING_QUEST_KEY slot,
+          // never a duplicate (see acceptGeneratedMorningQuest).
+          void acceptGeneratedMorningQuest(effectiveMorningProposal, todayIntentText.trim());
+          void recordGuidePlanFeedback({
+            proposalId: effectiveMorningProposal.proposalId,
+            source: "morning",
+            accepted: true,
+            edited: editingMorningProposal,
+            originalDuration: selectedMorningProposal?.durationMinutes ?? effectiveMorningProposal.durationMinutes,
+            acceptedDuration: effectiveMorningProposal.durationMinutes,
+          });
+        } else {
+          // No AI proposal accepted — preserve the existing deterministic behavior exactly.
+          // Idempotent per quest-day — a retry/refresh/another device never generates a second
+          // quest for the same day (see ensureEvieMorningQuest).
+          void ensureEvieMorningQuest(todayIntentText.trim());
+        }
+      }
+
+      if (isAfternoon && acceptedAfternoonProposalIds.size > 0) {
+        const boardMode: "Progress" | "Recovery" = mode === "Recovery" ? "Recovery" : "Progress";
+        for (const proposal of afternoonProposals) {
+          if (!acceptedAfternoonProposalIds.has(proposal.proposalId)) continue;
+          void acceptGeneratedProposalAsDailyQuest(proposal, boardMode, "afternoon");
+        }
       }
 
       await successHaptic();
@@ -1004,6 +1144,133 @@ export default function SleepCheckInScreen() {
               </View>
             </View>
 
+            {!isAfternoon ? (
+              <View style={[styles.genCard, { borderColor: theme.accent }]}>
+                <Text style={[styles.cardLabel, { color: theme.glow }]}>✨ Quest Options</Text>
+                {morningGenState === "ready" && morningProposals.length > 0 ? (
+                  <>
+                    <Text style={styles.helperText}>CHOOSE TODAY&apos;S PACE</Text>
+                    {morningProposals.map((p) => {
+                      const selected = p.proposalId === selectedMorningProposalId;
+                      return (
+                        <TouchableOpacity
+                          key={p.proposalId}
+                          style={[styles.proposalCard, selected && { borderColor: theme.accent, backgroundColor: "#86EFAC22" }]}
+                          onPress={() => selectMorningProposal(p.proposalId)}
+                        >
+                          <Text style={styles.proposalHeader}>
+                            {p.variantLabel === "push_forward" ? "🔥 PUSH FORWARD" : "🍃 FOCUSED PACE"}{selected ? " · SELECTED" : ""}
+                          </Text>
+                          <Text style={styles.proposalTitleText}>{p.title}</Text>
+                          <Text style={styles.napDurationEnergy}>
+                            {p.durationMinutes} min · Energy {p.energyCost >= 0 ? "+" : ""}{p.energyCost} · {p.sourceLabel}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                    {selectedMorningProposal ? (
+                      editingMorningProposal ? (
+                        <View style={{ marginTop: 8 }}>
+                          <TextInput style={styles.input} value={editedMorningTitle} onChangeText={setEditedMorningTitle} placeholder="Quest title" placeholderTextColor="#8A6D4A" />
+                          <View style={styles.napDurationRow}>
+                            {([15, 30, 45, 60] as const).map((d) => (
+                              <TouchableOpacity
+                                key={d}
+                                style={[styles.napDurationButton, editedMorningDuration === d && styles.choiceButtonActive]}
+                                onPress={() => setEditedMorningDuration(d)}
+                              >
+                                <Text style={styles.napDurationText}>{d} min</Text>
+                              </TouchableOpacity>
+                            ))}
+                          </View>
+                          <TouchableOpacity style={styles.dreamJournalButton} onPress={() => setEditingMorningProposal(false)}>
+                            <Text style={styles.dreamJournalButtonText}>DONE EDITING</Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        <TouchableOpacity onPress={() => setEditingMorningProposal(true)} style={{ marginTop: 4 }}>
+                          <Text style={styles.helperText}>✎ Edit this quest before saving</Text>
+                        </TouchableOpacity>
+                      )
+                    ) : null}
+                    <View style={styles.napDurationRow}>
+                      <TouchableOpacity
+                        disabled={hasRegeneratedMorning}
+                        style={[styles.choiceButton, hasRegeneratedMorning && { opacity: 0.5 }]}
+                        onPress={() => void generateMorningQuests(true)}
+                      >
+                        <Text style={styles.choiceText}>{hasRegeneratedMorning ? "REGENERATED" : "REGENERATE"}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.choiceButton} onPress={dismissMorningProposals}>
+                        <Text style={styles.choiceText}>DISMISS BOTH</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                ) : (
+                  <TouchableOpacity
+                    disabled={!todayIntentText.trim() || morningGenState === "generating"}
+                    style={[styles.dreamJournalButton, (!todayIntentText.trim() || morningGenState === "generating") && { opacity: 0.5 }]}
+                    onPress={() => void generateMorningQuests(false)}
+                  >
+                    <Text style={styles.dreamJournalButtonText}>{morningGenState === "generating" ? "GENERATING…" : "✨ GENERATE QUESTS"}</Text>
+                  </TouchableOpacity>
+                )}
+                {morningGenState === "error" ? (
+                  <Text style={styles.errorText}>Couldn&apos;t generate quests right now — you can still save your check-in normally.</Text>
+                ) : null}
+              </View>
+            ) : (
+              <View style={[styles.genCard, { borderColor: theme.accent }]}>
+                <Text style={[styles.cardLabel, { color: theme.glow }]}>✨ Quest Options</Text>
+                {afternoonGenState === "ready" && afternoonProposals.length > 0 ? (
+                  <>
+                    <Text style={styles.helperText}>Accept either, both, or neither.</Text>
+                    {afternoonProposals.map((p) => {
+                      const accepted = acceptedAfternoonProposalIds.has(p.proposalId);
+                      return (
+                        <TouchableOpacity
+                          key={p.proposalId}
+                          style={[styles.proposalCard, accepted && { borderColor: theme.accent, backgroundColor: "#86EFAC22" }]}
+                          onPress={() => toggleAfternoonProposal(p.proposalId)}
+                        >
+                          <Text style={styles.proposalHeader}>
+                            {p.mode === "recovery" ? "🌙 RECOVERY" : "🌲 PROGRESS"}{accepted ? " · ACCEPTED" : ""}
+                          </Text>
+                          <Text style={styles.proposalTitleText}>{p.title}</Text>
+                          <Text style={styles.napDurationEnergy}>
+                            {p.durationMinutes} min · Energy {p.energyCost >= 0 ? "+" : ""}{p.energyCost} · {p.sourceLabel}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                    <View style={styles.napDurationRow}>
+                      <TouchableOpacity
+                        disabled={hasRegeneratedAfternoon}
+                        style={[styles.choiceButton, hasRegeneratedAfternoon && { opacity: 0.5 }]}
+                        onPress={() => void generateAfternoonQuests(true)}
+                      >
+                        <Text style={styles.choiceText}>{hasRegeneratedAfternoon ? "REGENERATED" : "REGENERATE"}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                ) : (
+                  <TouchableOpacity
+                    disabled={afternoonGenState === "generating"}
+                    style={[styles.dreamJournalButton, afternoonGenState === "generating" && { opacity: 0.5 }]}
+                    onPress={() => void generateAfternoonQuests(false)}
+                  >
+                    <Text style={styles.dreamJournalButtonText}>{afternoonGenState === "generating" ? "GENERATING…" : "✨ GENERATE QUESTS"}</Text>
+                  </TouchableOpacity>
+                )}
+                {afternoonGenState === "error" ? (
+                  <Text style={styles.errorText}>Couldn&apos;t generate quests right now — you can still save your check-in normally.</Text>
+                ) : null}
+                {afternoonGenState === "ready" && afternoonProposals.length === 0 ? (
+                  <Text style={styles.helperText}>Nothing extra fits realistically right now — that&apos;s okay.</Text>
+                ) : null}
+              </View>
+            )}
+
             <SaveButton
               state={saveState}
               onPress={saveCheckIn}
@@ -1265,6 +1532,37 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     flexDirection: "row",
     alignItems: "center",
+  },
+  genCard: {
+    backgroundColor: "rgba(6, 10, 18, 0.96)",
+    borderWidth: 3,
+    borderRadius: 6,
+    padding: 12,
+    marginBottom: 10,
+  },
+  proposalCard: {
+    backgroundColor: "#F4E8CE",
+    borderWidth: 2,
+    borderColor: "#5C4425",
+    borderRadius: 7,
+    padding: 10,
+    marginTop: 8,
+  },
+  proposalHeader: {
+    color: "#4A3620",
+    fontFamily: pixelFont,
+    fontSize: 11,
+    fontWeight: "900",
+    letterSpacing: 0.5,
+    marginBottom: 3,
+  },
+  proposalTitleText: {
+    color: "#3D2C18",
+    fontFamily: pixelFont,
+    fontSize: 13,
+    fontWeight: "800",
+    lineHeight: 18,
+    marginBottom: 4,
   },
   flameFallback: {
     alignItems: "center",

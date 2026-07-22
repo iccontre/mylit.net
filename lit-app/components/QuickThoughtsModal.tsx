@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
 
+import { FeedToGuideButton } from "./parchment/FeedToGuideButton";
 import { readJson } from "../lib/readJson";
 import { persistProgressKeys } from "../lib/progressStore";
+import { getQuestDayKey } from "../lib/scheduling";
 import { QUICK_THOUGHT_NOTES_KEY } from "../lib/storageKeys";
 
 const pixelFont = Platform.select({ ios: "Menlo", android: "monospace", web: "monospace", default: "monospace" });
@@ -29,70 +31,12 @@ const CATEGORY_OPTIONS: { value: NonNullable<QuickThoughtNote["category"]>; labe
 ];
 
 /**
- * Calendar's "Quick Thoughts" entry point — Luna/Evie reminders plus MYLIT-themed General
- * Notes. Notes are intentionally separate from journal/dream/reflection logs (see
- * QUICK_THOUGHT_NOTES_KEY) — a lightweight, Apple-Notes-like scratchpad, not a guided log.
+ * Mind Hub's Quick Thoughts editor — a lightweight, Apple-Notes-like scratchpad, intentionally
+ * separate from journal/dream/reflection logs (see QUICK_THOUGHT_NOTES_KEY). This is the ONE
+ * canonical entry point for creating/editing a QuickThoughtNote; Log History (app/log-history.tsx)
+ * reads the same storage key read-only, so nothing here duplicates or migrates existing records.
  */
-export function QuickThoughtsModal({
-  visible,
-  onClose,
-  selectedDateKey,
-  onOpenLuna,
-  onOpenEvie,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  selectedDateKey: string;
-  onOpenLuna: () => void;
-  onOpenEvie: () => void;
-}) {
-  const [showNotes, setShowNotes] = useState(false);
-
-  return (
-    <>
-      <Modal visible={visible && !showNotes} transparent animationType="fade" onRequestClose={onClose}>
-        <View style={styles.backdrop}>
-          <View style={styles.panel}>
-            <Text style={styles.title}>QUICK THOUGHTS</Text>
-            <Text style={styles.intro}>Capture reminders, thoughts, and notes for this day.</Text>
-
-            <TouchableOpacity style={[styles.row, styles.rowPurple]} onPress={() => { onClose(); onOpenLuna(); }}>
-              <Text style={styles.rowIcon}>🌙</Text>
-              <View style={styles.rowCopy}>
-                <Text style={styles.rowName}>Luna Reminders</Text>
-                <Text style={styles.rowExplain}>Recovery reminders</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={[styles.row, styles.rowGreen]} onPress={() => { onClose(); onOpenEvie(); }}>
-              <Text style={styles.rowIcon}>🌲</Text>
-              <View style={styles.rowCopy}>
-                <Text style={styles.rowName}>Evie Reminders</Text>
-                <Text style={styles.rowExplain}>Progress reminders</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={[styles.row, styles.rowGold]} onPress={() => setShowNotes(true)}>
-              <Text style={styles.rowIcon}>📝</Text>
-              <View style={styles.rowCopy}>
-                <Text style={styles.rowName}>General Notes</Text>
-                <Text style={styles.rowExplain}>Simple notes for this day</Text>
-              </View>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.closeBtn} onPress={onClose}>
-              <Text style={styles.closeBtnText}>CLOSE</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-
-      <GeneralNotesModal visible={visible && showNotes} onClose={() => setShowNotes(false)} selectedDateKey={selectedDateKey} />
-    </>
-  );
-}
-
-function GeneralNotesModal({ visible, onClose, selectedDateKey }: { visible: boolean; onClose: () => void; selectedDateKey: string }) {
+export function QuickThoughtsModal({ visible, onClose }: { visible: boolean; onClose: () => void }) {
   const [notes, setNotes] = useState<QuickThoughtNote[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState("");
@@ -121,6 +65,8 @@ function GeneralNotesModal({ visible, onClose, selectedDateKey }: { visible: boo
     setSaved(false);
   }
 
+  const editingNote = editingId && editingId !== "new" ? notes.find((n) => n.id === editingId) ?? null : null;
+
   async function saveNote() {
     if (!draftTitle.trim() || saved) return;
     const now = new Date().toISOString();
@@ -137,9 +83,10 @@ function GeneralNotesModal({ visible, onClose, selectedDateKey }: { visible: boo
         category: draftCategory,
         createdAt: now,
         updatedAt: now,
-        localDate: selectedDateKey,
+        localDate: getQuestDayKey(),
       };
       nextNotes = [note, ...notes];
+      setEditingId(note.id);
     }
     await persistProgressKeys({ [QUICK_THOUGHT_NOTES_KEY]: JSON.stringify(nextNotes) });
     setNotes(nextNotes);
@@ -147,6 +94,7 @@ function GeneralNotesModal({ visible, onClose, selectedDateKey }: { visible: boo
   }
 
   const isDetailOpen = editingId !== null;
+  const savedNote = editingId ? notes.find((n) => n.id === editingId) : null;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
@@ -154,20 +102,20 @@ function GeneralNotesModal({ visible, onClose, selectedDateKey }: { visible: boo
         <ScrollView style={styles.panel} contentContainerStyle={styles.notesContent}>
           {isDetailOpen ? (
             <>
-              <Text style={styles.title}>{editingId === "new" ? "NEW NOTE" : "EDIT NOTE"}</Text>
+              <Text style={styles.title}>{editingNote ? "EDIT THOUGHT" : "NEW QUICK THOUGHT"}</Text>
               <TextInput
                 style={styles.titleInput}
                 value={draftTitle}
                 onChangeText={(t) => { setDraftTitle(t); setSaved(false); }}
                 placeholder="Title"
-                placeholderTextColor="#8A6D4A"
+                placeholderTextColor="#8783C9"
               />
               <TextInput
                 style={styles.bodyInput}
                 value={draftBody}
                 onChangeText={(t) => { setDraftBody(t); setSaved(false); }}
-                placeholder="Write something..."
-                placeholderTextColor="#8A6D4A"
+                placeholder="Capture something before it disappears…"
+                placeholderTextColor="#8783C9"
                 multiline
               />
               <View style={styles.categoryRow}>
@@ -186,24 +134,34 @@ function GeneralNotesModal({ visible, onClose, selectedDateKey }: { visible: boo
                 disabled={!draftTitle.trim() || saved}
                 onPress={() => void saveNote()}
               >
-                <Text style={styles.saveBtnText}>{saved ? "SAVED" : "SAVE"}</Text>
+                <Text style={styles.saveBtnText}>{saved ? "✓ SAVED" : "SAVE"}</Text>
               </TouchableOpacity>
+              {saved && savedNote ? (
+                <View style={styles.feedRow}>
+                  <FeedToGuideButton
+                    guide="luna"
+                    sourceType="quickThought"
+                    sourceId={savedNote.id}
+                    sourceText={`${savedNote.title}\n${savedNote.body}`.trim()}
+                  />
+                </View>
+              ) : null}
               <TouchableOpacity style={styles.closeBtn} onPress={() => setEditingId(null)}>
-                <Text style={styles.closeBtnText}>BACK TO NOTES</Text>
+                <Text style={styles.closeBtnText}>BACK TO THOUGHTS</Text>
               </TouchableOpacity>
             </>
           ) : (
             <>
-              <Text style={styles.title}>GENERAL NOTES</Text>
-              <Text style={styles.intro}>MYLIT-themed notes — separate from your journal and reflections.</Text>
-              <TouchableOpacity style={[styles.row, styles.rowGold]} onPress={openNew}>
+              <Text style={styles.title}>💭 QUICK THOUGHTS</Text>
+              <Text style={styles.intro}>Capture something before it disappears.</Text>
+              <TouchableOpacity style={[styles.row, styles.rowNew]} onPress={openNew}>
                 <Text style={styles.rowIcon}>+</Text>
                 <View style={styles.rowCopy}>
-                  <Text style={styles.rowName}>New Note</Text>
+                  <Text style={styles.rowName}>New Quick Thought</Text>
                 </View>
               </TouchableOpacity>
               {notes.length === 0 ? (
-                <Text style={styles.emptyText}>No notes yet.</Text>
+                <Text style={styles.emptyText}>No quick thoughts yet.</Text>
               ) : (
                 notes.map((note) => (
                   <TouchableOpacity key={note.id} style={styles.noteListRow} onPress={() => openExisting(note)}>
@@ -227,32 +185,30 @@ function GeneralNotesModal({ visible, onClose, selectedDateKey }: { visible: boo
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: "rgba(2,4,10,0.88)", alignItems: "center", justifyContent: "center", padding: 18 },
-  panel: { width: "100%", maxWidth: 380, maxHeight: "85%", backgroundColor: "rgba(46,32,20,0.98)", borderWidth: 3, borderColor: "#5C4425", borderRadius: 12, padding: 16 },
+  panel: { width: "100%", maxWidth: 380, maxHeight: "85%", backgroundColor: "rgba(36,26,74,0.98)", borderWidth: 3, borderColor: "#7C3AED", borderRadius: 12, padding: 16 },
   notesContent: { paddingBottom: 8 },
-  title: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 16, fontWeight: "900", textAlign: "center", marginBottom: 6, letterSpacing: 1 },
-  intro: { color: "#CBD5E1", fontSize: 11, lineHeight: 16, fontWeight: "700", textAlign: "center", marginBottom: 12 },
+  title: { color: "#ECE4FB", fontFamily: pixelFont, fontSize: 16, fontWeight: "900", textAlign: "center", marginBottom: 6, letterSpacing: 1 },
+  intro: { color: "#C4B5FD", fontSize: 11, lineHeight: 16, fontWeight: "700", textAlign: "center", marginBottom: 12 },
   row: { flexDirection: "row", alignItems: "center", borderWidth: 2, borderRadius: 8, padding: 12, marginBottom: 10, backgroundColor: "rgba(46,32,20,0.9)" },
-  rowPurple: { borderColor: "#A78BFA" },
-  rowGreen: { borderColor: "#22C55E" },
-  rowGold: { borderColor: "#FBBF24" },
-  rowIcon: { fontSize: 22, marginRight: 12 },
+  rowNew: { borderColor: "#C084FC", backgroundColor: "rgba(76,29,149,0.55)" },
+  rowIcon: { fontSize: 22, marginRight: 12, color: "#ECE4FB" },
   rowCopy: { flex: 1 },
-  rowName: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 13, fontWeight: "900" },
-  rowExplain: { color: "#94A3B8", fontSize: 11, fontWeight: "700", marginTop: 2 },
+  rowName: { color: "#ECE4FB", fontFamily: pixelFont, fontSize: 13, fontWeight: "900" },
   closeBtn: { marginTop: 4, alignItems: "center", paddingVertical: 10 },
-  closeBtnText: { color: "#94A3B8", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
-  emptyText: { color: "#94A3B8", fontSize: 11, fontWeight: "700", textAlign: "center", marginVertical: 10 },
-  noteListRow: { borderWidth: 2, borderColor: "#475569", borderRadius: 8, padding: 10, marginBottom: 8, backgroundColor: "rgba(46,32,20,0.85)" },
-  noteListTitle: { color: "#F8FAFC", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
-  noteListMeta: { color: "#94A3B8", fontSize: 10, fontWeight: "700", marginTop: 3 },
-  titleInput: { backgroundColor: "rgba(46,32,20,0.9)", borderWidth: 2, borderColor: "#475569", borderRadius: 6, padding: 10, fontSize: 14, color: "#F8FAFC", fontWeight: "800", marginBottom: 8 },
-  bodyInput: { backgroundColor: "rgba(46,32,20,0.9)", borderWidth: 2, borderColor: "#475569", borderRadius: 6, padding: 10, fontSize: 13, color: "#F8FAFC", fontWeight: "600", minHeight: 120, textAlignVertical: "top", marginBottom: 8 },
+  closeBtnText: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 11, fontWeight: "900" },
+  emptyText: { color: "#C4B5FD", fontSize: 11, fontWeight: "700", textAlign: "center", marginVertical: 10 },
+  noteListRow: { borderWidth: 2, borderColor: "#4C1D95", borderRadius: 8, padding: 10, marginBottom: 8, backgroundColor: "rgba(36,26,74,0.85)" },
+  noteListTitle: { color: "#ECE4FB", fontFamily: pixelFont, fontSize: 12, fontWeight: "900" },
+  noteListMeta: { color: "#C4B5FD", fontSize: 10, fontWeight: "700", marginTop: 3 },
+  titleInput: { backgroundColor: "rgba(36,26,74,0.9)", borderWidth: 2, borderColor: "#4C1D95", borderRadius: 6, padding: 10, fontSize: 14, color: "#ECE4FB", fontWeight: "800", marginBottom: 8 },
+  bodyInput: { backgroundColor: "rgba(36,26,74,0.9)", borderWidth: 2, borderColor: "#4C1D95", borderRadius: 6, padding: 10, fontSize: 13, color: "#ECE4FB", fontWeight: "600", minHeight: 120, textAlignVertical: "top", marginBottom: 8 },
   categoryRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, marginBottom: 12 },
-  categoryChip: { borderWidth: 1, borderColor: "#475569", borderRadius: 5, paddingVertical: 5, paddingHorizontal: 8, backgroundColor: "rgba(30,41,59,0.82)" },
-  categoryChipActive: { borderColor: "#FBBF24", backgroundColor: "rgba(113,63,18,0.8)" },
-  categoryChipText: { color: "#CBD5E1", fontFamily: pixelFont, fontSize: 9, fontWeight: "900" },
-  categoryChipTextActive: { color: "#FDE68A" },
-  saveBtn: { borderWidth: 2, borderColor: "#FBBF24", borderRadius: 6, paddingVertical: 11, alignItems: "center", backgroundColor: "rgba(69,43,8,0.65)" },
+  categoryChip: { borderWidth: 1, borderColor: "#4C1D95", borderRadius: 5, paddingVertical: 5, paddingHorizontal: 8, backgroundColor: "rgba(46,32,74,0.82)" },
+  categoryChipActive: { borderColor: "#C084FC", backgroundColor: "rgba(124,58,237,0.8)" },
+  categoryChipText: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 9, fontWeight: "900" },
+  categoryChipTextActive: { color: "#F3E8FF" },
+  saveBtn: { borderWidth: 2, borderColor: "#C084FC", borderRadius: 6, paddingVertical: 11, alignItems: "center", backgroundColor: "rgba(88,28,135,0.75)" },
   saveBtnDisabled: { opacity: 0.5 },
-  saveBtnText: { color: "#FDE68A", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 0.5 },
+  saveBtnText: { color: "#F3E8FF", fontFamily: pixelFont, fontSize: 12, fontWeight: "900", letterSpacing: 0.5 },
+  feedRow: { marginTop: 10 },
 });

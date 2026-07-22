@@ -16,6 +16,7 @@ import { BottomNav } from "../components/BottomNav";
 import { FormScreen } from "../components/FormScreen";
 import { GuideInfoModal } from "../components/GuideInfoModal";
 import { HistoryModal } from "../components/HistoryModal";
+import { FeedToGuideButton } from "../components/parchment/FeedToGuideButton";
 import { SaveButton, type SaveState } from "../components/parchment/SaveButton";
 import { formPageContent, formStyles } from "../constants/formStyles";
 import { useMobileFrame } from "../constants/mobileLayout";
@@ -54,6 +55,7 @@ export default function AffirmationsScreen() {
   const [affirmations, setAffirmations] = useState<AffirmationEntry[]>([]);
   const [showInfo, setShowInfo] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [lastSavedEntry, setLastSavedEntry] = useState<{ id: string; text: string } | null>(null);
   const saveStateTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     return () => {
@@ -129,6 +131,7 @@ export default function AffirmationsScreen() {
 
       await successHaptic();
 
+      setLastSavedEntry({ id: relatedId, text: text.trim() });
       setSaveState("saved");
       saveStateTimeout.current && clearTimeout(saveStateTimeout.current);
       saveStateTimeout.current = setTimeout(() => {
@@ -213,6 +216,11 @@ export default function AffirmationsScreen() {
                   style={styles.saveButton}
                 />
               </View>
+              {lastSavedEntry ? (
+                <View style={styles.feedToLunaRow}>
+                  <FeedToGuideButton guide="luna" sourceType="affirmation" sourceId={lastSavedEntry.id} sourceText={lastSavedEntry.text} />
+                </View>
+              ) : null}
             </View>
 
             <Text style={styles.sectionTitle}>RECENT AFFIRMATIONS</Text>
@@ -425,6 +433,7 @@ const styles = StyleSheet.create({
   saveButton: {
     flex: 1,
   },
+  feedToLunaRow: { marginTop: 10 },
   cancelEditBtn: {
     flex: 1,
     backgroundColor: "#3E2A1A",

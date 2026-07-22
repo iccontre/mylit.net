@@ -12,6 +12,7 @@ import {
 
 import { BottomNav } from "../components/BottomNav";
 import { GuideInfoModal } from "../components/GuideInfoModal";
+import { QuickThoughtsModal } from "../components/QuickThoughtsModal";
 import { GuidePanel } from "../components/parchment/GuidePanel";
 import { ParchmentSurface, parchmentTextStyles } from "../components/parchment/ParchmentSurface";
 import { WorldChrome } from "../components/parchment/WorldChrome";
@@ -86,6 +87,7 @@ export default function MindScreen() {
   const router = useRouter();
   const mobile = useMobileFrame();
   const [showInfo, setShowInfo] = useState(false);
+  const [showQuickThoughts, setShowQuickThoughts] = useState(false);
 
   function renderMindCard(card: MindCard) {
     return (
@@ -125,6 +127,15 @@ export default function MindScreen() {
               onInfoPress={() => setShowInfo(true)}
             />
 
+            <TouchableOpacity style={styles.quickThoughtsButton} onPress={() => setShowQuickThoughts(true)}>
+              <Text style={styles.quickThoughtsIcon}>💭</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.quickThoughtsTitle}>QUICK THOUGHTS</Text>
+                <Text style={styles.quickThoughtsSubtitle}>Capture something before it disappears.</Text>
+              </View>
+              <Text style={styles.actionArrow}>›</Text>
+            </TouchableOpacity>
+
             <View style={styles.cardStack}>{MIND_CARDS.map(renderMindCard)}</View>
           </ScrollView>
 
@@ -137,6 +148,8 @@ export default function MindScreen() {
             bullets={LUNA_MIND_BULLETS}
             accentColor={palette.accent}
           />
+
+          <QuickThoughtsModal visible={showQuickThoughts} onClose={() => setShowQuickThoughts(false)} />
 
           <BottomNav activeRoute="mind" bottomOffset={mobile.bottomNavOffset} />
         </View>
@@ -189,6 +202,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
   },
   chrome: { marginBottom: 14 },
+  quickThoughtsButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginTop: 12,
+    borderWidth: 3,
+    borderColor: "#7C3AED",
+    borderRadius: 8,
+    padding: 13,
+    backgroundColor: "rgba(36,26,74,0.92)",
+    shadowColor: "#000",
+    shadowOpacity: 0.6,
+    shadowRadius: 0,
+    shadowOffset: { width: 3, height: 3 },
+  },
+  quickThoughtsIcon: { fontSize: 26 },
+  quickThoughtsTitle: { color: "#ECE4FB", fontFamily: pixelFont, fontSize: 13, fontWeight: "900", letterSpacing: 0.6 },
+  quickThoughtsSubtitle: { color: "#C4B5FD", fontFamily: pixelFont, fontSize: 11, fontWeight: "700", marginTop: 2 },
   cardStack: {
     gap: 12,
     marginTop: 14,

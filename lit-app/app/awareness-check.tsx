@@ -23,6 +23,7 @@ import { AWARENESS_CHECKS_KEY } from "../lib/storageKeys";
 import { HistoryModal } from "../components/HistoryModal";
 import { normalizeMeditationLogs } from "../lib/logHistory";
 import { recordAgentEvent } from "../lib/mylitAgents";
+import { FeedToGuideButton } from "../components/parchment/FeedToGuideButton";
 import { SaveButton, type SaveState } from "../components/parchment/SaveButton";
 
 const LUNA_MEDITATIONS_BULLETS = [
@@ -80,6 +81,7 @@ export default function AwarenessCheckScreen() {
   const [checks, setChecks] = useState<AwarenessCheck[]>([]);
   const [showInfo, setShowInfo] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [lastSavedEntry, setLastSavedEntry] = useState<{ id: string; text: string } | null>(null);
   const savedTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     return () => {
@@ -127,6 +129,7 @@ export default function AwarenessCheckScreen() {
       await persistProgressKeys({ [AWARENESS_CHECKS_KEY]: JSON.stringify(nextChecks) });
       void recordAgentEvent({ type: "meditation_saved", sourcePage: "awareness-check", relatedItemId: newCheck.id, metadata: { mood } });
 
+      setLastSavedEntry({ id: newCheck.id, text: newCheck.truth ?? "" });
       setChecks(nextChecks);
       setMood("");
       setTruth("");
@@ -214,6 +217,11 @@ export default function AwarenessCheckScreen() {
                 idleLabel="SAVE MEDITATION"
                 style={styles.saveButton}
               />
+              {lastSavedEntry ? (
+                <View style={styles.feedToLunaRow}>
+                  <FeedToGuideButton guide="luna" sourceType="awarenessCheck" sourceId={lastSavedEntry.id} sourceText={lastSavedEntry.text} />
+                </View>
+              ) : null}
             </View>
 
             <Text style={styles.sectionTitle}>RECENT MEDITATIONS</Text>
@@ -460,6 +468,7 @@ const styles = StyleSheet.create({
   saveButton: {
     marginTop: 16,
   },
+  feedToLunaRow: { marginTop: 10 },
   sectionTitle: {
     color: "#FDE68A",
     fontFamily: pixelFont,
